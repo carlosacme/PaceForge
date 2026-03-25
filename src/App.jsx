@@ -1,11 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-
-const MOCK_ATHLETES = [
-  { id: 1, name: "Laura Martínez", age: 28, goal: "Sub 4:00 Maratón", pace: "5:40/km", weekly_km: 55, avatar: "🏃‍♀️", status: "on-track", next_race: "Maratón Bogotá - Jun 8", workouts_done: 14, workouts_total: 18 },
-  { id: 2, name: "Andrés Ospina", age: 34, goal: "Sub 3:30 Maratón", pace: "4:58/km", weekly_km: 72, avatar: "🏃", status: "behind", next_race: "Media Cali - May 18", workouts_done: 9, workouts_total: 18 },
-  { id: 3, name: "Valentina Cruz", age: 25, goal: "Primera Media Maratón", pace: "6:10/km", weekly_km: 38, avatar: "🏃‍♀️", status: "on-track", next_race: "10K Pacífico - Apr 27", workouts_done: 16, workouts_total: 18 },
-  { id: 4, name: "Diego Herrera", age: 41, goal: "Sub 45min 10K", pace: "4:30/km", weekly_km: 60, avatar: "🏃", status: "ahead", next_race: "10K Bogotá - May 4", workouts_done: 18, workouts_total: 18 },
-];
+import { supabase } from "./lib/supabase";
 
 const WORKOUT_TYPES = [
   { id: "easy", label: "Rodaje Suave", color: "#22c55e" },
@@ -48,6 +42,20 @@ const getRaceCountdownText = (nextRace) => {
   return `🏁 ${raceName} · faltan ${daysLeft} ${label}`;
 };
 
+const normalizeAthlete = (athlete) => ({
+  id: athlete?.id,
+  name: athlete?.name || "Atleta sin nombre",
+  age: Number.isFinite(Number(athlete?.age)) ? Number(athlete.age) : 0,
+  goal: athlete?.goal || "Objetivo pendiente",
+  pace: athlete?.pace || "N/A",
+  weekly_km: Number.isFinite(Number(athlete?.weekly_km)) ? Number(athlete.weekly_km) : 0,
+  avatar: athlete?.avatar || "🏃",
+  status: athlete?.status || "on-track",
+  next_race: athlete?.next_race || "Próxima carrera - Dec 31",
+  workouts_done: Number.isFinite(Number(athlete?.workouts_done)) ? Number(athlete.workouts_done) : 0,
+  workouts_total: Number.isFinite(Number(athlete?.workouts_total)) ? Number(athlete.workouts_total) : 18,
+});
+
 const generateCalendar = () => {
   const workouts = {};
   const types = ["easy", "tempo", "interval", "long", "recovery"];
@@ -83,7 +91,8 @@ export default function App() {
   const [aiWorkout, setAiWorkout] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [notification, setNotification] = useState(null);
-  const [athletes, setAthletes] = useState(MOCK_ATHLETES);
+  const [athletes, setAthletes] = useState([]);
+  const [loadingAthletes, setLoadingAthletes] = useState(true);
   const [showAddAthleteForm, setShowAddAthleteForm] = useState(false);
   const [newAthlete, setNewAthlete] = useState({ name: "", goal: "", pace: "", weekly_km: "" });
 
@@ -95,7 +104,23 @@ export default function App() {
     setNewAthlete(prev => ({ ...prev, [field]: value }));
   };
 
-  const saveNewAthlete = () => {
+  useEffect(() => {
+    const loadAthletes = async () => {
+      setLoadingAthletes(true);
+      const { data, error } = await supabase.from("athletes").select("*").order("id", { ascending: true });
+      if (error) {
+        notify("Error cargando atletas");
+        setAthletes([]);
+      } else {
+        setAthletes((data || []).map(normalizeAthlete));
+      }
+      setLoadingAthletes(false);
+    };
+
+    loadAthletes();
+  }, []);
+
+  const saveNewAthlete = async () => {
     const name = newAthlete.name.trim();
     const goal = newAthlete.goal.trim();
     const pace = newAthlete.pace.trim();
@@ -106,23 +131,23 @@ export default function App() {
       return;
     }
 
-    setAthletes(prev => {
-      const nextId = prev.reduce((m, a) => Math.max(m, a.id), 0) + 1;
-      const athlete = {
-        id: nextId,
-        name,
-        age: 0,
-        goal,
-        pace,
-        weekly_km: weeklyKm,
-        avatar: "🏃",
-        status: "on-track",
-        next_race: "Pendiente",
-        workouts_done: 0,
-        workouts_total: 18,
-      };
-      return [athlete, ...prev];
-    });
+    const payload = { name, goal, pace, weekly_km: weeklyKm };
+    const { data, error } = await supabase.from("athletes").insert(payload).select().single();
+    if (error) {
+      const errorText = [
+        "Error al guardar atleta en Supabase:",
+        `message: ${error.message || "N/A"}`,
+        `details: ${error.details || "N/A"}`,
+        `hint: ${error.hint || "N/A"}`,
+        `code: ${error.code || "N/A"}`,
+      ].join("\n");
+      console.error(errorText, error);
+      alert(errorText);
+      notify("Error al guardar atleta");
+      return;
+    }
+
+    setAthletes(prev => [normalizeAthlete(data), ...prev]);
 
     setShowAddAthleteForm(false);
     setNewAthlete({ name: "", goal: "", pace: "", weekly_km: "" });
@@ -167,6 +192,12 @@ export default function App() {
       </aside>
 
       <main style={{ flex: 1, overflowY: "auto" }}>
+        {loadingAthletes ? (
+          <div style={S.page}>
+            <h1 style={S.pageTitle}>Cargando atletas...</h1>
+          </div>
+        ) : (
+          <>
         {view === "dashboard" && (
           <Dashboard
             athletes={athletes}
@@ -181,6 +212,8 @@ export default function App() {
         )}
         {view === "athletes" && <Athletes athletes={athletes} selected={selectedAthlete} onSelect={setSelectedAthlete} calendar={calendar} />}
         {view === "builder" && <Builder aiPrompt={aiPrompt} setAiPrompt={setAiPrompt} aiWorkout={aiWorkout} setAiWorkout={setAiWorkout} aiLoading={aiLoading} setAiLoading={setAiLoading} notify={notify} />}
+          </>
+        )}
       </main>
     </div>
   );
@@ -356,12 +389,21 @@ function Dashboard({
 
 function Athletes({ athletes, selected, onSelect, calendar }) {
   const S = styles;
-  const athlete = selected || athletes[0];
+  const athlete = selected || athletes[0] || null;
   const [searchQuery, setSearchQuery] = useState("");
   const normalized = searchQuery.trim().toLowerCase();
   const filteredAthletes = normalized
     ? athletes.filter(a => (a.name || "").toLowerCase().includes(normalized) || (a.goal || "").toLowerCase().includes(normalized))
     : athletes;
+
+  if (!athlete) {
+    return (
+      <div style={S.page}>
+        <h1 style={{ ...S.pageTitle, marginBottom: 20 }}>Atletas</h1>
+        <div style={{ color: "#64748b", fontSize: ".9em" }}>No se encontraron atletas</div>
+      </div>
+    );
+  }
   return (
     <div style={S.page}>
       <h1 style={{ ...S.pageTitle, marginBottom: 20 }}>Atletas</h1>
