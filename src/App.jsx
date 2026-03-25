@@ -95,6 +95,12 @@ export default function App() {
   const [loadingAthletes, setLoadingAthletes] = useState(true);
   const [showAddAthleteForm, setShowAddAthleteForm] = useState(false);
   const [newAthlete, setNewAthlete] = useState({ name: "", goal: "", pace: "", weekly_km: "" });
+  const [session, setSession] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [authMode, setAuthMode] = useState("login");
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authSubmitting, setAuthSubmitting] = useState(false);
 
   const notify = (msg) => { setNotification(msg); setTimeout(() => setNotification(null), 3000); };
 
@@ -105,7 +111,38 @@ export default function App() {
   };
 
   useEffect(() => {
+    let mounted = true;
+    const bootstrapAuth = async () => {
+      const { data, error } = await supabase.auth.getSession();
+      if (error) {
+        console.error("Error leyendo sesión:", error);
+      }
+      if (mounted) {
+        setSession(data?.session ?? null);
+        setAuthLoading(false);
+      }
+    };
+
+    bootstrapAuth();
+
+    const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      if (!mounted) return;
+      setSession(nextSession ?? null);
+    });
+
+    return () => {
+      mounted = false;
+      data.subscription.unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
     const loadAthletes = async () => {
+      if (!session) {
+        setAthletes([]);
+        setLoadingAthletes(false);
+        return;
+      }
       setLoadingAthletes(true);
       const { data, error } = await supabase.from("athletes").select("*").order("id", { ascending: true });
       if (error) {
@@ -118,7 +155,52 @@ export default function App() {
     };
 
     loadAthletes();
-  }, []);
+  }, [session]);
+
+  const handleAuthSubmit = async (e) => {
+    e.preventDefault();
+    if (!authEmail.trim() || !authPassword.trim()) {
+      alert("Completa email y contraseña.");
+      return;
+    }
+
+    setAuthSubmitting(true);
+    try {
+      if (authMode === "login") {
+        const { error } = await supabase.auth.signInWithPassword({
+          email: authEmail.trim(),
+          password: authPassword,
+        });
+        if (error) {
+          console.error("Error en login:", error);
+          alert(`Error en login: ${error.message}`);
+          return;
+        }
+      } else {
+        const { error } = await supabase.auth.signUp({
+          email: authEmail.trim(),
+          password: authPassword,
+        });
+        if (error) {
+          console.error("Error en registro:", error);
+          alert(`Error en registro: ${error.message}`);
+          return;
+        }
+        alert("Registro exitoso. Revisa tu correo si la verificación está habilitada.");
+        setAuthMode("login");
+      }
+    } finally {
+      setAuthSubmitting(false);
+    }
+  };
+
+  const handleSignOut = async () => {
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      console.error("Error al cerrar sesión:", error);
+      alert(`Error al cerrar sesión: ${error.message}`);
+    }
+  };
 
   const saveNewAthlete = async () => {
     const name = newAthlete.name.trim();
@@ -159,6 +241,65 @@ export default function App() {
     setNewAthlete({ name: "", goal: "", pace: "", weekly_km: "" });
   };
 
+  if (authLoading) {
+    return (
+      <div style={S.root}>
+        <main style={{ ...S.page, display: "flex", alignItems: "center", justifyContent: "center", width: "100%" }}>
+          <h1 style={S.pageTitle}>Cargando sesión...</h1>
+        </main>
+      </div>
+    );
+  }
+
+  if (!session) {
+    return (
+      <div style={S.root}>
+        <main style={{ ...S.page, display: "flex", alignItems: "center", justifyContent: "center", width: "100%" }}>
+          <div style={{ ...S.card, width: 360 }}>
+            <h1 style={{ ...S.pageTitle, fontSize: "1.3em", marginBottom: 16 }}>
+              {authMode === "login" ? "Login" : "Registro"}
+            </h1>
+            <form onSubmit={handleAuthSubmit}>
+              <div style={{ marginBottom: 10 }}>
+                <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Email</div>
+                <input
+                  type="email"
+                  value={authEmail}
+                  onChange={e => setAuthEmail(e.target.value)}
+                  placeholder="correo@ejemplo.com"
+                  style={{ width: "100%", background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 8, padding: "10px 12px", color: "#e2e8f0", fontFamily: "inherit", fontSize: ".85em", outline: "none", boxSizing: "border-box" }}
+                />
+              </div>
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Contraseña</div>
+                <input
+                  type="password"
+                  value={authPassword}
+                  onChange={e => setAuthPassword(e.target.value)}
+                  placeholder="********"
+                  style={{ width: "100%", background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 8, padding: "10px 12px", color: "#e2e8f0", fontFamily: "inherit", fontSize: ".85em", outline: "none", boxSizing: "border-box" }}
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={authSubmitting}
+                style={{ width: "100%", background: authSubmitting ? "rgba(255,255,255,.06)" : "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 8, padding: "10px 14px", color: authSubmitting ? "#334155" : "white", cursor: authSubmitting ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 800, fontSize: ".85em", marginBottom: 10 }}
+              >
+                {authSubmitting ? "Procesando..." : (authMode === "login" ? "Iniciar sesión" : "Crear cuenta")}
+              </button>
+            </form>
+            <button
+              onClick={() => setAuthMode(authMode === "login" ? "register" : "login")}
+              style={{ background: "transparent", border: "none", color: "#94a3b8", cursor: "pointer", fontFamily: "inherit", fontSize: ".8em", padding: 0 }}
+            >
+              {authMode === "login" ? "¿No tienes cuenta? Ir a Registro" : "¿Ya tienes cuenta? Ir a Login"}
+            </button>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div style={S.root}>
       {notification && <div style={S.notification}>✓ {notification}</div>}
@@ -188,6 +329,12 @@ export default function App() {
           <div style={{ fontSize: ".7em", color: "#475569" }}>
             {athletes.length} atletas · {athletes.reduce((a, b) => a + b.weekly_km, 0)} km
           </div>
+          <button
+            onClick={handleSignOut}
+            style={{ marginTop: 10, width: "100%", background: "rgba(239,68,68,.08)", border: "1px solid rgba(239,68,68,.25)", borderRadius: 8, padding: "8px 10px", color: "#ef4444", cursor: "pointer", fontFamily: "inherit", fontSize: ".78em", fontWeight: 700 }}
+          >
+            Cerrar sesión
+          </button>
         </div>
       </aside>
 
