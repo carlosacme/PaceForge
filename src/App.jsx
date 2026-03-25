@@ -144,7 +144,20 @@ export default function App() {
         return;
       }
       setLoadingAthletes(true);
-      const { data, error } = await supabase.from("athletes").select("*").order("id", { ascending: true });
+      const { data: userData, error: userError } = await supabase.auth.getUser();
+      if (userError || !userData?.user) {
+        console.error("Error obteniendo usuario para filtrar atletas:", userError);
+        notify("Error cargando atletas");
+        setAthletes([]);
+        setLoadingAthletes(false);
+        return;
+      }
+      const coachId = userData.user.id;
+      const { data, error } = await supabase
+        .from("athletes")
+        .select("*")
+        .eq("coach_id", coachId)
+        .order("id", { ascending: true });
       if (error) {
         notify("Error cargando atletas");
         setAthletes([]);
@@ -213,7 +226,15 @@ export default function App() {
       return;
     }
 
-    const payload = { name, goal, pace, weekly_km: weeklyKm };
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+    if (userError || !userData?.user) {
+      console.error("Error obteniendo usuario para guardar atleta:", userError);
+      alert(userError?.message || "No se pudo obtener el usuario autenticado.");
+      notify("Error al guardar atleta");
+      return;
+    }
+
+    const payload = { name, goal, pace, weekly_km: weeklyKm, coach_id: userData.user.id };
     const { data, error } = await supabase.from("athletes").insert(payload).select().single();
     if (error) {
       const errorText = [
