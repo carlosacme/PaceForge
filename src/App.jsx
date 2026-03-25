@@ -82,8 +82,10 @@ export default function App() {
           ))}
         </nav>
         <div style={S.sidebarFooter}>
-          <div style={{ fontSize: ".82em", color: "#94a3b8" }}>👤 Coach Carlos</div>
-          <div style={{ fontSize: ".7em", color: "#475569" }}>{MOCK_ATHLETES.length} atletas activos</div>
+          <div style={{ fontSize: ".82em", color: "#94a3b8" }}>👤 Coach Carlos Acosta</div>
+          <div style={{ fontSize: ".7em", color: "#475569" }}>
+            {MOCK_ATHLETES.length} atletas · {MOCK_ATHLETES.reduce((a, b) => a + b.weekly_km, 0)} km
+          </div>
         </div>
       </aside>
 
