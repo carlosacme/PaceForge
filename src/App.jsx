@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { supabase } from "./lib/supabase";
 
 const WORKOUT_TYPES = [
@@ -56,19 +56,48 @@ const normalizeAthlete = (athlete) => ({
   workouts_total: Number.isFinite(Number(athlete?.workouts_total)) ? Number(athlete.workouts_total) : 18,
 });
 
-const generateCalendar = () => {
-  const workouts = {};
-  const types = ["easy", "tempo", "interval", "long", "recovery"];
-  for (let week = 0; week < 4; week++) {
-    [0, 2, 3, 5, 6].forEach(day => {
-      const type = types[Math.floor(Math.random() * types.length)];
-      workouts[`${week}-${day}`] = {
-        type, title: WORKOUT_TYPES.find(w => w.id === type).label,
-        km: Math.floor(Math.random() * 15 + 5), done: week < 2,
-      };
-    });
+const formatLocalYMD = (d) => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+};
+
+const startOfWeekMonday = (ref = new Date()) => {
+  const d = new Date(ref.getFullYear(), ref.getMonth(), ref.getDate());
+  const dow = d.getDay();
+  const offset = dow === 0 ? -6 : 1 - dow;
+  d.setDate(d.getDate() + offset);
+  return d;
+};
+
+const addDays = (d, n) => {
+  const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  x.setDate(x.getDate() + n);
+  return x;
+};
+
+const normalizeWorkoutRow = (row) => {
+  let structure = row.structure;
+  if (typeof structure === "string") {
+    try { structure = JSON.parse(structure); } catch { structure = []; }
   }
-  return workouts;
+  const dateRaw = row.scheduled_date;
+  const scheduled = typeof dateRaw === "string" ? dateRaw.slice(0, 10) : formatLocalYMD(new Date(dateRaw));
+  const type = row.type && WORKOUT_TYPES.some(t => t.id === row.type) ? row.type : "easy";
+  return {
+    id: row.id,
+    athlete_id: row.athlete_id,
+    coach_id: row.coach_id,
+    scheduled_date: scheduled,
+    type,
+    title: row.title || WORKOUT_TYPES.find(t => t.id === type)?.label || "Entrenamiento",
+    total_km: Number.isFinite(Number(row.total_km)) ? Number(row.total_km) : 0,
+    duration_min: Number.isFinite(Number(row.duration_min)) ? Number(row.duration_min) : 0,
+    description: row.description || "",
+    structure: Array.isArray(structure) ? structure : [],
+    done: Boolean(row.done),
+  };
 };
 
 const StatusBadge = ({ status }) => {
@@ -86,7 +115,7 @@ const ProgressBar = ({ value, total, color = "#f59e0b" }) => (
 export default function App() {
   const [view, setView] = useState("dashboard");
   const [selectedAthlete, setSelectedAthlete] = useState(null);
-  const [calendar] = useState(generateCalendar());
+  const [workoutsRefresh, setWorkoutsRefresh] = useState(0);
   const [aiPrompt, setAiPrompt] = useState("");
   const [aiWorkout, setAiWorkout] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
@@ -378,8 +407,22 @@ export default function App() {
             onCancelAddAthlete={cancelAddAthleteForm}
           />
         )}
-        {view === "athletes" && <Athletes athletes={athletes} selected={selectedAthlete} onSelect={setSelectedAthlete} calendar={calendar} />}
-        {view === "builder" && <Builder aiPrompt={aiPrompt} setAiPrompt={setAiPrompt} aiWorkout={aiWorkout} setAiWorkout={setAiWorkout} aiLoading={aiLoading} setAiLoading={setAiLoading} notify={notify} />}
+        {view === "athletes" && (
+          <Athletes athletes={athletes} selected={selectedAthlete} onSelect={setSelectedAthlete} workoutsRefresh={workoutsRefresh} />
+        )}
+        {view === "builder" && (
+          <Builder
+            athletes={athletes}
+            aiPrompt={aiPrompt}
+            setAiPrompt={setAiPrompt}
+            aiWorkout={aiWorkout}
+            setAiWorkout={setAiWorkout}
+            aiLoading={aiLoading}
+            setAiLoading={setAiLoading}
+            notify={notify}
+            onWorkoutAssigned={() => setWorkoutsRefresh(r => r + 1)}
+          />
+        )}
           </>
         )}
       </main>
@@ -555,14 +598,80 @@ function Dashboard({
   );
 }
 
-function Athletes({ athletes, selected, onSelect, calendar }) {
+function Athletes({ athletes, selected, onSelect, workoutsRefresh }) {
   const S = styles;
   const athlete = selected || athletes[0] || null;
   const [searchQuery, setSearchQuery] = useState("");
+  const [workouts, setWorkouts] = useState([]);
+  const [loadingWorkouts, setLoadingWorkouts] = useState(false);
   const normalized = searchQuery.trim().toLowerCase();
   const filteredAthletes = normalized
     ? athletes.filter(a => (a.name || "").toLowerCase().includes(normalized) || (a.goal || "").toLowerCase().includes(normalized))
     : athletes;
+
+  useEffect(() => {
+    if (!athlete?.id) {
+      setWorkouts([]);
+      return;
+    }
+    let cancelled = false;
+    const load = async () => {
+      setLoadingWorkouts(true);
+      const { data, error } = await supabase
+        .from("workouts")
+        .select("*")
+        .eq("athlete_id", athlete.id)
+        .order("scheduled_date", { ascending: true });
+      if (cancelled) return;
+      if (error) {
+        console.error("Error cargando workouts:", error);
+        setWorkouts([]);
+      } else {
+        setWorkouts((data || []).map(normalizeWorkoutRow));
+      }
+      setLoadingWorkouts(false);
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [athlete?.id, workoutsRefresh]);
+
+  const workoutsByDate = useMemo(() => {
+    const m = {};
+    for (const w of workouts) {
+      const k = w.scheduled_date;
+      if (!m[k]) m[k] = [];
+      m[k].push(w);
+    }
+    return m;
+  }, [workouts]);
+
+  const CALENDAR_DAYS = 42;
+  const weekStart = useMemo(() => {
+    const thisMonday = startOfWeekMonday(new Date());
+    if (!workouts.length) return thisMonday;
+    let minMs = Infinity;
+    for (const w of workouts) {
+      const t = new Date(`${w.scheduled_date}T12:00:00`).getTime();
+      if (t < minMs) minMs = t;
+    }
+    const firstMonday = startOfWeekMonday(new Date(minMs));
+    return firstMonday.getTime() < thisMonday.getTime() ? firstMonday : thisMonday;
+  }, [workouts]);
+  const calendarCells = useMemo(
+    () => Array.from({ length: CALENDAR_DAYS }, (_, i) => addDays(weekStart, i)),
+    [weekStart],
+  );
+
+  const toggleWorkoutDone = async (w) => {
+    const next = !w.done;
+    const { error } = await supabase.from("workouts").update({ done: next }).eq("id", w.id);
+    if (error) {
+      console.error(error);
+      alert(`Error al actualizar: ${error.message}`);
+      return;
+    }
+    setWorkouts(prev => prev.map(x => (x.id === w.id ? { ...x, done: next } : x)));
+  };
 
   if (!athlete) {
     return (
@@ -619,32 +728,127 @@ function Athletes({ athletes, selected, onSelect, calendar }) {
               </div>
             ))}
           </div>
-          <div style={{ fontSize: ".65em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase", marginBottom: 10 }}>CALENDARIO — MARZO 2026</div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 4 }}>
-            {DAYS.map(d => <div key={d} style={{ fontSize: ".65em", textAlign: "center", color: "#334155", padding: "4px 0" }}>{d}</div>)}
-            {Array.from({length:4}).map((_,week) => Array.from({length:7}).map((_,day) => {
-              const w = calendar[`${week}-${day}`];
-              const wt = w ? WORKOUT_TYPES.find(t=>t.id===w.type) : null;
-              return (
-                <div key={`${week}-${day}`} style={{ minHeight: 54, border: `1px solid ${wt ? `${wt.color}40` : "rgba(255,255,255,.05)"}`, borderRadius: 6, padding: "5px 4px", display: "flex", flexDirection: "column", alignItems: "center", background: wt ? `${wt.color}08` : "transparent" }}>
-                  {wt && <>
-                    <div style={{ width: 6, height: 6, borderRadius: "50%", background: wt.color, marginBottom: 3 }} />
-                    <div style={{ fontSize: ".58em", color: wt.color, fontWeight: 600, lineHeight: 1.2, textAlign: "center" }}>{w.title}</div>
-                    <div style={{ fontSize: ".56em", color: "#475569" }}>{w.km}km</div>
-                    {w.done && <div style={{ fontSize: ".55em", color: "#22c55e" }}>✓</div>}
-                  </>}
-                </div>
-              );
-            }))}
+          <div style={{ fontSize: ".65em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase", marginBottom: 10 }}>
+            CALENDARIO — {formatLocalYMD(calendarCells[0])} → {formatLocalYMD(calendarCells[calendarCells.length - 1])}
           </div>
+          {loadingWorkouts ? (
+            <div style={{ color: "#64748b", fontSize: ".85em", padding: "20px 0" }}>Cargando entrenamientos...</div>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 4 }}>
+              {DAYS.map(d => <div key={d} style={{ fontSize: ".65em", textAlign: "center", color: "#334155", padding: "4px 0" }}>{d}</div>)}
+              {calendarCells.map((cellDate, i) => {
+                const ymd = formatLocalYMD(cellDate);
+                const dayWorkouts = workoutsByDate[ymd] || [];
+                const hasWorkout = dayWorkouts.length > 0;
+                const borderColor = hasWorkout
+                  ? `${WORKOUT_TYPES.find(t => t.id === dayWorkouts[0].type)?.color || "#64748b"}40`
+                  : "rgba(255,255,255,.05)";
+                return (
+                  <div
+                    key={i}
+                    style={{
+                      minHeight: 72,
+                      border: `1px solid ${borderColor}`,
+                      borderRadius: 6,
+                      padding: "4px 3px",
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "stretch",
+                      gap: 3,
+                      background: hasWorkout ? "rgba(255,255,255,.02)" : "transparent",
+                    }}
+                  >
+                    <div style={{ fontSize: ".58em", color: "#475569", textAlign: "center", fontWeight: 600 }}>{cellDate.getDate()}</div>
+                    {dayWorkouts.map(w => {
+                      const wt = WORKOUT_TYPES.find(t => t.id === w.type) || WORKOUT_TYPES[0];
+                      return (
+                        <button
+                          key={w.id}
+                          type="button"
+                          onClick={() => toggleWorkoutDone(w)}
+                          title={w.done ? "Marcar como pendiente" : "Marcar como hecho"}
+                          style={{
+                            border: `1px solid ${wt.color}55`,
+                            borderRadius: 5,
+                            padding: "4px 3px",
+                            background: `${wt.color}12`,
+                            cursor: "pointer",
+                            fontFamily: "inherit",
+                            textAlign: "center",
+                            width: "100%",
+                            boxSizing: "border-box",
+                          }}
+                        >
+                          <div style={{ width: 5, height: 5, borderRadius: "50%", background: wt.color, margin: "0 auto 2px" }} />
+                          <div style={{ fontSize: ".52em", color: wt.color, fontWeight: 600, lineHeight: 1.15 }}>{w.title}</div>
+                          <div style={{ fontSize: ".5em", color: "#475569" }}>{w.total_km} km</div>
+                          {w.done && <div style={{ fontSize: ".52em", color: "#22c55e", marginTop: 1 }}>✓ Hecho</div>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
     </div>
   );
 }
 
-function Builder({ aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiLoading, setAiLoading, notify }) {
+function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiLoading, setAiLoading, notify, onWorkoutAssigned }) {
   const S = styles;
+  const [showAssignModal, setShowAssignModal] = useState(false);
+  const [assignAthleteId, setAssignAthleteId] = useState("");
+  const [assignDate, setAssignDate] = useState(() => formatLocalYMD(new Date()));
+  const [assignSaving, setAssignSaving] = useState(false);
+
+  const openAssignModal = () => {
+    if (!aiWorkout) return;
+    setAssignDate(formatLocalYMD(new Date()));
+    if (athletes?.length) setAssignAthleteId(String(athletes[0].id));
+    else setAssignAthleteId("");
+    setShowAssignModal(true);
+  };
+
+  const saveAssignedWorkout = async () => {
+    if (!aiWorkout) return;
+    if (!assignAthleteId) {
+      alert("Selecciona un atleta.");
+      return;
+    }
+    if (!assignDate) {
+      alert("Selecciona una fecha.");
+      return;
+    }
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+    if (userError || !userData?.user) {
+      alert(userError?.message || "No hay usuario autenticado.");
+      return;
+    }
+    setAssignSaving(true);
+    try {
+      const payload = {
+        ...aiWorkout,
+        athlete_id: assignAthleteId,
+        coach_id: userData.user.id,
+        scheduled_date: assignDate,
+        done: false,
+      };
+      const { error } = await supabase.from("workouts").insert(payload).select().single();
+      if (error) {
+        console.error("Error guardando workout asignado:", error);
+        alert(`Error: ${error.message}\n${error.details || ""}\n${error.hint || ""}`);
+        return;
+      }
+      setShowAssignModal(false);
+      onWorkoutAssigned?.();
+      notify("Entrenamiento guardado correctamente en Supabase.");
+    } finally {
+      setAssignSaving(false);
+    }
+  };
 
   const generateWorkout = async () => {
     if (!aiPrompt.trim()) return;
@@ -720,8 +924,74 @@ function Builder({ aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiLoading, se
             ))}
             <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
               <button onClick={exportGarmin} style={{ background: "rgba(22,163,74,.12)", border: "1px solid rgba(22,163,74,.3)", borderRadius: 8, padding: "8px 14px", color: "#22c55e", cursor: "pointer", fontSize: ".78em", fontFamily: "inherit", fontWeight: 600 }}>⌚ Exportar a Garmin</button>
-              <button onClick={()=>notify("Asignado al atleta ✓")} style={{ background: "rgba(59,130,246,.1)", border: "1px solid rgba(59,130,246,.3)", borderRadius: 8, padding: "8px 14px", color: "#3b82f6", cursor: "pointer", fontSize: ".78em", fontFamily: "inherit", fontWeight: 600 }}>📤 Asignar a Atleta</button>
+              <button
+                onClick={openAssignModal}
+                disabled={!athletes?.length}
+                style={{
+                  background: athletes?.length ? "rgba(59,130,246,.1)" : "rgba(255,255,255,.04)",
+                  border: `1px solid ${athletes?.length ? "rgba(59,130,246,.3)" : "rgba(255,255,255,.08)"}`,
+                  borderRadius: 8,
+                  padding: "8px 14px",
+                  color: athletes?.length ? "#3b82f6" : "#475569",
+                  cursor: athletes?.length ? "pointer" : "not-allowed",
+                  fontSize: ".78em",
+                  fontFamily: "inherit",
+                  fontWeight: 600,
+                }}
+              >
+                📤 Asignar a Atleta
+              </button>
             </div>
+            {showAssignModal && (
+              <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 16 }}>
+                <div style={{ ...S.card, width: "100%", maxWidth: 400, margin: 0 }}>
+                  <div style={{ fontSize: ".85em", fontWeight: 700, color: "#e2e8f0", marginBottom: 8 }}>Asignar workout a un atleta</div>
+                  <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 14 }}>
+                    Se guardará en Supabase con todos los datos generados por la IA, más atleta, coach y fecha.
+                  </div>
+                  <div style={{ marginBottom: 12 }}>
+                    <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Atleta del coach</div>
+                    <select
+                      value={assignAthleteId}
+                      onChange={e => setAssignAthleteId(e.target.value)}
+                      style={{ width: "100%", background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 8, padding: "10px 12px", color: "#e2e8f0", fontFamily: "inherit", fontSize: ".85em", outline: "none", boxSizing: "border-box" }}
+                    >
+                      <option value="" disabled>Selecciona un atleta</option>
+                      {(athletes || []).map(a => (
+                        <option key={a.id} value={String(a.id)}>{a.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div style={{ marginBottom: 16 }}>
+                    <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Fecha del workout</div>
+                    <input
+                      type="date"
+                      value={assignDate}
+                      onChange={e => setAssignDate(e.target.value)}
+                      style={{ width: "100%", background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 8, padding: "10px 12px", color: "#e2e8f0", fontFamily: "inherit", fontSize: ".85em", outline: "none", boxSizing: "border-box" }}
+                    />
+                  </div>
+                  <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+                    <button
+                      type="button"
+                      onClick={() => setShowAssignModal(false)}
+                      disabled={assignSaving}
+                      style={{ background: "rgba(255,255,255,.03)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 8, padding: "8px 14px", color: "#94a3b8", cursor: assignSaving ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: ".82em" }}
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={saveAssignedWorkout}
+                      disabled={assignSaving}
+                      style={{ background: assignSaving ? "rgba(255,255,255,.06)" : "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 8, padding: "8px 14px", color: assignSaving ? "#334155" : "white", cursor: assignSaving ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 800, fontSize: ".82em" }}
+                    >
+                      {assignSaving ? "Guardando..." : "Confirmar"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </> : (
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: 300, opacity: .4 }}>
               <div style={{ fontSize: "3em", marginBottom: 12 }}>⚡</div>
