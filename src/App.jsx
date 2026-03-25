@@ -860,7 +860,7 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           model: "claude-sonnet-4-20250514",
-          max_tokens: 1000,
+          max_tokens: 2000,
           system: `You are an elite running coach. Generate a structured workout in JSON only. No markdown, no backticks. Format: {"title":"...","type":"easy|tempo|interval|long|recovery","total_km":number,"duration_min":number,"description":"...","structure":[{"phase":"...","duration":"...","intensity":"...","pace":"..."}]}`,
           messages: [{ role: "user", content: aiPrompt }],
         }),
@@ -904,7 +904,13 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
               <div key={i} onClick={()=>setAiPrompt(s)} style={{ background: "rgba(255,255,255,.03)", border: "1px solid rgba(255,255,255,.07)", borderRadius: 6, padding: "8px 12px", fontSize: ".75em", color: "#64748b", cursor: "pointer", marginBottom: 6 }}>{s}</div>
             ))}
           </div>
-          <button onClick={generateWorkout} disabled={aiLoading || !aiPrompt.trim()} style={{ width: "100%", background: aiLoading || !aiPrompt.trim() ? "rgba(255,255,255,.06)" : "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 8, padding: "11px 20px", color: aiLoading || !aiPrompt.trim() ? "#334155" : "white", fontWeight: 700, cursor: aiLoading || !aiPrompt.trim() ? "not-allowed" : "pointer", fontSize: ".85em", fontFamily: "inherit" }}>
+          <button
+            onClick={() => {
+              console.log("Botón clickeado, prompt:", aiPrompt);
+              generateWorkout();
+            }}
+            disabled={aiLoading || !aiPrompt.trim()}
+            style={{ width: "100%", background: !aiPrompt.trim() ? "rgba(255,255,255,.06)" : "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 8, padding: "11px 20px", color: !aiPrompt.trim() ? "#334155" : "white", fontWeight: 700, cursor: !aiPrompt.trim() ? "not-allowed" : "pointer", fontSize: ".85em", fontFamily: "inherit" }}>
             {aiLoading ? "⏳ Generando..." : "⚡ GENERAR WORKOUT"}
           </button>
         </div>
