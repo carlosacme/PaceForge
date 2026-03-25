@@ -17,6 +17,37 @@ const WORKOUT_TYPES = [
 
 const DAYS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
 
+const MONTH_INDEX = {
+  Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5,
+  Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11,
+};
+
+const getRaceCountdownText = (nextRace) => {
+  if (!nextRace || typeof nextRace !== "string") return "🏁 Próxima carrera · fecha pendiente";
+
+  const [raceNameRaw, datePartRaw] = nextRace.split(" - ");
+  const raceName = (raceNameRaw || "Próxima carrera").trim();
+  const datePart = (datePartRaw || "").trim();
+  const [monthAbbr, dayRaw] = datePart.split(/\s+/);
+  const month = MONTH_INDEX[monthAbbr];
+  const day = Number(dayRaw);
+
+  if (month === undefined || !Number.isFinite(day)) {
+    return `🏁 ${raceName} · fecha pendiente`;
+  }
+
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  let raceDate = new Date(today.getFullYear(), month, day);
+  if (raceDate < today) raceDate = new Date(today.getFullYear() + 1, month, day);
+
+  const diffMs = raceDate.getTime() - today.getTime();
+  const daysLeft = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+  const label = daysLeft === 1 ? "día" : "días";
+
+  return `🏁 ${raceName} · faltan ${daysLeft} ${label}`;
+};
+
 const generateCalendar = () => {
   const workouts = {};
   const types = ["easy", "tempo", "interval", "long", "recovery"];
@@ -52,10 +83,56 @@ export default function App() {
   const [aiWorkout, setAiWorkout] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [notification, setNotification] = useState(null);
+  const [athletes, setAthletes] = useState(MOCK_ATHLETES);
+  const [showAddAthleteForm, setShowAddAthleteForm] = useState(false);
+  const [newAthlete, setNewAthlete] = useState({ name: "", goal: "", pace: "", weekly_km: "" });
 
   const notify = (msg) => { setNotification(msg); setTimeout(() => setNotification(null), 3000); };
 
   const S = styles;
+
+  const updateNewAthleteField = (field, value) => {
+    setNewAthlete(prev => ({ ...prev, [field]: value }));
+  };
+
+  const saveNewAthlete = () => {
+    const name = newAthlete.name.trim();
+    const goal = newAthlete.goal.trim();
+    const pace = newAthlete.pace.trim();
+    const weeklyKm = Number(newAthlete.weekly_km);
+
+    if (!name || !goal || !pace || !Number.isFinite(weeklyKm) || weeklyKm <= 0) {
+      notify("Completa todos los campos ✓");
+      return;
+    }
+
+    setAthletes(prev => {
+      const nextId = prev.reduce((m, a) => Math.max(m, a.id), 0) + 1;
+      const athlete = {
+        id: nextId,
+        name,
+        age: 0,
+        goal,
+        pace,
+        weekly_km: weeklyKm,
+        avatar: "🏃",
+        status: "on-track",
+        next_race: "Pendiente",
+        workouts_done: 0,
+        workouts_total: 18,
+      };
+      return [athlete, ...prev];
+    });
+
+    setShowAddAthleteForm(false);
+    setNewAthlete({ name: "", goal: "", pace: "", weekly_km: "" });
+    notify("Atleta agregado ✓");
+  };
+
+  const cancelAddAthleteForm = () => {
+    setShowAddAthleteForm(false);
+    setNewAthlete({ name: "", goal: "", pace: "", weekly_km: "" });
+  };
 
   return (
     <div style={S.root}>
@@ -75,7 +152,7 @@ export default function App() {
             { id: "athletes", icon: "◉", label: "Atletas" },
             { id: "builder", icon: "◎", label: "Crear Workout" },
           ].map(item => (
-            <button key={item.id} onClick={() => { setView(item.id); setSelectedAthlete(null); }}
+            <button key={item.id} onClick={() => { setView(item.id); setSelectedAthlete(null); setShowAddAthleteForm(false); }}
               style={{ ...S.navBtn, ...(view === item.id ? S.navBtnActive : {}) }}>
               <span>{item.icon}</span><span>{item.label}</span>
             </button>
@@ -84,28 +161,158 @@ export default function App() {
         <div style={S.sidebarFooter}>
           <div style={{ fontSize: ".82em", color: "#94a3b8" }}>👤 Coach Carlos Acosta</div>
           <div style={{ fontSize: ".7em", color: "#475569" }}>
-            {MOCK_ATHLETES.length} atletas · {MOCK_ATHLETES.reduce((a, b) => a + b.weekly_km, 0)} km
+            {athletes.length} atletas · {athletes.reduce((a, b) => a + b.weekly_km, 0)} km
           </div>
         </div>
       </aside>
 
       <main style={{ flex: 1, overflowY: "auto" }}>
-        {view === "dashboard" && <Dashboard athletes={MOCK_ATHLETES} onSelect={a => { setSelectedAthlete(a); setView("athletes"); }} />}
-        {view === "athletes" && <Athletes athletes={MOCK_ATHLETES} selected={selectedAthlete} onSelect={setSelectedAthlete} calendar={calendar} />}
+        {view === "dashboard" && (
+          <Dashboard
+            athletes={athletes}
+            onSelect={a => { setSelectedAthlete(a); setView("athletes"); setShowAddAthleteForm(false); }}
+            onRequestAddAthlete={() => setShowAddAthleteForm(true)}
+            showAddAthleteForm={showAddAthleteForm}
+            newAthlete={newAthlete}
+            onChangeNewAthleteField={updateNewAthleteField}
+            onSaveNewAthlete={saveNewAthlete}
+            onCancelAddAthlete={cancelAddAthleteForm}
+          />
+        )}
+        {view === "athletes" && <Athletes athletes={athletes} selected={selectedAthlete} onSelect={setSelectedAthlete} calendar={calendar} />}
         {view === "builder" && <Builder aiPrompt={aiPrompt} setAiPrompt={setAiPrompt} aiWorkout={aiWorkout} setAiWorkout={setAiWorkout} aiLoading={aiLoading} setAiLoading={setAiLoading} notify={notify} />}
       </main>
     </div>
   );
 }
 
-function Dashboard({ athletes, onSelect }) {
+function Dashboard({
+  athletes,
+  onSelect,
+  onRequestAddAthlete,
+  showAddAthleteForm,
+  newAthlete,
+  onChangeNewAthleteField,
+  onSaveNewAthlete,
+  onCancelAddAthlete,
+}) {
   const S = styles;
   return (
     <div style={S.page}>
       <div style={{ marginBottom: 28 }}>
-        <h1 style={S.pageTitle}>Dashboard</h1>
-        <p style={{ color: "#475569", fontSize: ".82em", marginTop: 4 }}>Semana del 17 al 23 de Marzo, 2026</p>
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16 }}>
+          <div>
+            <h1 style={S.pageTitle}>Dashboard</h1>
+            <p style={{ color: "#475569", fontSize: ".82em", marginTop: 4 }}>Semana del 17 al 23 de Marzo, 2026</p>
+          </div>
+          <button
+            onClick={onRequestAddAthlete}
+            style={{
+              background: "rgba(255,255,255,.03)",
+              border: "1px solid rgba(255,255,255,.08)",
+              borderRadius: 10,
+              padding: "10px 14px",
+              color: "#e2e8f0",
+              cursor: "pointer",
+              fontFamily: "inherit",
+              fontSize: ".85em",
+              fontWeight: 700,
+              whiteSpace: "nowrap",
+            }}
+          >
+            ＋ Nuevo Atleta
+          </button>
+        </div>
       </div>
+
+      {showAddAthleteForm && (
+        <div style={{ marginBottom: 22, background: "rgba(255,255,255,.025)", border: "1px solid rgba(255,255,255,.07)", borderRadius: 12, padding: 18 }}>
+          <div style={{ fontSize: ".75em", letterSpacing: ".13em", color: "#475569", textTransform: "uppercase", marginBottom: 14 }}>
+            Nuevo Atleta
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
+            <div>
+              <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Nombre</div>
+              <input
+                value={newAthlete.name}
+                onChange={e => onChangeNewAthleteField("name", e.target.value)}
+                placeholder="Ej: Carlos Rojas"
+                style={{ width: "100%", background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 8, padding: "10px 12px", color: "#e2e8f0", fontFamily: "inherit", fontSize: ".85em", outline: "none", boxSizing: "border-box" }}
+              />
+            </div>
+            <div>
+              <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Ritmo por km</div>
+              <input
+                value={newAthlete.pace}
+                onChange={e => onChangeNewAthleteField("pace", e.target.value)}
+                placeholder="Ej: 5:10/km"
+                style={{ width: "100%", background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 8, padding: "10px 12px", color: "#e2e8f0", fontFamily: "inherit", fontSize: ".85em", outline: "none", boxSizing: "border-box" }}
+              />
+            </div>
+            <div style={{ gridColumn: "1 / -1" }}>
+              <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Objetivo</div>
+              <input
+                value={newAthlete.goal}
+                onChange={e => onChangeNewAthleteField("goal", e.target.value)}
+                placeholder="Ej: Sub 3:45 Maratón"
+                style={{ width: "100%", background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 8, padding: "10px 12px", color: "#e2e8f0", fontFamily: "inherit", fontSize: ".85em", outline: "none", boxSizing: "border-box" }}
+              />
+            </div>
+            <div>
+              <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Km semanales</div>
+              <input
+                type="number"
+                value={newAthlete.weekly_km}
+                onChange={e => onChangeNewAthleteField("weekly_km", e.target.value)}
+                placeholder="Ej: 65"
+                min="1"
+                step="1"
+                style={{ width: "100%", background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 8, padding: "10px 12px", color: "#e2e8f0", fontFamily: "inherit", fontSize: ".85em", outline: "none", boxSizing: "border-box" }}
+              />
+            </div>
+            <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "flex-end" }}>
+              <div style={{ fontSize: ".72em", color: "#64748b", paddingBottom: 2, textAlign: "right" }}>
+                Se agrega con estado “En ruta” y calendario básico.
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+            <button
+              onClick={onCancelAddAthlete}
+              style={{
+                background: "rgba(255,255,255,.03)",
+                border: "1px solid rgba(255,255,255,.1)",
+                borderRadius: 10,
+                padding: "10px 14px",
+                color: "#94a3b8",
+                cursor: "pointer",
+                fontFamily: "inherit",
+                fontWeight: 700,
+                fontSize: ".85em",
+              }}
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={onSaveNewAthlete}
+              style={{
+                background: "linear-gradient(135deg,#b45309,#f59e0b)",
+                border: "none",
+                borderRadius: 10,
+                padding: "10px 14px",
+                color: "white",
+                cursor: "pointer",
+                fontFamily: "inherit",
+                fontWeight: 800,
+                fontSize: ".85em",
+              }}
+            >
+              Guardar
+            </button>
+          </div>
+        </div>
+      )}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14, marginBottom: 28 }}>
         {[
           { label: "Atletas Activos", value: athletes.length, icon: "🏃", color: "#f59e0b" },
@@ -139,7 +346,7 @@ function Dashboard({ athletes, onSelect }) {
             </div>
             <div style={{ fontSize: ".72em", color: "#64748b" }}>{a.workouts_done}/{a.workouts_total} entrenamientos</div>
             <ProgressBar value={a.workouts_done} total={a.workouts_total} color={a.status === "behind" ? "#ef4444" : "#f59e0b"} />
-            <div style={{ marginTop: 10, fontSize: ".72em", color: "#475569" }}>🏁 {a.next_race}</div>
+            <div style={{ marginTop: 10, fontSize: ".72em", color: "#475569" }}>{getRaceCountdownText(a.next_race)}</div>
           </div>
         ))}
       </div>
@@ -150,20 +357,39 @@ function Dashboard({ athletes, onSelect }) {
 function Athletes({ athletes, selected, onSelect, calendar }) {
   const S = styles;
   const athlete = selected || athletes[0];
+  const [searchQuery, setSearchQuery] = useState("");
+  const normalized = searchQuery.trim().toLowerCase();
+  const filteredAthletes = normalized
+    ? athletes.filter(a => (a.name || "").toLowerCase().includes(normalized) || (a.goal || "").toLowerCase().includes(normalized))
+    : athletes;
   return (
     <div style={S.page}>
       <h1 style={{ ...S.pageTitle, marginBottom: 20 }}>Atletas</h1>
       <div style={{ display: "grid", gridTemplateColumns: "220px 1fr", gap: 20 }}>
         <div>
-          {athletes.map(a => (
-            <div key={a.id} onClick={() => onSelect(a)} style={{ display: "flex", gap: 10, alignItems: "center", padding: "10px 12px", borderRadius: 8, cursor: "pointer", border: `1px solid ${athlete.id === a.id ? "rgba(245,158,11,.2)" : "transparent"}`, background: athlete.id === a.id ? "rgba(245,158,11,.08)" : "transparent", marginBottom: 6 }}>
-              <span style={{ fontSize: "1.3em" }}>{a.avatar}</span>
-              <div>
-                <div style={{ fontSize: ".85em", fontWeight: 600, color: "#e2e8f0" }}>{a.name}</div>
-                <div style={{ fontSize: ".7em", color: "#64748b" }}>{a.pace} · {a.weekly_km}km</div>
+          <div style={{ marginBottom: 10 }}>
+            <div style={{ fontSize: ".72em", color: "#475569", marginBottom: 6 }}>Buscar</div>
+            <input
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="Nombre o objetivo"
+              style={{ width: "100%", background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 8, padding: "10px 12px", color: "#e2e8f0", fontFamily: "inherit", fontSize: ".85em", outline: "none", boxSizing: "border-box" }}
+            />
+          </div>
+
+          {filteredAthletes.length === 0 ? (
+            <div style={{ padding: "14px 8px", color: "#64748b", fontSize: ".85em" }}>No se encontraron atletas</div>
+          ) : (
+            filteredAthletes.map(a => (
+              <div key={a.id} onClick={() => onSelect(a)} style={{ display: "flex", gap: 10, alignItems: "center", padding: "10px 12px", borderRadius: 8, cursor: "pointer", border: `1px solid ${athlete.id === a.id ? "rgba(245,158,11,.2)" : "transparent"}`, background: athlete.id === a.id ? "rgba(245,158,11,.08)" : "transparent", marginBottom: 6 }}>
+                <span style={{ fontSize: "1.3em" }}>{a.avatar}</span>
+                <div>
+                  <div style={{ fontSize: ".85em", fontWeight: 600, color: "#e2e8f0" }}>{a.name}</div>
+                  <div style={{ fontSize: ".7em", color: "#64748b" }}>{a.pace} · {a.weekly_km}km</div>
+                </div>
               </div>
-            </div>
-          ))}
+            ))
+          )}
         </div>
         <div style={{ ...S.card }}>
           <div style={{ display: "flex", gap: 16, alignItems: "center", marginBottom: 20 }}>
