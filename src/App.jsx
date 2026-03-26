@@ -1493,41 +1493,29 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
       }
 
       if (selectedAthlete.email) {
-        const prettyDate = assignDate;
-        const structureHtml = Array.isArray(aiWorkout?.structure)
-          ? aiWorkout.structure.map((s) => (
-            `<li style="margin-bottom:8px;">
-              <div><strong>${String(s.phase || "Fase")}</strong></div>
-              <div style="color:#475569;">${String(s.duration || "")} · ${String(s.intensity || "")} · <span style="font-family:monospace;">${String(s.pace || "")}</span></div>
-            </li>`
-          )).join("")
-          : "";
-
-        const html = `
-          <div style="font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial; line-height: 1.5;">
-            <h2 style="margin:0 0 8px;">Nuevo entrenamiento asignado</h2>
-            <p style="margin:0 0 14px; color:#475569;">Hola <strong>${selectedAthlete.name}</strong>, tienes un nuevo workout asignado para el <strong>${prettyDate}</strong>.</p>
-            <div style="border:1px solid rgba(15,23,42,.12); border-radius:12px; padding:14px;">
-              <div style="font-size:16px; font-weight:800; margin-bottom:6px;">${String(aiWorkout?.title || "Workout")}</div>
-              <div style="color:#475569; margin-bottom:10px;">${String(aiWorkout?.description || "")}</div>
-              <div style="color:#334155; font-size:13px; margin-bottom:10px;">
-                <strong>Distancia:</strong> ${String(aiWorkout?.total_km ?? "")} km ·
-                <strong>Duración:</strong> ${String(aiWorkout?.duration_min ?? "")} min
-              </div>
-              ${structureHtml ? `<div style="margin-top:10px;"><div style="font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:#64748b; font-weight:800; margin-bottom:8px;">Estructura</div><ul style="padding-left:18px; margin:0;">${structureHtml}</ul></div>` : ""}
-            </div>
-            <p style="margin:14px 0 0; color:#64748b; font-size:12px;">PaceForge · Entrenamientos con IA</p>
-          </div>
-        `;
-
         try {
+          const structureRows = Array.isArray(aiWorkout?.structure)
+            ? aiWorkout.structure.map((s) => `<p>• <strong>${s.phase}</strong>: ${s.duration} a ${s.pace}</p>`).join("")
+            : "";
           await fetch("/api/send-email", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               to: selectedAthlete.email,
-              subject: `Nuevo entrenamiento asignado: ${String(aiWorkout?.title || "Workout")}`,
-              html,
+              subject: `Nuevo entrenamiento: ${aiWorkout.title}`,
+              html: `
+      <h2>Hola ${selectedAthlete.name} 👋</h2>
+      <p>Tu coach te ha asignado un nuevo entrenamiento:</p>
+      <h3>${aiWorkout.title}</h3>
+      <p><strong>Fecha:</strong> ${assignDate}</p>
+      <p><strong>Descripción:</strong> ${aiWorkout.description}</p>
+      <p><strong>Distancia:</strong> ${aiWorkout.total_km} km</p>
+      <p><strong>Duración:</strong> ${aiWorkout.duration_min} minutos</p>
+      <h4>Estructura:</h4>
+      ${structureRows}
+      <br/><p>¡Mucho éxito! 💪</p>
+      <p>— Tu coach en PaceForge</p>
+    `,
             }),
           });
         } catch (e) {
