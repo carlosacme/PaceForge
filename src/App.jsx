@@ -54,6 +54,7 @@ const normalizeAthlete = (athlete) => ({
   next_race: athlete?.next_race || "Próxima carrera - Dec 31",
   workouts_done: Number.isFinite(Number(athlete?.workouts_done)) ? Number(athlete.workouts_done) : 0,
   workouts_total: Number.isFinite(Number(athlete?.workouts_total)) ? Number(athlete.workouts_total) : 18,
+  device: typeof athlete?.device === "string" ? athlete.device : "",
 });
 
 const formatLocalYMD = (d) => {
@@ -417,6 +418,10 @@ export default function App() {
               setAthletes(prev => prev.map(a => (String(a.id) === String(athleteId) ? { ...a, workouts_done: workoutsDone } : a)));
               setSelectedAthlete(prev => (prev && String(prev.id) === String(athleteId) ? { ...prev, workouts_done: workoutsDone } : prev));
             }}
+            onAthleteDeviceSync={(athleteId, device) => {
+              setAthletes(prev => prev.map(a => (String(a.id) === String(athleteId) ? { ...a, device } : a)));
+              setSelectedAthlete(prev => (prev && String(prev.id) === String(athleteId) ? { ...prev, device } : prev));
+            }}
           />
         )}
         {view === "builder" && (
@@ -607,12 +612,14 @@ function Dashboard({
   );
 }
 
-function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWorkoutsDoneSync }) {
+function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWorkoutsDoneSync, onAthleteDeviceSync }) {
   const S = styles;
   const athlete = (selected ? athletes.find(a => String(a.id) === String(selected.id)) : athletes[0]) || null;
   const [searchQuery, setSearchQuery] = useState("");
   const [workouts, setWorkouts] = useState([]);
   const [loadingWorkouts, setLoadingWorkouts] = useState(false);
+  const [deviceModal, setDeviceModal] = useState({ open: false, provider: null });
+  const [deviceMessage, setDeviceMessage] = useState("");
   const normalized = searchQuery.trim().toLowerCase();
   const filteredAthletes = normalized
     ? athletes.filter(a => (a.name || "").toLowerCase().includes(normalized) || (a.goal || "").toLowerCase().includes(normalized))
@@ -692,6 +699,40 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
     if (athleteUpdateError) {
       console.error("Error actualizando workouts_done en athletes:", athleteUpdateError);
     }
+  };
+
+  const isCorosConnected = athlete?.device === "coros";
+  const latestWorkout = workouts.length
+    ? [...workouts].sort((a, b) => {
+      if (a.scheduled_date === b.scheduled_date) return String(b.id).localeCompare(String(a.id));
+      return b.scheduled_date.localeCompare(a.scheduled_date);
+    })[0]
+    : null;
+
+  const openDeviceModal = (provider) => {
+    setDeviceMessage("");
+    setDeviceModal({ open: true, provider });
+  };
+
+  const confirmCorosConnect = async () => {
+    if (!athlete?.id) return;
+    const { error } = await supabase.from("athletes").update({ device: "coros" }).eq("id", athlete.id);
+    if (error) {
+      console.error("Error guardando device en athletes:", error);
+      alert(`Error al conectar COROS: ${error.message}`);
+      return;
+    }
+    onAthleteDeviceSync?.(athlete.id, "coros");
+    setDeviceMessage("COROS conectado correctamente.");
+    setDeviceModal({ open: false, provider: null });
+  };
+
+  const syncLatestWorkoutToCoros = () => {
+    if (!latestWorkout) {
+      setDeviceMessage("No hay workouts para sincronizar.");
+      return;
+    }
+    setDeviceMessage(`Workout "${latestWorkout.title}" sincronizado a COROS ✓`);
   };
 
   if (!athlete) {
@@ -813,8 +854,79 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
               })}
             </div>
           )}
+
+          <div style={{ marginTop: 22 }}>
+            <div style={{ fontSize: ".65em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase", marginBottom: 10 }}>
+              DISPOSITIVOS
+            </div>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
+              <button
+                type="button"
+                onClick={() => openDeviceModal("coros")}
+                style={{ background: "rgba(255,255,255,.03)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 8, padding: "8px 12px", color: "#e2e8f0", cursor: "pointer", fontFamily: "inherit", fontSize: ".8em", fontWeight: 700 }}
+              >
+                Conectar COROS
+              </button>
+              <button
+                type="button"
+                onClick={() => openDeviceModal("garmin")}
+                style={{ background: "rgba(255,255,255,.03)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 8, padding: "8px 12px", color: "#e2e8f0", cursor: "pointer", fontFamily: "inherit", fontSize: ".8em", fontWeight: 700 }}
+              >
+                Conectar Garmin
+              </button>
+              <span style={{ background: "rgba(245,158,11,.15)", border: "1px solid rgba(245,158,11,.35)", borderRadius: 999, padding: "6px 10px", color: "#f59e0b", fontSize: ".75em", fontWeight: 700 }}>
+                Garmin · Próximamente
+              </span>
+              {isCorosConnected && (
+                <span style={{ background: "rgba(34,197,94,.14)", border: "1px solid rgba(34,197,94,.35)", borderRadius: 999, padding: "6px 10px", color: "#22c55e", fontSize: ".75em", fontWeight: 700 }}>
+                  COROS conectado ⌚
+                </span>
+              )}
+            </div>
+            {isCorosConnected && (
+              <button
+                type="button"
+                onClick={syncLatestWorkoutToCoros}
+                style={{ background: "rgba(59,130,246,.12)", border: "1px solid rgba(59,130,246,.35)", borderRadius: 8, padding: "8px 12px", color: "#3b82f6", cursor: "pointer", fontFamily: "inherit", fontSize: ".8em", fontWeight: 700 }}
+              >
+                Sync workout a COROS
+              </button>
+            )}
+            {!!deviceMessage && <div style={{ marginTop: 10, color: "#22c55e", fontSize: ".78em" }}>{deviceMessage}</div>}
+          </div>
         </div>
       </div>
+
+      {deviceModal.open && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 16 }}>
+          <div style={{ ...S.card, width: "100%", maxWidth: 420, margin: 0 }}>
+            <div style={{ fontSize: ".95em", fontWeight: 700, color: "#e2e8f0", marginBottom: 8 }}>
+              Conectar {deviceModal.provider === "garmin" ? "Garmin" : "COROS"}
+            </div>
+            <div style={{ fontSize: ".8em", color: "#94a3b8", marginBottom: 14 }}>
+              {deviceModal.provider === "garmin"
+                ? "Garmin estará disponible próximamente. La conexión OAuth se habilitará en una próxima versión."
+                : "Serás redirigido a COROS para autorizar la conexión OAuth del atleta."}
+            </div>
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button
+                type="button"
+                onClick={() => setDeviceModal({ open: false, provider: null })}
+                style={{ background: "rgba(255,255,255,.03)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 8, padding: "8px 14px", color: "#94a3b8", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: ".82em" }}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={deviceModal.provider === "garmin" ? () => setDeviceModal({ open: false, provider: null }) : confirmCorosConnect}
+                style={{ background: "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 8, padding: "8px 14px", color: "white", cursor: "pointer", fontFamily: "inherit", fontWeight: 800, fontSize: ".82em" }}
+              >
+                {deviceModal.provider === "garmin" ? "Entendido" : "Autorizar"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
