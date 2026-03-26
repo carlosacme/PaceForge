@@ -132,6 +132,8 @@ export default function App() {
   const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
   const [authSubmitting, setAuthSubmitting] = useState(false);
+  const [landingAuthOpen, setLandingAuthOpen] = useState(false);
+  const [demoModalOpen, setDemoModalOpen] = useState(false);
 
   const notify = (msg) => { setNotification(msg); setTimeout(() => setNotification(null), 3000); };
 
@@ -244,6 +246,9 @@ export default function App() {
       console.error("Error al cerrar sesión:", error);
       alert(`Error al cerrar sesión: ${error.message}`);
     }
+    setLandingAuthOpen(false);
+    setDemoModalOpen(false);
+    setAuthMode("login");
   };
 
   const saveNewAthlete = async () => {
@@ -304,50 +309,217 @@ export default function App() {
   }
 
   if (!session) {
+    if (landingAuthOpen) {
+      return (
+        <div style={S.root}>
+          <main style={{ ...S.page, display: "flex", alignItems: "center", justifyContent: "center", width: "100%" }}>
+            <div style={{ ...S.card, width: 360 }}>
+              <h1 style={{ ...S.pageTitle, fontSize: "1.3em", marginBottom: 16 }}>
+                {authMode === "login" ? "Login" : "Registro"}
+              </h1>
+              <form onSubmit={handleAuthSubmit}>
+                <div style={{ marginBottom: 10 }}>
+                  <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Email</div>
+                  <input
+                    type="email"
+                    value={authEmail}
+                    onChange={e => setAuthEmail(e.target.value)}
+                    placeholder="correo@ejemplo.com"
+                    style={{ width: "100%", background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 8, padding: "10px 12px", color: "#e2e8f0", fontFamily: "inherit", fontSize: ".85em", outline: "none", boxSizing: "border-box" }}
+                  />
+                </div>
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Contraseña</div>
+                  <input
+                    type="password"
+                    value={authPassword}
+                    onChange={e => setAuthPassword(e.target.value)}
+                    placeholder="********"
+                    style={{ width: "100%", background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 8, padding: "10px 12px", color: "#e2e8f0", fontFamily: "inherit", fontSize: ".85em", outline: "none", boxSizing: "border-box" }}
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={authSubmitting}
+                  style={{ width: "100%", background: authSubmitting ? "rgba(255,255,255,.06)" : "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 8, padding: "10px 14px", color: authSubmitting ? "#334155" : "white", cursor: authSubmitting ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 800, fontSize: ".85em", marginBottom: 10 }}
+                >
+                  {authSubmitting ? "Procesando..." : (authMode === "login" ? "Iniciar sesión" : "Crear cuenta")}
+                </button>
+              </form>
+              <button
+                onClick={() => setAuthMode(authMode === "login" ? "register" : "login")}
+                style={{ background: "transparent", border: "none", color: "#94a3b8", cursor: "pointer", fontFamily: "inherit", fontSize: ".8em", padding: 0 }}
+              >
+                {authMode === "login" ? "¿No tienes cuenta? Ir a Registro" : "¿Ya tienes cuenta? Ir a Login"}
+              </button>
+            </div>
+          </main>
+        </div>
+      );
+    }
+
+    const PLAN_CATALOG = [
+      { plan: "Starter", label: "Starter", priceCop: 49000, priceUsd: 13, description: "Ideal para empezar" },
+      { plan: "Pro", label: "Pro", priceCop: 129000, priceUsd: 34, description: "Para entrenamientos avanzados" },
+      { plan: "Equipo", label: "Equipo", priceCop: 299000, priceUsd: 79, description: "Para equipos y seguimiento completo" },
+    ];
+
     return (
       <div style={S.root}>
-        <main style={{ ...S.page, display: "flex", alignItems: "center", justifyContent: "center", width: "100%" }}>
-          <div style={{ ...S.card, width: 360 }}>
-            <h1 style={{ ...S.pageTitle, fontSize: "1.3em", marginBottom: 16 }}>
-              {authMode === "login" ? "Login" : "Registro"}
-            </h1>
-            <form onSubmit={handleAuthSubmit}>
-              <div style={{ marginBottom: 10 }}>
-                <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Email</div>
-                <input
-                  type="email"
-                  value={authEmail}
-                  onChange={e => setAuthEmail(e.target.value)}
-                  placeholder="correo@ejemplo.com"
-                  style={{ width: "100%", background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 8, padding: "10px 12px", color: "#e2e8f0", fontFamily: "inherit", fontSize: ".85em", outline: "none", boxSizing: "border-box" }}
-                />
+        <main style={{ ...S.page, width: "100%" }}>
+          <div style={{ marginTop: 10, marginBottom: 28 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+              <div style={{ maxWidth: 720 }}>
+                <div style={{ fontSize: "0.9em", color: "#f59e0b", letterSpacing: ".14em", textTransform: "uppercase", fontWeight: 800, marginBottom: 8 }}>
+                  Coach Platform
+                </div>
+                <h1 style={{ fontSize: "2.2em", fontWeight: 900, color: "#e2e8f0", margin: "0 0 8px" }}>
+                  La plataforma de coaching para todo tipo de runners
+                </h1>
+                <p style={{ color: "#94a3b8", fontSize: ".95em", marginTop: 0 }}>
+                  Crea, asigna y sincroniza entrenamientos con IA. Conecta con Garmin y COROS. Lleva a tus atletas al siguiente nivel.
+                </p>
+                <div style={{ display: "flex", gap: 12, marginTop: 18, flexWrap: "wrap" }}>
+                  <button
+                    type="button"
+                    onClick={() => { setAuthMode("register"); setLandingAuthOpen(true); }}
+                    style={{ background: "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 10, padding: "12px 16px", color: "white", cursor: "pointer", fontFamily: "inherit", fontWeight: 900, fontSize: ".9em" }}
+                  >
+                    Empezar gratis
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDemoModalOpen(true)}
+                    style={{ background: "rgba(255,255,255,.03)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 10, padding: "12px 16px", color: "#e2e8f0", cursor: "pointer", fontFamily: "inherit", fontWeight: 900, fontSize: ".9em" }}
+                  >
+                    Ver demo
+                  </button>
+                </div>
               </div>
-              <div style={{ marginBottom: 14 }}>
-                <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Contraseña</div>
-                <input
-                  type="password"
-                  value={authPassword}
-                  onChange={e => setAuthPassword(e.target.value)}
-                  placeholder="********"
-                  style={{ width: "100%", background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 8, padding: "10px 12px", color: "#e2e8f0", fontFamily: "inherit", fontSize: ".85em", outline: "none", boxSizing: "border-box" }}
-                />
+              <div style={{ minWidth: 320, flex: 1, background: "rgba(255,255,255,.02)", border: "1px solid rgba(255,255,255,.07)", borderRadius: 14, padding: 16 }}>
+                <div style={{ fontSize: ".75em", color: "#94a3b8", letterSpacing: ".12em", textTransform: "uppercase", fontWeight: 800, marginBottom: 10 }}>
+                  Vista previa
+                </div>
+                <div style={{ fontSize: "1.2em", fontWeight: 800, color: "#f59e0b", marginBottom: 8 }}>
+                  Dashboard + Planes + IA
+                </div>
+                <div style={{ color: "#64748b", fontSize: ".9em" }}>
+                  Asignación de workouts con IA, calendario y sincronización con dispositivos.
+                </div>
+                <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}>
+                  {[
+                    { t: "IA", c: "#f59e0b", s: "Workouts inteligentes" },
+                    { t: "Garmin", c: "#3b82f6", s: "Sync & seguimiento" },
+                    { t: "COROS", c: "#22c55e", s: "Conexión flexible" },
+                  ].map((x) => (
+                    <div key={x.t} style={{ background: "rgba(255,255,255,.03)", border: "1px solid rgba(255,255,255,.07)", borderRadius: 12, padding: 12 }}>
+                      <div style={{ fontSize: "1.2em", fontWeight: 900, color: x.c, fontFamily: "monospace" }}>{x.t}</div>
+                      <div style={{ color: "#94a3b8", fontSize: ".8em", marginTop: 6 }}>{x.s}</div>
+                    </div>
+                  ))}
+                </div>
               </div>
-              <button
-                type="submit"
-                disabled={authSubmitting}
-                style={{ width: "100%", background: authSubmitting ? "rgba(255,255,255,.06)" : "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 8, padding: "10px 14px", color: authSubmitting ? "#334155" : "white", cursor: authSubmitting ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 800, fontSize: ".85em", marginBottom: 10 }}
-              >
-                {authSubmitting ? "Procesando..." : (authMode === "login" ? "Iniciar sesión" : "Crear cuenta")}
-              </button>
-            </form>
-            <button
-              onClick={() => setAuthMode(authMode === "login" ? "register" : "login")}
-              style={{ background: "transparent", border: "none", color: "#94a3b8", cursor: "pointer", fontFamily: "inherit", fontSize: ".8em", padding: 0 }}
-            >
-              {authMode === "login" ? "¿No tienes cuenta? Ir a Registro" : "¿Ya tienes cuenta? Ir a Login"}
-            </button>
+            </div>
           </div>
+
+          <div style={{ marginBottom: 24 }}>
+            <div style={{ fontSize: ".85em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase", fontWeight: 900, marginBottom: 12 }}>
+              Features
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 18 }}>
+              {[
+                { title: "Generador IA", body: "Crea entrenamientos en segundos y ajusta estructura, ritmos y fases." },
+                { title: "Sync con relojes", body: "Exporta y sincroniza para que tu atleta entrene con precisión." },
+                { title: "Seguimiento real", body: "Marca “done”, mide progreso y mantén el control del plan." },
+              ].map((f) => (
+                <div key={f.title} style={{ ...S.card, padding: 18 }}>
+                  <div style={{ fontSize: "1.1em", fontWeight: 900, color: "#e2e8f0", marginBottom: 8 }}>{f.title}</div>
+                  <div style={{ color: "#94a3b8", fontSize: ".9em", lineHeight: 1.35 }}>{f.body}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ marginBottom: 26 }}>
+            <div style={{ fontSize: ".85em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase", fontWeight: 900, marginBottom: 12 }}>
+              Precios
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 18 }}>
+              {PLAN_CATALOG.map((p) => (
+                <div key={p.plan} style={{ ...S.card, padding: 18 }}>
+                  <div style={{ fontSize: "1.25em", fontWeight: 900, color: "#f59e0b" }}>
+                    {p.label} (${p.priceUsd} USD)
+                  </div>
+                  <div style={{ fontSize: "2em", fontWeight: 900, color: "#f59e0b", fontFamily: "monospace", marginTop: 6 }}>
+                    {`$${Number(p.priceCop).toLocaleString("es-CO")}`}
+                    <span style={{ fontSize: ".55em", color: "#64748b", fontFamily: "inherit", marginLeft: 6 }}>COP</span>
+                  </div>
+                  <div style={{ color: "#94a3b8", fontSize: ".9em", marginTop: 8 }}>{p.description}</div>
+                  <div style={{ marginTop: 14 }}>
+                    <button
+                      type="button"
+                      onClick={() => { setAuthMode("register"); setLandingAuthOpen(true); }}
+                      style={{ width: "100%", background: "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 10, padding: "10px 14px", color: "white", cursor: "pointer", fontFamily: "inherit", fontWeight: 900, fontSize: ".85em" }}
+                    >
+                      Empezar gratis
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ marginBottom: 26 }}>
+            <div style={{ fontSize: ".85em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase", fontWeight: 900, marginBottom: 12 }}>
+              Testimonios
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 18 }}>
+              {[
+                { name: "Sofía Ríos", role: "Coach en Colombia", body: "La IA me ayuda a construir semanas completas. Ver el estado “done” en el calendario hace que mis atletas sigan el plan con claridad." },
+                { name: "Luis Martínez", role: "Coach en México", body: "Ahora asigno workouts en minutos y sincronizo con relojes. La vista semanal hace que todo sea más transparente." },
+                { name: "María Torres", role: "Coach en España", body: "El seguimiento real y la exportación a dispositivos me permiten ajustar ritmos con confianza. Se nota el progreso semana a semana." },
+              ].map((t) => (
+                <div key={t.name} style={{ ...S.card, padding: 18 }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                    <div>
+                      <div style={{ fontSize: "1.05em", fontWeight: 900, color: "#e2e8f0" }}>{t.name}</div>
+                      <div style={{ color: "#64748b", fontSize: ".85em" }}>{t.role}</div>
+                    </div>
+                    <div style={{ color: "#f59e0b", fontWeight: 900, fontFamily: "monospace" }}>★★★★★</div>
+                  </div>
+                  <div style={{ color: "#94a3b8", fontSize: ".92em", marginTop: 12, lineHeight: 1.35 }}>{t.body}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <footer style={{ marginTop: 20, paddingTop: 18, borderTop: "1px solid rgba(255,255,255,.06)", color: "#64748b", fontSize: ".85em" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+              <div style={{ color: "#e2e8f0", fontWeight: 900 }}>PaceForge</div>
+              <div>© 2026</div>
+            </div>
+          </footer>
         </main>
+
+        {demoModalOpen && (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 300, padding: 16 }}>
+            <div style={{ ...S.card, width: "100%", maxWidth: 520, margin: 0 }}>
+              <div style={{ fontSize: "1.05em", fontWeight: 900, marginBottom: 6 }}>Demo simulada</div>
+              <div style={{ color: "#94a3b8", fontSize: ".9em", marginBottom: 14 }}>
+                En esta demo podrás ver cómo un coach crea entrenamientos con IA, los asigna al atleta y marca progreso en el calendario.
+              </div>
+              <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+                <button
+                  type="button"
+                  onClick={() => setDemoModalOpen(false)}
+                  style={{ background: "rgba(255,255,255,.03)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 8, padding: "8px 14px", color: "#94a3b8", cursor: "pointer", fontFamily: "inherit", fontWeight: 900, fontSize: ".82em" }}
+                >
+                  Cerrar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
