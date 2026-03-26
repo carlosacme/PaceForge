@@ -408,7 +408,16 @@ export default function App() {
           />
         )}
         {view === "athletes" && (
-          <Athletes athletes={athletes} selected={selectedAthlete} onSelect={setSelectedAthlete} workoutsRefresh={workoutsRefresh} />
+          <Athletes
+            athletes={athletes}
+            selected={selectedAthlete}
+            onSelect={setSelectedAthlete}
+            workoutsRefresh={workoutsRefresh}
+            onAthleteWorkoutsDoneSync={(athleteId, workoutsDone) => {
+              setAthletes(prev => prev.map(a => (String(a.id) === String(athleteId) ? { ...a, workouts_done: workoutsDone } : a)));
+              setSelectedAthlete(prev => (prev && String(prev.id) === String(athleteId) ? { ...prev, workouts_done: workoutsDone } : prev));
+            }}
+          />
         )}
         {view === "builder" && (
           <Builder
@@ -598,9 +607,9 @@ function Dashboard({
   );
 }
 
-function Athletes({ athletes, selected, onSelect, workoutsRefresh }) {
+function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWorkoutsDoneSync }) {
   const S = styles;
-  const athlete = selected || athletes[0] || null;
+  const athlete = (selected ? athletes.find(a => String(a.id) === String(selected.id)) : athletes[0]) || null;
   const [searchQuery, setSearchQuery] = useState("");
   const [workouts, setWorkouts] = useState([]);
   const [loadingWorkouts, setLoadingWorkouts] = useState(false);
@@ -670,7 +679,19 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh }) {
       alert(`Error al actualizar: ${error.message}`);
       return;
     }
-    setWorkouts(prev => prev.map(x => (x.id === w.id ? { ...x, done: next } : x)));
+    const nextWorkouts = workouts.map(x => (x.id === w.id ? { ...x, done: next } : x));
+    setWorkouts(nextWorkouts);
+
+    const workoutsDone = nextWorkouts.filter(x => x.done).length;
+    onAthleteWorkoutsDoneSync?.(athlete.id, workoutsDone);
+
+    const { error: athleteUpdateError } = await supabase
+      .from("athletes")
+      .update({ workouts_done: workoutsDone })
+      .eq("id", athlete.id);
+    if (athleteUpdateError) {
+      console.error("Error actualizando workouts_done en athletes:", athleteUpdateError);
+    }
   };
 
   if (!athlete) {
@@ -740,6 +761,7 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh }) {
                 const ymd = formatLocalYMD(cellDate);
                 const dayWorkouts = workoutsByDate[ymd] || [];
                 const hasWorkout = dayWorkouts.length > 0;
+                const hasDoneWorkout = dayWorkouts.some(w => w.done);
                 const borderColor = hasWorkout
                   ? `${WORKOUT_TYPES.find(t => t.id === dayWorkouts[0].type)?.color || "#64748b"}40`
                   : "rgba(255,255,255,.05)";
@@ -755,7 +777,7 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh }) {
                       flexDirection: "column",
                       alignItems: "stretch",
                       gap: 3,
-                      background: hasWorkout ? "rgba(255,255,255,.02)" : "transparent",
+                      background: hasDoneWorkout ? "rgba(34,197,94,.08)" : (hasWorkout ? "rgba(255,255,255,.02)" : "transparent"),
                     }}
                   >
                     <div style={{ fontSize: ".58em", color: "#475569", textAlign: "center", fontWeight: 600 }}>{cellDate.getDate()}</div>
@@ -768,10 +790,10 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh }) {
                           onClick={() => toggleWorkoutDone(w)}
                           title={w.done ? "Marcar como pendiente" : "Marcar como hecho"}
                           style={{
-                            border: `1px solid ${wt.color}55`,
+                            border: `1px solid ${w.done ? "rgba(34,197,94,.55)" : `${wt.color}55`}`,
                             borderRadius: 5,
                             padding: "4px 3px",
-                            background: `${wt.color}12`,
+                            background: w.done ? "rgba(34,197,94,.16)" : `${wt.color}12`,
                             cursor: "pointer",
                             fontFamily: "inherit",
                             textAlign: "center",
