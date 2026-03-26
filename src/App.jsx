@@ -732,7 +732,7 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh }) {
             CALENDARIO — {formatLocalYMD(calendarCells[0])} → {formatLocalYMD(calendarCells[calendarCells.length - 1])}
           </div>
           {loadingWorkouts ? (
-            <div style={{ color: "#64748b", fontSize: ".85em", padding: "20px 0" }}>Cargando entrenamientos...</div>
+            <div style={{ color: "#64748b", fontSize: ".85em", padding: "20px 0" }}>Cargando...</div>
           ) : (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 4 }}>
               {DAYS.map(d => <div key={d} style={{ fontSize: ".65em", textAlign: "center", color: "#334155", padding: "4px 0" }}>{d}</div>)}
