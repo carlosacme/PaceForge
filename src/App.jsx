@@ -55,6 +55,7 @@ const normalizeAthlete = (athlete) => ({
   workouts_done: Number.isFinite(Number(athlete?.workouts_done)) ? Number(athlete.workouts_done) : 0,
   workouts_total: Number.isFinite(Number(athlete?.workouts_total)) ? Number(athlete.workouts_total) : 18,
   device: typeof athlete?.device === "string" ? athlete.device : "",
+  plan: typeof athlete?.plan === "string" ? athlete.plan : "",
 });
 
 const formatLocalYMD = (d) => {
@@ -367,6 +368,7 @@ export default function App() {
           {[
             { id: "dashboard", icon: "◈", label: "Dashboard" },
             { id: "athletes", icon: "◉", label: "Atletas" },
+            { id: "plans", icon: "◇", label: "Planes" },
             { id: "builder", icon: "◎", label: "Crear Workout" },
           ].map(item => (
             <button key={item.id} onClick={() => { setView(item.id); setSelectedAthlete(null); setShowAddAthleteForm(false); }}
@@ -424,6 +426,7 @@ export default function App() {
             }}
           />
         )}
+        {view === "plans" && <Plans athletes={athletes} />}
         {view === "builder" && (
           <Builder
             athletes={athletes}
@@ -1150,6 +1153,111 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
             </div>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function Plans({ athletes }) {
+  const S = styles;
+
+  const WOMPI_PUBLIC_KEY = "pub_test_9yDINqJhS2WxJYpYtgzXkP5TKND5WQyf";
+  const WompiCheckoutBase = "https://checkout.wompi.co/p/";
+  const redirectUrl = "https://pace-forge-eta.vercel.app";
+
+  const PLAN_CATALOG = useMemo(
+    () => [
+      { plan: "Starter", label: "Starter", priceCop: 49000, description: "Ideal para empezar" },
+      { plan: "Pro", label: "Pro", priceCop: 129000, description: "Para entrenamientos avanzados" },
+      { plan: "Equipo", label: "Equipo", priceCop: 299000, description: "Para equipos y seguimiento completo" },
+    ],
+    [],
+  );
+
+  const coachPlan = athletes?.[0]?.plan || "";
+
+  const amountInCentsByPlan = (planName) => {
+    if (planName === "Starter") return 4900000;
+    if (planName === "Pro") return 12900000;
+    if (planName === "Equipo") return 29900000;
+    return 0;
+  };
+
+  const openDirectWompiCheckout = (planObj) => {
+    const amountInCents = amountInCentsByPlan(planObj.plan);
+    if (!amountInCents) return;
+
+    const reference = `paceforge-${planObj.plan}-${Date.now()}`;
+
+    const params = new URLSearchParams({
+      "public-key": WOMPI_PUBLIC_KEY,
+      currency: "COP",
+      "amount-in-cents": String(amountInCents),
+      reference,
+      "redirect-url": redirectUrl,
+    });
+
+    const checkoutUrl = `${WompiCheckoutBase}?${params.toString()}`;
+    window.open(checkoutUrl, "_blank", "noopener,noreferrer");
+  };
+
+  return (
+    <div style={S.page}>
+      <div style={{ marginBottom: 22 }}>
+        <h1 style={S.pageTitle}>Planes</h1>
+        <p style={{ color: "#475569", fontSize: ".82em", marginTop: 4 }}>Elige un plan para tu coach</p>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 18 }}>
+        {PLAN_CATALOG.map((p) => {
+          const isCurrent = coachPlan === p.plan;
+          const copPretty = Number(p.priceCop).toLocaleString("es-CO");
+
+          return (
+            <div
+              key={p.plan}
+              style={{
+                ...S.card,
+                border: isCurrent ? "2px solid #f59e0b" : "1px solid rgba(255,255,255,.07)",
+                background: isCurrent ? "rgba(245,158,11,.06)" : "rgba(255,255,255,.025)",
+                padding: 18,
+                display: "flex",
+                flexDirection: "column",
+                gap: 10,
+              }}
+            >
+              <div style={{ fontSize: "1.2em", fontWeight: 800, color: isCurrent ? "#f59e0b" : "#e2e8f0" }}>
+                {p.label} ($${copPretty} COP)
+              </div>
+              <div style={{ fontSize: "2em", fontWeight: 900, color: "#f59e0b", fontFamily: "monospace" }}>
+                {`$${copPretty}`}
+                <span style={{ fontSize: ".55em", color: "#64748b", fontFamily: "inherit", marginLeft: 6 }}>COP</span>
+              </div>
+              <div style={{ fontSize: ".8em", color: "#64748b" }}>{p.description}</div>
+
+              <div style={{ marginTop: "auto" }}>
+                <button
+                  type="button"
+                  onClick={() => openDirectWompiCheckout(p)}
+                  style={{
+                    width: "100%",
+                    background: "linear-gradient(135deg,#b45309,#f59e0b)",
+                    border: "none",
+                    borderRadius: 10,
+                    padding: "10px 14px",
+                    color: "white",
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                    fontWeight: 900,
+                    fontSize: ".85em",
+                  }}
+                >
+                  Suscribirse
+                </button>
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
