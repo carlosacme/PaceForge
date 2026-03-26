@@ -818,6 +818,11 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
       alert("Selecciona un atleta.");
       return;
     }
+    const selectedAthlete = (athletes || []).find(a => String(a.id) === String(assignAthleteId));
+    if (!selectedAthlete?.id) {
+      alert("No se encontró el atleta seleccionado.");
+      return;
+    }
     if (!assignDate) {
       alert("Selecciona una fecha.");
       return;
@@ -831,7 +836,7 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
     try {
       const payload = {
         ...aiWorkout,
-        athlete_id: assignAthleteId,
+        athlete_id: selectedAthlete.id,
         coach_id: userData.user.id,
         scheduled_date: assignDate,
         done: false,
