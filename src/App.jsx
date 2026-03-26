@@ -49,6 +49,7 @@ const normalizeAthlete = (athlete) => ({
   goal: athlete?.goal || "Objetivo pendiente",
   pace: athlete?.pace || "N/A",
   weekly_km: Number.isFinite(Number(athlete?.weekly_km)) ? Number(athlete.weekly_km) : 0,
+  email: typeof athlete?.email === "string" ? athlete.email : "",
   avatar: athlete?.avatar || "🏃",
   status: athlete?.status || "on-track",
   next_race: athlete?.next_race || "Próxima carrera - Dec 31",
@@ -125,7 +126,7 @@ export default function App() {
   const [athletes, setAthletes] = useState([]);
   const [loadingAthletes, setLoadingAthletes] = useState(true);
   const [showAddAthleteForm, setShowAddAthleteForm] = useState(false);
-  const [newAthlete, setNewAthlete] = useState({ name: "", goal: "", pace: "", weekly_km: "" });
+  const [newAthlete, setNewAthlete] = useState({ name: "", email: "", goal: "", pace: "", weekly_km: "" });
   const [session, setSession] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [authMode, setAuthMode] = useState("login");
@@ -317,11 +318,12 @@ export default function App() {
 
   const saveNewAthlete = async () => {
     const name = newAthlete.name.trim();
+    const email = newAthlete.email.trim();
     const goal = newAthlete.goal.trim();
     const pace = newAthlete.pace.trim();
     const weeklyKm = Number(newAthlete.weekly_km);
 
-    if (!name || !goal || !pace || !Number.isFinite(weeklyKm) || weeklyKm <= 0) {
+    if (!name || !email || !goal || !pace || !Number.isFinite(weeklyKm) || weeklyKm <= 0) {
       notify("Completa todos los campos ✓");
       return;
     }
@@ -334,7 +336,7 @@ export default function App() {
       return;
     }
 
-    const payload = { name, goal, pace, weekly_km: weeklyKm, coach_id: userData.user.id };
+    const payload = { name, email, goal, pace, weekly_km: weeklyKm, coach_id: userData.user.id };
     const { data, error } = await supabase.from("athletes").insert(payload).select().single();
     if (error) {
       const errorText = [
@@ -353,13 +355,13 @@ export default function App() {
     setAthletes(prev => [normalizeAthlete(data), ...prev]);
 
     setShowAddAthleteForm(false);
-    setNewAthlete({ name: "", goal: "", pace: "", weekly_km: "" });
+    setNewAthlete({ name: "", email: "", goal: "", pace: "", weekly_km: "" });
     notify("Atleta agregado ✓");
   };
 
   const cancelAddAthleteForm = () => {
     setShowAddAthleteForm(false);
-    setNewAthlete({ name: "", goal: "", pace: "", weekly_km: "" });
+    setNewAthlete({ name: "", email: "", goal: "", pace: "", weekly_km: "" });
   };
 
   if (authLoading) {
@@ -804,6 +806,16 @@ function Dashboard({
                 value={newAthlete.name}
                 onChange={e => onChangeNewAthleteField("name", e.target.value)}
                 placeholder="Ej: Carlos Rojas"
+                style={{ width: "100%", background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 8, padding: "10px 12px", color: "#e2e8f0", fontFamily: "inherit", fontSize: ".85em", outline: "none", boxSizing: "border-box" }}
+              />
+            </div>
+            <div>
+              <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Email</div>
+              <input
+                type="email"
+                value={newAthlete.email}
+                onChange={e => onChangeNewAthleteField("email", e.target.value)}
+                placeholder="atleta@correo.com"
                 style={{ width: "100%", background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 8, padding: "10px 12px", color: "#e2e8f0", fontFamily: "inherit", fontSize: ".85em", outline: "none", boxSizing: "border-box" }}
               />
             </div>
@@ -1479,6 +1491,50 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
         alert(`Error: ${error.message}\n${error.details || ""}\n${error.hint || ""}`);
         return;
       }
+
+      if (selectedAthlete.email) {
+        const prettyDate = assignDate;
+        const structureHtml = Array.isArray(aiWorkout?.structure)
+          ? aiWorkout.structure.map((s) => (
+            `<li style="margin-bottom:8px;">
+              <div><strong>${String(s.phase || "Fase")}</strong></div>
+              <div style="color:#475569;">${String(s.duration || "")} · ${String(s.intensity || "")} · <span style="font-family:monospace;">${String(s.pace || "")}</span></div>
+            </li>`
+          )).join("")
+          : "";
+
+        const html = `
+          <div style="font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial; line-height: 1.5;">
+            <h2 style="margin:0 0 8px;">Nuevo entrenamiento asignado</h2>
+            <p style="margin:0 0 14px; color:#475569;">Hola <strong>${selectedAthlete.name}</strong>, tienes un nuevo workout asignado para el <strong>${prettyDate}</strong>.</p>
+            <div style="border:1px solid rgba(15,23,42,.12); border-radius:12px; padding:14px;">
+              <div style="font-size:16px; font-weight:800; margin-bottom:6px;">${String(aiWorkout?.title || "Workout")}</div>
+              <div style="color:#475569; margin-bottom:10px;">${String(aiWorkout?.description || "")}</div>
+              <div style="color:#334155; font-size:13px; margin-bottom:10px;">
+                <strong>Distancia:</strong> ${String(aiWorkout?.total_km ?? "")} km ·
+                <strong>Duración:</strong> ${String(aiWorkout?.duration_min ?? "")} min
+              </div>
+              ${structureHtml ? `<div style="margin-top:10px;"><div style="font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:#64748b; font-weight:800; margin-bottom:8px;">Estructura</div><ul style="padding-left:18px; margin:0;">${structureHtml}</ul></div>` : ""}
+            </div>
+            <p style="margin:14px 0 0; color:#64748b; font-size:12px;">PaceForge · Entrenamientos con IA</p>
+          </div>
+        `;
+
+        try {
+          await fetch("/api/send-email", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              to: selectedAthlete.email,
+              subject: `Nuevo entrenamiento asignado: ${String(aiWorkout?.title || "Workout")}`,
+              html,
+            }),
+          });
+        } catch (e) {
+          console.error("Error llamando /api/send-email:", e);
+        }
+      }
+
       setShowAssignModal(false);
       onWorkoutAssigned?.();
       notify("Entrenamiento guardado correctamente en Supabase.");
