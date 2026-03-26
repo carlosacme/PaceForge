@@ -134,6 +134,10 @@ export default function App() {
   const [authSubmitting, setAuthSubmitting] = useState(false);
   const [landingAuthOpen, setLandingAuthOpen] = useState(false);
   const [demoModalOpen, setDemoModalOpen] = useState(false);
+  const [authRole, setAuthRole] = useState("");
+  const [authName, setAuthName] = useState("");
+  const [profile, setProfile] = useState(null);
+  const [profileLoading, setProfileLoading] = useState(false);
 
   const notify = (msg) => { setNotification(msg); setTimeout(() => setNotification(null), 3000); };
 
@@ -168,6 +172,31 @@ export default function App() {
       data.subscription.unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    const loadProfile = async () => {
+      if (!session?.user) {
+        setProfile(null);
+        return;
+      }
+      setProfileLoading(true);
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("user_id", session.user.id)
+        .maybeSingle();
+      if (error) {
+        console.error("Error cargando perfil:", error);
+        setProfile(null);
+      } else {
+        console.log("Perfil cargado, role:", data?.role);
+        setProfile(data || null);
+      }
+      setProfileLoading(false);
+    };
+
+    loadProfile();
+  }, [session]);
 
   useEffect(() => {
     const loadAthletes = async () => {
@@ -209,6 +238,16 @@ export default function App() {
       alert("Completa email y contraseña.");
       return;
     }
+    if (authMode === "register") {
+      if (!authRole) {
+        alert("Selecciona si eres coach o atleta.");
+        return;
+      }
+      if (!authName.trim()) {
+        alert("Completa tu nombre.");
+        return;
+      }
+    }
 
     setAuthSubmitting(true);
     try {
@@ -223,7 +262,7 @@ export default function App() {
           return;
         }
       } else {
-        const { error } = await supabase.auth.signUp({
+        const { data, error } = await supabase.auth.signUp({
           email: authEmail.trim(),
           password: authPassword,
         });
@@ -232,8 +271,33 @@ export default function App() {
           alert(`Error en registro: ${error.message}`);
           return;
         }
+
+        const newUserId = data?.user?.id;
+        if (!newUserId) {
+          console.log("signUp completado pero no devolvió user. data:", data);
+          alert("Registro exitoso. Revisa tu correo si la verificación está habilitada.");
+          setAuthMode("login");
+          return;
+        }
+
+        const profilePayload = {
+          user_id: newUserId,
+          role: authRole,
+          coach_id: authRole === "coach" ? newUserId : null,
+          name: authName.trim(),
+        };
+
+        const { error: profileError } = await supabase.from("profiles").insert(profilePayload);
+        if (profileError) {
+          console.log("Error insertando en profiles:", profileError, { profilePayload });
+        } else {
+          console.log("Perfil creado en profiles:", { user_id: newUserId, role: authRole });
+        }
+
         alert("Registro exitoso. Revisa tu correo si la verificación está habilitada.");
         setAuthMode("login");
+        setAuthRole("");
+        setAuthName("");
       }
     } finally {
       setAuthSubmitting(false);
@@ -318,6 +382,61 @@ export default function App() {
                 {authMode === "login" ? "Login" : "Registro"}
               </h1>
               <form onSubmit={handleAuthSubmit}>
+                {authMode === "register" && (
+                  <>
+                    <div style={{ marginBottom: 10 }}>
+                      <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>¿Qué eres?</div>
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <button
+                          type="button"
+                          onClick={() => setAuthRole("coach")}
+                          style={{
+                            flex: 1,
+                            padding: "10px 12px",
+                            borderRadius: 10,
+                            border: authRole === "coach" ? "2px solid #f59e0b" : "1px solid rgba(148,163,184,.4)",
+                            background: authRole === "coach" ? "rgba(245,158,11,.15)" : "rgba(15,23,42,.8)",
+                            color: "#e2e8f0",
+                            cursor: "pointer",
+                            fontFamily: "inherit",
+                            fontWeight: 800,
+                            fontSize: ".8em",
+                          }}
+                        >
+                          Soy coach
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setAuthRole("athlete")}
+                          style={{
+                            flex: 1,
+                            padding: "10px 12px",
+                            borderRadius: 10,
+                            border: authRole === "athlete" ? "2px solid #3b82f6" : "1px solid rgba(148,163,184,.4)",
+                            background: authRole === "athlete" ? "rgba(59,130,246,.15)" : "rgba(15,23,42,.8)",
+                            color: "#e2e8f0",
+                            cursor: "pointer",
+                            fontFamily: "inherit",
+                            fontWeight: 800,
+                            fontSize: ".8em",
+                          }}
+                        >
+                          Soy atleta
+                        </button>
+                      </div>
+                    </div>
+                    <div style={{ marginBottom: 10 }}>
+                      <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Nombre</div>
+                      <input
+                        type="text"
+                        value={authName}
+                        onChange={e => setAuthName(e.target.value)}
+                        placeholder="Tu nombre completo"
+                        style={{ width: "100%", background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 8, padding: "10px 12px", color: "#e2e8f0", fontFamily: "inherit", fontSize: ".85em", outline: "none", boxSizing: "border-box" }}
+                      />
+                    </div>
+                  </>
+                )}
                 <div style={{ marginBottom: 10 }}>
                   <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Email</div>
                   <input
@@ -522,6 +641,21 @@ export default function App() {
         )}
       </div>
     );
+  }
+
+  if (profileLoading) {
+    return (
+      <div style={S.root}>
+        <main style={{ ...S.page, display: "flex", alignItems: "center", justifyContent: "center", width: "100%" }}>
+          <h1 style={S.pageTitle}>Cargando perfil...</h1>
+        </main>
+      </div>
+    );
+  }
+
+  if (profile && profile.role === "athlete") {
+    console.log("Renderizando vista AthleteHome para role=athlete");
+    return <AthleteHome profile={profile} />;
   }
 
   return (
@@ -1102,6 +1236,195 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function AthleteHome({ profile }) {
+  const S = styles;
+  const [athleteInfo, setAthleteInfo] = useState(null);
+  const [workouts, setWorkouts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      if (!profile?.user_id) return;
+      setLoading(true);
+      setMessage("");
+
+      const [{ data: athleteRow, error: athleteErr }, { data: workoutsRows, error: workoutsErr }] = await Promise.all([
+        supabase.from("athletes").select("*").eq("id", profile.user_id).maybeSingle(),
+        supabase.from("workouts").select("*").eq("athlete_id", profile.user_id).order("scheduled_date", { ascending: true }),
+      ]);
+
+      if (cancelled) return;
+
+      if (athleteErr) {
+        console.error("Error cargando atleta:", athleteErr);
+        setAthleteInfo(null);
+      } else {
+        setAthleteInfo(athleteRow || null);
+      }
+
+      if (workoutsErr) {
+        console.error("Error cargando workouts atleta:", workoutsErr);
+        setWorkouts([]);
+      } else {
+        setWorkouts((workoutsRows || []).map(normalizeWorkoutRow));
+      }
+
+      setLoading(false);
+    };
+
+    load();
+    return () => { cancelled = true; };
+  }, [profile?.user_id]);
+
+  const workoutsByDate = useMemo(() => {
+    const m = {};
+    for (const w of workouts) {
+      const k = w.scheduled_date;
+      if (!m[k]) m[k] = [];
+      m[k].push(w);
+    }
+    return m;
+  }, [workouts]);
+
+  const CALENDAR_DAYS = 42;
+  const weekStart = useMemo(() => {
+    const thisMonday = startOfWeekMonday(new Date());
+    if (!workouts.length) return thisMonday;
+    let minMs = Infinity;
+    for (const w of workouts) {
+      const t = new Date(`${w.scheduled_date}T12:00:00`).getTime();
+      if (t < minMs) minMs = t;
+    }
+    const firstMonday = startOfWeekMonday(new Date(minMs));
+    return firstMonday.getTime() < thisMonday.getTime() ? firstMonday : thisMonday;
+  }, [workouts]);
+
+  const calendarCells = useMemo(
+    () => Array.from({ length: CALENDAR_DAYS }, (_, i) => addDays(weekStart, i)),
+    [weekStart],
+  );
+
+  const thisWeekStart = useMemo(() => startOfWeekMonday(new Date()), []);
+  const thisWeekEnd = useMemo(() => addDays(thisWeekStart, 6), [thisWeekStart]);
+  const thisWeekStartYmd = useMemo(() => formatLocalYMD(thisWeekStart), [thisWeekStart]);
+  const thisWeekEndYmd = useMemo(() => formatLocalYMD(thisWeekEnd), [thisWeekEnd]);
+
+  const weeklyWorkouts = useMemo(
+    () => workouts.filter(w => w.scheduled_date >= thisWeekStartYmd && w.scheduled_date <= thisWeekEndYmd),
+    [workouts, thisWeekStartYmd, thisWeekEndYmd],
+  );
+
+  const weeklyTotalKm = useMemo(() => weeklyWorkouts.reduce((s, w) => s + (Number(w.total_km) || 0), 0), [weeklyWorkouts]);
+  const weeklyDoneKm = useMemo(() => weeklyWorkouts.filter(w => w.done).reduce((s, w) => s + (Number(w.total_km) || 0), 0), [weeklyWorkouts]);
+
+  const toggleDone = async (w) => {
+    const next = !w.done;
+    setWorkouts(prev => prev.map(x => (x.id === w.id ? { ...x, done: next } : x)));
+    const { error } = await supabase.from("workouts").update({ done: next }).eq("id", w.id);
+    if (error) {
+      console.error("Error actualizando workout:", error);
+      setWorkouts(prev => prev.map(x => (x.id === w.id ? { ...x, done: !next } : x)));
+      setMessage(`Error actualizando workout: ${error.message}`);
+    }
+  };
+
+  const athleteName = profile?.name || athleteInfo?.name || "Atleta";
+  const nextRaceText = athleteInfo?.next_race ? `🏁 ${getRaceCountdownText(athleteInfo.next_race)}` : "🏁 Próxima carrera · fecha pendiente";
+
+  return (
+    <div style={S.page}>
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: 18 }}>
+        <div>
+          <h1 style={{ ...S.pageTitle, marginBottom: 6 }}>Hola, {athleteName}</h1>
+          <div style={{ color: "#94a3b8", fontSize: ".9em" }}>{nextRaceText}</div>
+        </div>
+        <div style={{ ...S.card, padding: 14, minWidth: 260 }}>
+          <div style={{ fontSize: ".72em", letterSpacing: ".13em", color: "#475569", textTransform: "uppercase", marginBottom: 8 }}>PROGRESO SEMANAL</div>
+          <div style={{ fontSize: "1.6em", fontWeight: 900, color: "#22c55e", fontFamily: "monospace" }}>
+            {weeklyDoneKm} / {weeklyTotalKm} km
+          </div>
+          <div style={{ color: "#64748b", fontSize: ".8em", marginTop: 6 }}>
+            Semana {thisWeekStartYmd} → {thisWeekEndYmd}
+          </div>
+        </div>
+      </div>
+
+      {message && <div style={{ ...S.card, border: "1px solid rgba(239,68,68,.35)", background: "rgba(239,68,68,.08)", color: "#fecaca", marginBottom: 14 }}>{message}</div>}
+
+      <div style={{ ...S.card }}>
+        <div style={{ fontSize: ".65em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase", marginBottom: 10 }}>
+          CALENDARIO — {formatLocalYMD(calendarCells[0])} → {formatLocalYMD(calendarCells[calendarCells.length - 1])}
+        </div>
+
+        {loading ? (
+          <div style={{ color: "#64748b", fontSize: ".85em", padding: "20px 0" }}>Cargando...</div>
+        ) : (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 4 }}>
+            {DAYS.map(d => <div key={d} style={{ fontSize: ".65em", textAlign: "center", color: "#334155", padding: "4px 0" }}>{d}</div>)}
+            {calendarCells.map((cellDate, i) => {
+              const ymd = formatLocalYMD(cellDate);
+              const dayWorkouts = workoutsByDate[ymd] || [];
+              const hasWorkout = dayWorkouts.length > 0;
+              const hasDoneWorkout = dayWorkouts.some(w => w.done);
+              const borderColor = hasWorkout
+                ? `${WORKOUT_TYPES.find(t => t.id === dayWorkouts[0].type)?.color || "#64748b"}40`
+                : "rgba(255,255,255,.05)";
+
+              return (
+                <div
+                  key={i}
+                  style={{
+                    minHeight: 72,
+                    border: `1px solid ${borderColor}`,
+                    borderRadius: 6,
+                    padding: "4px 3px",
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "stretch",
+                    gap: 3,
+                    background: hasDoneWorkout ? "rgba(34,197,94,.08)" : (hasWorkout ? "rgba(255,255,255,.02)" : "transparent"),
+                  }}
+                >
+                  <div style={{ fontSize: ".58em", color: "#475569", textAlign: "center", fontWeight: 600 }}>{cellDate.getDate()}</div>
+                  {dayWorkouts.map(w => {
+                    const wt = WORKOUT_TYPES.find(t => t.id === w.type) || WORKOUT_TYPES[0];
+                    return (
+                      <button
+                        key={w.id}
+                        type="button"
+                        onClick={() => toggleDone(w)}
+                        title={w.done ? "Marcar como pendiente" : "Marcar como hecho"}
+                        style={{
+                          border: `1px solid ${w.done ? "rgba(34,197,94,.55)" : `${wt.color}55`}`,
+                          borderRadius: 5,
+                          padding: "4px 3px",
+                          background: w.done ? "rgba(34,197,94,.16)" : `${wt.color}12`,
+                          cursor: "pointer",
+                          fontFamily: "inherit",
+                          textAlign: "center",
+                          width: "100%",
+                          boxSizing: "border-box",
+                        }}
+                      >
+                        <div style={{ width: 5, height: 5, borderRadius: "50%", background: wt.color, margin: "0 auto 2px" }} />
+                        <div style={{ fontSize: ".52em", color: wt.color, fontWeight: 600, lineHeight: 1.15 }}>{w.title}</div>
+                        <div style={{ fontSize: ".5em", color: "#475569" }}>{w.total_km} km</div>
+                        {w.done && <div style={{ fontSize: ".52em", color: "#22c55e", marginTop: 1 }}>✓ Hecho</div>}
+                      </button>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
