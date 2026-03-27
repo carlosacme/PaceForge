@@ -1936,6 +1936,7 @@ function AthleteHome({ profile }) {
       if (cancelled) return;
 
       const userEmail = authData?.user?.email?.trim();
+      console.log("[AthleteHome] session.user.email", authData?.user?.email ?? null);
       if (authErr || !userEmail) {
         console.error("Error obteniendo sesión:", authErr);
         setAthleteInfo(null);
@@ -1950,6 +1951,12 @@ function AthleteHome({ profile }) {
         .select("*")
         .ilike("email", userEmail)
         .limit(1);
+
+      console.log("[AthleteHome] consulta athletes (ilike email)", {
+        emailFiltro: userEmail,
+        data: athleteRows,
+        error: athleteErr,
+      });
 
       if (cancelled) return;
 
@@ -1977,6 +1984,12 @@ function AthleteHome({ profile }) {
         .select("*")
         .eq("athlete_id", athleteRow.id)
         .order("scheduled_date", { ascending: true });
+
+      console.log("[AthleteHome] consulta workouts (athlete_id)", {
+        athlete_id: athleteRow.id,
+        data: workoutsRows,
+        error: workoutsErr,
+      });
 
       if (cancelled) return;
 
