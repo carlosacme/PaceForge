@@ -1922,28 +1922,63 @@ function AthleteHome({ profile }) {
   const [athleteChatMessages, setAthleteChatMessages] = useState([]);
   const [athleteChatDraft, setAthleteChatDraft] = useState("");
   const [athleteChatSending, setAthleteChatSending] = useState(false);
+  const [athleteNotRegistered, setAthleteNotRegistered] = useState(false);
   const athleteChatScrollRef = useRef(null);
 
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
-      if (!profile?.user_id) return;
       setLoading(true);
       setMessage("");
+      setAthleteNotRegistered(false);
 
-      const [{ data: athleteRow, error: athleteErr }, { data: workoutsRows, error: workoutsErr }] = await Promise.all([
-        supabase.from("athletes").select("*").eq("id", profile.user_id).maybeSingle(),
-        supabase.from("workouts").select("*").eq("athlete_id", profile.user_id).order("scheduled_date", { ascending: true }),
-      ]);
+      const { data: authData, error: authErr } = await supabase.auth.getUser();
+      if (cancelled) return;
+
+      const userEmail = authData?.user?.email?.trim();
+      if (authErr || !userEmail) {
+        console.error("Error obteniendo sesión:", authErr);
+        setAthleteInfo(null);
+        setWorkouts([]);
+        setLoading(false);
+        if (!userEmail) setMessage("No se pudo obtener el email de tu cuenta.");
+        return;
+      }
+
+      const { data: athleteRows, error: athleteErr } = await supabase
+        .from("athletes")
+        .select("*")
+        .ilike("email", userEmail)
+        .limit(1);
 
       if (cancelled) return;
 
       if (athleteErr) {
         console.error("Error cargando atleta:", athleteErr);
         setAthleteInfo(null);
-      } else {
-        setAthleteInfo(athleteRow || null);
+        setWorkouts([]);
+        setLoading(false);
+        return;
       }
+
+      const athleteRow = athleteRows?.[0];
+      if (!athleteRow) {
+        setAthleteInfo(null);
+        setWorkouts([]);
+        setAthleteNotRegistered(true);
+        setLoading(false);
+        return;
+      }
+
+      setAthleteInfo(athleteRow);
+
+      const { data: workoutsRows, error: workoutsErr } = await supabase
+        .from("workouts")
+        .select("*")
+        .eq("athlete_id", athleteRow.id)
+        .order("scheduled_date", { ascending: true });
+
+      if (cancelled) return;
 
       if (workoutsErr) {
         console.error("Error cargando workouts atleta:", workoutsErr);
@@ -2031,14 +2066,14 @@ function AthleteHome({ profile }) {
   const coachIdForChat = athleteInfo?.coach_id || null;
 
   const loadAthleteChat = useCallback(async () => {
-    if (!profile?.user_id || !coachIdForChat) {
+    if (!athleteInfo?.id || !coachIdForChat) {
       setAthleteChatMessages([]);
       return;
     }
     const { data, error } = await supabase
       .from("messages")
       .select("*")
-      .eq("athlete_id", profile.user_id)
+      .eq("athlete_id", athleteInfo.id)
       .eq("coach_id", coachIdForChat)
       .order("created_at", { ascending: true });
     if (error) {
@@ -2046,7 +2081,7 @@ function AthleteHome({ profile }) {
       return;
     }
     setAthleteChatMessages(data || []);
-  }, [profile?.user_id, coachIdForChat]);
+  }, [athleteInfo?.id, coachIdForChat]);
 
   useEffect(() => {
     loadAthleteChat();
@@ -2064,11 +2099,11 @@ function AthleteHome({ profile }) {
 
   const sendAthleteChat = async () => {
     const body = athleteChatDraft.trim();
-    if (!body || !profile?.user_id || !coachIdForChat || athleteChatSending) return;
+    if (!body || !athleteInfo?.id || !coachIdForChat || athleteChatSending) return;
     setAthleteChatSending(true);
     try {
       const { error } = await supabase.from("messages").insert({
-        athlete_id: profile.user_id,
+        athlete_id: athleteInfo.id,
         coach_id: coachIdForChat,
         sender_role: "athlete",
         body,
@@ -2131,6 +2166,23 @@ function AthleteHome({ profile }) {
 
       {message && <div style={{ ...S.card, border: "1px solid rgba(239,68,68,.35)", background: "rgba(239,68,68,.08)", color: "#fecaca", marginBottom: 14 }}>{message}</div>}
 
+      {athleteNotRegistered && !loading && (
+        <div
+          style={{
+            ...S.card,
+            marginBottom: 14,
+            border: "1px solid rgba(245,158,11,.35)",
+            background: "rgba(245,158,11,.08)",
+            color: "#fde68a",
+            fontSize: ".95em",
+            lineHeight: 1.45,
+          }}
+        >
+          Tu coach aún no te ha registrado en la plataforma
+        </div>
+      )}
+
+      {!athleteNotRegistered && (
       <div style={{ ...S.card }}>
         <div style={{ fontSize: ".65em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase", marginBottom: 10 }}>
           CALENDARIO — {formatLocalYMD(calendarCells[0])} → {formatLocalYMD(calendarCells[calendarCells.length - 1])}
@@ -2238,7 +2290,9 @@ function AthleteHome({ profile }) {
           </div>
         )}
       </div>
+      )}
 
+      {!athleteNotRegistered && (
       <div style={{ ...S.card, marginTop: 20 }}>
         <div style={{ fontSize: ".65em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase", marginBottom: 10 }}>
           CHAT CON TU COACH
@@ -2336,6 +2390,7 @@ function AthleteHome({ profile }) {
           </>
         )}
       </div>
+      )}
     </div>
   );
 }
