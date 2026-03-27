@@ -152,6 +152,42 @@ const PLAN_12_LEVELS = [
   { id: "avanzado", label: "Avanzado" },
 ];
 
+/** Plantilla fija plan 2 semanas: omitir domingo, luego jueves, luego miércoles si N<5 */
+const PLAN2_FIXED_SLOTS = [
+  { weekday: 2, type: "long" },
+  { weekday: 3, type: "tempo" },
+  { weekday: 4, type: "recovery" },
+  { weekday: 6, type: "interval" },
+  { weekday: 7, type: "long" },
+];
+const PLAN2_OMIT_ORDER = [7, 4, 3];
+
+const getPlan2ExpectedSlots = (sessionsPerWeek) => {
+  let slots = [...PLAN2_FIXED_SLOTS];
+  for (const wd of PLAN2_OMIT_ORDER) {
+    if (slots.length <= sessionsPerWeek) break;
+    slots = slots.filter((s) => s.weekday !== wd);
+  }
+  return slots;
+};
+
+const validatePlan2Distribution = (weeks, sessionsPerWeek) => {
+  const expected = getPlan2ExpectedSlots(sessionsPerWeek);
+  if (expected.length !== sessionsPerWeek) return "template";
+  for (const week of weeks) {
+    const list = Array.isArray(week.workouts) ? week.workouts : [];
+    if (list.length !== sessionsPerWeek) return "count";
+    const byWd = new Map(list.map((w) => [Number(w.weekday), w]));
+    for (const slot of expected) {
+      const wo = byWd.get(slot.weekday);
+      if (!wo) return "missing";
+      if (wo.type !== slot.type) return "type";
+    }
+    if (byWd.size !== expected.length) return "extra";
+  }
+  return null;
+};
+
 const normalizeWorkoutRow = (row) => {
   let structure = row.structure;
   if (typeof structure === "string") {
@@ -2080,7 +2116,19 @@ function Plan2Weeks({ athletes, notify, onPlanAssigned }) {
   };
 
   const plan2SystemPrompt = `You are an elite running coach for PaceForge. Output ONLY compact valid JSON. No markdown, no code fences, no extra text.
-Schema (keep description short, ~120 chars max):
+weekday: always 1=Monday .. 7=Sunday.
+
+Fixed weekly template (same both weeks). Session types MUST match exactly:
+- weekday 2 (Tuesday): type "long" — Rodaje largo
+- weekday 3 (Wednesday): type "tempo" — Tempo
+- weekday 4 (Thursday): type "recovery" — Recuperación
+- weekday 6 (Saturday): type "interval" — Intervalos
+- weekday 7 (Sunday): type "long" — Largo
+
+If the user requests fewer than 5 sessions per week, OMIT sessions in this strict order until the count matches: (1) omit Sunday (weekday 7), (2) then omit Thursday (weekday 4), (3) then omit Wednesday (weekday 3). The remaining sessions keep the same weekdays and types as above.
+Examples: N=5 → weekdays 2,3,4,6,7; N=4 → 2,3,4,6; N=3 → 2,3,6.
+
+Schema (description ≤120 chars):
 {
   "plan_title": "short string",
   "weeks": [
@@ -2088,38 +2136,40 @@ Schema (keep description short, ~120 chars max):
       "week_number": 1,
       "focus": "optional ≤4 words",
       "workouts": [
-        {
-          "weekday": 1,
-          "title": "string",
-          "type": "easy|tempo|interval|long|recovery",
-          "total_km": 0,
-          "duration_min": 0,
-          "description": "short string"
-        }
+        { "weekday": 2, "title": "string", "type": "long|tempo|recovery|interval", "total_km": 0, "duration_min": 0, "description": "string" }
       ]
     }
   ]
 }
 Rules:
-- Exactly 2 weeks: week_number 1 and 2 only, in order.
-- Each week must contain EXACTLY N workouts, where N is given by the user (N is 3, 4, or 5). Same N both weeks. No more, no fewer.
-- Each workout MUST have: weekday (1=Monday..7=Sunday), title, type, total_km (km as number), duration_min (minutes), description (short).
-- Spread hard sessions with rest days; week 2 is race week—taper and goal-appropriate quality; match volume to level.
-- Do not include extra properties. All numeric fields must be JSON numbers.`;
+- Exactly 2 weeks (week_number 1 then 2). Each week: EXACTLY N workouts (N is 3, 4, or 5 from user). Same N and same weekday/type pattern both weeks.
+- Every workout must use one of the allowed weekday+type pairs from the template after applying the omission rule for that N.
+- Titles should reflect the session (e.g. rodaje largo, tempo, recuperación, intervalos, largo) in the plan language but types must be exact enum values.
+- Week 2 is race week: adjust volume/quality vs week 1 but never change weekdays or session types for that N.
+- No extra JSON keys. All numeric fields must be numbers.`;
 
-  const generatePlan2 = async () => {
+  const plan2UserPrompt = useMemo(() => {
     const goalLabel = PLAN_12_GOALS.find((g) => g.id === goalId)?.label || goalId;
     const levelLabel = PLAN_12_LEVELS.find((l) => l.id === levelId)?.label || levelId;
-    const userPrompt = `Create a compact 2-week running plan as JSON only.
+    return `2-week running plan JSON only.
 
-Goal: ${goalLabel}
-Level: ${levelLabel}
-Exact workouts per week (same count week 1 and 2, must be exactly ${daysPerWeek} sessions each week): ${daysPerWeek}
-Race date (week 2 is the calendar week that contains this race): ${raceDate}
+Goal: ${goalLabel}. Level: ${levelLabel}.
+Sessions per week (N): ${daysPerWeek} — same N in week 1 and week 2.
+Race date (week 2 contains this date): ${raceDate}
 
-Each workout object: weekday 1-7, title, type (easy|tempo|interval|long|recovery), total_km, duration_min, description (short).
-Output exactly two week objects with the required session counts.`;
+Follow the FIXED calendar exactly:
+- Martes weekday=2: rodaje largo → type "long"
+- Miércoles weekday=3: tempo → type "tempo"
+- Jueves weekday=4: recuperación → type "recovery"
+- Sábado weekday=6: intervalos → type "interval"
+- Domingo weekday=7: largo → type "long"
 
+If N<5, drop sessions in order: first domingo (7), then jueves (4), then miércoles (3). N=4 → keep 2,3,4,6. N=3 → keep 2,3,6.
+
+Output 2 week objects with the correct ${daysPerWeek} workouts each; each workout: weekday, title, type, total_km, duration_min, short description.`;
+  }, [goalId, levelId, daysPerWeek, raceDate]);
+
+  const generatePlan2 = async () => {
     setPlanLoading(true);
     setGeneratedPlan(null);
     try {
@@ -2130,7 +2180,7 @@ Output exactly two week objects with the required session counts.`;
           model: "claude-sonnet-4-20250514",
           max_tokens: 3000,
           system: plan2SystemPrompt,
-          messages: [{ role: "user", content: userPrompt }],
+          messages: [{ role: "user", content: plan2UserPrompt }],
         }),
       });
       const data = await res.json();
@@ -2151,6 +2201,11 @@ Output exactly two week objects with the required session counts.`;
       const countMismatch = orderedWeeks.some((w) => (Array.isArray(w.workouts) ? w.workouts.length : 0) !== daysPerWeek);
       if (countMismatch) {
         notify(`Cada semana debe tener exactamente ${daysPerWeek} sesiones. Reintenta la generación.`);
+        return;
+      }
+      const distErr = validatePlan2Distribution(orderedWeeks, daysPerWeek);
+      if (distErr) {
+        notify("El plan no respeta la distribución fija (martes largo, miércoles tempo, etc.). Reintenta la generación.");
         return;
       }
       setGeneratedPlan({ ...parsed, weeks: orderedWeeks });
@@ -2298,8 +2353,61 @@ Output exactly two week objects with the required session counts.`;
       <div style={{ marginBottom: 24 }}>
         <h1 style={S.pageTitle}>Plan 2 Semanas</h1>
         <p style={{ color: "#475569", fontSize: ".82em", marginTop: 4 }}>
-          Bloque de 2 semanas con IA (3 a 5 sesiones por semana). La semana de la carrera es la semana 2.
+          Distribución fija: mar largo · mié tempo · jue recuperación · sáb intervalos · dom largo. Con menos de 5 sesiones se quitan primero domingo, luego jueves y miércoles. Semana 2 = semana de carrera.
         </p>
+      </div>
+
+      <div style={{ ...S.card, marginBottom: 22 }}>
+        <div style={{ fontSize: ".65em", letterSpacing: ".13em", color: "#475569", textTransform: "uppercase", marginBottom: 12 }}>
+          Prompt exacto enviado a la IA
+        </div>
+        <p style={{ fontSize: ".72em", color: "#64748b", marginBottom: 14 }}>
+          Mismo contenido que en <code style={{ color: "#94a3b8" }}>system</code> y el mensaje <code style={{ color: "#94a3b8" }}>user</code> del cuerpo POST a <code style={{ color: "#94a3b8" }}>/api/generate-workout</code> (modelo Claude + max_tokens 3000). Se actualiza al cambiar el formulario.
+        </p>
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: ".78em", fontWeight: 700, color: "#f59e0b", marginBottom: 8 }}>system</div>
+          <pre
+            style={{
+              margin: 0,
+              padding: 12,
+              borderRadius: 8,
+              background: "rgba(0,0,0,.35)",
+              border: "1px solid rgba(255,255,255,.08)",
+              color: "#cbd5e1",
+              fontSize: ".72em",
+              lineHeight: 1.45,
+              whiteSpace: "pre-wrap",
+              wordBreak: "break-word",
+              maxHeight: 320,
+              overflowY: "auto",
+              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+            }}
+          >
+            {plan2SystemPrompt}
+          </pre>
+        </div>
+        <div>
+          <div style={{ fontSize: ".78em", fontWeight: 700, color: "#38bdf8", marginBottom: 8 }}>user (mensaje)</div>
+          <pre
+            style={{
+              margin: 0,
+              padding: 12,
+              borderRadius: 8,
+              background: "rgba(0,0,0,.35)",
+              border: "1px solid rgba(255,255,255,.08)",
+              color: "#cbd5e1",
+              fontSize: ".72em",
+              lineHeight: 1.45,
+              whiteSpace: "pre-wrap",
+              wordBreak: "break-word",
+              maxHeight: 240,
+              overflowY: "auto",
+              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+            }}
+          >
+            {plan2UserPrompt}
+          </pre>
+        </div>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "minmax(280px, 360px) 1fr", gap: 22, alignItems: "start" }}>
