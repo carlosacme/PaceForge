@@ -101,6 +101,49 @@ const addDays = (d, n) => {
   return x;
 };
 
+const extractJsonFromAnthropicText = (text) => {
+  const raw = (text || "").trim();
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    /* continue */
+  }
+  const fence = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fence) {
+    try {
+      return JSON.parse(fence[1].trim());
+    } catch {
+      /* continue */
+    }
+  }
+  const start = raw.indexOf("{");
+  const end = raw.lastIndexOf("}");
+  if (start >= 0 && end > start) {
+    try {
+      return JSON.parse(raw.slice(start, end + 1));
+    } catch {
+      return null;
+    }
+  }
+  return null;
+};
+
+const PLAN_12_GOALS = [
+  { id: "maraton_sub4", label: "Maratón sub 4h" },
+  { id: "maraton_sub330", label: "Maratón sub 3:30" },
+  { id: "maraton_sub3", label: "Maratón sub 3h" },
+  { id: "media", label: "Media maratón" },
+  { id: "10k", label: "10K" },
+  { id: "5k", label: "5K" },
+];
+
+const PLAN_12_LEVELS = [
+  { id: "principiante", label: "Principiante" },
+  { id: "intermedio", label: "Intermedio" },
+  { id: "avanzado", label: "Avanzado" },
+];
+
 const normalizeWorkoutRow = (row) => {
   let structure = row.structure;
   if (typeof structure === "string") {
@@ -697,6 +740,7 @@ export default function App() {
           {[
             { id: "dashboard", icon: "◈", label: "Dashboard" },
             { id: "athletes", icon: "◉", label: "Atletas" },
+            { id: "plan12", icon: "◉", label: "Plan 4 Semanas" },
             { id: "plans", icon: "◇", label: "Planes" },
             { id: "builder", icon: "◎", label: "Crear Workout" },
           ].map(item => (
@@ -756,6 +800,9 @@ export default function App() {
           />
         )}
         {view === "plans" && <Plans athletes={athletes} />}
+        {view === "plan12" && (
+          <Plan12Weeks athletes={athletes} notify={notify} onPlanAssigned={() => setWorkoutsRefresh((r) => r + 1)} />
+        )}
         {view === "builder" && (
           <Builder
             athletes={athletes}
@@ -1673,6 +1720,421 @@ function AthleteHome({ profile }) {
             })}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+function Plan12Weeks({ athletes, notify, onPlanAssigned }) {
+  const S = styles;
+  const [athleteId, setAthleteId] = useState("");
+  const [goalId, setGoalId] = useState(PLAN_12_GOALS[0]?.id || "maraton_sub4");
+  const [levelId, setLevelId] = useState("intermedio");
+  const [daysPerWeek, setDaysPerWeek] = useState(3);
+  const [raceDate, setRaceDate] = useState(() => formatLocalYMD(addDays(new Date(), 28)));
+  const [generatedPlan, setGeneratedPlan] = useState(null);
+  const [planLoading, setPlanLoading] = useState(false);
+  const [assignLoading, setAssignLoading] = useState(false);
+  const [openWeeks, setOpenWeeks] = useState(() => new Set());
+
+  useEffect(() => {
+    if (athletes?.length && !athleteId) {
+      setAthleteId(String(athletes[0].id));
+    }
+  }, [athletes, athleteId]);
+
+  const toggleWeek = (weekNum) => {
+    setOpenWeeks((prev) => {
+      const next = new Set(prev);
+      if (next.has(weekNum)) next.delete(weekNum);
+      else next.add(weekNum);
+      return next;
+    });
+  };
+
+  const plan12SystemPrompt = `You are an elite running coach for PaceForge. Output ONLY compact valid JSON. No markdown, no code fences, no extra text.
+Schema (keep strings short):
+{
+  "plan_title": "short string",
+  "weeks": [
+    {
+      "week_number": 1,
+      "focus": "optional max 4 words",
+      "workouts": [
+        {
+          "weekday": 1,
+          "title": "short",
+          "type": "easy|tempo|interval|long|recovery",
+          "total_km": 0,
+          "duration_min": 0,
+          "description": "max ~80 chars",
+          "structure": []
+        }
+      ]
+    }
+  ]
+}
+Rules:
+- Exactly 4 weeks: week_number 1..4 only, in order.
+- Each week: at most 3 workouts; the user specifies how many (1–3)—use exactly that count every week.
+- Keep "structure" as [] always (empty array) to minimize size.
+- "weekday": 1=Monday … 7=Sunday. Space hard days with rest.
+- Week 4 contains the race week: slight taper and race-appropriate work; align volume to goal and level.
+- All numeric fields must be numbers.`;
+
+  const generatePlan12 = async () => {
+    const goalLabel = PLAN_12_GOALS.find((g) => g.id === goalId)?.label || goalId;
+    const levelLabel = PLAN_12_LEVELS.find((l) => l.id === levelId)?.label || levelId;
+    const userPrompt = `Create a compact 4-week running plan as JSON only.
+
+Goal: ${goalLabel}
+Level: ${levelLabel}
+Workouts per week (1 to 3, same count each week): ${daysPerWeek}
+Race date (week 4 is this calendar week containing the race): ${raceDate}
+
+Each workout: weekday 1-7, title, type, total_km, duration_min, brief description, structure: [].`;
+
+    setPlanLoading(true);
+    setGeneratedPlan(null);
+    try {
+      const res = await fetch("/api/generate-workout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 4000,
+          system: plan12SystemPrompt,
+          messages: [{ role: "user", content: userPrompt }],
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        console.error("Plan 4 semanas API error:", data);
+        notify("Error al generar el plan (API).");
+        return;
+      }
+      const text = data.content?.find((b) => b.type === "text")?.text || "";
+      const parsed = extractJsonFromAnthropicText(text);
+      const byWeek = new Map((parsed?.weeks || []).map((w) => [Number(w.week_number) || 0, w]));
+      const orderedWeeks = [1, 2, 3, 4].map((n) => byWeek.get(n)).filter(Boolean);
+      if (!parsed || orderedWeeks.length < 4) {
+        console.error("Plan JSON inválido:", text?.slice?.(0, 500));
+        notify("La IA no devolvió un plan válido (semanas 1–4). Intenta de nuevo.");
+        return;
+      }
+      setGeneratedPlan({ ...parsed, weeks: orderedWeeks });
+      setOpenWeeks(new Set([1]));
+      notify("Plan de 4 semanas generado ✓");
+    } catch (e) {
+      console.error(e);
+      notify("Error al procesar el plan.");
+    } finally {
+      setPlanLoading(false);
+    }
+  };
+
+  const assignPlanToAthlete = async () => {
+    if (!generatedPlan?.weeks?.length) {
+      alert("Genera un plan antes de asignar.");
+      return;
+    }
+    if (!athleteId) {
+      alert("Selecciona un atleta.");
+      return;
+    }
+    if (!raceDate) {
+      alert("Indica la fecha de la carrera.");
+      return;
+    }
+    const selectedAthlete = (athletes || []).find((a) => String(a.id) === String(athleteId));
+    if (!selectedAthlete?.id) {
+      alert("No se encontró el atleta.");
+      return;
+    }
+
+    const race = new Date(`${raceDate}T12:00:00`);
+    const raceMonday = startOfWeekMonday(race);
+    const planStartMonday = addDays(raceMonday, -3 * 7);
+
+    const rows = [];
+    for (const week of generatedPlan.weeks) {
+      const wn = Number(week.week_number) || 0;
+      if (wn < 1 || wn > 4) continue;
+      const list = Array.isArray(week.workouts) ? week.workouts : [];
+      for (const wo of list) {
+        let wd = Number(wo.weekday);
+        if (!Number.isFinite(wd) || wd < 1) wd = 1;
+        if (wd > 7) wd = 7;
+        const offsetDays = (wn - 1) * 7 + (wd - 1);
+        const sessionDate = addDays(planStartMonday, offsetDays);
+        const scheduled_date = formatLocalYMD(sessionDate);
+        const typeRaw = wo.type || "easy";
+        const type = WORKOUT_TYPES.some((t) => t.id === typeRaw) ? typeRaw : "easy";
+        let structure = wo.structure;
+        if (!Array.isArray(structure)) structure = [];
+        rows.push({
+          athlete_id: selectedAthlete.id,
+          title: String(wo.title || "Entrenamiento"),
+          type,
+          total_km: Number.isFinite(Number(wo.total_km)) ? Number(wo.total_km) : 0,
+          duration_min: Number.isFinite(Number(wo.duration_min)) ? Number(wo.duration_min) : 0,
+          description: String(wo.description || ""),
+          structure,
+          scheduled_date,
+          done: false,
+        });
+      }
+    }
+
+    if (!rows.length) {
+      alert("No hay entrenamientos en el plan para guardar.");
+      return;
+    }
+
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+    if (userError || !userData?.user) {
+      alert(userError?.message || "No hay usuario autenticado.");
+      return;
+    }
+    const coachId = userData.user.id;
+    const payload = rows.map((r) => ({ ...r, coach_id: coachId }));
+
+    setAssignLoading(true);
+    try {
+      const { error } = await supabase.from("workouts").insert(payload);
+      if (error) {
+        console.error("Error insertando plan:", error);
+        alert(`Error: ${error.message}`);
+        return;
+      }
+      onPlanAssigned?.();
+
+      if (selectedAthlete.email) {
+        try {
+          const weekSummary = (generatedPlan.weeks || [])
+            .map((w) => {
+              const n = Number(w.week_number) || 0;
+              const c = Array.isArray(w.workouts) ? w.workouts.length : 0;
+              return `<li>Semana ${n}: ${c} sesiones</li>`;
+            })
+            .join("");
+          await fetch("/api/send-email", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              to: selectedAthlete.email,
+              subject: `Tu plan de 4 semanas: ${generatedPlan.plan_title || "PaceForge"}`,
+              html: `
+                <h2>Hola ${selectedAthlete.name} 👋</h2>
+                <p>Tu coach te ha asignado un <strong>plan de 4 semanas</strong> en PaceForge.</p>
+                <p><strong>Objetivo:</strong> ${PLAN_12_GOALS.find((g) => g.id === goalId)?.label || goalId}<br/>
+                <strong>Carrera:</strong> ${raceDate}</p>
+                <p><strong>${generatedPlan.plan_title || "Plan personalizado"}</strong></p>
+                <ul>${weekSummary}</ul>
+                <p>Total: <strong>${rows.length}</strong> entrenamientos cargados en tu calendario.</p>
+                <p>¡Mucho éxito! 💪</p>
+                <p>— PaceForge</p>
+              `,
+            }),
+          });
+        } catch (e) {
+          console.error("send-email plan12:", e);
+        }
+      }
+      notify(`Plan asignado: ${rows.length} workouts guardados.`);
+    } finally {
+      setAssignLoading(false);
+    }
+  };
+
+  const inputStyle = {
+    width: "100%",
+    background: "rgba(255,255,255,.04)",
+    border: "1px solid rgba(255,255,255,.1)",
+    borderRadius: 8,
+    padding: "10px 12px",
+    color: "#e2e8f0",
+    fontFamily: "inherit",
+    fontSize: ".85em",
+    outline: "none",
+    boxSizing: "border-box",
+  };
+  const labelStyle = { fontSize: ".72em", color: "#64748b", marginBottom: 6 };
+
+  return (
+    <div style={S.page}>
+      <div style={{ marginBottom: 24 }}>
+        <h1 style={S.pageTitle}>Plan 4 Semanas</h1>
+        <p style={{ color: "#475569", fontSize: ".82em", marginTop: 4 }}>
+          Mesociclo corto con IA (hasta 3 sesiones por semana). Las fechas se anclan a la semana de la carrera (semana 4).
+        </p>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(280px, 360px) 1fr", gap: 22, alignItems: "start" }}>
+        <div style={S.card}>
+          <div style={{ fontSize: ".65em", letterSpacing: ".13em", color: "#475569", textTransform: "uppercase", marginBottom: 16 }}>Parámetros del plan</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <div>
+              <div style={labelStyle}>Atleta</div>
+              <select value={athleteId} onChange={(e) => setAthleteId(e.target.value)} style={inputStyle}>
+                <option value="" disabled>{athletes?.length ? "Selecciona…" : "Sin atletas"}</option>
+                {(athletes || []).map((a) => (
+                  <option key={a.id} value={String(a.id)}>{a.name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <div style={labelStyle}>Objetivo</div>
+              <select value={goalId} onChange={(e) => setGoalId(e.target.value)} style={inputStyle}>
+                {PLAN_12_GOALS.map((g) => (
+                  <option key={g.id} value={g.id}>{g.label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <div style={labelStyle}>Nivel</div>
+              <select value={levelId} onChange={(e) => setLevelId(e.target.value)} style={inputStyle}>
+                {PLAN_12_LEVELS.map((l) => (
+                  <option key={l.id} value={l.id}>{l.label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <div style={labelStyle}>Sesiones por semana (máx. 3)</div>
+              <select value={String(daysPerWeek)} onChange={(e) => setDaysPerWeek(Number(e.target.value))} style={inputStyle}>
+                {[1, 2, 3].map((d) => (
+                  <option key={d} value={String(d)}>{d} {d === 1 ? "sesión" : "sesiones"}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <div style={labelStyle}>Fecha de la carrera objetivo</div>
+              <input type="date" value={raceDate} onChange={(e) => setRaceDate(e.target.value)} style={inputStyle} />
+            </div>
+            <button
+              type="button"
+              onClick={generatePlan12}
+              disabled={planLoading || !athletes?.length}
+              style={{
+                marginTop: 6,
+                width: "100%",
+                background: planLoading || !athletes?.length ? "rgba(255,255,255,.06)" : "linear-gradient(135deg,#b45309,#f59e0b)",
+                border: "none",
+                borderRadius: 8,
+                padding: "12px 16px",
+                color: planLoading || !athletes?.length ? "#334155" : "white",
+                fontWeight: 800,
+                cursor: planLoading || !athletes?.length ? "not-allowed" : "pointer",
+                fontSize: ".85em",
+                fontFamily: "inherit",
+              }}
+            >
+              {planLoading ? "⏳ Generando plan…" : "⚡ Generar Plan con IA"}
+            </button>
+            {generatedPlan && (
+              <button
+                type="button"
+                onClick={assignPlanToAthlete}
+                disabled={assignLoading || !athleteId}
+                style={{
+                  width: "100%",
+                  background: assignLoading || !athleteId ? "rgba(255,255,255,.06)" : "rgba(59,130,246,.18)",
+                  border: `1px solid ${assignLoading || !athleteId ? "rgba(255,255,255,.08)" : "rgba(59,130,246,.45)"}`,
+                  borderRadius: 8,
+                  padding: "12px 16px",
+                  color: assignLoading || !athleteId ? "#475569" : "#93c5fd",
+                  fontWeight: 800,
+                  cursor: assignLoading || !athleteId ? "not-allowed" : "pointer",
+                  fontSize: ".85em",
+                  fontFamily: "inherit",
+                }}
+              >
+                {assignLoading ? "Guardando…" : "Asignar Plan al Atleta"}
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div style={S.card}>
+          <div style={{ fontSize: ".65em", letterSpacing: ".13em", color: "#475569", textTransform: "uppercase", marginBottom: 14 }}>Vista previa</div>
+          {!generatedPlan ? (
+            <div style={{ color: "#64748b", fontSize: ".88em", lineHeight: 1.5 }}>
+              Completa el formulario y pulsa <strong>Generar Plan con IA</strong>. Aquí verás las 4 semanas en acordeón.
+            </div>
+          ) : (
+            <>
+              <div style={{ fontSize: "1.05em", fontWeight: 700, color: "#e2e8f0", marginBottom: 16 }}>{generatedPlan.plan_title || "Plan 4 semanas"}</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {[...generatedPlan.weeks].sort((a, b) => (Number(a.week_number) || 0) - (Number(b.week_number) || 0)).map((week) => {
+                  const n = Number(week.week_number) || 0;
+                  const open = openWeeks.has(n);
+                  const wos = Array.isArray(week.workouts) ? week.workouts : [];
+                  return (
+                    <div key={n} style={{ border: "1px solid rgba(255,255,255,.08)", borderRadius: 10, overflow: "hidden" }}>
+                      <button
+                        type="button"
+                        onClick={() => toggleWeek(n)}
+                        style={{
+                          width: "100%",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          padding: "12px 14px",
+                          background: open ? "rgba(245,158,11,.1)" : "rgba(255,255,255,.03)",
+                          border: "none",
+                          color: "#e2e8f0",
+                          fontFamily: "inherit",
+                          fontWeight: 700,
+                          fontSize: ".88em",
+                          cursor: "pointer",
+                          textAlign: "left",
+                        }}
+                      >
+                        <span>
+                          Semana {n}
+                          {week.focus ? <span style={{ color: "#64748b", fontWeight: 500 }}> · {week.focus}</span> : null}
+                        </span>
+                        <span style={{ color: "#94a3b8" }}>{open ? "▼" : "▶"}</span>
+                      </button>
+                      {open && (
+                        <div style={{ padding: "10px 14px 14px", background: "rgba(0,0,0,.12)" }}>
+                          {wos.length === 0 ? (
+                            <div style={{ color: "#64748b", fontSize: ".82em" }}>Sin sesiones en esta semana.</div>
+                          ) : (
+                            wos.map((wo, idx) => {
+                              const wd = Number(wo.weekday) || 1;
+                              const dayName = DAYS[wd - 1] || `Día ${wd}`;
+                              const wt = WORKOUT_TYPES.find((t) => t.id === wo.type) || WORKOUT_TYPES[0];
+                              return (
+                                <div
+                                  key={idx}
+                                  style={{
+                                    marginBottom: idx === wos.length - 1 ? 0 : 10,
+                                    padding: 10,
+                                    borderRadius: 8,
+                                    background: "rgba(255,255,255,.03)",
+                                    borderLeft: `3px solid ${wt.color}`,
+                                  }}
+                                >
+                                  <div style={{ fontSize: ".78em", color: "#64748b", marginBottom: 4 }}>{dayName}</div>
+                                  <div style={{ fontWeight: 700, color: "#e2e8f0", fontSize: ".88em" }}>{wo.title}</div>
+                                  <div style={{ fontSize: ".76em", color: "#94a3b8", marginTop: 4 }}>
+                                    {wo.total_km} km · {wo.duration_min} min · <span style={{ color: wt.color }}>{wt.label}</span>
+                                  </div>
+                                  {wo.description && <div style={{ fontSize: ".78em", color: "#cbd5e1", marginTop: 8, lineHeight: 1.45 }}>{wo.description}</div>}
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </div>
       </div>
     </div>
   );
