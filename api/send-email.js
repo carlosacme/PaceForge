@@ -5,7 +5,8 @@ export default async function handler(req, res) {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "Authorization": `Bearer ${process.env.RESEND_API_KEY}`,
+      // TODO: revert — temporal para prueba; usar process.env.RESEND_API_KEY
+      "Authorization": "Bearer re_3CLu9n3j_LpDi3Hq9vXrC42tv6ycmMagz",
     },
     body: JSON.stringify({
       from: "PaceForge <onboarding@resend.dev>",
