@@ -2557,7 +2557,7 @@ Output 2 week objects with the correct ${daysPerWeek} workouts each; each workou
           <div style={{ fontSize: ".65em", letterSpacing: ".13em", color: "#475569", textTransform: "uppercase", marginBottom: 14 }}>Vista previa</div>
           {generatedPlan && (
             <p style={{ fontSize: ".78em", color: "#64748b", marginBottom: 12, marginTop: -6 }}>
-              Tocá una sesión para editarla. Los cambios se usan al asignar el plan.
+              Usá ✏️ para editar una sesión. El estado completado solo se marca en el calendario del atleta, no aquí.
             </p>
           )}
           {!generatedPlan ? (
@@ -2630,23 +2630,18 @@ Output 2 week objects with the correct ${daysPerWeek} workouts each; each workou
                               return (
                                 <div
                                   key={`${n}-${idx}-${wo.title}-${wo.weekday}`}
-                                  role="button"
-                                  tabIndex={0}
-                                  onClick={() => setPlanEditModal({ weekNumber: n, workoutIdx: idx })}
-                                  onKeyDown={(ev) => ev.key === "Enter" && setPlanEditModal({ weekNumber: n, workoutIdx: idx })}
                                   style={{
                                     marginBottom: idx === wos.length - 1 ? 0 : 10,
                                     padding: 10,
                                     borderRadius: 8,
                                     background: "rgba(255,255,255,.03)",
                                     borderLeft: `3px solid ${wt.color}`,
-                                    cursor: "pointer",
                                     display: "flex",
                                     gap: 10,
                                     alignItems: "flex-start",
                                   }}
                                 >
-                                  <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div style={{ flex: 1, minWidth: 0, cursor: "default" }}>
                                     <div style={{ fontSize: ".78em", color: "#64748b", marginBottom: 4 }}>{dayName}</div>
                                     <div style={{ fontWeight: 700, color: "#e2e8f0", fontSize: ".88em" }}>{wo.title || "Sin título"}</div>
                                     <div style={{ fontSize: ".76em", color: "#94a3b8", marginTop: 4 }}>
@@ -2654,23 +2649,40 @@ Output 2 week objects with the correct ${daysPerWeek} workouts each; each workou
                                     </div>
                                     {wo.description && <div style={{ fontSize: ".78em", color: "#cbd5e1", marginTop: 8, lineHeight: 1.45 }}>{wo.description}</div>}
                                   </div>
-                                  <button
-                                    type="button"
-                                    title="Eliminar sesión"
-                                    onClick={(e) => deletePlanWorkout(n, idx, e)}
-                                    style={{
-                                      flexShrink: 0,
-                                      background: "rgba(239,68,68,.12)",
-                                      border: "1px solid rgba(239,68,68,.3)",
-                                      borderRadius: 6,
-                                      padding: "6px 10px",
-                                      cursor: "pointer",
-                                      fontSize: ".85em",
-                                      lineHeight: 1,
-                                    }}
-                                  >
-                                    🗑
-                                  </button>
+                                  <div style={{ display: "flex", flexDirection: "column", gap: 6, flexShrink: 0 }}>
+                                    <button
+                                      type="button"
+                                      title="Editar sesión"
+                                      onClick={() => setPlanEditModal({ weekNumber: n, workoutIdx: idx })}
+                                      style={{
+                                        background: "rgba(245,158,11,.14)",
+                                        border: "1px solid rgba(245,158,11,.35)",
+                                        borderRadius: 6,
+                                        padding: "6px 10px",
+                                        cursor: "pointer",
+                                        fontSize: ".85em",
+                                        lineHeight: 1,
+                                      }}
+                                    >
+                                      ✏️
+                                    </button>
+                                    <button
+                                      type="button"
+                                      title="Eliminar sesión"
+                                      onClick={(e) => deletePlanWorkout(n, idx, e)}
+                                      style={{
+                                        background: "rgba(239,68,68,.12)",
+                                        border: "1px solid rgba(239,68,68,.3)",
+                                        borderRadius: 6,
+                                        padding: "6px 10px",
+                                        cursor: "pointer",
+                                        fontSize: ".85em",
+                                        lineHeight: 1,
+                                      }}
+                                    >
+                                      🗑
+                                    </button>
+                                  </div>
                                 </div>
                               );
                             })
