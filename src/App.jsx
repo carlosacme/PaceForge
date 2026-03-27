@@ -748,7 +748,7 @@ export default function App() {
           {[
             { id: "dashboard", icon: "◈", label: "Dashboard" },
             { id: "athletes", icon: "◉", label: "Atletas" },
-            { id: "plan12", icon: "◉", label: "Plan 4 Semanas" },
+            { id: "plan12", icon: "◉", label: "Plan 2 Semanas" },
             { id: "plans", icon: "◇", label: "Planes" },
             { id: "builder", icon: "◎", label: "Crear Workout" },
           ].map(item => (
@@ -809,7 +809,7 @@ export default function App() {
         )}
         {view === "plans" && <Plans athletes={athletes} />}
         {view === "plan12" && (
-          <Plan12Weeks athletes={athletes} notify={notify} onPlanAssigned={() => setWorkoutsRefresh((r) => r + 1)} />
+          <Plan2Weeks athletes={athletes} notify={notify} onPlanAssigned={() => setWorkoutsRefresh((r) => r + 1)} />
         )}
         {view === "builder" && (
           <Builder
@@ -2052,13 +2052,13 @@ function AthleteHome({ profile }) {
   );
 }
 
-function Plan12Weeks({ athletes, notify, onPlanAssigned }) {
+function Plan2Weeks({ athletes, notify, onPlanAssigned }) {
   const S = styles;
   const [athleteId, setAthleteId] = useState("");
   const [goalId, setGoalId] = useState(PLAN_12_GOALS[0]?.id || "maraton_sub4");
   const [levelId, setLevelId] = useState("intermedio");
   const [daysPerWeek, setDaysPerWeek] = useState(3);
-  const [raceDate, setRaceDate] = useState(() => formatLocalYMD(addDays(new Date(), 28)));
+  const [raceDate, setRaceDate] = useState(() => formatLocalYMD(addDays(new Date(), 14)));
   const [generatedPlan, setGeneratedPlan] = useState(null);
   const [planLoading, setPlanLoading] = useState(false);
   const [assignLoading, setAssignLoading] = useState(false);
@@ -2079,47 +2079,46 @@ function Plan12Weeks({ athletes, notify, onPlanAssigned }) {
     });
   };
 
-  const plan12SystemPrompt = `You are an elite running coach for PaceForge. Output ONLY compact valid JSON. No markdown, no code fences, no extra text.
-Schema (keep strings short):
+  const plan2SystemPrompt = `You are an elite running coach for PaceForge. Output ONLY compact valid JSON. No markdown, no code fences, no extra text.
+Schema (keep description short, ~120 chars max):
 {
   "plan_title": "short string",
   "weeks": [
     {
       "week_number": 1,
-      "focus": "optional max 4 words",
+      "focus": "optional ≤4 words",
       "workouts": [
         {
           "weekday": 1,
-          "title": "short",
+          "title": "string",
           "type": "easy|tempo|interval|long|recovery",
           "total_km": 0,
           "duration_min": 0,
-          "description": "max ~80 chars",
-          "structure": []
+          "description": "short string"
         }
       ]
     }
   ]
 }
 Rules:
-- Exactly 4 weeks: week_number 1..4 only, in order.
-- Each week: at most 3 workouts; the user specifies how many (1–3)—use exactly that count every week.
-- Keep "structure" as [] always (empty array) to minimize size.
-- "weekday": 1=Monday … 7=Sunday. Space hard days with rest.
-- Week 4 contains the race week: slight taper and race-appropriate work; align volume to goal and level.
-- All numeric fields must be numbers.`;
+- Exactly 2 weeks: week_number 1 and 2 only, in order.
+- Each week must contain EXACTLY N workouts, where N is given by the user (N is 3, 4, or 5). Same N both weeks. No more, no fewer.
+- Each workout MUST have: weekday (1=Monday..7=Sunday), title, type, total_km (km as number), duration_min (minutes), description (short).
+- Spread hard sessions with rest days; week 2 is race week—taper and goal-appropriate quality; match volume to level.
+- Do not include extra properties. All numeric fields must be JSON numbers.`;
 
-  const generatePlan12 = async () => {
+  const generatePlan2 = async () => {
     const goalLabel = PLAN_12_GOALS.find((g) => g.id === goalId)?.label || goalId;
     const levelLabel = PLAN_12_LEVELS.find((l) => l.id === levelId)?.label || levelId;
-    const userPrompt = `Create a compact 4-week running plan as JSON only.
+    const userPrompt = `Create a compact 2-week running plan as JSON only.
 
 Goal: ${goalLabel}
 Level: ${levelLabel}
-Workouts per week (1 to 3, same count each week): ${daysPerWeek}
-Race date (week 4 is this calendar week containing the race): ${raceDate}
+Exact workouts per week (same count week 1 and 2, must be exactly ${daysPerWeek} sessions each week): ${daysPerWeek}
+Race date (week 2 is the calendar week that contains this race): ${raceDate}
 
-Each workout: weekday 1-7, title, type, total_km, duration_min, brief description, structure: [].`;
+Each workout object: weekday 1-7, title, type (easy|tempo|interval|long|recovery), total_km, duration_min, description (short).
+Output exactly two week objects with the required session counts.`;
 
     setPlanLoading(true);
     setGeneratedPlan(null);
@@ -2129,29 +2128,34 @@ Each workout: weekday 1-7, title, type, total_km, duration_min, brief descriptio
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           model: "claude-sonnet-4-20250514",
-          max_tokens: 4000,
-          system: plan12SystemPrompt,
+          max_tokens: 3000,
+          system: plan2SystemPrompt,
           messages: [{ role: "user", content: userPrompt }],
         }),
       });
       const data = await res.json();
       if (!res.ok) {
-        console.error("Plan 4 semanas API error:", data);
+        console.error("Plan 2 semanas API error:", data);
         notify("Error al generar el plan (API).");
         return;
       }
       const text = data.content?.find((b) => b.type === "text")?.text || "";
       const parsed = extractJsonFromAnthropicText(text);
       const byWeek = new Map((parsed?.weeks || []).map((w) => [Number(w.week_number) || 0, w]));
-      const orderedWeeks = [1, 2, 3, 4].map((n) => byWeek.get(n)).filter(Boolean);
-      if (!parsed || orderedWeeks.length < 4) {
+      const orderedWeeks = [1, 2].map((n) => byWeek.get(n)).filter(Boolean);
+      if (!parsed || orderedWeeks.length < 2) {
         console.error("Plan JSON inválido:", text?.slice?.(0, 500));
-        notify("La IA no devolvió un plan válido (semanas 1–4). Intenta de nuevo.");
+        notify("La IA no devolvió un plan válido (semanas 1–2). Intenta de nuevo.");
+        return;
+      }
+      const countMismatch = orderedWeeks.some((w) => (Array.isArray(w.workouts) ? w.workouts.length : 0) !== daysPerWeek);
+      if (countMismatch) {
+        notify(`Cada semana debe tener exactamente ${daysPerWeek} sesiones. Reintenta la generación.`);
         return;
       }
       setGeneratedPlan({ ...parsed, weeks: orderedWeeks });
-      setOpenWeeks(new Set([1]));
-      notify("Plan de 4 semanas generado ✓");
+      setOpenWeeks(new Set([1, 2]));
+      notify("Plan de 2 semanas generado ✓");
     } catch (e) {
       console.error(e);
       notify("Error al procesar el plan.");
@@ -2181,12 +2185,12 @@ Each workout: weekday 1-7, title, type, total_km, duration_min, brief descriptio
 
     const race = new Date(`${raceDate}T12:00:00`);
     const raceMonday = startOfWeekMonday(race);
-    const planStartMonday = addDays(raceMonday, -3 * 7);
+    const planStartMonday = addDays(raceMonday, -1 * 7);
 
     const rows = [];
     for (const week of generatedPlan.weeks) {
       const wn = Number(week.week_number) || 0;
-      if (wn < 1 || wn > 4) continue;
+      if (wn < 1 || wn > 2) continue;
       const list = Array.isArray(week.workouts) ? week.workouts : [];
       for (const wo of list) {
         let wd = Number(wo.weekday);
@@ -2197,13 +2201,14 @@ Each workout: weekday 1-7, title, type, total_km, duration_min, brief descriptio
         const scheduled_date = formatLocalYMD(sessionDate);
         const typeRaw = wo.type || "easy";
         const type = WORKOUT_TYPES.some((t) => t.id === typeRaw) ? typeRaw : "easy";
+        const kmVal = wo.total_km ?? wo.km;
         let structure = wo.structure;
         if (!Array.isArray(structure)) structure = [];
         rows.push({
           athlete_id: selectedAthlete.id,
           title: String(wo.title || "Entrenamiento"),
           type,
-          total_km: Number.isFinite(Number(wo.total_km)) ? Number(wo.total_km) : 0,
+          total_km: Number.isFinite(Number(kmVal)) ? Number(kmVal) : 0,
           duration_min: Number.isFinite(Number(wo.duration_min)) ? Number(wo.duration_min) : 0,
           description: String(wo.description || ""),
           structure,
@@ -2250,10 +2255,10 @@ Each workout: weekday 1-7, title, type, total_km, duration_min, brief descriptio
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               to: selectedAthlete.email,
-              subject: `Tu plan de 4 semanas: ${generatedPlan.plan_title || "PaceForge"}`,
+              subject: `Tu plan de 2 semanas: ${generatedPlan.plan_title || "PaceForge"}`,
               html: `
                 <h2>Hola ${selectedAthlete.name} 👋</h2>
-                <p>Tu coach te ha asignado un <strong>plan de 4 semanas</strong> en PaceForge.</p>
+                <p>Tu coach te ha asignado un <strong>plan de 2 semanas</strong> en PaceForge.</p>
                 <p><strong>Objetivo:</strong> ${PLAN_12_GOALS.find((g) => g.id === goalId)?.label || goalId}<br/>
                 <strong>Carrera:</strong> ${raceDate}</p>
                 <p><strong>${generatedPlan.plan_title || "Plan personalizado"}</strong></p>
@@ -2291,9 +2296,9 @@ Each workout: weekday 1-7, title, type, total_km, duration_min, brief descriptio
   return (
     <div style={S.page}>
       <div style={{ marginBottom: 24 }}>
-        <h1 style={S.pageTitle}>Plan 4 Semanas</h1>
+        <h1 style={S.pageTitle}>Plan 2 Semanas</h1>
         <p style={{ color: "#475569", fontSize: ".82em", marginTop: 4 }}>
-          Mesociclo corto con IA (hasta 3 sesiones por semana). Las fechas se anclan a la semana de la carrera (semana 4).
+          Bloque de 2 semanas con IA (3 a 5 sesiones por semana). La semana de la carrera es la semana 2.
         </p>
       </div>
 
@@ -2327,10 +2332,10 @@ Each workout: weekday 1-7, title, type, total_km, duration_min, brief descriptio
               </select>
             </div>
             <div>
-              <div style={labelStyle}>Sesiones por semana (máx. 3)</div>
+              <div style={labelStyle}>Sesiones por semana (3, 4 o 5)</div>
               <select value={String(daysPerWeek)} onChange={(e) => setDaysPerWeek(Number(e.target.value))} style={inputStyle}>
-                {[1, 2, 3].map((d) => (
-                  <option key={d} value={String(d)}>{d} {d === 1 ? "sesión" : "sesiones"}</option>
+                {[3, 4, 5].map((d) => (
+                  <option key={d} value={String(d)}>{d} sesiones</option>
                 ))}
               </select>
             </div>
@@ -2340,7 +2345,7 @@ Each workout: weekday 1-7, title, type, total_km, duration_min, brief descriptio
             </div>
             <button
               type="button"
-              onClick={generatePlan12}
+              onClick={generatePlan2}
               disabled={planLoading || !athletes?.length}
               style={{
                 marginTop: 6,
@@ -2386,11 +2391,11 @@ Each workout: weekday 1-7, title, type, total_km, duration_min, brief descriptio
           <div style={{ fontSize: ".65em", letterSpacing: ".13em", color: "#475569", textTransform: "uppercase", marginBottom: 14 }}>Vista previa</div>
           {!generatedPlan ? (
             <div style={{ color: "#64748b", fontSize: ".88em", lineHeight: 1.5 }}>
-              Completa el formulario y pulsa <strong>Generar Plan con IA</strong>. Aquí verás las 4 semanas en acordeón.
+              Completa el formulario y pulsa <strong>Generar Plan con IA</strong>. Aquí verás las 2 semanas en acordeón con todas las sesiones.
             </div>
           ) : (
             <>
-              <div style={{ fontSize: "1.05em", fontWeight: 700, color: "#e2e8f0", marginBottom: 16 }}>{generatedPlan.plan_title || "Plan 4 semanas"}</div>
+              <div style={{ fontSize: "1.05em", fontWeight: 700, color: "#e2e8f0", marginBottom: 16 }}>{generatedPlan.plan_title || "Plan 2 semanas"}</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 {[...generatedPlan.weeks].sort((a, b) => (Number(a.week_number) || 0) - (Number(b.week_number) || 0)).map((week) => {
                   const n = Number(week.week_number) || 0;
@@ -2446,7 +2451,7 @@ Each workout: weekday 1-7, title, type, total_km, duration_min, brief descriptio
                                   <div style={{ fontSize: ".78em", color: "#64748b", marginBottom: 4 }}>{dayName}</div>
                                   <div style={{ fontWeight: 700, color: "#e2e8f0", fontSize: ".88em" }}>{wo.title}</div>
                                   <div style={{ fontSize: ".76em", color: "#94a3b8", marginTop: 4 }}>
-                                    {wo.total_km} km · {wo.duration_min} min · <span style={{ color: wt.color }}>{wt.label}</span>
+                                    {Number(wo.total_km ?? wo.km) || 0} km · {wo.duration_min} min · <span style={{ color: wt.color }}>{wt.label}</span>
                                   </div>
                                   {wo.description && <div style={{ fontSize: ".78em", color: "#cbd5e1", marginTop: 8, lineHeight: 1.45 }}>{wo.description}</div>}
                                 </div>
