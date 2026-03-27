@@ -2100,6 +2100,14 @@ function Plan2Weeks({ athletes, notify, onPlanAssigned }) {
   const [assignLoading, setAssignLoading] = useState(false);
   const [openWeeks, setOpenWeeks] = useState(() => new Set());
   const [planAssignedSuccess, setPlanAssignedSuccess] = useState(false);
+  const [planEditModal, setPlanEditModal] = useState(null);
+  const [editDraft, setEditDraft] = useState({
+    title: "",
+    type: "easy",
+    total_km: 0,
+    duration_min: 0,
+    weekday: 2,
+  });
 
   useEffect(() => {
     if (athletes?.length && !athleteId) {
@@ -2110,6 +2118,28 @@ function Plan2Weeks({ athletes, notify, onPlanAssigned }) {
   useEffect(() => {
     setPlanAssignedSuccess(false);
   }, [athleteId]);
+
+  useEffect(() => {
+    if (!planEditModal || !generatedPlan) return;
+    const week = generatedPlan.weeks.find((w) => Number(w.week_number) === planEditModal.weekNumber);
+    if (!week) return;
+    if (planEditModal.workoutIdx === "new") {
+      setEditDraft({ title: "", type: "easy", total_km: 0, duration_min: 0, weekday: 2 });
+      return;
+    }
+    const wo = week.workouts?.[planEditModal.workoutIdx];
+    if (!wo) {
+      setPlanEditModal(null);
+      return;
+    }
+    setEditDraft({
+      title: String(wo.title || ""),
+      type: WORKOUT_TYPES.some((t) => t.id === wo.type) ? wo.type : "easy",
+      total_km: Number(wo.total_km ?? wo.km) || 0,
+      duration_min: Number(wo.duration_min) || 0,
+      weekday: Math.min(7, Math.max(1, Number(wo.weekday) || 2)),
+    });
+  }, [planEditModal, generatedPlan]);
 
   const toggleWeek = (weekNum) => {
     setOpenWeeks((prev) => {
@@ -2176,6 +2206,7 @@ Output 2 week objects with the correct ${daysPerWeek} workouts each; each workou
 
   const generatePlan2 = async () => {
     setPlanAssignedSuccess(false);
+    setPlanEditModal(null);
     setPlanLoading(true);
     setGeneratedPlan(null);
     try {
@@ -2342,6 +2373,49 @@ Output 2 week objects with the correct ${daysPerWeek} workouts each; each workou
     }
   };
 
+  const deletePlanWorkout = (weekNumber, workoutIndex, e) => {
+    e?.stopPropagation?.();
+    setGeneratedPlan((prev) => {
+      if (!prev?.weeks) return prev;
+      return {
+        ...prev,
+        weeks: prev.weeks.map((w) => {
+          if (Number(w.week_number) !== weekNumber) return w;
+          return { ...w, workouts: (w.workouts || []).filter((_, i) => i !== workoutIndex) };
+        }),
+      };
+    });
+  };
+
+  const savePlanEditModal = () => {
+    if (!planEditModal || !generatedPlan) return;
+    const { weekNumber, workoutIdx } = planEditModal;
+    setGeneratedPlan((prev) => {
+      if (!prev?.weeks) return prev;
+      return {
+        ...prev,
+        weeks: prev.weeks.map((w) => {
+          if (Number(w.week_number) !== weekNumber) return w;
+          const list = [...(w.workouts || [])];
+          const prevWo = workoutIdx !== "new" ? { ...(list[workoutIdx] || {}) } : {};
+          const merged = {
+            ...prevWo,
+            title: editDraft.title.trim() || "Entrenamiento",
+            type: editDraft.type,
+            total_km: Number(editDraft.total_km) || 0,
+            duration_min: Number(editDraft.duration_min) || 0,
+            weekday: Math.min(7, Math.max(1, Number(editDraft.weekday) || 1)),
+            description: typeof prevWo.description === "string" ? prevWo.description : "",
+          };
+          if (workoutIdx === "new") list.push(merged);
+          else list[workoutIdx] = merged;
+          return { ...w, workouts: list };
+        }),
+      };
+    });
+    setPlanEditModal(null);
+  };
+
   const inputStyle = {
     width: "100%",
     background: "rgba(255,255,255,.04)",
@@ -2452,6 +2526,7 @@ Output 2 week objects with the correct ${daysPerWeek} workouts each; each workou
                 type="button"
                 onClick={() => {
                   setPlanAssignedSuccess(false);
+                  setPlanEditModal(null);
                   setGeneratedPlan(null);
                   setOpenWeeks(new Set());
                   const next = addDays(new Date(`${raceDate}T12:00:00`), 14);
@@ -2480,6 +2555,11 @@ Output 2 week objects with the correct ${daysPerWeek} workouts each; each workou
 
         <div style={S.card}>
           <div style={{ fontSize: ".65em", letterSpacing: ".13em", color: "#475569", textTransform: "uppercase", marginBottom: 14 }}>Vista previa</div>
+          {generatedPlan && (
+            <p style={{ fontSize: ".78em", color: "#64748b", marginBottom: 12, marginTop: -6 }}>
+              Tocá una sesión para editarla. Los cambios se usan al asignar el plan.
+            </p>
+          )}
           {!generatedPlan ? (
             <div style={{ color: "#64748b", fontSize: ".88em", lineHeight: 1.5 }}>
               Completa el formulario y pulsa <strong>Generar Plan con IA</strong>. Aquí verás las 2 semanas en acordeón con todas las sesiones.
@@ -2521,6 +2601,25 @@ Output 2 week objects with the correct ${daysPerWeek} workouts each; each workou
                       </button>
                       {open && (
                         <div style={{ padding: "10px 14px 14px", background: "rgba(0,0,0,.12)" }}>
+                          <button
+                            type="button"
+                            onClick={() => setPlanEditModal({ weekNumber: n, workoutIdx: "new" })}
+                            style={{
+                              width: "100%",
+                              marginBottom: 12,
+                              background: "rgba(245,158,11,.1)",
+                              border: "1px dashed rgba(245,158,11,.35)",
+                              borderRadius: 8,
+                              padding: "8px 12px",
+                              color: "#fbbf24",
+                              fontWeight: 700,
+                              fontSize: ".8em",
+                              cursor: "pointer",
+                              fontFamily: "inherit",
+                            }}
+                          >
+                            ＋ Agregar Sesión
+                          </button>
                           {wos.length === 0 ? (
                             <div style={{ color: "#64748b", fontSize: ".82em" }}>Sin sesiones en esta semana.</div>
                           ) : (
@@ -2530,21 +2629,48 @@ Output 2 week objects with the correct ${daysPerWeek} workouts each; each workou
                               const wt = WORKOUT_TYPES.find((t) => t.id === wo.type) || WORKOUT_TYPES[0];
                               return (
                                 <div
-                                  key={idx}
+                                  key={`${n}-${idx}-${wo.title}-${wo.weekday}`}
+                                  role="button"
+                                  tabIndex={0}
+                                  onClick={() => setPlanEditModal({ weekNumber: n, workoutIdx: idx })}
+                                  onKeyDown={(ev) => ev.key === "Enter" && setPlanEditModal({ weekNumber: n, workoutIdx: idx })}
                                   style={{
                                     marginBottom: idx === wos.length - 1 ? 0 : 10,
                                     padding: 10,
                                     borderRadius: 8,
                                     background: "rgba(255,255,255,.03)",
                                     borderLeft: `3px solid ${wt.color}`,
+                                    cursor: "pointer",
+                                    display: "flex",
+                                    gap: 10,
+                                    alignItems: "flex-start",
                                   }}
                                 >
-                                  <div style={{ fontSize: ".78em", color: "#64748b", marginBottom: 4 }}>{dayName}</div>
-                                  <div style={{ fontWeight: 700, color: "#e2e8f0", fontSize: ".88em" }}>{wo.title}</div>
-                                  <div style={{ fontSize: ".76em", color: "#94a3b8", marginTop: 4 }}>
-                                    {Number(wo.total_km ?? wo.km) || 0} km · {wo.duration_min} min · <span style={{ color: wt.color }}>{wt.label}</span>
+                                  <div style={{ flex: 1, minWidth: 0 }}>
+                                    <div style={{ fontSize: ".78em", color: "#64748b", marginBottom: 4 }}>{dayName}</div>
+                                    <div style={{ fontWeight: 700, color: "#e2e8f0", fontSize: ".88em" }}>{wo.title || "Sin título"}</div>
+                                    <div style={{ fontSize: ".76em", color: "#94a3b8", marginTop: 4 }}>
+                                      {Number(wo.total_km ?? wo.km) || 0} km · {wo.duration_min} min · <span style={{ color: wt.color }}>{wt.label}</span>
+                                    </div>
+                                    {wo.description && <div style={{ fontSize: ".78em", color: "#cbd5e1", marginTop: 8, lineHeight: 1.45 }}>{wo.description}</div>}
                                   </div>
-                                  {wo.description && <div style={{ fontSize: ".78em", color: "#cbd5e1", marginTop: 8, lineHeight: 1.45 }}>{wo.description}</div>}
+                                  <button
+                                    type="button"
+                                    title="Eliminar sesión"
+                                    onClick={(e) => deletePlanWorkout(n, idx, e)}
+                                    style={{
+                                      flexShrink: 0,
+                                      background: "rgba(239,68,68,.12)",
+                                      border: "1px solid rgba(239,68,68,.3)",
+                                      borderRadius: 6,
+                                      padding: "6px 10px",
+                                      cursor: "pointer",
+                                      fontSize: ".85em",
+                                      lineHeight: 1,
+                                    }}
+                                  >
+                                    🗑
+                                  </button>
                                 </div>
                               );
                             })
@@ -2559,6 +2685,114 @@ Output 2 week objects with the correct ${daysPerWeek} workouts each; each workou
           )}
         </div>
       </div>
+
+      {planEditModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 220, padding: 16 }}>
+          <div style={{ ...S.card, width: "100%", maxWidth: 420, margin: 0 }}>
+            <div style={{ fontSize: ".95em", fontWeight: 700, color: "#e2e8f0", marginBottom: 6 }}>
+              {planEditModal.workoutIdx === "new" ? "Nueva sesión" : "Editar sesión"}
+            </div>
+            <div style={{ fontSize: ".75em", color: "#64748b", marginBottom: 14 }}>
+              Semana {planEditModal.weekNumber}. El día de la semana define la fecha al asignar.
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <div>
+                <div style={labelStyle}>Título</div>
+                <input
+                  value={editDraft.title}
+                  onChange={(e) => setEditDraft((d) => ({ ...d, title: e.target.value }))}
+                  placeholder="Ej: Rodaje suave 45'"
+                  style={inputStyle}
+                />
+              </div>
+              <div>
+                <div style={labelStyle}>Tipo</div>
+                <select
+                  value={editDraft.type}
+                  onChange={(e) => setEditDraft((d) => ({ ...d, type: e.target.value }))}
+                  style={inputStyle}
+                >
+                  {WORKOUT_TYPES.map((t) => (
+                    <option key={t.id} value={t.id}>{t.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <div>
+                  <div style={labelStyle}>Km</div>
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.1}
+                    value={editDraft.total_km}
+                    onChange={(e) => setEditDraft((d) => ({ ...d, total_km: Number(e.target.value) }))}
+                    style={inputStyle}
+                  />
+                </div>
+                <div>
+                  <div style={labelStyle}>Duración (min)</div>
+                  <input
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={editDraft.duration_min}
+                    onChange={(e) => setEditDraft((d) => ({ ...d, duration_min: Number(e.target.value) }))}
+                    style={inputStyle}
+                  />
+                </div>
+              </div>
+              <div>
+                <div style={labelStyle}>Día de la semana</div>
+                <select
+                  value={String(editDraft.weekday)}
+                  onChange={(e) => setEditDraft((d) => ({ ...d, weekday: Number(e.target.value) }))}
+                  style={inputStyle}
+                >
+                  {DAYS.map((label, i) => (
+                    <option key={label} value={String(i + 1)}>{label} ({i + 1})</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 18 }}>
+              <button
+                type="button"
+                onClick={() => setPlanEditModal(null)}
+                style={{
+                  background: "rgba(255,255,255,.03)",
+                  border: "1px solid rgba(255,255,255,.1)",
+                  borderRadius: 8,
+                  padding: "8px 14px",
+                  color: "#94a3b8",
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                  fontWeight: 700,
+                  fontSize: ".82em",
+                }}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={savePlanEditModal}
+                style={{
+                  background: "linear-gradient(135deg,#b45309,#f59e0b)",
+                  border: "none",
+                  borderRadius: 8,
+                  padding: "8px 14px",
+                  color: "white",
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                  fontWeight: 800,
+                  fontSize: ".82em",
+                }}
+              >
+                Guardar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
