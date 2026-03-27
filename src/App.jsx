@@ -2357,59 +2357,6 @@ Output 2 week objects with the correct ${daysPerWeek} workouts each; each workou
         </p>
       </div>
 
-      <div style={{ ...S.card, marginBottom: 22 }}>
-        <div style={{ fontSize: ".65em", letterSpacing: ".13em", color: "#475569", textTransform: "uppercase", marginBottom: 12 }}>
-          Prompt exacto enviado a la IA
-        </div>
-        <p style={{ fontSize: ".72em", color: "#64748b", marginBottom: 14 }}>
-          Mismo contenido que en <code style={{ color: "#94a3b8" }}>system</code> y el mensaje <code style={{ color: "#94a3b8" }}>user</code> del cuerpo POST a <code style={{ color: "#94a3b8" }}>/api/generate-workout</code> (modelo Claude + max_tokens 3000). Se actualiza al cambiar el formulario.
-        </p>
-        <div style={{ marginBottom: 16 }}>
-          <div style={{ fontSize: ".78em", fontWeight: 700, color: "#f59e0b", marginBottom: 8 }}>system</div>
-          <pre
-            style={{
-              margin: 0,
-              padding: 12,
-              borderRadius: 8,
-              background: "rgba(0,0,0,.35)",
-              border: "1px solid rgba(255,255,255,.08)",
-              color: "#cbd5e1",
-              fontSize: ".72em",
-              lineHeight: 1.45,
-              whiteSpace: "pre-wrap",
-              wordBreak: "break-word",
-              maxHeight: 320,
-              overflowY: "auto",
-              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
-            }}
-          >
-            {plan2SystemPrompt}
-          </pre>
-        </div>
-        <div>
-          <div style={{ fontSize: ".78em", fontWeight: 700, color: "#38bdf8", marginBottom: 8 }}>user (mensaje)</div>
-          <pre
-            style={{
-              margin: 0,
-              padding: 12,
-              borderRadius: 8,
-              background: "rgba(0,0,0,.35)",
-              border: "1px solid rgba(255,255,255,.08)",
-              color: "#cbd5e1",
-              fontSize: ".72em",
-              lineHeight: 1.45,
-              whiteSpace: "pre-wrap",
-              wordBreak: "break-word",
-              maxHeight: 240,
-              overflowY: "auto",
-              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
-            }}
-          >
-            {plan2UserPrompt}
-          </pre>
-        </div>
-      </div>
-
       <div style={{ display: "grid", gridTemplateColumns: "minmax(280px, 360px) 1fr", gap: 22, alignItems: "start" }}>
         <div style={S.card}>
           <div style={{ fontSize: ".65em", letterSpacing: ".13em", color: "#475569", textTransform: "uppercase", marginBottom: 16 }}>Parámetros del plan</div>
