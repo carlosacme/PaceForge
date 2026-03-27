@@ -2099,12 +2099,17 @@ function Plan2Weeks({ athletes, notify, onPlanAssigned }) {
   const [planLoading, setPlanLoading] = useState(false);
   const [assignLoading, setAssignLoading] = useState(false);
   const [openWeeks, setOpenWeeks] = useState(() => new Set());
+  const [planAssignedSuccess, setPlanAssignedSuccess] = useState(false);
 
   useEffect(() => {
     if (athletes?.length && !athleteId) {
       setAthleteId(String(athletes[0].id));
     }
   }, [athletes, athleteId]);
+
+  useEffect(() => {
+    setPlanAssignedSuccess(false);
+  }, [athleteId]);
 
   const toggleWeek = (weekNum) => {
     setOpenWeeks((prev) => {
@@ -2170,6 +2175,7 @@ Output 2 week objects with the correct ${daysPerWeek} workouts each; each workou
   }, [goalId, levelId, daysPerWeek, raceDate]);
 
   const generatePlan2 = async () => {
+    setPlanAssignedSuccess(false);
     setPlanLoading(true);
     setGeneratedPlan(null);
     try {
@@ -2294,6 +2300,8 @@ Output 2 week objects with the correct ${daysPerWeek} workouts each; each workou
         alert(`Error: ${error.message}`);
         return;
       }
+
+      setPlanAssignedSuccess(true);
       onPlanAssigned?.();
 
       if (selectedAthlete.email) {
@@ -2437,6 +2445,34 @@ Output 2 week objects with the correct ${daysPerWeek} workouts each; each workou
                 }}
               >
                 {assignLoading ? "Guardando…" : "Asignar Plan al Atleta"}
+              </button>
+            )}
+            {planAssignedSuccess && (
+              <button
+                type="button"
+                onClick={() => {
+                  setPlanAssignedSuccess(false);
+                  setGeneratedPlan(null);
+                  setOpenWeeks(new Set());
+                  const next = addDays(new Date(`${raceDate}T12:00:00`), 14);
+                  setRaceDate(formatLocalYMD(next));
+                  notify("Siguiente bloque: fecha de carrera avanzada 2 semanas. Genera el plan con IA cuando quieras.");
+                }}
+                style={{
+                  width: "100%",
+                  marginTop: 4,
+                  background: "rgba(34,197,94,.12)",
+                  border: "1px solid rgba(34,197,94,.4)",
+                  borderRadius: 8,
+                  padding: "12px 16px",
+                  color: "#4ade80",
+                  fontWeight: 800,
+                  cursor: "pointer",
+                  fontSize: ".85em",
+                  fontFamily: "inherit",
+                }}
+              >
+                ⚡ Generar Siguiente Bloque
               </button>
             )}
           </div>
