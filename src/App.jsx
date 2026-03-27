@@ -79,7 +79,45 @@ const normalizeAthlete = (athlete) => ({
   device: typeof athlete?.device === "string" ? athlete.device : "",
   plan: typeof athlete?.plan === "string" ? athlete.plan : "",
   coach_id: athlete?.coach_id ?? "",
+  fc_max: Number.isFinite(Number(athlete?.fc_max)) && Number(athlete.fc_max) > 0 ? Math.round(Number(athlete.fc_max)) : null,
+  fc_reposo: Number.isFinite(Number(athlete?.fc_reposo)) && Number(athlete.fc_reposo) > 0 ? Math.round(Number(athlete.fc_reposo)) : null,
 });
+
+/** Zonas % de FC máx (bpm). */
+const HR_ZONE_DEFS = [
+  { z: 1, lowPct: 0.5, highPct: 0.6, label: "Recuperación activa", color: "#22c55e" },
+  { z: 2, lowPct: 0.6, highPct: 0.7, label: "Aeróbico base", color: "#3b82f6" },
+  { z: 3, lowPct: 0.7, highPct: 0.8, label: "Aeróbico tempo", color: "#eab308" },
+  { z: 4, lowPct: 0.8, highPct: 0.9, label: "Umbral anaeróbico", color: "#f97316" },
+  { z: 5, lowPct: 0.9, highPct: 1.0, label: "VO2 max", color: "#ef4444" },
+];
+
+const computeAthleteHrZones = (fcMax) => {
+  const max = Number(fcMax);
+  if (!Number.isFinite(max) || max <= 0) return null;
+  return HR_ZONE_DEFS.map((d) => ({
+    zone: d.z,
+    low: Math.round(max * d.lowPct),
+    high: Math.round(max * d.highPct),
+    label: d.label,
+    color: d.color,
+    pctLabel: `${d.lowPct * 100}-${d.highPct * 100}% FC máx`,
+  }));
+};
+
+const buildAthleteHrZonesPromptText = (athlete) => {
+  if (!athlete || !athlete.fc_max || athlete.fc_max <= 0) return "";
+  const zones = computeAthleteHrZones(athlete.fc_max);
+  if (!zones) return "";
+  const lines = zones.map(
+    (z) => `Z${z.zone} (${z.pctLabel}): ${z.low}-${z.high} bpm — ${z.label}`,
+  );
+  let t = `Athlete heart rate zones (based on max HR ${athlete.fc_max} bpm):\n${lines.join("\n")}`;
+  if (athlete.fc_reposo && athlete.fc_reposo > 0) {
+    t += `\nResting HR (reference): ${athlete.fc_reposo} bpm.`;
+  }
+  return t;
+};
 
 const formatMessageTimestamp = (iso) => {
   if (!iso) return "";
@@ -841,6 +879,14 @@ export default function App() {
               setAthletes(prev => prev.map(a => (String(a.id) === String(athleteId) ? { ...a, device } : a)));
               setSelectedAthlete(prev => (prev && String(prev.id) === String(athleteId) ? { ...prev, device } : prev));
             }}
+            onAthleteFcSync={(athleteId, fc_max, fc_reposo) => {
+              setAthletes((prev) =>
+                prev.map((a) => (String(a.id) === String(athleteId) ? normalizeAthlete({ ...a, fc_max, fc_reposo }) : a)),
+              );
+              setSelectedAthlete((prev) =>
+                prev && String(prev.id) === String(athleteId) ? normalizeAthlete({ ...prev, fc_max, fc_reposo }) : prev,
+              );
+            }}
           />
         )}
         {view === "plans" && <Plans athletes={athletes} />}
@@ -1235,7 +1281,7 @@ function Dashboard({
   );
 }
 
-function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWorkoutsDoneSync, onAthleteDeviceSync }) {
+function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWorkoutsDoneSync, onAthleteDeviceSync, onAthleteFcSync }) {
   const S = styles;
   const athlete = (selected ? athletes.find(a => String(a.id) === String(selected.id)) : athletes[0]) || null;
   const [searchQuery, setSearchQuery] = useState("");
@@ -1243,6 +1289,9 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
   const [loadingWorkouts, setLoadingWorkouts] = useState(false);
   const [deviceModal, setDeviceModal] = useState({ open: false, provider: null });
   const [deviceMessage, setDeviceMessage] = useState("");
+  const [fcMaxInput, setFcMaxInput] = useState("");
+  const [fcReposoInput, setFcReposoInput] = useState("");
+  const [fcSaving, setFcSaving] = useState(false);
   const [coachId, setCoachId] = useState(null);
   const [chatMessages, setChatMessages] = useState([]);
   const [chatDraft, setChatDraft] = useState("");
@@ -1390,6 +1439,16 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
   }, []);
 
   useEffect(() => {
+    if (!athlete?.id) {
+      setFcMaxInput("");
+      setFcReposoInput("");
+      return;
+    }
+    setFcMaxInput(athlete.fc_max != null && athlete.fc_max > 0 ? String(athlete.fc_max) : "");
+    setFcReposoInput(athlete.fc_reposo != null && athlete.fc_reposo > 0 ? String(athlete.fc_reposo) : "");
+  }, [athlete?.id, athlete?.fc_max, athlete?.fc_reposo]);
+
+  useEffect(() => {
     loadCoachChat();
   }, [loadCoachChat]);
 
@@ -1402,6 +1461,32 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
     if (!chatScrollRef.current) return;
     chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
   }, [chatMessages]);
+
+  const saveAthleteFc = async () => {
+    if (!athlete?.id) return;
+    const fcmax = fcMaxInput.trim() === "" ? null : Math.round(Number(fcMaxInput));
+    const fcr = fcReposoInput.trim() === "" ? null : Math.round(Number(fcReposoInput));
+    if (fcmax != null && (!Number.isFinite(fcmax) || fcmax < 30 || fcmax > 250)) {
+      alert("FC máxima: indica un valor entre 30 y 250 lpm, o déjalo vacío.");
+      return;
+    }
+    if (fcr != null && (!Number.isFinite(fcr) || fcr < 30 || fcr > 120)) {
+      alert("FC reposo: indica un valor entre 30 y 120 lpm, o déjalo vacío.");
+      return;
+    }
+    setFcSaving(true);
+    try {
+      const { error } = await supabase.from("athletes").update({ fc_max: fcmax, fc_reposo: fcr }).eq("id", athlete.id);
+      if (error) {
+        console.error(error);
+        alert(`Error al guardar FC: ${error.message}`);
+        return;
+      }
+      onAthleteFcSync?.(athlete.id, fcmax, fcr);
+    } finally {
+      setFcSaving(false);
+    }
+  };
 
   const sendCoachChat = async () => {
     const body = chatDraft.trim();
@@ -1481,6 +1566,82 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
               </div>
             ))}
           </div>
+
+          <div style={{ marginBottom: 24, paddingBottom: 20, borderBottom: "1px solid rgba(255,255,255,.06)" }}>
+            <div style={{ fontSize: ".65em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase", marginBottom: 12 }}>
+              ZONAS FC
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-end", marginBottom: 14 }}>
+              <div style={{ flex: "1 1 120px", minWidth: 100 }}>
+                <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>FC máx (lpm)</div>
+                <input
+                  type="number"
+                  min={30}
+                  max={250}
+                  placeholder="Ej: 185"
+                  value={fcMaxInput}
+                  onChange={(e) => setFcMaxInput(e.target.value)}
+                  style={{ width: "100%", background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 8, padding: "8px 10px", color: "#e2e8f0", fontFamily: "inherit", fontSize: ".85em", outline: "none", boxSizing: "border-box" }}
+                />
+              </div>
+              <div style={{ flex: "1 1 120px", minWidth: 100 }}>
+                <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>FC reposo (lpm)</div>
+                <input
+                  type="number"
+                  min={30}
+                  max={120}
+                  placeholder="Ej: 48"
+                  value={fcReposoInput}
+                  onChange={(e) => setFcReposoInput(e.target.value)}
+                  style={{ width: "100%", background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 8, padding: "8px 10px", color: "#e2e8f0", fontFamily: "inherit", fontSize: ".85em", outline: "none", boxSizing: "border-box" }}
+                />
+              </div>
+              <button
+                type="button"
+                onClick={saveAthleteFc}
+                disabled={fcSaving}
+                style={{
+                  background: fcSaving ? "rgba(255,255,255,.06)" : "linear-gradient(135deg,#b45309,#f59e0b)",
+                  border: "none",
+                  borderRadius: 8,
+                  padding: "10px 16px",
+                  color: fcSaving ? "#64748b" : "white",
+                  fontWeight: 800,
+                  cursor: fcSaving ? "not-allowed" : "pointer",
+                  fontFamily: "inherit",
+                  fontSize: ".82em",
+                }}
+              >
+                {fcSaving ? "Guardando…" : "Guardar FC"}
+              </button>
+            </div>
+            {(() => {
+              const zones = computeAthleteHrZones(athlete.fc_max);
+              return zones ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {zones.map((z) => (
+                  <div key={z.zone}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4, fontSize: ".78em" }}>
+                      <span style={{ color: "#e2e8f0", fontWeight: 600 }}>
+                        Zona {z.zone}: {z.low}–{z.high} lpm
+                      </span>
+                      <span style={{ color: "#64748b", fontSize: ".72em" }}>{z.pctLabel}</span>
+                    </div>
+                    <div style={{ fontSize: ".72em", color: "#94a3b8", marginBottom: 4 }}>{z.label}</div>
+                    <div style={{ height: 10, borderRadius: 5, background: "rgba(255,255,255,.06)", overflow: "hidden" }}>
+                      <div style={{ height: "100%", width: "100%", background: z.color, borderRadius: 5, opacity: 0.95 }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+              ) : (
+              <div style={{ color: "#64748b", fontSize: ".82em" }}>
+                Indica una FC máx válida y pulsa Guardar FC para ver las 5 zonas.
+              </div>
+              );
+            })()}
+          </div>
+
           <div style={{ fontSize: ".65em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase", marginBottom: 10 }}>
             CALENDARIO — {formatLocalYMD(calendarCells[0])} → {formatLocalYMD(calendarCells[calendarCells.length - 1])}
           </div>
@@ -2824,6 +2985,7 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
   const [assignAthleteId, setAssignAthleteId] = useState("");
   const [assignDate, setAssignDate] = useState(() => formatLocalYMD(new Date()));
   const [assignSaving, setAssignSaving] = useState(false);
+  const [builderHrAthleteId, setBuilderHrAthleteId] = useState("");
 
   const openAssignModal = () => {
     if (!aiWorkout) return;
@@ -2913,13 +3075,20 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
     setAiLoading(true);
     setAiWorkout(null);
     try {
+      const hrAthlete = builderHrAthleteId ? athletes.find((a) => String(a.id) === String(builderHrAthleteId)) : null;
+      const zonesBlock = hrAthlete ? buildAthleteHrZonesPromptText(hrAthlete) : "";
+      const baseSystem =
+        'You are an elite running coach. Generate a structured workout in JSON only. No markdown, no backticks. Format: {"title":"...","type":"easy|tempo|interval|long|recovery","total_km":number,"duration_min":number,"description":"...","structure":[{"phase":"...","duration":"...","intensity":"...","pace":"..."}]}';
+      const system = zonesBlock
+        ? `${baseSystem}\n\n${zonesBlock}\nWhen setting structure, align intensity with these HR zones where it fits (reference bpm or zone Z1-Z5 in the intensity field when useful).`
+        : baseSystem;
       const res = await fetch("/api/generate-workout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           model: "claude-sonnet-4-20250514",
           max_tokens: 2000,
-          system: `You are an elite running coach. Generate a structured workout in JSON only. No markdown, no backticks. Format: {"title":"...","type":"easy|tempo|interval|long|recovery","total_km":number,"duration_min":number,"description":"...","structure":[{"phase":"...","duration":"...","intensity":"...","pace":"..."}]}`,
+          system,
           messages: [{ role: "user", content: aiPrompt }],
         }),
       });
@@ -2955,6 +3124,21 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
         <div style={S.card}>
           <div style={{ fontSize: ".65em", letterSpacing: ".13em", color: "#475569", textTransform: "uppercase", marginBottom: 14 }}>⚡ DESCRIBE EL ENTRENAMIENTO</div>
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Zonas FC en el prompt (atleta con FC máx guardada)</div>
+            <select
+              value={builderHrAthleteId}
+              onChange={(e) => setBuilderHrAthleteId(e.target.value)}
+              style={{ width: "100%", background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 8, padding: "10px 12px", color: "#e2e8f0", fontFamily: "inherit", fontSize: ".85em", outline: "none", boxSizing: "border-box" }}
+            >
+              <option value="">Sin zonas FC en el prompt</option>
+              {(athletes || []).map((a) => (
+                <option key={a.id} value={String(a.id)}>
+                  {a.name}{a.fc_max ? ` (${a.fc_max} lpm)` : " — sin FC máx"}
+                </option>
+              ))}
+            </select>
+          </div>
           <textarea value={aiPrompt} onChange={e=>setAiPrompt(e.target.value)} placeholder="Ej: Intervalos 6x800m para atleta sub 4h maratón..." style={{ width: "100%", background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 8, padding: "12px 14px", color: "#e2e8f0", fontFamily: "inherit", fontSize: ".85em", resize: "vertical", outline: "none", marginBottom: 12, boxSizing: "border-box" }} rows={5} />
           <div style={{ marginBottom: 12 }}>
             <div style={{ fontSize: ".72em", color: "#475569", marginBottom: 8 }}>SUGERENCIAS:</div>
