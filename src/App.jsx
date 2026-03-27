@@ -226,6 +226,24 @@ const validatePlan2Distribution = (weeks, sessionsPerWeek) => {
   return null;
 };
 
+const clampWorkoutRpe = (n) => {
+  const v = Number(n);
+  if (!Number.isFinite(v)) return null;
+  const i = Math.round(v);
+  if (i < 1 || i > 10) return null;
+  return i;
+};
+
+/** Emoji por banda RPE (1–10). */
+const rpeBandMeta = (rpe) => {
+  if (rpe == null || rpe < 1 || rpe > 10) return { emoji: "", label: "" };
+  if (rpe <= 3) return { emoji: "😌", label: "Muy fácil" };
+  if (rpe <= 5) return { emoji: "🙂", label: "Moderado" };
+  if (rpe <= 7) return { emoji: "😤", label: "Duro" };
+  if (rpe <= 9) return { emoji: "😰", label: "Muy duro" };
+  return { emoji: "🔥", label: "Máximo" };
+};
+
 const normalizeWorkoutRow = (row) => {
   let structure = row.structure;
   if (typeof structure === "string") {
@@ -246,6 +264,7 @@ const normalizeWorkoutRow = (row) => {
     description: row.description || "",
     structure: Array.isArray(structure) ? structure : [],
     done: Boolean(row.done),
+    rpe: clampWorkoutRpe(row.rpe),
   };
 };
 
@@ -985,10 +1004,13 @@ function Dashboard({
     [dashAthletes],
   );
 
-  const { weekWorkoutsTotal, weekWorkoutsDone } = useMemo(() => ({
-    weekWorkoutsTotal: weekWorkouts.length,
-    weekWorkoutsDone: weekWorkouts.filter((w) => w.done).length,
-  }), [weekWorkouts]);
+  const { weekWorkoutsTotal, weekWorkoutsDone, weekAvgRpe, weekRpeCount } = useMemo(() => {
+    const total = weekWorkouts.length;
+    const done = weekWorkouts.filter((w) => w.done).length;
+    const rpeVals = weekWorkouts.filter((w) => w.done && w.rpe != null).map((w) => w.rpe);
+    const avgRpe = rpeVals.length ? rpeVals.reduce((a, b) => a + b, 0) / rpeVals.length : null;
+    return { weekWorkoutsTotal: total, weekWorkoutsDone: done, weekAvgRpe: avgRpe, weekRpeCount: rpeVals.length };
+  }, [weekWorkouts]);
 
   const globalAdherencePct = weekWorkoutsTotal > 0
     ? Math.round((weekWorkoutsDone / weekWorkoutsTotal) * 100)
@@ -1141,7 +1163,7 @@ function Dashboard({
         <div style={{ color: "#94a3b8", padding: "24px 0" }}>Cargando métricas desde Supabase…</div>
       ) : (
         <>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14, marginBottom: 28 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 14, marginBottom: 28 }}>
             {[
               { label: "Atletas activos", value: dashAthletes.length, sub: "Registrados bajo tu cuenta", icon: "🏃", color: "#f59e0b" },
               { label: "Km objetivo / semana", value: `${totalWeeklyKmTarget} km`, sub: "Suma de weekly_km de tus atletas", icon: "📍", color: "#3b82f6" },
@@ -1151,6 +1173,16 @@ function Dashboard({
                 sub: weekWorkoutsTotal ? `${weekWorkoutsDone} de ${weekWorkoutsTotal} workouts esta semana` : "Sin entrenamientos programados esta semana",
                 icon: "✅",
                 color: "#22c55e",
+              },
+              {
+                label: "Carga promedio RPE",
+                value: weekAvgRpe != null ? weekAvgRpe.toFixed(1) : "—",
+                sub:
+                  weekAvgRpe != null
+                    ? `Promedio de RPE en sesiones completadas con registro (${weekRpeCount} sesiones)`
+                    : "Ningún workout completado con RPE esta semana",
+                icon: "📊",
+                color: "#a855f7",
               },
             ].map((s, i) => (
               <div key={i} style={S.card}>
@@ -1357,13 +1389,14 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
 
   const toggleWorkoutDone = async (w) => {
     const next = !w.done;
-    const { error } = await supabase.from("workouts").update({ done: next }).eq("id", w.id);
+    const payload = next ? { done: true } : { done: false, rpe: null };
+    const { error } = await supabase.from("workouts").update(payload).eq("id", w.id);
     if (error) {
       console.error(error);
       alert(`Error al actualizar: ${error.message}`);
       return;
     }
-    const nextWorkouts = workouts.map(x => (x.id === w.id ? { ...x, done: next } : x));
+    const nextWorkouts = workouts.map(x => (x.id === w.id ? { ...x, done: next, rpe: next ? x.rpe : null } : x));
     setWorkouts(nextWorkouts);
 
     const workoutsDone = nextWorkouts.filter(x => x.done).length;
@@ -1698,6 +1731,11 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
                           <div style={{ fontSize: ".52em", color: wt.color, fontWeight: 600, lineHeight: 1.15 }}>{w.title}</div>
                           <div style={{ fontSize: ".5em", color: "#475569" }}>{w.total_km} km</div>
                           {w.done && <div style={{ fontSize: ".52em", color: "#22c55e", marginTop: 1 }}>✓ Hecho</div>}
+                          {w.done && w.rpe != null && (
+                            <div style={{ fontSize: ".52em", color: "#94a3b8", marginTop: 2, lineHeight: 1.2 }}>
+                              {rpeBandMeta(w.rpe).emoji} RPE {w.rpe}
+                            </div>
+                          )}
                         </button>
                       );
                     })}
@@ -1964,12 +2002,26 @@ function AthleteHome({ profile }) {
 
   const toggleDone = async (w) => {
     const next = !w.done;
-    setWorkouts(prev => prev.map(x => (x.id === w.id ? { ...x, done: next } : x)));
-    const { error } = await supabase.from("workouts").update({ done: next }).eq("id", w.id);
+    const payload = next ? { done: true } : { done: false, rpe: null };
+    setWorkouts(prev => prev.map(x => (x.id === w.id ? { ...x, done: next, rpe: next ? x.rpe : null } : x)));
+    const { error } = await supabase.from("workouts").update(payload).eq("id", w.id);
     if (error) {
       console.error("Error actualizando workout:", error);
-      setWorkouts(prev => prev.map(x => (x.id === w.id ? { ...x, done: !next } : x)));
+      setWorkouts(prev => prev.map(x => (x.id === w.id ? { ...x, done: !next, rpe: w.rpe } : x)));
       setMessage(`Error actualizando workout: ${error.message}`);
+    }
+  };
+
+  const saveWorkoutRpe = async (w, rawVal) => {
+    if (!w.done) return;
+    const rpe = clampWorkoutRpe(rawVal);
+    if (rpe == null) return;
+    setWorkouts((prev) => prev.map((x) => (x.id === w.id ? { ...x, rpe } : x)));
+    const { error } = await supabase.from("workouts").update({ rpe }).eq("id", w.id);
+    if (error) {
+      console.error("Error guardando RPE:", error);
+      setWorkouts((prev) => prev.map((x) => (x.id === w.id ? { ...x, rpe: w.rpe } : x)));
+      setMessage(`Error guardando RPE: ${error.message}`);
     }
   };
 
@@ -2117,28 +2169,67 @@ function AthleteHome({ profile }) {
                   {dayWorkouts.map(w => {
                     const wt = WORKOUT_TYPES.find(t => t.id === w.type) || WORKOUT_TYPES[0];
                     return (
-                      <button
-                        key={w.id}
-                        type="button"
-                        onClick={() => toggleDone(w)}
-                        title={w.done ? "Marcar como pendiente" : "Marcar como hecho"}
-                        style={{
-                          border: `1px solid ${w.done ? "rgba(34,197,94,.55)" : `${wt.color}55`}`,
-                          borderRadius: 5,
-                          padding: "4px 3px",
-                          background: w.done ? "rgba(34,197,94,.16)" : `${wt.color}12`,
-                          cursor: "pointer",
-                          fontFamily: "inherit",
-                          textAlign: "center",
-                          width: "100%",
-                          boxSizing: "border-box",
-                        }}
-                      >
-                        <div style={{ width: 5, height: 5, borderRadius: "50%", background: wt.color, margin: "0 auto 2px" }} />
-                        <div style={{ fontSize: ".52em", color: wt.color, fontWeight: 600, lineHeight: 1.15 }}>{w.title}</div>
-                        <div style={{ fontSize: ".5em", color: "#475569" }}>{w.total_km} km</div>
-                        {w.done && <div style={{ fontSize: ".52em", color: "#22c55e", marginTop: 1 }}>✓ Hecho</div>}
-                      </button>
+                      <div key={w.id} style={{ display: "flex", flexDirection: "column", gap: 3, width: "100%", minWidth: 0 }}>
+                        <button
+                          type="button"
+                          onClick={() => toggleDone(w)}
+                          title={w.done ? "Marcar como pendiente" : "Marcar como hecho"}
+                          style={{
+                            border: `1px solid ${w.done ? "rgba(34,197,94,.55)" : `${wt.color}55`}`,
+                            borderRadius: 5,
+                            padding: "4px 3px",
+                            background: w.done ? "rgba(34,197,94,.16)" : `${wt.color}12`,
+                            cursor: "pointer",
+                            fontFamily: "inherit",
+                            textAlign: "center",
+                            width: "100%",
+                            boxSizing: "border-box",
+                          }}
+                        >
+                          <div style={{ width: 5, height: 5, borderRadius: "50%", background: wt.color, margin: "0 auto 2px" }} />
+                          <div style={{ fontSize: ".52em", color: wt.color, fontWeight: 600, lineHeight: 1.15 }}>{w.title}</div>
+                          <div style={{ fontSize: ".5em", color: "#475569" }}>{w.total_km} km</div>
+                          {w.done && <div style={{ fontSize: ".52em", color: "#22c55e", marginTop: 1 }}>✓ Hecho</div>}
+                        </button>
+                        {w.done && (
+                          <label style={{ display: "flex", flexDirection: "column", gap: 2, fontSize: ".48em", color: "#64748b", textAlign: "center" }}>
+                            <span style={{ letterSpacing: ".04em" }}>¿Cómo te sentiste? (RPE)</span>
+                            <select
+                              value={w.rpe ?? ""}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                if (v === "") return;
+                                saveWorkoutRpe(w, v);
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                              style={{
+                                width: "100%",
+                                maxWidth: "100%",
+                                background: "rgba(0,0,0,.35)",
+                                border: "1px solid rgba(255,255,255,.12)",
+                                borderRadius: 4,
+                                padding: "3px 2px",
+                                color: "#e2e8f0",
+                                fontFamily: "inherit",
+                                fontSize: "inherit",
+                                cursor: "pointer",
+                                boxSizing: "border-box",
+                              }}
+                            >
+                              <option value="">Elegir 1–10…</option>
+                              {Array.from({ length: 10 }, (_, i) => {
+                                const n = i + 1;
+                                const { emoji, label } = rpeBandMeta(n);
+                                return (
+                                  <option key={n} value={String(n)}>
+                                    {n} {emoji} {label}
+                                  </option>
+                                );
+                              })}
+                            </select>
+                          </label>
+                        )}
+                      </div>
                     );
                   })}
                 </div>
