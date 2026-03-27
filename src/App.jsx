@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "./lib/supabase";
 
 const WORKOUT_TYPES = [
@@ -40,6 +40,27 @@ const getRaceCountdownText = (nextRace) => {
   const label = daysLeft === 1 ? "día" : "días";
 
   return `🏁 ${raceName} · faltan ${daysLeft} ${label}`;
+};
+
+/** Etiqueta de carrera y días restantes (para tablas y métricas). */
+const getRaceMeta = (nextRace) => {
+  if (!nextRace || typeof nextRace !== "string") return { name: "—", daysLeft: null };
+  const [raceNameRaw, datePartRaw] = nextRace.split(" - ");
+  const raceName = (raceNameRaw || "Próxima carrera").trim();
+  const datePart = (datePartRaw || "").trim();
+  const [monthAbbr, dayRaw] = datePart.split(/\s+/);
+  const month = MONTH_INDEX[monthAbbr];
+  const day = Number(dayRaw);
+  if (month === undefined || !Number.isFinite(day)) {
+    return { name: raceName, daysLeft: null };
+  }
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  let raceDate = new Date(today.getFullYear(), month, day);
+  if (raceDate < today) raceDate = new Date(today.getFullYear() + 1, month, day);
+  const diffMs = raceDate.getTime() - today.getTime();
+  const daysLeft = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+  return { name: raceName, daysLeft };
 };
 
 const normalizeAthlete = (athlete) => ({
@@ -708,7 +729,7 @@ export default function App() {
           <>
         {view === "dashboard" && (
           <Dashboard
-            athletes={athletes}
+            coachUserId={session?.user?.id ?? null}
             onSelect={a => { setSelectedAthlete(a); setView("athletes"); setShowAddAthleteForm(false); }}
             onRequestAddAthlete={() => setShowAddAthleteForm(true)}
             showAddAthleteForm={showAddAthleteForm}
@@ -756,7 +777,7 @@ export default function App() {
 }
 
 function Dashboard({
-  athletes,
+  coachUserId,
   onSelect,
   onRequestAddAthlete,
   showAddAthleteForm,
@@ -766,13 +787,99 @@ function Dashboard({
   onCancelAddAthlete,
 }) {
   const S = styles;
+  const weekStart = useMemo(() => startOfWeekMonday(new Date()), []);
+  const weekEnd = useMemo(() => addDays(weekStart, 6), [weekStart]);
+  const weekRangeLabel = useMemo(() => {
+    const opt = { day: "numeric", month: "long", year: "numeric" };
+    return `Semana del ${weekStart.toLocaleDateString("es", opt)} al ${weekEnd.toLocaleDateString("es", opt)}`;
+  }, [weekStart, weekEnd]);
+
+  const [dashAthletes, setDashAthletes] = useState([]);
+  const [weekWorkouts, setWeekWorkouts] = useState([]);
+  const [dashLoading, setDashLoading] = useState(true);
+
+  const loadDashboardData = useCallback(async (silent) => {
+    if (!coachUserId) {
+      setDashAthletes([]);
+      setWeekWorkouts([]);
+      setDashLoading(false);
+      return;
+    }
+    if (!silent) setDashLoading(true);
+    const ws = formatLocalYMD(weekStart);
+    const we = formatLocalYMD(weekEnd);
+    const [aRes, wRes] = await Promise.all([
+      supabase.from("athletes").select("*").eq("coach_id", coachUserId).order("id", { ascending: true }),
+      supabase.from("workouts").select("*").eq("coach_id", coachUserId).gte("scheduled_date", ws).lte("scheduled_date", we),
+    ]);
+    if (aRes.error) console.error("Dashboard athletes:", aRes.error);
+    else setDashAthletes((aRes.data || []).map(normalizeAthlete));
+    if (wRes.error) console.error("Dashboard workouts:", wRes.error);
+    else setWeekWorkouts((wRes.data || []).map(normalizeWorkoutRow));
+    if (!silent) setDashLoading(false);
+  }, [coachUserId, weekStart, weekEnd]);
+
+  useEffect(() => {
+    loadDashboardData(false);
+  }, [loadDashboardData]);
+
+  useEffect(() => {
+    if (!coachUserId) return undefined;
+    const channel = supabase
+      .channel(`dashboard-coach-${coachUserId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "athletes", filter: `coach_id=eq.${coachUserId}` },
+        () => loadDashboardData(true),
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "workouts", filter: `coach_id=eq.${coachUserId}` },
+        () => loadDashboardData(true),
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [coachUserId, loadDashboardData]);
+
+  const totalWeeklyKmTarget = useMemo(
+    () => dashAthletes.reduce((sum, a) => sum + (Number(a.weekly_km) || 0), 0),
+    [dashAthletes],
+  );
+
+  const { weekWorkoutsTotal, weekWorkoutsDone } = useMemo(() => ({
+    weekWorkoutsTotal: weekWorkouts.length,
+    weekWorkoutsDone: weekWorkouts.filter((w) => w.done).length,
+  }), [weekWorkouts]);
+
+  const globalAdherencePct = weekWorkoutsTotal > 0
+    ? Math.round((weekWorkoutsDone / weekWorkoutsTotal) * 100)
+    : 0;
+
+  const athleteRows = useMemo(() => {
+    return dashAthletes.map((a) => {
+      const forAthlete = weekWorkouts.filter((w) => String(w.athlete_id) === String(a.id));
+      const weekTotal = forAthlete.length;
+      const weekDone = forAthlete.filter((w) => w.done).length;
+      const adherencePct = weekTotal > 0 ? Math.round((weekDone / weekTotal) * 100) : 0;
+      const { name: raceName, daysLeft } = getRaceMeta(a.next_race);
+      return { athlete: a, weekTotal, weekDone, adherencePct, raceName, daysLeft };
+    });
+  }, [dashAthletes, weekWorkouts]);
+
+  const maxWeeklyKm = useMemo(() => {
+    const m = Math.max(1, ...dashAthletes.map((a) => Number(a.weekly_km) || 0));
+    return m;
+  }, [dashAthletes]);
+
   return (
     <div style={S.page}>
       <div style={{ marginBottom: 28 }}>
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16 }}>
           <div>
             <h1 style={S.pageTitle}>Dashboard</h1>
-            <p style={{ color: "#475569", fontSize: ".82em", marginTop: 4 }}>Semana del 17 al 23 de Marzo, 2026</p>
+            <p style={{ color: "#475569", fontSize: ".82em", marginTop: 4 }}>{weekRangeLabel} · datos en vivo</p>
           </div>
           <button
             onClick={onRequestAddAthlete}
@@ -892,43 +999,147 @@ function Dashboard({
           </div>
         </div>
       )}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14, marginBottom: 28 }}>
-        {[
-          { label: "Atletas Activos", value: athletes.length, icon: "🏃", color: "#f59e0b" },
-          { label: "Km Totales / Semana", value: `${athletes.reduce((a,b)=>a+b.weekly_km,0)} km`, icon: "📍", color: "#3b82f6" },
-          { label: "Entrenamientos Completados", value: athletes.reduce((a,b)=>a+b.workouts_done,0), icon: "✅", color: "#22c55e" },
-          { label: "Carreras Este Mes", value: 3, icon: "🏁", color: "#ef4444" },
-        ].map((s, i) => (
-          <div key={i} style={S.card}>
-            <div style={{ fontSize: "1.8em", marginBottom: 8 }}>{s.icon}</div>
-            <div style={{ fontSize: "2em", fontWeight: 700, color: s.color, fontFamily: "monospace" }}>{s.value}</div>
-            <div style={{ fontSize: ".75em", color: "#64748b" }}>{s.label}</div>
-          </div>
-        ))}
-      </div>
-      <div style={{ fontSize: ".72em", letterSpacing: ".15em", color: "#475569", textTransform: "uppercase", marginBottom: 14 }}>ESTADO DE ATLETAS</div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(240px,1fr))", gap: 14 }}>
-        {athletes.map(a => (
-          <div key={a.id} onClick={() => onSelect(a)} style={{ ...S.card, cursor: "pointer" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
-              <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                <div style={S.avatar}>{a.avatar}</div>
-                <div>
-                  <div style={{ fontWeight: 600, color: "#e2e8f0", fontSize: ".95em" }}>{a.name}</div>
-                  <div style={{ color: "#64748b", fontSize: ".75em" }}>{a.goal}</div>
-                </div>
+
+      {dashLoading ? (
+        <div style={{ color: "#94a3b8", padding: "24px 0" }}>Cargando métricas desde Supabase…</div>
+      ) : (
+        <>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14, marginBottom: 28 }}>
+            {[
+              { label: "Atletas activos", value: dashAthletes.length, sub: "Registrados bajo tu cuenta", icon: "🏃", color: "#f59e0b" },
+              { label: "Km objetivo / semana", value: `${totalWeeklyKmTarget} km`, sub: "Suma de weekly_km de tus atletas", icon: "📍", color: "#3b82f6" },
+              {
+                label: "Adherencia global",
+                value: weekWorkoutsTotal ? `${globalAdherencePct}%` : "—",
+                sub: weekWorkoutsTotal ? `${weekWorkoutsDone} de ${weekWorkoutsTotal} workouts esta semana` : "Sin entrenamientos programados esta semana",
+                icon: "✅",
+                color: "#22c55e",
+              },
+            ].map((s, i) => (
+              <div key={i} style={S.card}>
+                <div style={{ fontSize: "1.8em", marginBottom: 8 }}>{s.icon}</div>
+                <div style={{ fontSize: "2em", fontWeight: 700, color: s.color, fontFamily: "monospace", lineHeight: 1.1 }}>{s.value}</div>
+                <div style={{ fontSize: ".75em", color: "#64748b", marginTop: 6 }}>{s.label}</div>
+                <div style={{ fontSize: ".68em", color: "#475569", marginTop: 8, lineHeight: 1.35 }}>{s.sub}</div>
               </div>
-              <StatusBadge status={a.status} />
-            </div>
-            <div style={{ display: "flex", gap: 16, marginBottom: 8, fontSize: ".78em", color: "#94a3b8" }}>
-              <span>⚡ {a.pace}</span><span>📍 {a.weekly_km} km/sem</span>
-            </div>
-            <div style={{ fontSize: ".72em", color: "#64748b" }}>{a.workouts_done}/{a.workouts_total} entrenamientos</div>
-            <ProgressBar value={a.workouts_done} total={a.workouts_total} color={a.status === "behind" ? "#ef4444" : "#f59e0b"} />
-            <div style={{ marginTop: 10, fontSize: ".72em", color: "#475569" }}>{getRaceCountdownText(a.next_race)}</div>
+            ))}
           </div>
-        ))}
-      </div>
+
+          <div style={{ fontSize: ".72em", letterSpacing: ".15em", color: "#475569", textTransform: "uppercase", marginBottom: 14 }}>Detalle por atleta</div>
+          <div style={{ ...S.card, padding: 0, overflow: "hidden", marginBottom: 24 }}>
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: ".82em" }}>
+                <thead>
+                  <tr style={{ background: "rgba(255,255,255,.04)", textAlign: "left", color: "#94a3b8" }}>
+                    <th style={{ padding: "12px 14px", fontWeight: 700 }}>Atleta</th>
+                    <th style={{ padding: "12px 14px", fontWeight: 700 }}>Km / sem</th>
+                    <th style={{ padding: "12px 14px", fontWeight: 700, minWidth: 160 }}>Adherencia (semana)</th>
+                    <th style={{ padding: "12px 14px", fontWeight: 700 }}>Próxima carrera</th>
+                    <th style={{ padding: "12px 14px", fontWeight: 700 }}>Días restantes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {athleteRows.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} style={{ padding: "20px 14px", color: "#64748b" }}>
+                        Aún no hay atletas. Usa «Nuevo Atleta» para comenzar.
+                      </td>
+                    </tr>
+                  ) : (
+                    athleteRows.map(({ athlete: a, weekTotal, weekDone, adherencePct, raceName, daysLeft }) => (
+                      <tr
+                        key={a.id}
+                        onClick={() => onSelect(a)}
+                        style={{ borderTop: "1px solid rgba(255,255,255,.06)", cursor: "pointer" }}
+                      >
+                        <td style={{ padding: "12px 14px", color: "#e2e8f0", fontWeight: 600 }}>{a.name}</td>
+                        <td style={{ padding: "12px 14px", color: "#cbd5e1", fontFamily: "monospace" }}>{a.weekly_km} km</td>
+                        <td style={{ padding: "12px 14px" }}>
+                          <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 4 }}>
+                            {weekTotal ? `${weekDone}/${weekTotal} · ${adherencePct}%` : "Sin workouts esta semana"}
+                          </div>
+                          <ProgressBar value={weekDone} total={weekTotal || 1} color={adherencePct >= 70 ? "#22c55e" : adherencePct >= 40 ? "#f59e0b" : "#ef4444"} />
+                        </td>
+                        <td style={{ padding: "12px 14px", color: "#94a3b8", maxWidth: 200 }}>{raceName}</td>
+                        <td style={{ padding: "12px 14px", color: "#cbd5e1", fontFamily: "monospace" }}>
+                          {daysLeft == null ? "—" : `${daysLeft} ${daysLeft === 1 ? "día" : "días"}`}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div style={{ fontSize: ".72em", letterSpacing: ".15em", color: "#475569", textTransform: "uppercase", marginBottom: 14 }}>Km semanales por atleta</div>
+          <div style={{ ...S.card, padding: "18px 16px 22px" }}>
+            {dashAthletes.length === 0 ? (
+              <div style={{ color: "#64748b", fontSize: ".85em" }}>Sin datos para graficar.</div>
+            ) : (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "flex-end",
+                  justifyContent: "flex-start",
+                  gap: 10,
+                  minHeight: 140,
+                  paddingTop: 8,
+                }}
+              >
+                {dashAthletes.map((a) => {
+                  const km = Number(a.weekly_km) || 0;
+                  const hPct = Math.max(6, (km / maxWeeklyKm) * 100);
+                  return (
+                    <div
+                      key={a.id}
+                      style={{
+                        flex: "1 1 0",
+                        minWidth: 36,
+                        maxWidth: 72,
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        gap: 8,
+                      }}
+                      title={`${a.name}: ${km} km/semana`}
+                    >
+                      <div
+                        style={{
+                          width: "100%",
+                          height: 110,
+                          display: "flex",
+                          alignItems: "flex-end",
+                          justifyContent: "center",
+                          background: "rgba(255,255,255,.03)",
+                          borderRadius: 8,
+                          padding: "0 6px",
+                          boxSizing: "border-box",
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: "72%",
+                            height: `${hPct}%`,
+                            maxHeight: "100%",
+                            background: "linear-gradient(180deg,#fbbf24,#b45309)",
+                            borderRadius: "6px 6px 2px 2px",
+                            boxShadow: "0 0 12px rgba(245,158,11,.25)",
+                          }}
+                        />
+                      </div>
+                      <div style={{ fontSize: ".62em", color: "#94a3b8", textAlign: "center", lineHeight: 1.2, wordBreak: "break-word" }}>
+                        {(a.name || "").split(/\s+/)[0]}
+                      </div>
+                      <div style={{ fontSize: ".65em", color: "#64748b", fontFamily: "monospace" }}>{km}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -1356,13 +1567,39 @@ function AthleteHome({ profile }) {
           <h1 style={{ ...S.pageTitle, marginBottom: 6 }}>Hola, {athleteName}</h1>
           <div style={{ color: "#94a3b8", fontSize: ".9em" }}>{nextRaceText}</div>
         </div>
-        <div style={{ ...S.card, padding: 14, minWidth: 260 }}>
-          <div style={{ fontSize: ".72em", letterSpacing: ".13em", color: "#475569", textTransform: "uppercase", marginBottom: 8 }}>PROGRESO SEMANAL</div>
-          <div style={{ fontSize: "1.6em", fontWeight: 900, color: "#22c55e", fontFamily: "monospace" }}>
-            {weeklyDoneKm} / {weeklyTotalKm} km
-          </div>
-          <div style={{ color: "#64748b", fontSize: ".8em", marginTop: 6 }}>
-            Semana {thisWeekStartYmd} → {thisWeekEndYmd}
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 10 }}>
+          <button
+            type="button"
+            onClick={async () => {
+              const { error } = await supabase.auth.signOut();
+              if (error) {
+                console.error("Error al cerrar sesión:", error);
+                alert(`Error al cerrar sesión: ${error.message}`);
+              }
+            }}
+            style={{
+              background: "rgba(239,68,68,.08)",
+              border: "1px solid rgba(239,68,68,.25)",
+              borderRadius: 8,
+              padding: "8px 14px",
+              color: "#ef4444",
+              cursor: "pointer",
+              fontFamily: "inherit",
+              fontSize: ".8em",
+              fontWeight: 700,
+              whiteSpace: "nowrap",
+            }}
+          >
+            Cerrar sesión
+          </button>
+          <div style={{ ...S.card, padding: 14, minWidth: 260 }}>
+            <div style={{ fontSize: ".72em", letterSpacing: ".13em", color: "#475569", textTransform: "uppercase", marginBottom: 8 }}>PROGRESO SEMANAL</div>
+            <div style={{ fontSize: "1.6em", fontWeight: 900, color: "#22c55e", fontFamily: "monospace" }}>
+              {weeklyDoneKm} / {weeklyTotalKm} km
+            </div>
+            <div style={{ color: "#64748b", fontSize: ".8em", marginTop: 6 }}>
+              Semana {thisWeekStartYmd} → {thisWeekEndYmd}
+            </div>
           </div>
         </div>
       </div>
