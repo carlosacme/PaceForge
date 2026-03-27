@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { supabase } from "./lib/supabase";
 
 const WORKOUT_TYPES = [
@@ -78,7 +78,15 @@ const normalizeAthlete = (athlete) => ({
   workouts_total: Number.isFinite(Number(athlete?.workouts_total)) ? Number(athlete.workouts_total) : 18,
   device: typeof athlete?.device === "string" ? athlete.device : "",
   plan: typeof athlete?.plan === "string" ? athlete.plan : "",
+  coach_id: athlete?.coach_id ?? "",
 });
+
+const formatMessageTimestamp = (iso) => {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleString("es", { dateStyle: "short", timeStyle: "short" });
+};
 
 const formatLocalYMD = (d) => {
   const y = d.getFullYear();
@@ -1199,6 +1207,11 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
   const [loadingWorkouts, setLoadingWorkouts] = useState(false);
   const [deviceModal, setDeviceModal] = useState({ open: false, provider: null });
   const [deviceMessage, setDeviceMessage] = useState("");
+  const [coachId, setCoachId] = useState(null);
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatDraft, setChatDraft] = useState("");
+  const [chatSending, setChatSending] = useState(false);
+  const chatScrollRef = useRef(null);
   const normalized = searchQuery.trim().toLowerCase();
   const filteredAthletes = normalized
     ? athletes.filter(a => (a.name || "").toLowerCase().includes(normalized) || (a.goal || "").toLowerCase().includes(normalized))
@@ -1312,6 +1325,69 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
       return;
     }
     setDeviceMessage(`Workout "${latestWorkout.title}" sincronizado a COROS ✓`);
+  };
+
+  const loadCoachChat = useCallback(async () => {
+    if (!athlete?.id || !coachId) {
+      setChatMessages([]);
+      return;
+    }
+    const { data, error } = await supabase
+      .from("messages")
+      .select("*")
+      .eq("athlete_id", athlete.id)
+      .eq("coach_id", coachId)
+      .order("created_at", { ascending: true });
+    if (error) {
+      console.error("Error cargando mensajes:", error);
+      return;
+    }
+    setChatMessages(data || []);
+  }, [athlete?.id, coachId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    supabase.auth.getUser().then(({ data }) => {
+      if (!cancelled) setCoachId(data?.user?.id ?? null);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    loadCoachChat();
+  }, [loadCoachChat]);
+
+  useEffect(() => {
+    const t = setInterval(() => loadCoachChat(), 10000);
+    return () => clearInterval(t);
+  }, [loadCoachChat]);
+
+  useEffect(() => {
+    if (!chatScrollRef.current) return;
+    chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+  }, [chatMessages]);
+
+  const sendCoachChat = async () => {
+    const body = chatDraft.trim();
+    if (!body || !athlete?.id || !coachId || chatSending) return;
+    setChatSending(true);
+    try {
+      const { error } = await supabase.from("messages").insert({
+        athlete_id: athlete.id,
+        coach_id: coachId,
+        sender_role: "coach",
+        body,
+      });
+      if (error) {
+        console.error(error);
+        alert(`No se pudo enviar: ${error.message}`);
+        return;
+      }
+      setChatDraft("");
+      await loadCoachChat();
+    } finally {
+      setChatSending(false);
+    }
   };
 
   if (!athlete) {
@@ -1473,6 +1549,98 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
             )}
             {!!deviceMessage && <div style={{ marginTop: 10, color: "#22c55e", fontSize: ".78em" }}>{deviceMessage}</div>}
           </div>
+
+          <div style={{ marginTop: 22 }}>
+            <div style={{ fontSize: ".65em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase", marginBottom: 10 }}>
+              CHAT CON ATLETA
+            </div>
+            <div
+              ref={chatScrollRef}
+              style={{
+                maxHeight: 280,
+                overflowY: "auto",
+                padding: "10px 8px",
+                borderRadius: 10,
+                background: "rgba(0,0,0,.2)",
+                border: "1px solid rgba(255,255,255,.06)",
+                marginBottom: 10,
+                display: "flex",
+                flexDirection: "column",
+                gap: 8,
+              }}
+            >
+              {chatMessages.length === 0 ? (
+                <div style={{ color: "#64748b", fontSize: ".8em", textAlign: "center", padding: "12px 0" }}>Sin mensajes aún</div>
+              ) : (
+                chatMessages.map((m) => {
+                  const isCoach = m.sender_role === "coach";
+                  return (
+                    <div
+                      key={m.id}
+                      style={{
+                        alignSelf: isCoach ? "flex-end" : "flex-start",
+                        maxWidth: "88%",
+                        padding: "8px 12px",
+                        borderRadius: 10,
+                        background: isCoach
+                          ? "linear-gradient(135deg, rgba(180,83,9,.85), rgba(245,158,11,.75))"
+                          : "rgba(59,130,246,.35)",
+                        border: `1px solid ${isCoach ? "rgba(245,158,11,.5)" : "rgba(59,130,246,.45)"}`,
+                        color: "#f8fafc",
+                        fontSize: ".82em",
+                        lineHeight: 1.45,
+                      }}
+                    >
+                      <div>{m.body}</div>
+                      <div style={{ fontSize: ".65em", color: isCoach ? "rgba(255,255,255,.75)" : "rgba(191,219,254,.85)", marginTop: 6 }}>
+                        {formatMessageTimestamp(m.created_at)}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+            <div style={{ display: "flex", gap: 8, alignItems: "stretch" }}>
+              <input
+                type="text"
+                value={chatDraft}
+                onChange={(e) => setChatDraft(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && sendCoachChat()}
+                placeholder="Escribe un mensaje…"
+                style={{
+                  flex: 1,
+                  background: "rgba(255,255,255,.04)",
+                  border: "1px solid rgba(255,255,255,.1)",
+                  borderRadius: 8,
+                  padding: "10px 12px",
+                  color: "#e2e8f0",
+                  fontFamily: "inherit",
+                  fontSize: ".85em",
+                  outline: "none",
+                  boxSizing: "border-box",
+                }}
+              />
+              <button
+                type="button"
+                onClick={sendCoachChat}
+                disabled={chatSending || !chatDraft.trim() || !coachId}
+                style={{
+                  background: chatSending || !chatDraft.trim() ? "rgba(255,255,255,.06)" : "linear-gradient(135deg,#b45309,#f59e0b)",
+                  border: "none",
+                  borderRadius: 8,
+                  padding: "10px 16px",
+                  color: chatSending || !chatDraft.trim() ? "#64748b" : "white",
+                  fontWeight: 800,
+                  cursor: chatSending || !chatDraft.trim() ? "not-allowed" : "pointer",
+                  fontFamily: "inherit",
+                  fontSize: ".82em",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                Enviar
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1516,6 +1684,10 @@ function AthleteHome({ profile }) {
   const [workouts, setWorkouts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
+  const [athleteChatMessages, setAthleteChatMessages] = useState([]);
+  const [athleteChatDraft, setAthleteChatDraft] = useState("");
+  const [athleteChatSending, setAthleteChatSending] = useState(false);
+  const athleteChatScrollRef = useRef(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -1606,6 +1778,63 @@ function AthleteHome({ profile }) {
 
   const athleteName = profile?.name || athleteInfo?.name || "Atleta";
   const nextRaceText = athleteInfo?.next_race ? `🏁 ${getRaceCountdownText(athleteInfo.next_race)}` : "🏁 Próxima carrera · fecha pendiente";
+
+  const coachIdForChat = athleteInfo?.coach_id || null;
+
+  const loadAthleteChat = useCallback(async () => {
+    if (!profile?.user_id || !coachIdForChat) {
+      setAthleteChatMessages([]);
+      return;
+    }
+    const { data, error } = await supabase
+      .from("messages")
+      .select("*")
+      .eq("athlete_id", profile.user_id)
+      .eq("coach_id", coachIdForChat)
+      .order("created_at", { ascending: true });
+    if (error) {
+      console.error("Error cargando chat atleta:", error);
+      return;
+    }
+    setAthleteChatMessages(data || []);
+  }, [profile?.user_id, coachIdForChat]);
+
+  useEffect(() => {
+    loadAthleteChat();
+  }, [loadAthleteChat]);
+
+  useEffect(() => {
+    const t = setInterval(() => loadAthleteChat(), 10000);
+    return () => clearInterval(t);
+  }, [loadAthleteChat]);
+
+  useEffect(() => {
+    if (!athleteChatScrollRef.current) return;
+    athleteChatScrollRef.current.scrollTop = athleteChatScrollRef.current.scrollHeight;
+  }, [athleteChatMessages]);
+
+  const sendAthleteChat = async () => {
+    const body = athleteChatDraft.trim();
+    if (!body || !profile?.user_id || !coachIdForChat || athleteChatSending) return;
+    setAthleteChatSending(true);
+    try {
+      const { error } = await supabase.from("messages").insert({
+        athlete_id: profile.user_id,
+        coach_id: coachIdForChat,
+        sender_role: "athlete",
+        body,
+      });
+      if (error) {
+        console.error(error);
+        setMessage(`Error al enviar mensaje: ${error.message}`);
+        return;
+      }
+      setAthleteChatDraft("");
+      await loadAthleteChat();
+    } finally {
+      setAthleteChatSending(false);
+    }
+  };
 
   return (
     <div style={S.page}>
@@ -1719,6 +1948,104 @@ function AthleteHome({ profile }) {
               );
             })}
           </div>
+        )}
+      </div>
+
+      <div style={{ ...S.card, marginTop: 20 }}>
+        <div style={{ fontSize: ".65em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase", marginBottom: 10 }}>
+          CHAT CON TU COACH
+        </div>
+        {!coachIdForChat ? (
+          <div style={{ color: "#64748b", fontSize: ".85em" }}>Sin datos de coach. Contacta a soporte si esto continúa.</div>
+        ) : (
+          <>
+            <div
+              ref={athleteChatScrollRef}
+              style={{
+                maxHeight: 300,
+                overflowY: "auto",
+                padding: "10px 8px",
+                borderRadius: 10,
+                background: "rgba(0,0,0,.2)",
+                border: "1px solid rgba(255,255,255,.06)",
+                marginBottom: 10,
+                display: "flex",
+                flexDirection: "column",
+                gap: 8,
+              }}
+            >
+              {athleteChatMessages.length === 0 ? (
+                <div style={{ color: "#64748b", fontSize: ".8em", textAlign: "center", padding: "12px 0" }}>Sin mensajes aún</div>
+              ) : (
+                athleteChatMessages.map((m) => {
+                  const isCoach = m.sender_role === "coach";
+                  return (
+                    <div
+                      key={m.id}
+                      style={{
+                        alignSelf: isCoach ? "flex-end" : "flex-start",
+                        maxWidth: "88%",
+                        padding: "8px 12px",
+                        borderRadius: 10,
+                        background: isCoach
+                          ? "linear-gradient(135deg, rgba(180,83,9,.85), rgba(245,158,11,.75))"
+                          : "rgba(59,130,246,.35)",
+                        border: `1px solid ${isCoach ? "rgba(245,158,11,.5)" : "rgba(59,130,246,.45)"}`,
+                        color: "#f8fafc",
+                        fontSize: ".82em",
+                        lineHeight: 1.45,
+                      }}
+                    >
+                      <div>{m.body}</div>
+                      <div style={{ fontSize: ".65em", color: isCoach ? "rgba(255,255,255,.75)" : "rgba(191,219,254,.85)", marginTop: 6 }}>
+                        {formatMessageTimestamp(m.created_at)}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+            <div style={{ display: "flex", gap: 8, alignItems: "stretch" }}>
+              <input
+                type="text"
+                value={athleteChatDraft}
+                onChange={(e) => setAthleteChatDraft(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && sendAthleteChat()}
+                placeholder="Escribe un mensaje a tu coach…"
+                style={{
+                  flex: 1,
+                  background: "rgba(255,255,255,.04)",
+                  border: "1px solid rgba(255,255,255,.1)",
+                  borderRadius: 8,
+                  padding: "10px 12px",
+                  color: "#e2e8f0",
+                  fontFamily: "inherit",
+                  fontSize: ".85em",
+                  outline: "none",
+                  boxSizing: "border-box",
+                }}
+              />
+              <button
+                type="button"
+                onClick={sendAthleteChat}
+                disabled={athleteChatSending || !athleteChatDraft.trim()}
+                style={{
+                  background: athleteChatSending || !athleteChatDraft.trim() ? "rgba(255,255,255,.06)" : "linear-gradient(135deg,#b45309,#f59e0b)",
+                  border: "none",
+                  borderRadius: 8,
+                  padding: "10px 16px",
+                  color: athleteChatSending || !athleteChatDraft.trim() ? "#64748b" : "white",
+                  fontWeight: 800,
+                  cursor: athleteChatSending || !athleteChatDraft.trim() ? "not-allowed" : "pointer",
+                  fontFamily: "inherit",
+                  fontSize: ".82em",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                Enviar
+              </button>
+            </div>
+          </>
         )}
       </div>
     </div>
