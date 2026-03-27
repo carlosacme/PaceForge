@@ -2653,7 +2653,10 @@ Output 2 week objects with the correct ${daysPerWeek} workouts each; each workou
                                     <button
                                       type="button"
                                       title="Editar sesión"
-                                      onClick={() => setPlanEditModal({ weekNumber: n, workoutIdx: idx })}
+                                      onClick={() => {
+                                        console.log("Abriendo editor");
+                                        setPlanEditModal({ weekNumber: n, workoutIdx: idx });
+                                      }}
                                       style={{
                                         background: "rgba(245,158,11,.14)",
                                         border: "1px solid rgba(245,158,11,.35)",
@@ -2699,7 +2702,12 @@ Output 2 week objects with the correct ${daysPerWeek} workouts each; each workou
       </div>
 
       {planEditModal && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 220, padding: 16 }}>
+        <>
+          {(() => {
+            console.log("planEditModal vale:", planEditModal);
+            return null;
+          })()}
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 220, padding: 16 }}>
           <div style={{ ...S.card, width: "100%", maxWidth: 420, margin: 0 }}>
             <div style={{ fontSize: ".95em", fontWeight: 700, color: "#e2e8f0", marginBottom: 6 }}>
               {planEditModal.workoutIdx === "new" ? "Nueva sesión" : "Editar sesión"}
@@ -2804,6 +2812,7 @@ Output 2 week objects with the correct ${daysPerWeek} workouts each; each workou
             </div>
           </div>
         </div>
+        </>
       )}
     </div>
   );
