@@ -794,8 +794,8 @@ export default function App() {
         const payload = {
           user_id: u.id,
           role: "coach",
-          coach_id: u.id,
           name: (typeof data?.name === "string" && data.name.trim()) || displayName,
+          coach_id: null,
         };
         const { data: saved, error: upErr } = await supabase
           .from("profiles")
@@ -803,7 +803,14 @@ export default function App() {
           .select()
           .single();
         if (upErr) {
-          console.error("Error creando perfil coach por defecto:", upErr);
+          console.error("Error creando perfil coach por defecto (completo):", {
+            message: upErr.message,
+            details: upErr.details,
+            hint: upErr.hint,
+            code: upErr.code,
+            status: upErr.status,
+            fullError: upErr,
+          });
           setProfile(data ?? null);
         } else {
           console.log("Perfil coach creado/actualizado (sin role previo):", saved?.user_id);
