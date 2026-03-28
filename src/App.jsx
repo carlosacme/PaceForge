@@ -268,6 +268,133 @@ const normalizeWorkoutRow = (row) => {
   };
 };
 
+/** Carga sesión: RPE × km (solo sesiones con RPE válido). */
+const sessionRpeKmLoad = (w) => {
+  const km = Number(w.total_km);
+  const rpe = clampWorkoutRpe(w.rpe);
+  if (rpe == null || !Number.isFinite(km) || km < 0) return null;
+  return rpe * km;
+};
+
+/** Promedio de RPE×km en ventana [startYmd, endYmd] inclusive; null si no hay sesiones válidas. */
+const avgRpeKmInWindow = (eligibleWorkouts, startYmd, endYmd) => {
+  const loads = eligibleWorkouts
+    .filter((w) => w.scheduled_date >= startYmd && w.scheduled_date <= endYmd)
+    .map(sessionRpeKmLoad)
+    .filter((v) => v != null);
+  if (!loads.length) return null;
+  return loads.reduce((a, b) => a + b, 0) / loads.length;
+};
+
+/** 8 puntos semanales (índice 0 = semana actual respecto a hoy): aguda 7d, crónica 28d, forma = crónica − aguda. */
+const computeFormaFatigaWeeklyPoints = (workouts) => {
+  const eligible = workouts.filter((w) => w.done && clampWorkoutRpe(w.rpe) != null);
+  const today = new Date();
+  const points = [];
+  for (let i = 0; i < 8; i++) {
+    const endD = addDays(today, -i * 7);
+    const endYmd = formatLocalYMD(endD);
+    const acuteStartYmd = formatLocalYMD(addDays(endD, -6));
+    const chronicStartYmd = formatLocalYMD(addDays(endD, -27));
+    const acute = avgRpeKmInWindow(eligible, acuteStartYmd, endYmd);
+    const chronic = avgRpeKmInWindow(eligible, chronicStartYmd, endYmd);
+    const forma = acute != null || chronic != null ? (chronic ?? 0) - (acute ?? 0) : null;
+    points.push({
+      i,
+      label: i === 0 ? "Actual" : `−${i} sem`,
+      endYmd,
+      acute,
+      chronic,
+      forma,
+    });
+  }
+  return points;
+};
+
+const formaFatigaStatusFromPoint = (p) => {
+  if (!p || (p.acute == null && p.chronic == null)) {
+    return { label: "Sin datos suficientes", kind: "none" };
+  }
+  const acute = p.acute ?? 0;
+  const chronic = p.chronic ?? 0;
+  const forma = p.forma != null ? p.forma : chronic - acute;
+  const scale = Math.max(Math.abs(acute), Math.abs(chronic), 1);
+  const r = forma / scale;
+  if (r > 0.12) return { label: "En forma 🟢", kind: "forma" };
+  if (r < -0.12) return { label: "Fatigado 🔴", kind: "fatiga" };
+  return { label: "Fresco 🟡", kind: "fresco" };
+};
+
+/** Gráfico de líneas (SVG + estilos inline, sin librerías de gráficos). */
+const FormaFatigaLineChart = ({ chronological }) => {
+  const n = chronological.length;
+  const W = 360;
+  const H = 160;
+  const padL = 36;
+  const padR = 12;
+  const padT = 14;
+  const padB = 28;
+  const innerW = W - padL - padR;
+  const innerH = H - padT - padB;
+  const xs = n <= 1 ? [padL + innerW / 2] : chronological.map((_, idx) => padL + (innerW * idx) / (n - 1));
+
+  const vals = [];
+  chronological.forEach((p) => {
+    vals.push(p.acute ?? 0, p.chronic ?? 0, p.forma ?? 0);
+  });
+  const minV = Math.min(0, ...vals);
+  const maxV = Math.max(1e-6, ...vals);
+  const span = maxV - minV || 1;
+  const toY = (v) => padT + innerH - ((v - minV) / span) * innerH;
+
+  const linePoints = (key) =>
+    chronological
+      .map((p, idx) => {
+        const v = p[key] ?? 0;
+        return `${xs[idx]},${toY(v)}`;
+      })
+      .join(" ");
+
+  return (
+    <svg
+      viewBox={`0 0 ${W} ${H}`}
+      role="img"
+      aria-label="Carga aguda, crónica y forma en las últimas 8 semanas"
+      style={{ width: "100%", maxWidth: 520, height: "auto", display: "block" }}
+    >
+      <rect x={0} y={0} width={W} height={H} fill="rgba(255,255,255,.02)" rx={8} />
+      {[0, 0.25, 0.5, 0.75, 1].map((t) => {
+        const y = padT + innerH * (1 - t);
+        const gv = minV + span * t;
+        return (
+          <g key={t}>
+            <line x1={padL} y1={y} x2={W - padR} y2={y} stroke="rgba(148,163,184,.15)" strokeWidth={1} />
+            <text x={4} y={y + 4} fill="#64748b" fontSize={9} fontFamily="system-ui,sans-serif">
+              {gv.toFixed(0)}
+            </text>
+          </g>
+        );
+      })}
+      <polyline fill="none" stroke="#ef4444" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" points={linePoints("acute")} />
+      <polyline fill="none" stroke="#3b82f6" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" points={linePoints("chronic")} />
+      <polyline fill="none" stroke="#22c55e" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" points={linePoints("forma")} />
+      {chronological.map((p, idx) => (
+        <text
+          key={p.i}
+          x={xs[idx]}
+          y={H - 6}
+          fill="#64748b"
+          fontSize={8}
+          fontFamily="system-ui,sans-serif"
+          textAnchor="middle"
+        >
+          {p.label}
+        </text>
+      ))}
+    </svg>
+  );
+};
+
 const StatusBadge = ({ status }) => {
   const map = { "on-track": ["#22c55e", "EN RUTA"], "behind": ["#ef4444", "REZAGADO"], "ahead": ["#f59e0b", "ADELANTADO"] };
   const [color, label] = map[status] || ["#64748b", "N/A"];
@@ -1387,6 +1514,11 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
     [weekStart],
   );
 
+  const formaFatigaPoints = useMemo(() => computeFormaFatigaWeeklyPoints(workouts), [workouts]);
+  const formaFatigaChronological = useMemo(() => [...formaFatigaPoints].reverse(), [formaFatigaPoints]);
+  const formaFatigaStatus = useMemo(() => formaFatigaStatusFromPoint(formaFatigaPoints[0]), [formaFatigaPoints]);
+  const formaFatigaTableRows = useMemo(() => formaFatigaPoints.slice(0, 4), [formaFatigaPoints]);
+
   const toggleWorkoutDone = async (w) => {
     const next = !w.done;
     const payload = next ? { done: true } : { done: false, rpe: null };
@@ -1673,6 +1805,90 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
               </div>
               );
             })()}
+          </div>
+
+          <div style={{ marginBottom: 24, paddingBottom: 20, borderBottom: "1px solid rgba(255,255,255,.06)" }}>
+            <div style={{ fontSize: ".65em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase", marginBottom: 10 }}>
+              FORMA Y FATIGA
+            </div>
+            <div style={{ fontSize: ".78em", color: "#64748b", marginBottom: 12, lineHeight: 1.45 }}>
+              Basado en sesiones completadas con RPE: carga aguda = promedio (RPE × km) últimos 7 días; carga crónica = promedio (RPE × km) últimos 28 días; forma = crónica − aguda.
+            </div>
+            {loadingWorkouts ? (
+              <div style={{ color: "#64748b", fontSize: ".85em", padding: "12px 0" }}>Cargando datos…</div>
+            ) : (
+              <>
+                <div
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 10,
+                    marginBottom: 14,
+                    padding: "10px 14px",
+                    borderRadius: 10,
+                    border: "1px solid rgba(255,255,255,.08)",
+                    background: "rgba(255,255,255,.03)",
+                    fontSize: ".88em",
+                    fontWeight: 700,
+                    color:
+                      formaFatigaStatus.kind === "forma"
+                        ? "#22c55e"
+                        : formaFatigaStatus.kind === "fatiga"
+                          ? "#f87171"
+                          : formaFatigaStatus.kind === "fresco"
+                            ? "#facc15"
+                            : "#94a3b8",
+                  }}
+                >
+                  Estado actual: {formaFatigaStatus.label}
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 14, marginBottom: 14, fontSize: ".72em", color: "#94a3b8" }}>
+                  <span>
+                    <span style={{ color: "#ef4444", fontWeight: 700 }}>—</span> Carga aguda (7 d)
+                  </span>
+                  <span>
+                    <span style={{ color: "#3b82f6", fontWeight: 700 }}>—</span> Carga crónica (28 d)
+                  </span>
+                  <span>
+                    <span style={{ color: "#22c55e", fontWeight: 700 }}>—</span> Forma (crónica − aguda)
+                  </span>
+                </div>
+                <FormaFatigaLineChart chronological={formaFatigaChronological} />
+                <div style={{ fontSize: ".72em", letterSpacing: ".12em", color: "#475569", textTransform: "uppercase", marginTop: 18, marginBottom: 8 }}>
+                  Resumen últimas 4 semanas
+                </div>
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: ".8em" }}>
+                    <thead>
+                      <tr style={{ textAlign: "left", color: "#94a3b8", borderBottom: "1px solid rgba(255,255,255,.08)" }}>
+                        <th style={{ padding: "8px 10px", fontWeight: 700 }}>Semana (corte)</th>
+                        <th style={{ padding: "8px 10px", fontWeight: 700, color: "#ef4444" }}>Aguda</th>
+                        <th style={{ padding: "8px 10px", fontWeight: 700, color: "#3b82f6" }}>Crónica</th>
+                        <th style={{ padding: "8px 10px", fontWeight: 700, color: "#22c55e" }}>Forma</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {formaFatigaTableRows.map((row) => (
+                        <tr key={row.i} style={{ borderBottom: "1px solid rgba(255,255,255,.05)" }}>
+                          <td style={{ padding: "8px 10px", color: "#e2e8f0" }}>
+                            {row.label} <span style={{ color: "#64748b", fontSize: ".85em" }}>({row.endYmd})</span>
+                          </td>
+                          <td style={{ padding: "8px 10px", color: "#fecaca", fontFamily: "monospace" }}>
+                            {row.acute != null ? row.acute.toFixed(1) : "—"}
+                          </td>
+                          <td style={{ padding: "8px 10px", color: "#bfdbfe", fontFamily: "monospace" }}>
+                            {row.chronic != null ? row.chronic.toFixed(1) : "—"}
+                          </td>
+                          <td style={{ padding: "8px 10px", color: "#bbf7d0", fontFamily: "monospace" }}>
+                            {row.forma != null ? row.forma.toFixed(1) : "—"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
           </div>
 
           <div style={{ fontSize: ".65em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase", marginBottom: 10 }}>
