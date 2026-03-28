@@ -391,7 +391,7 @@ const FormaFatigaLineChart = ({ chronological }) => {
       aria-label="Carga aguda, crónica y forma en las últimas 8 semanas"
       style={{ width: "100%", maxWidth: 520, height: "auto", display: "block" }}
     >
-      <rect x={0} y={0} width={W} height={H} fill="rgba(255,255,255,.02)" rx={8} />
+      <rect x={0} y={0} width={W} height={H} fill="#f8fafc" rx={8} />
       {[0, 0.25, 0.5, 0.75, 1].map((t) => {
         const y = padT + innerH * (1 - t);
         const gv = minV + span * t;
@@ -615,10 +615,19 @@ const StatusBadge = ({ status }) => {
 };
 
 const ProgressBar = ({ value, total, color = "#f59e0b" }) => (
-  <div style={{ background: "rgba(255,255,255,.06)", borderRadius: 4, height: 5, overflow: "hidden", marginTop: 6 }}>
+  <div style={{ background: "#f1f5f9", borderRadius: 4, height: 5, overflow: "hidden", marginTop: 6 }}>
     <div style={{ width: `${(value / total) * 100}%`, height: "100%", background: color, borderRadius: 4 }} />
   </div>
 );
+
+const COACH_NAV_ITEMS = [
+  { id: "dashboard", icon: "▤", label: "Dashboard", shortLabel: "Inicio", color: "#f59e0b" },
+  { id: "athletes", icon: "◉", label: "Atletas", shortLabel: "Atletas", color: "#3b82f6" },
+  { id: "plan12", icon: "◇", label: "Plan 2 Semanas", shortLabel: "2 sem.", color: "#8b5cf6" },
+  { id: "plans", icon: "◆", label: "Planes", shortLabel: "Planes", color: "#0d9488" },
+  { id: "builder", icon: "◎", label: "Crear Workout", shortLabel: "IA", color: "#ea580c" },
+  { id: "library", icon: "◈", label: "Biblioteca", shortLabel: "Biblio", color: "#6366f1" },
+];
 
 export default function App() {
   const [view, setView] = useState("dashboard");
@@ -870,6 +879,29 @@ export default function App() {
     setNewAthlete({ name: "", email: "", goal: "", pace: "", weekly_km: "" });
   };
 
+  const handleDeleteAthlete = async (athleteRow) => {
+    if (!athleteRow?.id) return;
+    const name = athleteRow.name || "este atleta";
+    if (!window.confirm(`¿Eliminar a ${name}? Se borrarán sus mensajes y workouts asociados. Esta acción no se puede deshacer.`)) {
+      return;
+    }
+    const id = athleteRow.id;
+    const { error: mErr } = await supabase.from("messages").delete().eq("athlete_id", id);
+    if (mErr) console.warn("messages delete:", mErr);
+    const { error: wErr } = await supabase.from("workouts").delete().eq("athlete_id", id);
+    if (wErr) console.warn("workouts delete:", wErr);
+    const { error } = await supabase.from("athletes").delete().eq("id", id);
+    if (error) {
+      console.error(error);
+      alert(`No se pudo eliminar: ${error.message}`);
+      return;
+    }
+    setAthletes((prev) => prev.filter((a) => String(a.id) !== String(id)));
+    setSelectedAthlete((prev) => (prev && String(prev.id) === String(id) ? null : prev));
+    setWorkoutsRefresh((r) => r + 1);
+    notify("Atleta eliminado");
+  };
+
   if (authLoading) {
     return (
       <div style={S.root}>
@@ -903,8 +935,8 @@ export default function App() {
                             padding: "10px 12px",
                             borderRadius: 10,
                             border: authRole === "coach" ? "2px solid #f59e0b" : "1px solid rgba(148,163,184,.4)",
-                            background: authRole === "coach" ? "rgba(245,158,11,.15)" : "rgba(15,23,42,.8)",
-                            color: "#e2e8f0",
+                            background: authRole === "coach" ? "rgba(245,158,11,.15)" : "#f1f5f9",
+                            color: "#0f172a",
                             cursor: "pointer",
                             fontFamily: "inherit",
                             fontWeight: 800,
@@ -921,8 +953,8 @@ export default function App() {
                             padding: "10px 12px",
                             borderRadius: 10,
                             border: authRole === "athlete" ? "2px solid #3b82f6" : "1px solid rgba(148,163,184,.4)",
-                            background: authRole === "athlete" ? "rgba(59,130,246,.15)" : "rgba(15,23,42,.8)",
-                            color: "#e2e8f0",
+                            background: authRole === "athlete" ? "rgba(59,130,246,.15)" : "#f1f5f9",
+                            color: "#0f172a",
                             cursor: "pointer",
                             fontFamily: "inherit",
                             fontWeight: 800,
@@ -940,7 +972,7 @@ export default function App() {
                         value={authName}
                         onChange={e => setAuthName(e.target.value)}
                         placeholder="Tu nombre completo"
-                        style={{ width: "100%", background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 8, padding: "10px 12px", color: "#e2e8f0", fontFamily: "inherit", fontSize: ".85em", outline: "none", boxSizing: "border-box" }}
+                        style={{ width: "100%", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", color: "#0f172a", fontFamily: "inherit", fontSize: ".85em", outline: "none", boxSizing: "border-box" }}
                       />
                     </div>
                   </>
@@ -952,7 +984,7 @@ export default function App() {
                     value={authEmail}
                     onChange={e => setAuthEmail(e.target.value)}
                     placeholder="correo@ejemplo.com"
-                    style={{ width: "100%", background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 8, padding: "10px 12px", color: "#e2e8f0", fontFamily: "inherit", fontSize: ".85em", outline: "none", boxSizing: "border-box" }}
+                    style={{ width: "100%", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", color: "#0f172a", fontFamily: "inherit", fontSize: ".85em", outline: "none", boxSizing: "border-box" }}
                   />
                 </div>
                 <div style={{ marginBottom: 14 }}>
@@ -962,13 +994,13 @@ export default function App() {
                     value={authPassword}
                     onChange={e => setAuthPassword(e.target.value)}
                     placeholder="********"
-                    style={{ width: "100%", background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 8, padding: "10px 12px", color: "#e2e8f0", fontFamily: "inherit", fontSize: ".85em", outline: "none", boxSizing: "border-box" }}
+                    style={{ width: "100%", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", color: "#0f172a", fontFamily: "inherit", fontSize: ".85em", outline: "none", boxSizing: "border-box" }}
                   />
                 </div>
                 <button
                   type="submit"
                   disabled={authSubmitting}
-                  style={{ width: "100%", background: authSubmitting ? "rgba(255,255,255,.06)" : "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 8, padding: "10px 14px", color: authSubmitting ? "#334155" : "white", cursor: authSubmitting ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 800, fontSize: ".85em", marginBottom: 10 }}
+                  style={{ width: "100%", background: authSubmitting ? "#e2e8f0" : "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 8, padding: "10px 14px", color: authSubmitting ? "#334155" : "white", cursor: authSubmitting ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 800, fontSize: ".85em", marginBottom: 10 }}
                 >
                   {authSubmitting ? "Procesando..." : (authMode === "login" ? "Iniciar sesión" : "Crear cuenta")}
                 </button>
@@ -1000,7 +1032,7 @@ export default function App() {
                 <div style={{ fontSize: "0.9em", color: "#f59e0b", letterSpacing: ".14em", textTransform: "uppercase", fontWeight: 800, marginBottom: 8 }}>
                   Coach Platform
                 </div>
-                <h1 style={{ fontSize: "2.2em", fontWeight: 900, color: "#e2e8f0", margin: "0 0 8px" }}>
+                <h1 style={{ fontSize: "2.2em", fontWeight: 900, color: "#0f172a", margin: "0 0 8px" }}>
                   La plataforma de coaching para todo tipo de runners
                 </h1>
                 <p style={{ color: "#94a3b8", fontSize: ".95em", marginTop: 0 }}>
@@ -1017,13 +1049,13 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => setDemoModalOpen(true)}
-                    style={{ background: "rgba(255,255,255,.03)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 10, padding: "12px 16px", color: "#e2e8f0", cursor: "pointer", fontFamily: "inherit", fontWeight: 900, fontSize: ".9em" }}
+                    style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 10, padding: "12px 16px", color: "#0f172a", cursor: "pointer", fontFamily: "inherit", fontWeight: 900, fontSize: ".9em" }}
                   >
                     Ver demo
                   </button>
                 </div>
               </div>
-              <div style={{ minWidth: 320, flex: 1, background: "rgba(255,255,255,.02)", border: "1px solid rgba(255,255,255,.07)", borderRadius: 14, padding: 16 }}>
+              <div style={{ minWidth: 320, flex: 1, background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 14, padding: 16 }}>
                 <div style={{ fontSize: ".75em", color: "#94a3b8", letterSpacing: ".12em", textTransform: "uppercase", fontWeight: 800, marginBottom: 10 }}>
                   Vista previa
                 </div>
@@ -1039,7 +1071,7 @@ export default function App() {
                     { t: "Garmin", c: "#3b82f6", s: "Sync & seguimiento" },
                     { t: "COROS", c: "#22c55e", s: "Conexión flexible" },
                   ].map((x) => (
-                    <div key={x.t} style={{ background: "rgba(255,255,255,.03)", border: "1px solid rgba(255,255,255,.07)", borderRadius: 12, padding: 12 }}>
+                    <div key={x.t} style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 12, padding: 12 }}>
                       <div style={{ fontSize: "1.2em", fontWeight: 900, color: x.c, fontFamily: "monospace" }}>{x.t}</div>
                       <div style={{ color: "#94a3b8", fontSize: ".8em", marginTop: 6 }}>{x.s}</div>
                     </div>
@@ -1060,7 +1092,7 @@ export default function App() {
                 { title: "Seguimiento real", body: "Marca “done”, mide progreso y mantén el control del plan." },
               ].map((f) => (
                 <div key={f.title} style={{ ...S.card, padding: 18 }}>
-                  <div style={{ fontSize: "1.1em", fontWeight: 900, color: "#e2e8f0", marginBottom: 8 }}>{f.title}</div>
+                  <div style={{ fontSize: "1.1em", fontWeight: 900, color: "#0f172a", marginBottom: 8 }}>{f.title}</div>
                   <div style={{ color: "#94a3b8", fontSize: ".9em", lineHeight: 1.35 }}>{f.body}</div>
                 </div>
               ))}
@@ -1109,7 +1141,7 @@ export default function App() {
                 <div key={t.name} style={{ ...S.card, padding: 18 }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
                     <div>
-                      <div style={{ fontSize: "1.05em", fontWeight: 900, color: "#e2e8f0" }}>{t.name}</div>
+                      <div style={{ fontSize: "1.05em", fontWeight: 900, color: "#0f172a" }}>{t.name}</div>
                       <div style={{ color: "#64748b", fontSize: ".85em" }}>{t.role}</div>
                     </div>
                     <div style={{ color: "#f59e0b", fontWeight: 900, fontFamily: "monospace" }}>★★★★★</div>
@@ -1120,16 +1152,16 @@ export default function App() {
             </div>
           </div>
 
-          <footer style={{ marginTop: 20, paddingTop: 18, borderTop: "1px solid rgba(255,255,255,.06)", color: "#64748b", fontSize: ".85em" }}>
+          <footer style={{ marginTop: 20, paddingTop: 18, borderTop: "1px solid #e2e8f0", color: "#64748b", fontSize: ".85em" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-              <div style={{ color: "#e2e8f0", fontWeight: 900 }}>PaceForge</div>
+              <div style={{ color: "#0f172a", fontWeight: 900 }}>PaceForge</div>
               <div>© 2026</div>
             </div>
           </footer>
         </main>
 
         {demoModalOpen && (
-          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 300, padding: 16 }}>
+          <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 300, padding: 16 }}>
             <div style={{ ...S.card, width: "100%", maxWidth: 520, margin: 0 }}>
               <div style={{ fontSize: "1.05em", fontWeight: 900, marginBottom: 6 }}>Demo simulada</div>
               <div style={{ color: "#94a3b8", fontSize: ".9em", marginBottom: 14 }}>
@@ -1139,7 +1171,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => setDemoModalOpen(false)}
-                  style={{ background: "rgba(255,255,255,.03)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 8, padding: "8px 14px", color: "#94a3b8", cursor: "pointer", fontFamily: "inherit", fontWeight: 900, fontSize: ".82em" }}
+                  style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 14px", color: "#94a3b8", cursor: "pointer", fontFamily: "inherit", fontWeight: 900, fontSize: ".82em" }}
                 >
                   Cerrar
                 </button>
@@ -1170,7 +1202,7 @@ export default function App() {
     <div style={S.root}>
       {notification && <div style={S.notification}>✓ {notification}</div>}
 
-      <aside style={S.sidebar}>
+      <aside className="pf-sidebar-desktop" style={S.sidebar}>
         <div style={S.logo}>
           <span style={{ fontSize: "1.6em" }}>⚡</span>
           <div>
@@ -1178,36 +1210,53 @@ export default function App() {
             <div style={S.logoSub}>Coach Platform</div>
           </div>
         </div>
-        <nav style={{ flex: 1 }}>
-          {[
-            { id: "dashboard", icon: "▤", label: "Dashboard" },
-            { id: "athletes", icon: "◉", label: "Atletas" },
-            { id: "plan12", icon: "◉", label: "Plan 2 Semanas" },
-            { id: "plans", icon: "◇", label: "Planes" },
-            { id: "builder", icon: "◎", label: "Crear Workout" },
-            { id: "library", icon: "◈", label: "Biblioteca" },
-          ].map(item => (
-            <button key={item.id} onClick={() => { setView(item.id); setSelectedAthlete(null); setShowAddAthleteForm(false); }}
-              style={{ ...S.navBtn, ...(view === item.id ? S.navBtnActive : {}) }}>
-              <span>{item.icon}</span><span>{item.label}</span>
+        <nav style={{ flex: 1, paddingTop: 8 }}>
+          {COACH_NAV_ITEMS.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => {
+                setView(item.id);
+                setSelectedAthlete(null);
+                setShowAddAthleteForm(false);
+              }}
+              style={{ ...S.navBtn, ...(view === item.id ? S.navBtnActive : {}) }}
+            >
+              <span style={{ fontSize: "1.15em", color: item.color, width: 22, textAlign: "center" }}>{item.icon}</span>
+              <span>{item.label}</span>
             </button>
           ))}
         </nav>
         <div style={S.sidebarFooter}>
-          <div style={{ fontSize: ".82em", color: "#94a3b8" }}>👤 Coach Carlos Acosta</div>
-          <div style={{ fontSize: ".7em", color: "#475569" }}>
+          <div style={{ fontSize: ".82em", color: "#64748b", fontWeight: 600 }}>
+            👤 {profile?.name || session?.user?.email?.split("@")[0] || "Coach"}
+          </div>
+          <div style={{ fontSize: ".7em", color: "#94a3b8", marginTop: 4 }}>
             {athletes.length} atletas · {athletes.reduce((a, b) => a + b.weekly_km, 0)} km
           </div>
           <button
+            type="button"
             onClick={handleSignOut}
-            style={{ marginTop: 10, width: "100%", background: "rgba(239,68,68,.08)", border: "1px solid rgba(239,68,68,.25)", borderRadius: 8, padding: "8px 10px", color: "#ef4444", cursor: "pointer", fontFamily: "inherit", fontSize: ".78em", fontWeight: 700 }}
+            style={{
+              marginTop: 10,
+              width: "100%",
+              background: "#fef2f2",
+              border: "1px solid #fecaca",
+              borderRadius: 8,
+              padding: "9px 10px",
+              color: "#dc2626",
+              cursor: "pointer",
+              fontFamily: "inherit",
+              fontSize: ".78em",
+              fontWeight: 700,
+            }}
           >
             Cerrar sesión
           </button>
         </div>
       </aside>
 
-      <main style={{ flex: 1, overflowY: "auto" }}>
+      <main className="pf-main-mobile-pad" style={{ flex: 1, overflowY: "auto", background: "#f8fafc" }}>
         {loadingAthletes ? (
           <div style={S.page}>
             <h1 style={S.pageTitle}>Cargando atletas...</h1>
@@ -1254,6 +1303,7 @@ export default function App() {
               (session?.user?.email ? session.user.email.split("@")[0] : null) ||
               "Coach"
             }
+            onDeleteAthlete={handleDeleteAthlete}
           />
         )}
         {view === "plans" && <Plans athletes={athletes} />}
@@ -1289,6 +1339,33 @@ export default function App() {
           </>
         )}
       </main>
+
+      <nav className="pf-bottom-nav" aria-label="Navegación principal">
+        {COACH_NAV_ITEMS.map((item) => {
+          const active = view === item.id;
+          return (
+            <button
+              key={`m-${item.id}`}
+              type="button"
+              onClick={() => {
+                setView(item.id);
+                setSelectedAthlete(null);
+                setShowAddAthleteForm(false);
+              }}
+              style={{
+                color: active ? "#c2410c" : "#64748b",
+                background: active ? "rgba(245, 158, 11, 0.14)" : "transparent",
+                fontWeight: active ? 800 : 600,
+              }}
+            >
+              <span className="pf-bnav-icon" style={{ color: item.color }}>
+                {item.icon}
+              </span>
+              <span style={{ fontSize: "0.62rem", lineHeight: 1.15, textAlign: "center" }}>{item.shortLabel || item.label}</span>
+            </button>
+          );
+        })}
+      </nav>
     </div>
   );
 }
@@ -1404,11 +1481,11 @@ function Dashboard({
           <button
             onClick={onRequestAddAthlete}
             style={{
-              background: "rgba(255,255,255,.03)",
-              border: "1px solid rgba(255,255,255,.08)",
+              background: "#f8fafc",
+              border: "1px solid #e2e8f0",
               borderRadius: 10,
               padding: "10px 14px",
-              color: "#e2e8f0",
+              color: "#0f172a",
               cursor: "pointer",
               fontFamily: "inherit",
               fontSize: ".85em",
@@ -1422,7 +1499,7 @@ function Dashboard({
       </div>
 
       {showAddAthleteForm && (
-        <div style={{ marginBottom: 22, background: "rgba(255,255,255,.025)", border: "1px solid rgba(255,255,255,.07)", borderRadius: 12, padding: 18 }}>
+        <div style={{ marginBottom: 22, background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 12, padding: 18 }}>
           <div style={{ fontSize: ".75em", letterSpacing: ".13em", color: "#475569", textTransform: "uppercase", marginBottom: 14 }}>
             Nuevo Atleta
           </div>
@@ -1433,7 +1510,7 @@ function Dashboard({
                 value={newAthlete.name}
                 onChange={e => onChangeNewAthleteField("name", e.target.value)}
                 placeholder="Ej: Carlos Rojas"
-                style={{ width: "100%", background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 8, padding: "10px 12px", color: "#e2e8f0", fontFamily: "inherit", fontSize: ".85em", outline: "none", boxSizing: "border-box" }}
+                style={{ width: "100%", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", color: "#0f172a", fontFamily: "inherit", fontSize: ".85em", outline: "none", boxSizing: "border-box" }}
               />
             </div>
             <div>
@@ -1443,7 +1520,7 @@ function Dashboard({
                 value={newAthlete.email}
                 onChange={e => onChangeNewAthleteField("email", e.target.value)}
                 placeholder="atleta@correo.com"
-                style={{ width: "100%", background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 8, padding: "10px 12px", color: "#e2e8f0", fontFamily: "inherit", fontSize: ".85em", outline: "none", boxSizing: "border-box" }}
+                style={{ width: "100%", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", color: "#0f172a", fontFamily: "inherit", fontSize: ".85em", outline: "none", boxSizing: "border-box" }}
               />
             </div>
             <div>
@@ -1452,7 +1529,7 @@ function Dashboard({
                 value={newAthlete.pace}
                 onChange={e => onChangeNewAthleteField("pace", e.target.value)}
                 placeholder="Ej: 5:10/km"
-                style={{ width: "100%", background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 8, padding: "10px 12px", color: "#e2e8f0", fontFamily: "inherit", fontSize: ".85em", outline: "none", boxSizing: "border-box" }}
+                style={{ width: "100%", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", color: "#0f172a", fontFamily: "inherit", fontSize: ".85em", outline: "none", boxSizing: "border-box" }}
               />
             </div>
             <div style={{ gridColumn: "1 / -1" }}>
@@ -1461,7 +1538,7 @@ function Dashboard({
                 value={newAthlete.goal}
                 onChange={e => onChangeNewAthleteField("goal", e.target.value)}
                 placeholder="Ej: Sub 3:45 Maratón"
-                style={{ width: "100%", background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 8, padding: "10px 12px", color: "#e2e8f0", fontFamily: "inherit", fontSize: ".85em", outline: "none", boxSizing: "border-box" }}
+                style={{ width: "100%", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", color: "#0f172a", fontFamily: "inherit", fontSize: ".85em", outline: "none", boxSizing: "border-box" }}
               />
             </div>
             <div>
@@ -1473,7 +1550,7 @@ function Dashboard({
                 placeholder="Ej: 65"
                 min="1"
                 step="1"
-                style={{ width: "100%", background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 8, padding: "10px 12px", color: "#e2e8f0", fontFamily: "inherit", fontSize: ".85em", outline: "none", boxSizing: "border-box" }}
+                style={{ width: "100%", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", color: "#0f172a", fontFamily: "inherit", fontSize: ".85em", outline: "none", boxSizing: "border-box" }}
               />
             </div>
             <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "flex-end" }}>
@@ -1487,8 +1564,8 @@ function Dashboard({
             <button
               onClick={onCancelAddAthlete}
               style={{
-                background: "rgba(255,255,255,.03)",
-                border: "1px solid rgba(255,255,255,.1)",
+                background: "#f8fafc",
+                border: "1px solid #e2e8f0",
                 borderRadius: 10,
                 padding: "10px 14px",
                 color: "#94a3b8",
@@ -1560,7 +1637,7 @@ function Dashboard({
             <div style={{ overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: ".82em" }}>
                 <thead>
-                  <tr style={{ background: "rgba(255,255,255,.04)", textAlign: "left", color: "#94a3b8" }}>
+                  <tr style={{ background: "#f1f5f9", textAlign: "left", color: "#94a3b8" }}>
                     <th style={{ padding: "12px 14px", fontWeight: 700 }}>Atleta</th>
                     <th style={{ padding: "12px 14px", fontWeight: 700 }}>Km / sem</th>
                     <th style={{ padding: "12px 14px", fontWeight: 700, minWidth: 160 }}>Adherencia (semana)</th>
@@ -1580,9 +1657,9 @@ function Dashboard({
                       <tr
                         key={a.id}
                         onClick={() => onSelect(a)}
-                        style={{ borderTop: "1px solid rgba(255,255,255,.06)", cursor: "pointer" }}
+                        style={{ borderTop: "1px solid #e2e8f0", cursor: "pointer" }}
                       >
-                        <td style={{ padding: "12px 14px", color: "#e2e8f0", fontWeight: 600 }}>{a.name}</td>
+                        <td style={{ padding: "12px 14px", color: "#0f172a", fontWeight: 600 }}>{a.name}</td>
                         <td style={{ padding: "12px 14px", color: "#cbd5e1", fontFamily: "monospace" }}>{a.weekly_km} km</td>
                         <td style={{ padding: "12px 14px" }}>
                           <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 4 }}>
@@ -1641,7 +1718,7 @@ function Dashboard({
                           display: "flex",
                           alignItems: "flex-end",
                           justifyContent: "center",
-                          background: "rgba(255,255,255,.03)",
+                          background: "#f8fafc",
                           borderRadius: 8,
                           padding: "0 6px",
                           boxSizing: "border-box",
@@ -1674,7 +1751,7 @@ function Dashboard({
   );
 }
 
-function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWorkoutsDoneSync, onAthleteDeviceSync, onAthleteFcSync, coachDisplayName }) {
+function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWorkoutsDoneSync, onAthleteDeviceSync, onAthleteFcSync, coachDisplayName, onDeleteAthlete }) {
   const S = styles;
   const athlete = (selected ? athletes.find(a => String(a.id) === String(selected.id)) : athletes[0]) || null;
   const [searchQuery, setSearchQuery] = useState("");
@@ -1921,7 +1998,7 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
   return (
     <div style={S.page}>
       <h1 style={{ ...S.pageTitle, marginBottom: 20 }}>Atletas</h1>
-      <div style={{ display: "grid", gridTemplateColumns: "220px 1fr", gap: 20 }}>
+      <div className="pf-stack-mobile" style={{ display: "grid", gridTemplateColumns: "220px 1fr", gap: 20 }}>
         <div>
           <div style={{ marginBottom: 10 }}>
             <div style={{ fontSize: ".72em", color: "#475569", marginBottom: 6 }}>Buscar</div>
@@ -1929,7 +2006,7 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
               placeholder="Nombre o objetivo"
-              style={{ width: "100%", background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 8, padding: "10px 12px", color: "#e2e8f0", fontFamily: "inherit", fontSize: ".85em", outline: "none", boxSizing: "border-box" }}
+              style={{ width: "100%", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", color: "#0f172a", fontFamily: "inherit", fontSize: ".85em", outline: "none", boxSizing: "border-box" }}
             />
           </div>
 
@@ -1937,12 +2014,48 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
             <div style={{ padding: "14px 8px", color: "#64748b", fontSize: ".85em" }}>No se encontraron atletas</div>
           ) : (
             filteredAthletes.map(a => (
-              <div key={a.id} onClick={() => onSelect(a)} style={{ display: "flex", gap: 10, alignItems: "center", padding: "10px 12px", borderRadius: 8, cursor: "pointer", border: `1px solid ${athlete.id === a.id ? "rgba(245,158,11,.2)" : "transparent"}`, background: athlete.id === a.id ? "rgba(245,158,11,.08)" : "transparent", marginBottom: 6 }}>
+              <div
+                key={a.id}
+                onClick={() => onSelect(a)}
+                style={{
+                  display: "flex",
+                  gap: 10,
+                  alignItems: "center",
+                  padding: "10px 12px",
+                  borderRadius: 10,
+                  cursor: "pointer",
+                  border: `1px solid ${athlete.id === a.id ? "rgba(245,158,11,.45)" : "#e2e8f0"}`,
+                  background: athlete.id === a.id ? "rgba(245,158,11,.1)" : "#ffffff",
+                  marginBottom: 8,
+                  boxShadow: athlete.id === a.id ? "0 1px 3px rgba(0,0,0,0.08)" : "0 1px 2px rgba(0,0,0,0.04)",
+                }}
+              >
                 <span style={{ fontSize: "1.3em" }}>{a.avatar}</span>
-                <div>
-                  <div style={{ fontSize: ".85em", fontWeight: 600, color: "#e2e8f0" }}>{a.name}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: ".85em", fontWeight: 700, color: "#0f172a" }}>{a.name}</div>
                   <div style={{ fontSize: ".7em", color: "#64748b" }}>{a.pace} · {a.weekly_km}km</div>
                 </div>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDeleteAthlete?.(a);
+                  }}
+                  style={{
+                    flexShrink: 0,
+                    background: "#fef2f2",
+                    border: "1px solid #fecaca",
+                    borderRadius: 8,
+                    padding: "6px 10px",
+                    color: "#b91c1c",
+                    fontSize: ".72em",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  🗑 Eliminar
+                </button>
               </div>
             ))
           )}
@@ -1951,7 +2064,7 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
           <div style={{ display: "flex", flexWrap: "wrap", gap: 14, alignItems: "center", marginBottom: 20 }}>
             <div style={{ ...S.avatar, width: 52, height: 52, fontSize: "1.8em" }}>{athlete.avatar}</div>
             <div style={{ flex: "1 1 180px", minWidth: 0 }}>
-              <div style={{ fontSize: "1.3em", fontWeight: 700, color: "#e2e8f0" }}>{athlete.name}</div>
+              <div style={{ fontSize: "1.3em", fontWeight: 700, color: "#0f172a" }}>{athlete.name}</div>
               <div style={{ color: "#64748b", fontSize: ".85em" }}>{athlete.goal}</div>
             </div>
             <button
@@ -1969,11 +2082,11 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
                 }
               }}
               style={{
-                background: "rgba(255,255,255,.04)",
-                border: "1px solid rgba(255,255,255,.12)",
+                background: "#f1f5f9",
+                border: "1px solid #cbd5e1",
                 borderRadius: 8,
                 padding: "8px 14px",
-                color: "#e2e8f0",
+                color: "#0f172a",
                 fontWeight: 700,
                 cursor: "pointer",
                 fontFamily: "inherit",
@@ -1987,7 +2100,7 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12, marginBottom: 24 }}>
             {[{ label: "Ritmo", value: athlete.pace, icon: "⚡" }, { label: "Km/Semana", value: `${athlete.weekly_km}km`, icon: "📍" }, { label: "Adherencia", value: `${Math.round(athlete.workouts_done/athlete.workouts_total*100)}%`, icon: "✅" }].map((m,i) => (
-              <div key={i} style={{ background: "rgba(255,255,255,.03)", borderRadius: 10, padding: "14px 12px", textAlign: "center", border: "1px solid rgba(255,255,255,.06)" }}>
+              <div key={i} style={{ background: "#f8fafc", borderRadius: 10, padding: "14px 12px", textAlign: "center", border: "1px solid #e2e8f0" }}>
                 <div style={{ fontSize: "1.3em" }}>{m.icon}</div>
                 <div style={{ fontSize: "1.2em", fontWeight: 700, color: "#f59e0b", fontFamily: "monospace" }}>{m.value}</div>
                 <div style={{ fontSize: ".7em", color: "#64748b" }}>{m.label}</div>
@@ -1995,7 +2108,7 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
             ))}
           </div>
 
-          <div style={{ marginBottom: 24, paddingBottom: 20, borderBottom: "1px solid rgba(255,255,255,.06)" }}>
+          <div style={{ marginBottom: 24, paddingBottom: 20, borderBottom: "1px solid #e2e8f0" }}>
             <div style={{ fontSize: ".65em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase", marginBottom: 12 }}>
               ZONAS FC
             </div>
@@ -2009,7 +2122,7 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
                   placeholder="Ej: 185"
                   value={fcMaxInput}
                   onChange={(e) => setFcMaxInput(e.target.value)}
-                  style={{ width: "100%", background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 8, padding: "8px 10px", color: "#e2e8f0", fontFamily: "inherit", fontSize: ".85em", outline: "none", boxSizing: "border-box" }}
+                  style={{ width: "100%", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", color: "#0f172a", fontFamily: "inherit", fontSize: ".85em", outline: "none", boxSizing: "border-box" }}
                 />
               </div>
               <div style={{ flex: "1 1 120px", minWidth: 100 }}>
@@ -2021,7 +2134,7 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
                   placeholder="Ej: 48"
                   value={fcReposoInput}
                   onChange={(e) => setFcReposoInput(e.target.value)}
-                  style={{ width: "100%", background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 8, padding: "8px 10px", color: "#e2e8f0", fontFamily: "inherit", fontSize: ".85em", outline: "none", boxSizing: "border-box" }}
+                  style={{ width: "100%", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", color: "#0f172a", fontFamily: "inherit", fontSize: ".85em", outline: "none", boxSizing: "border-box" }}
                 />
               </div>
               <button
@@ -2029,7 +2142,7 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
                 onClick={saveAthleteFc}
                 disabled={fcSaving}
                 style={{
-                  background: fcSaving ? "rgba(255,255,255,.06)" : "linear-gradient(135deg,#b45309,#f59e0b)",
+                  background: fcSaving ? "#e2e8f0" : "linear-gradient(135deg,#b45309,#f59e0b)",
                   border: "none",
                   borderRadius: 8,
                   padding: "10px 16px",
@@ -2050,13 +2163,13 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
                 {zones.map((z) => (
                   <div key={z.zone}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4, fontSize: ".78em" }}>
-                      <span style={{ color: "#e2e8f0", fontWeight: 600 }}>
+                      <span style={{ color: "#0f172a", fontWeight: 600 }}>
                         Zona {z.zone}: {z.low}–{z.high} lpm
                       </span>
                       <span style={{ color: "#64748b", fontSize: ".72em" }}>{z.pctLabel}</span>
                     </div>
                     <div style={{ fontSize: ".72em", color: "#94a3b8", marginBottom: 4 }}>{z.label}</div>
-                    <div style={{ height: 10, borderRadius: 5, background: "rgba(255,255,255,.06)", overflow: "hidden" }}>
+                    <div style={{ height: 10, borderRadius: 5, background: "#e2e8f0", overflow: "hidden" }}>
                       <div style={{ height: "100%", width: "100%", background: z.color, borderRadius: 5, opacity: 0.95 }} />
                     </div>
                   </div>
@@ -2070,7 +2183,7 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
             })()}
           </div>
 
-          <div style={{ marginBottom: 24, paddingBottom: 20, borderBottom: "1px solid rgba(255,255,255,.06)" }}>
+          <div style={{ marginBottom: 24, paddingBottom: 20, borderBottom: "1px solid #e2e8f0" }}>
             <div style={{ fontSize: ".65em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase", marginBottom: 10 }}>
               FORMA Y FATIGA
             </div>
@@ -2089,8 +2202,8 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
                     marginBottom: 14,
                     padding: "10px 14px",
                     borderRadius: 10,
-                    border: "1px solid rgba(255,255,255,.08)",
-                    background: "rgba(255,255,255,.03)",
+                    border: "1px solid #e2e8f0",
+                    background: "#f8fafc",
                     fontSize: ".88em",
                     fontWeight: 700,
                     color:
@@ -2123,7 +2236,7 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
                 <div style={{ overflowX: "auto" }}>
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: ".8em" }}>
                     <thead>
-                      <tr style={{ textAlign: "left", color: "#94a3b8", borderBottom: "1px solid rgba(255,255,255,.08)" }}>
+                      <tr style={{ textAlign: "left", color: "#94a3b8", borderBottom: "1px solid #e2e8f0" }}>
                         <th style={{ padding: "8px 10px", fontWeight: 700 }}>Semana (corte)</th>
                         <th style={{ padding: "8px 10px", fontWeight: 700, color: "#ef4444" }}>Aguda</th>
                         <th style={{ padding: "8px 10px", fontWeight: 700, color: "#3b82f6" }}>Crónica</th>
@@ -2132,8 +2245,8 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
                     </thead>
                     <tbody>
                       {formaFatigaTableRows.map((row) => (
-                        <tr key={row.i} style={{ borderBottom: "1px solid rgba(255,255,255,.05)" }}>
-                          <td style={{ padding: "8px 10px", color: "#e2e8f0" }}>
+                        <tr key={row.i} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                          <td style={{ padding: "8px 10px", color: "#0f172a" }}>
                             {row.label} <span style={{ color: "#64748b", fontSize: ".85em" }}>({row.endYmd})</span>
                           </td>
                           <td style={{ padding: "8px 10px", color: "#fecaca", fontFamily: "monospace" }}>
@@ -2169,7 +2282,7 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
                 const hasDoneWorkout = dayWorkouts.some(w => w.done);
                 const borderColor = hasWorkout
                   ? `${WORKOUT_TYPES.find(t => t.id === dayWorkouts[0].type)?.color || "#64748b"}40`
-                  : "rgba(255,255,255,.05)";
+                  : "#f1f5f9";
                 return (
                   <div
                     key={i}
@@ -2182,7 +2295,7 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
                       flexDirection: "column",
                       alignItems: "stretch",
                       gap: 3,
-                      background: hasDoneWorkout ? "rgba(34,197,94,.08)" : (hasWorkout ? "rgba(255,255,255,.02)" : "transparent"),
+                      background: hasDoneWorkout ? "rgba(34,197,94,.08)" : (hasWorkout ? "#f8fafc" : "transparent"),
                     }}
                   >
                     <div style={{ fontSize: ".58em", color: "#475569", textAlign: "center", fontWeight: 600 }}>{cellDate.getDate()}</div>
@@ -2232,14 +2345,14 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
               <button
                 type="button"
                 onClick={() => openDeviceModal("coros")}
-                style={{ background: "rgba(255,255,255,.03)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 8, padding: "8px 12px", color: "#e2e8f0", cursor: "pointer", fontFamily: "inherit", fontSize: ".8em", fontWeight: 700 }}
+                style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 12px", color: "#0f172a", cursor: "pointer", fontFamily: "inherit", fontSize: ".8em", fontWeight: 700 }}
               >
                 Conectar COROS
               </button>
               <button
                 type="button"
                 onClick={() => openDeviceModal("garmin")}
-                style={{ background: "rgba(255,255,255,.03)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 8, padding: "8px 12px", color: "#e2e8f0", cursor: "pointer", fontFamily: "inherit", fontSize: ".8em", fontWeight: 700 }}
+                style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 12px", color: "#0f172a", cursor: "pointer", fontFamily: "inherit", fontSize: ".8em", fontWeight: 700 }}
               >
                 Conectar Garmin
               </button>
@@ -2275,8 +2388,8 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
                 overflowY: "auto",
                 padding: "10px 8px",
                 borderRadius: 10,
-                background: "rgba(0,0,0,.2)",
-                border: "1px solid rgba(255,255,255,.06)",
+                background: "#f1f5f9",
+                border: "1px solid #e2e8f0",
                 marginBottom: 10,
                 display: "flex",
                 flexDirection: "column",
@@ -2298,15 +2411,15 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
                         borderRadius: 10,
                         background: isCoach
                           ? "linear-gradient(135deg, rgba(180,83,9,.85), rgba(245,158,11,.75))"
-                          : "rgba(59,130,246,.35)",
-                        border: `1px solid ${isCoach ? "rgba(245,158,11,.5)" : "rgba(59,130,246,.45)"}`,
-                        color: "#f8fafc",
+                          : "#eff6ff",
+                        border: `1px solid ${isCoach ? "rgba(245,158,11,.5)" : "rgba(59,130,246,.35)"}`,
+                        color: isCoach ? "#f8fafc" : "#0f172a",
                         fontSize: ".82em",
                         lineHeight: 1.45,
                       }}
                     >
                       <div>{m.body}</div>
-                      <div style={{ fontSize: ".65em", color: isCoach ? "rgba(255,255,255,.75)" : "rgba(191,219,254,.85)", marginTop: 6 }}>
+                      <div style={{ fontSize: ".65em", color: isCoach ? "rgba(255,255,255,.85)" : "#64748b", marginTop: 6 }}>
                         {formatMessageTimestamp(m.created_at)}
                       </div>
                     </div>
@@ -2323,11 +2436,11 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
                 placeholder="Escribe un mensaje…"
                 style={{
                   flex: 1,
-                  background: "rgba(255,255,255,.04)",
-                  border: "1px solid rgba(255,255,255,.1)",
+                  background: "#f1f5f9",
+                  border: "1px solid #e2e8f0",
                   borderRadius: 8,
                   padding: "10px 12px",
-                  color: "#e2e8f0",
+                  color: "#0f172a",
                   fontFamily: "inherit",
                   fontSize: ".85em",
                   outline: "none",
@@ -2339,7 +2452,7 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
                 onClick={sendCoachChat}
                 disabled={chatSending || !chatDraft.trim() || !coachId}
                 style={{
-                  background: chatSending || !chatDraft.trim() ? "rgba(255,255,255,.06)" : "linear-gradient(135deg,#b45309,#f59e0b)",
+                  background: chatSending || !chatDraft.trim() ? "#e2e8f0" : "linear-gradient(135deg,#b45309,#f59e0b)",
                   border: "none",
                   borderRadius: 8,
                   padding: "10px 16px",
@@ -2359,9 +2472,9 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
       </div>
 
       {deviceModal.open && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 16 }}>
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 16 }}>
           <div style={{ ...S.card, width: "100%", maxWidth: 420, margin: 0 }}>
-            <div style={{ fontSize: ".95em", fontWeight: 700, color: "#e2e8f0", marginBottom: 8 }}>
+            <div style={{ fontSize: ".95em", fontWeight: 700, color: "#0f172a", marginBottom: 8 }}>
               Conectar {deviceModal.provider === "garmin" ? "Garmin" : "COROS"}
             </div>
             <div style={{ fontSize: ".8em", color: "#94a3b8", marginBottom: 14 }}>
@@ -2373,7 +2486,7 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
               <button
                 type="button"
                 onClick={() => setDeviceModal({ open: false, provider: null })}
-                style={{ background: "rgba(255,255,255,.03)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 8, padding: "8px 14px", color: "#94a3b8", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: ".82em" }}
+                style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 14px", color: "#94a3b8", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: ".82em" }}
               >
                 Cancelar
               </button>
@@ -2692,7 +2805,7 @@ function AthleteHome({ profile }) {
               const hasDoneWorkout = dayWorkouts.some(w => w.done);
               const borderColor = hasWorkout
                 ? `${WORKOUT_TYPES.find(t => t.id === dayWorkouts[0].type)?.color || "#64748b"}40`
-                : "rgba(255,255,255,.05)";
+                : "#f1f5f9";
 
               return (
                 <div
@@ -2706,7 +2819,7 @@ function AthleteHome({ profile }) {
                     flexDirection: "column",
                     alignItems: "stretch",
                     gap: 3,
-                    background: hasDoneWorkout ? "rgba(34,197,94,.08)" : (hasWorkout ? "rgba(255,255,255,.02)" : "transparent"),
+                    background: hasDoneWorkout ? "rgba(34,197,94,.08)" : (hasWorkout ? "#f8fafc" : "transparent"),
                   }}
                 >
                   <div style={{ fontSize: ".58em", color: "#475569", textAlign: "center", fontWeight: 600 }}>{cellDate.getDate()}</div>
@@ -2750,10 +2863,10 @@ function AthleteHome({ profile }) {
                                 width: "100%",
                                 maxWidth: "100%",
                                 background: "rgba(0,0,0,.35)",
-                                border: "1px solid rgba(255,255,255,.12)",
+                                border: "1px solid #cbd5e1",
                                 borderRadius: 4,
                                 padding: "3px 2px",
-                                color: "#e2e8f0",
+                                color: "#0f172a",
                                 fontFamily: "inherit",
                                 fontSize: "inherit",
                                 cursor: "pointer",
@@ -2800,8 +2913,8 @@ function AthleteHome({ profile }) {
                 overflowY: "auto",
                 padding: "10px 8px",
                 borderRadius: 10,
-                background: "rgba(0,0,0,.2)",
-                border: "1px solid rgba(255,255,255,.06)",
+                background: "#f1f5f9",
+                border: "1px solid #e2e8f0",
                 marginBottom: 10,
                 display: "flex",
                 flexDirection: "column",
@@ -2823,15 +2936,15 @@ function AthleteHome({ profile }) {
                         borderRadius: 10,
                         background: isCoach
                           ? "linear-gradient(135deg, rgba(180,83,9,.85), rgba(245,158,11,.75))"
-                          : "rgba(59,130,246,.35)",
-                        border: `1px solid ${isCoach ? "rgba(245,158,11,.5)" : "rgba(59,130,246,.45)"}`,
-                        color: "#f8fafc",
+                          : "#eff6ff",
+                        border: `1px solid ${isCoach ? "rgba(245,158,11,.5)" : "rgba(59,130,246,.35)"}`,
+                        color: isCoach ? "#f8fafc" : "#0f172a",
                         fontSize: ".82em",
                         lineHeight: 1.45,
                       }}
                     >
                       <div>{m.body}</div>
-                      <div style={{ fontSize: ".65em", color: isCoach ? "rgba(255,255,255,.75)" : "rgba(191,219,254,.85)", marginTop: 6 }}>
+                      <div style={{ fontSize: ".65em", color: isCoach ? "rgba(255,255,255,.85)" : "#64748b", marginTop: 6 }}>
                         {formatMessageTimestamp(m.created_at)}
                       </div>
                     </div>
@@ -2848,11 +2961,11 @@ function AthleteHome({ profile }) {
                 placeholder="Escribe un mensaje a tu coach…"
                 style={{
                   flex: 1,
-                  background: "rgba(255,255,255,.04)",
-                  border: "1px solid rgba(255,255,255,.1)",
+                  background: "#f1f5f9",
+                  border: "1px solid #e2e8f0",
                   borderRadius: 8,
                   padding: "10px 12px",
-                  color: "#e2e8f0",
+                  color: "#0f172a",
                   fontFamily: "inherit",
                   fontSize: ".85em",
                   outline: "none",
@@ -2864,7 +2977,7 @@ function AthleteHome({ profile }) {
                 onClick={sendAthleteChat}
                 disabled={athleteChatSending || !athleteChatDraft.trim()}
                 style={{
-                  background: athleteChatSending || !athleteChatDraft.trim() ? "rgba(255,255,255,.06)" : "linear-gradient(135deg,#b45309,#f59e0b)",
+                  background: athleteChatSending || !athleteChatDraft.trim() ? "#e2e8f0" : "linear-gradient(135deg,#b45309,#f59e0b)",
                   border: "none",
                   borderRadius: 8,
                   padding: "10px 16px",
@@ -3217,11 +3330,11 @@ Output 2 week objects with the correct ${daysPerWeek} workouts each; each workou
 
   const inputStyle = {
     width: "100%",
-    background: "rgba(255,255,255,.04)",
-    border: "1px solid rgba(255,255,255,.1)",
+    background: "#f1f5f9",
+    border: "1px solid #e2e8f0",
     borderRadius: 8,
     padding: "10px 12px",
-    color: "#e2e8f0",
+    color: "#0f172a",
     fontFamily: "inherit",
     fontSize: ".85em",
     outline: "none",
@@ -3286,7 +3399,7 @@ Output 2 week objects with the correct ${daysPerWeek} workouts each; each workou
               style={{
                 marginTop: 6,
                 width: "100%",
-                background: planLoading || !athletes?.length ? "rgba(255,255,255,.06)" : "linear-gradient(135deg,#b45309,#f59e0b)",
+                background: planLoading || !athletes?.length ? "#e2e8f0" : "linear-gradient(135deg,#b45309,#f59e0b)",
                 border: "none",
                 borderRadius: 8,
                 padding: "12px 16px",
@@ -3306,8 +3419,8 @@ Output 2 week objects with the correct ${daysPerWeek} workouts each; each workou
                 disabled={assignLoading || !athleteId}
                 style={{
                   width: "100%",
-                  background: assignLoading || !athleteId ? "rgba(255,255,255,.06)" : "rgba(59,130,246,.18)",
-                  border: `1px solid ${assignLoading || !athleteId ? "rgba(255,255,255,.08)" : "rgba(59,130,246,.45)"}`,
+                  background: assignLoading || !athleteId ? "#e2e8f0" : "rgba(59,130,246,.18)",
+                  border: `1px solid ${assignLoading || !athleteId ? "#e2e8f0" : "rgba(59,130,246,.45)"}`,
                   borderRadius: 8,
                   padding: "12px 16px",
                   color: assignLoading || !athleteId ? "#475569" : "#93c5fd",
@@ -3365,14 +3478,14 @@ Output 2 week objects with the correct ${daysPerWeek} workouts each; each workou
             </div>
           ) : (
             <>
-              <div style={{ fontSize: "1.05em", fontWeight: 700, color: "#e2e8f0", marginBottom: 16 }}>{generatedPlan.plan_title || "Plan 2 semanas"}</div>
+              <div style={{ fontSize: "1.05em", fontWeight: 700, color: "#0f172a", marginBottom: 16 }}>{generatedPlan.plan_title || "Plan 2 semanas"}</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 {[...generatedPlan.weeks].sort((a, b) => (Number(a.week_number) || 0) - (Number(b.week_number) || 0)).map((week) => {
                   const n = Number(week.week_number) || 0;
                   const open = openWeeks.has(n);
                   const wos = Array.isArray(week.workouts) ? week.workouts : [];
                   return (
-                    <div key={n} style={{ border: "1px solid rgba(255,255,255,.08)", borderRadius: 10, overflow: "hidden" }}>
+                    <div key={n} style={{ border: "1px solid #e2e8f0", borderRadius: 10, overflow: "hidden" }}>
                       <button
                         type="button"
                         onClick={() => toggleWeek(n)}
@@ -3382,9 +3495,9 @@ Output 2 week objects with the correct ${daysPerWeek} workouts each; each workou
                           alignItems: "center",
                           justifyContent: "space-between",
                           padding: "12px 14px",
-                          background: open ? "rgba(245,158,11,.1)" : "rgba(255,255,255,.03)",
+                          background: open ? "rgba(245,158,11,.1)" : "#f8fafc",
                           border: "none",
-                          color: "#e2e8f0",
+                          color: "#0f172a",
                           fontFamily: "inherit",
                           fontWeight: 700,
                           fontSize: ".88em",
@@ -3433,7 +3546,7 @@ Output 2 week objects with the correct ${daysPerWeek} workouts each; each workou
                                     marginBottom: idx === wos.length - 1 ? 0 : 10,
                                     padding: 10,
                                     borderRadius: 8,
-                                    background: "rgba(255,255,255,.03)",
+                                    background: "#f8fafc",
                                     borderLeft: `3px solid ${wt.color}`,
                                     display: "flex",
                                     gap: 10,
@@ -3442,7 +3555,7 @@ Output 2 week objects with the correct ${daysPerWeek} workouts each; each workou
                                 >
                                   <div style={{ flex: 1, minWidth: 0, cursor: "default" }}>
                                     <div style={{ fontSize: ".78em", color: "#64748b", marginBottom: 4 }}>{dayName}</div>
-                                    <div style={{ fontWeight: 700, color: "#e2e8f0", fontSize: ".88em" }}>{wo.title || "Sin título"}</div>
+                                    <div style={{ fontWeight: 700, color: "#0f172a", fontSize: ".88em" }}>{wo.title || "Sin título"}</div>
                                     <div style={{ fontSize: ".76em", color: "#94a3b8", marginTop: 4 }}>
                                       {Number(wo.total_km ?? wo.km) || 0} km · {wo.duration_min} min · <span style={{ color: wt.color }}>{wt.label}</span>
                                     </div>
@@ -3506,9 +3619,9 @@ Output 2 week objects with the correct ${daysPerWeek} workouts each; each workou
             console.log("planEditModal vale:", planEditModal);
             return null;
           })()}
-          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 220, padding: 16 }}>
+          <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 220, padding: 16 }}>
           <div style={{ ...S.card, width: "100%", maxWidth: 420, margin: 0 }}>
-            <div style={{ fontSize: ".95em", fontWeight: 700, color: "#e2e8f0", marginBottom: 6 }}>
+            <div style={{ fontSize: ".95em", fontWeight: 700, color: "#0f172a", marginBottom: 6 }}>
               {planEditModal.workoutIdx === "new" ? "Nueva sesión" : "Editar sesión"}
             </div>
             <div style={{ fontSize: ".75em", color: "#64748b", marginBottom: 14 }}>
@@ -3578,8 +3691,8 @@ Output 2 week objects with the correct ${daysPerWeek} workouts each; each workou
                 type="button"
                 onClick={() => setPlanEditModal(null)}
                 style={{
-                  background: "rgba(255,255,255,.03)",
-                  border: "1px solid rgba(255,255,255,.1)",
+                  background: "#f8fafc",
+                  border: "1px solid #e2e8f0",
                   borderRadius: 8,
                   padding: "8px 14px",
                   color: "#94a3b8",
@@ -3694,11 +3807,11 @@ function WorkoutLibrary({ coachUserId, libraryRefresh, onUseWorkout, notify }) {
           style={{
             width: "100%",
             maxWidth: 400,
-            background: "rgba(255,255,255,.04)",
-            border: "1px solid rgba(255,255,255,.1)",
+            background: "#f1f5f9",
+            border: "1px solid #e2e8f0",
             borderRadius: 8,
             padding: "10px 12px",
-            color: "#e2e8f0",
+            color: "#0f172a",
             fontFamily: "inherit",
             fontSize: ".85em",
             outline: "none",
@@ -3731,12 +3844,12 @@ function WorkoutLibrary({ coachUserId, libraryRefresh, onUseWorkout, notify }) {
                   alignItems: "flex-start",
                   justifyContent: "space-between",
                   gap: 14,
-                  border: "1px solid rgba(255,255,255,.07)",
+                  border: "1px solid #e2e8f0",
                 }}
               >
                 <div style={{ flex: "1 1 220px", minWidth: 0 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8, flexWrap: "wrap" }}>
-                    <span style={{ fontSize: "1.05em", fontWeight: 700, color: "#e2e8f0" }}>{row.title}</span>
+                    <span style={{ fontSize: "1.05em", fontWeight: 700, color: "#0f172a" }}>{row.title}</span>
                     <span
                       style={{
                         fontSize: ".65em",
@@ -3990,7 +4103,7 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
             <select
               value={builderHrAthleteId}
               onChange={(e) => setBuilderHrAthleteId(e.target.value)}
-              style={{ width: "100%", background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 8, padding: "10px 12px", color: "#e2e8f0", fontFamily: "inherit", fontSize: ".85em", outline: "none", boxSizing: "border-box" }}
+              style={{ width: "100%", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", color: "#0f172a", fontFamily: "inherit", fontSize: ".85em", outline: "none", boxSizing: "border-box" }}
             >
               <option value="">Sin zonas FC en el prompt</option>
               {(athletes || []).map((a) => (
@@ -4000,11 +4113,11 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
               ))}
             </select>
           </div>
-          <textarea value={aiPrompt} onChange={e=>setAiPrompt(e.target.value)} placeholder="Ej: Intervalos 6x800m para atleta sub 4h maratón..." style={{ width: "100%", background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 8, padding: "12px 14px", color: "#e2e8f0", fontFamily: "inherit", fontSize: ".85em", resize: "vertical", outline: "none", marginBottom: 12, boxSizing: "border-box" }} rows={5} />
+          <textarea value={aiPrompt} onChange={e=>setAiPrompt(e.target.value)} placeholder="Ej: Intervalos 6x800m para atleta sub 4h maratón..." style={{ width: "100%", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "12px 14px", color: "#0f172a", fontFamily: "inherit", fontSize: ".85em", resize: "vertical", outline: "none", marginBottom: 12, boxSizing: "border-box" }} rows={5} />
           <div style={{ marginBottom: 12 }}>
             <div style={{ fontSize: ".72em", color: "#475569", marginBottom: 8 }}>SUGERENCIAS:</div>
             {["Intervalos 6x800m para atleta sub 4h maratón", "Rodaje largo 28km semana 18 de plan", "Tempo 8km para media maratón zona 3-4"].map((s,i) => (
-              <div key={i} onClick={()=>setAiPrompt(s)} style={{ background: "rgba(255,255,255,.03)", border: "1px solid rgba(255,255,255,.07)", borderRadius: 6, padding: "8px 12px", fontSize: ".75em", color: "#64748b", cursor: "pointer", marginBottom: 6 }}>{s}</div>
+              <div key={i} onClick={()=>setAiPrompt(s)} style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 6, padding: "8px 12px", fontSize: ".75em", color: "#64748b", cursor: "pointer", marginBottom: 6 }}>{s}</div>
             ))}
           </div>
           <button
@@ -4013,14 +4126,14 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
               generateWorkout();
             }}
             disabled={aiLoading || !aiPrompt.trim()}
-            style={{ width: "100%", background: !aiPrompt.trim() ? "rgba(255,255,255,.06)" : "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 8, padding: "11px 20px", color: !aiPrompt.trim() ? "#334155" : "white", fontWeight: 700, cursor: !aiPrompt.trim() ? "not-allowed" : "pointer", fontSize: ".85em", fontFamily: "inherit" }}>
+            style={{ width: "100%", background: !aiPrompt.trim() ? "#e2e8f0" : "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 8, padding: "11px 20px", color: !aiPrompt.trim() ? "#334155" : "white", fontWeight: 700, cursor: !aiPrompt.trim() ? "not-allowed" : "pointer", fontSize: ".85em", fontFamily: "inherit" }}>
             {aiLoading ? "⏳ Generando..." : "⚡ GENERAR WORKOUT"}
           </button>
         </div>
         <div style={S.card}>
           {aiWorkout ? <>
             <div style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: "1.1em", fontWeight: 700, color: "#e2e8f0" }}>{aiWorkout.title}</div>
+              <div style={{ fontSize: "1.1em", fontWeight: 700, color: "#0f172a" }}>{aiWorkout.title}</div>
               <div style={{ fontSize: ".75em", color: "#64748b", marginTop: 2 }}>{aiWorkout.description}</div>
             </div>
             <div style={{ display: "flex", gap: 16, marginBottom: 16, fontSize: ".78em", color: "#94a3b8" }}>
@@ -4028,10 +4141,10 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
             </div>
             <div style={{ fontSize: ".65em", letterSpacing: ".13em", color: "#475569", textTransform: "uppercase", marginBottom: 10 }}>ESTRUCTURA</div>
             {(aiWorkout.structure||[]).map((step,i) => (
-              <div key={i} style={{ display: "flex", gap: 10, alignItems: "center", background: "rgba(255,255,255,.02)", borderRadius: 7, padding: "8px 10px", marginBottom: 6 }}>
+              <div key={i} style={{ display: "flex", gap: 10, alignItems: "center", background: "#f8fafc", borderRadius: 7, padding: "8px 10px", marginBottom: 6 }}>
                 <div style={{ width: 22, height: 22, borderRadius: "50%", background: "rgba(245,158,11,.15)", color: "#f59e0b", display: "flex", alignItems: "center", justifyContent: "center", fontSize: ".7em", fontWeight: 700, flexShrink: 0 }}>{i+1}</div>
                 <div style={{ flex: 1, fontSize: ".85em" }}>
-                  <span style={{ color: "#e2e8f0", fontWeight: 600 }}>{step.phase}</span>
+                  <span style={{ color: "#0f172a", fontWeight: 600 }}>{step.phase}</span>
                   <span style={{ color: "#64748b" }}> · {step.duration} · {step.intensity}</span>
                 </div>
                 <div style={{ fontSize: ".78em", color: "#f59e0b", fontFamily: "monospace" }}>{step.pace}</div>
@@ -4044,8 +4157,8 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
                 onClick={saveToLibrary}
                 disabled={savingLibrary}
                 style={{
-                  background: savingLibrary ? "rgba(255,255,255,.06)" : "rgba(168,85,247,.12)",
-                  border: `1px solid ${savingLibrary ? "rgba(255,255,255,.08)" : "rgba(168,85,247,.35)"}`,
+                  background: savingLibrary ? "#e2e8f0" : "rgba(168,85,247,.12)",
+                  border: `1px solid ${savingLibrary ? "#e2e8f0" : "rgba(168,85,247,.35)"}`,
                   borderRadius: 8,
                   padding: "8px 14px",
                   color: savingLibrary ? "#64748b" : "#c084fc",
@@ -4061,8 +4174,8 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
                 onClick={openAssignModal}
                 disabled={!athletes?.length}
                 style={{
-                  background: athletes?.length ? "rgba(59,130,246,.1)" : "rgba(255,255,255,.04)",
-                  border: `1px solid ${athletes?.length ? "rgba(59,130,246,.3)" : "rgba(255,255,255,.08)"}`,
+                  background: athletes?.length ? "rgba(59,130,246,.1)" : "#f1f5f9",
+                  border: `1px solid ${athletes?.length ? "rgba(59,130,246,.3)" : "#e2e8f0"}`,
                   borderRadius: 8,
                   padding: "8px 14px",
                   color: athletes?.length ? "#3b82f6" : "#475569",
@@ -4076,9 +4189,9 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
               </button>
             </div>
             {showAssignModal && (
-              <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 16 }}>
+              <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 16 }}>
                 <div style={{ ...S.card, width: "100%", maxWidth: 400, margin: 0 }}>
-                  <div style={{ fontSize: ".85em", fontWeight: 700, color: "#e2e8f0", marginBottom: 8 }}>Asignar workout a un atleta</div>
+                  <div style={{ fontSize: ".85em", fontWeight: 700, color: "#0f172a", marginBottom: 8 }}>Asignar workout a un atleta</div>
                   <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 14 }}>
                     Se guardará en Supabase con todos los datos generados por la IA, más atleta, coach y fecha.
                   </div>
@@ -4087,7 +4200,7 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
                     <select
                       value={assignAthleteId}
                       onChange={e => setAssignAthleteId(e.target.value)}
-                      style={{ width: "100%", background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 8, padding: "10px 12px", color: "#e2e8f0", fontFamily: "inherit", fontSize: ".85em", outline: "none", boxSizing: "border-box" }}
+                      style={{ width: "100%", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", color: "#0f172a", fontFamily: "inherit", fontSize: ".85em", outline: "none", boxSizing: "border-box" }}
                     >
                       <option value="" disabled>Selecciona un atleta</option>
                       {(athletes || []).map(a => (
@@ -4101,7 +4214,7 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
                       type="date"
                       value={assignDate}
                       onChange={e => setAssignDate(e.target.value)}
-                      style={{ width: "100%", background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 8, padding: "10px 12px", color: "#e2e8f0", fontFamily: "inherit", fontSize: ".85em", outline: "none", boxSizing: "border-box" }}
+                      style={{ width: "100%", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", color: "#0f172a", fontFamily: "inherit", fontSize: ".85em", outline: "none", boxSizing: "border-box" }}
                     />
                   </div>
                   <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
@@ -4109,7 +4222,7 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
                       type="button"
                       onClick={() => setShowAssignModal(false)}
                       disabled={assignSaving}
-                      style={{ background: "rgba(255,255,255,.03)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 8, padding: "8px 14px", color: "#94a3b8", cursor: assignSaving ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: ".82em" }}
+                      style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 14px", color: "#94a3b8", cursor: assignSaving ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: ".82em" }}
                     >
                       Cancelar
                     </button>
@@ -4117,7 +4230,7 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
                       type="button"
                       onClick={saveAssignedWorkout}
                       disabled={assignSaving}
-                      style={{ background: assignSaving ? "rgba(255,255,255,.06)" : "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 8, padding: "8px 14px", color: assignSaving ? "#334155" : "white", cursor: assignSaving ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 800, fontSize: ".82em" }}
+                      style={{ background: assignSaving ? "#e2e8f0" : "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 8, padding: "8px 14px", color: assignSaving ? "#334155" : "white", cursor: assignSaving ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 800, fontSize: ".82em" }}
                     >
                       {assignSaving ? "Guardando..." : "Confirmar"}
                     </button>
@@ -4197,15 +4310,15 @@ function Plans({ athletes }) {
               key={p.plan}
               style={{
                 ...S.card,
-                border: isCurrent ? "2px solid #f59e0b" : "1px solid rgba(255,255,255,.07)",
-                background: isCurrent ? "rgba(245,158,11,.06)" : "rgba(255,255,255,.025)",
+                border: isCurrent ? "2px solid #f59e0b" : "1px solid #e2e8f0",
+                background: isCurrent ? "rgba(245,158,11,.06)" : "#ffffff",
                 padding: 18,
                 display: "flex",
                 flexDirection: "column",
                 gap: 10,
               }}
             >
-              <div style={{ fontSize: "1.2em", fontWeight: 800, color: isCurrent ? "#f59e0b" : "#e2e8f0" }}>
+              <div style={{ fontSize: "1.2em", fontWeight: 800, color: isCurrent ? "#f59e0b" : "#0f172a" }}>
                 {p.label} ($${copPretty} COP)
               </div>
               <div style={{ fontSize: "2em", fontWeight: 900, color: "#f59e0b", fontFamily: "monospace" }}>
@@ -4243,17 +4356,82 @@ function Plans({ athletes }) {
 }
 
 const styles = {
-  root: { display: "flex", minHeight: "100vh", background: "#080f18", color: "#e2e8f0", fontFamily: "Georgia, 'Times New Roman', serif" },
-  sidebar: { width: 220, background: "#050c15", borderRight: "1px solid rgba(255,255,255,.06)", display: "flex", flexDirection: "column", padding: "0 0 20px", flexShrink: 0 },
-  logo: { display: "flex", gap: 10, alignItems: "center", padding: "20px 16px 24px", borderBottom: "1px solid rgba(255,255,255,.06)" },
-  logoTitle: { fontSize: "1em", fontWeight: 700, letterSpacing: ".08em", color: "#e2e8f0" },
-  logoSub: { fontSize: ".65em", color: "#334155", letterSpacing: ".1em", textTransform: "uppercase" },
-  navBtn: { display: "flex", gap: 10, alignItems: "center", width: "100%", background: "transparent", border: "none", color: "#475569", padding: "10px 16px", cursor: "pointer", fontSize: ".85em", textAlign: "left", fontFamily: "inherit" },
-  navBtnActive: { color: "#f59e0b", background: "rgba(245,158,11,.08)", borderRight: "2px solid #f59e0b" },
-  sidebarFooter: { padding: "16px", borderTop: "1px solid rgba(255,255,255,.06)", marginTop: "auto" },
-  page: { padding: "28px 32px", maxWidth: 1100 },
-  pageTitle: { fontSize: "1.6em", fontWeight: 700, color: "#e2e8f0", margin: 0, letterSpacing: ".02em" },
-  card: { background: "rgba(255,255,255,.025)", border: "1px solid rgba(255,255,255,.07)", borderRadius: 12, padding: 18 },
-  avatar: { width: 36, height: 36, borderRadius: "50%", background: "rgba(245,158,11,.1)", border: "1px solid rgba(245,158,11,.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.2em", flexShrink: 0 },
-  notification: { position: "fixed", top: 20, right: 20, background: "#080f18", border: "1px solid #22c55e", borderRadius: 8, padding: "10px 18px", fontSize: ".82em", fontWeight: 600, color: "#22c55e", zIndex: 100 },
+  root: {
+    display: "flex",
+    minHeight: "100vh",
+    background: "#f8fafc",
+    color: "#0f172a",
+    fontFamily: "'Plus Jakarta Sans', system-ui, -apple-system, sans-serif",
+  },
+  sidebar: {
+    width: 228,
+    background: "#ffffff",
+    borderRight: "1px solid #e2e8f0",
+    display: "flex",
+    flexDirection: "column",
+    padding: "0 0 20px",
+    flexShrink: 0,
+    boxShadow: "1px 0 0 rgba(15,23,42,0.04)",
+  },
+  logo: { display: "flex", gap: 10, alignItems: "center", padding: "20px 16px 22px", borderBottom: "1px solid #e2e8f0" },
+  logoTitle: { fontSize: "1em", fontWeight: 800, letterSpacing: ".06em", color: "#0f172a" },
+  logoSub: { fontSize: ".65em", color: "#64748b", letterSpacing: ".1em", textTransform: "uppercase", fontWeight: 600 },
+  navBtn: {
+    display: "flex",
+    gap: 12,
+    alignItems: "center",
+    width: "100%",
+    background: "transparent",
+    border: "none",
+    color: "#475569",
+    padding: "11px 16px",
+    cursor: "pointer",
+    fontSize: ".86em",
+    textAlign: "left",
+    fontFamily: "inherit",
+    fontWeight: 600,
+    borderRadius: 0,
+    borderRight: "3px solid transparent",
+  },
+  navBtnActive: {
+    color: "#c2410c",
+    background: "rgba(245, 158, 11, 0.14)",
+    borderRight: "3px solid #f59e0b",
+  },
+  sidebarFooter: { padding: "16px", borderTop: "1px solid #e2e8f0", marginTop: "auto", background: "#fafafa" },
+  page: { padding: "28px 32px", maxWidth: 1120, width: "100%" },
+  pageTitle: { fontSize: "1.65em", fontWeight: 800, color: "#0f172a", margin: 0, letterSpacing: "-0.02em" },
+  card: {
+    background: "#ffffff",
+    border: "1px solid #f1f5f9",
+    borderRadius: 12,
+    padding: 22,
+    boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+  },
+  avatar: {
+    width: 36,
+    height: 36,
+    borderRadius: "50%",
+    background: "rgba(245, 158, 11, 0.12)",
+    border: "1px solid rgba(245, 158, 11, 0.35)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: "1.2em",
+    flexShrink: 0,
+  },
+  notification: {
+    position: "fixed",
+    top: 20,
+    right: 20,
+    background: "#ffffff",
+    border: "1px solid #86efac",
+    borderRadius: 10,
+    padding: "12px 18px",
+    fontSize: ".82em",
+    fontWeight: 700,
+    color: "#15803d",
+    zIndex: 200,
+    boxShadow: "0 4px 20px rgba(15,23,42,0.12)",
+  },
 };
