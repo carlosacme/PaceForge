@@ -268,6 +268,34 @@ const normalizeWorkoutRow = (row) => {
   };
 };
 
+const normalizeLibraryRow = (row) => {
+  let structure = row.structure;
+  if (typeof structure === "string") {
+    try { structure = JSON.parse(structure); } catch { structure = []; }
+  }
+  const type = row.type && WORKOUT_TYPES.some((t) => t.id === row.type) ? row.type : "easy";
+  return {
+    id: row.id,
+    coach_id: row.coach_id,
+    title: row.title || "",
+    type,
+    total_km: Number.isFinite(Number(row.total_km)) ? Number(row.total_km) : 0,
+    duration_min: Number.isFinite(Number(row.duration_min)) ? Math.round(Number(row.duration_min)) : 0,
+    description: row.description || "",
+    structure: Array.isArray(structure) ? structure : [],
+    created_at: row.created_at ?? null,
+  };
+};
+
+const libraryRowToBuilderWorkout = (row) => ({
+  title: row.title,
+  type: row.type,
+  total_km: row.total_km,
+  duration_min: row.duration_min,
+  description: row.description || "",
+  structure: Array.isArray(row.structure) ? row.structure : [],
+});
+
 /** Carga sesión: RPE × km (solo sesiones con RPE válido). */
 const sessionRpeKmLoad = (w) => {
   const km = Number(w.total_km);
@@ -414,6 +442,7 @@ export default function App() {
   const [aiPrompt, setAiPrompt] = useState("");
   const [aiWorkout, setAiWorkout] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
+  const [libraryRefresh, setLibraryRefresh] = useState(0);
   const [notification, setNotification] = useState(null);
   const [athletes, setAthletes] = useState([]);
   const [loadingAthletes, setLoadingAthletes] = useState(true);
@@ -966,11 +995,12 @@ export default function App() {
         </div>
         <nav style={{ flex: 1 }}>
           {[
-            { id: "dashboard", icon: "◈", label: "Dashboard" },
+            { id: "dashboard", icon: "▤", label: "Dashboard" },
             { id: "athletes", icon: "◉", label: "Atletas" },
             { id: "plan12", icon: "◉", label: "Plan 2 Semanas" },
             { id: "plans", icon: "◇", label: "Planes" },
             { id: "builder", icon: "◎", label: "Crear Workout" },
+            { id: "library", icon: "◈", label: "Biblioteca" },
           ].map(item => (
             <button key={item.id} onClick={() => { setView(item.id); setSelectedAthlete(null); setShowAddAthleteForm(false); }}
               style={{ ...S.navBtn, ...(view === item.id ? S.navBtnActive : {}) }}>
@@ -1050,6 +1080,19 @@ export default function App() {
             setAiLoading={setAiLoading}
             notify={notify}
             onWorkoutAssigned={() => setWorkoutsRefresh(r => r + 1)}
+            onSavedToLibrary={() => setLibraryRefresh((r) => r + 1)}
+          />
+        )}
+        {view === "library" && (
+          <WorkoutLibrary
+            coachUserId={session?.user?.id ?? null}
+            libraryRefresh={libraryRefresh}
+            onUseWorkout={(row) => {
+              setAiWorkout(libraryRowToBuilderWorkout(row));
+              setView("builder");
+              notify("Workout cargado en el generador. Puedes asignarlo a un atleta.");
+            }}
+            notify={notify}
           />
         )}
           </>
@@ -3354,9 +3397,200 @@ Output 2 week objects with the correct ${daysPerWeek} workouts each; each workou
   );
 }
 
-function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiLoading, setAiLoading, notify, onWorkoutAssigned }) {
+function WorkoutLibrary({ coachUserId, libraryRefresh, onUseWorkout, notify }) {
+  const S = styles;
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [deletingId, setDeletingId] = useState(null);
+
+  const load = useCallback(async () => {
+    if (!coachUserId) {
+      setItems([]);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    const { data, error } = await supabase
+      .from("workout_library")
+      .select("*")
+      .eq("coach_id", coachUserId)
+      .order("created_at", { ascending: false });
+    if (error) {
+      console.error("workout_library:", error);
+      setItems([]);
+      notify("Error al cargar la biblioteca");
+    } else {
+      setItems((data || []).map(normalizeLibraryRow));
+    }
+    setLoading(false);
+  }, [coachUserId]);
+
+  useEffect(() => {
+    load();
+  }, [load, libraryRefresh]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return items;
+    return items.filter((row) => {
+      const typeLabel = (WORKOUT_TYPES.find((t) => t.id === row.type)?.label || row.type || "").toLowerCase();
+      return (
+        (row.title || "").toLowerCase().includes(q) ||
+        (row.type || "").toLowerCase().includes(q) ||
+        typeLabel.includes(q)
+      );
+    });
+  }, [items, search]);
+
+  const deleteRow = async (id) => {
+    if (!coachUserId) return;
+    setDeletingId(id);
+    const { error } = await supabase.from("workout_library").delete().eq("id", id).eq("coach_id", coachUserId);
+    setDeletingId(null);
+    if (error) {
+      console.error(error);
+      notify(`Error al eliminar: ${error.message}`);
+      return;
+    }
+    setItems((prev) => prev.filter((x) => x.id !== id));
+    notify("Eliminado de la biblioteca");
+  };
+
+  return (
+    <div style={S.page}>
+      <div style={{ marginBottom: 22 }}>
+        <h1 style={S.pageTitle}>Biblioteca</h1>
+        <p style={{ color: "#475569", fontSize: ".82em", marginTop: 4 }}>
+          Workouts guardados para reutilizar en el generador y asignar a atletas
+        </p>
+      </div>
+      <div style={{ ...S.card, marginBottom: 18 }}>
+        <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 8 }}>Buscar por nombre o tipo</div>
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Ej: tempo, intervalos, rodaje…"
+          style={{
+            width: "100%",
+            maxWidth: 400,
+            background: "rgba(255,255,255,.04)",
+            border: "1px solid rgba(255,255,255,.1)",
+            borderRadius: 8,
+            padding: "10px 12px",
+            color: "#e2e8f0",
+            fontFamily: "inherit",
+            fontSize: ".85em",
+            outline: "none",
+            boxSizing: "border-box",
+          }}
+        />
+      </div>
+      {!coachUserId ? (
+        <div style={{ color: "#64748b", fontSize: ".9em" }}>Inicia sesión para ver tu biblioteca.</div>
+      ) : loading ? (
+        <div style={{ color: "#64748b", fontSize: ".9em" }}>Cargando biblioteca…</div>
+      ) : filtered.length === 0 ? (
+        <div style={{ ...S.card, color: "#64748b", fontSize: ".9em" }}>
+          {items.length === 0
+            ? "Aún no hay workouts guardados. Genera uno en «Crear Workout» y pulsa «Guardar en Biblioteca»."
+            : "Ningún resultado para tu búsqueda."}
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {filtered.map((row) => {
+            const wt = WORKOUT_TYPES.find((t) => t.id === row.type) || WORKOUT_TYPES[0];
+            return (
+              <div
+                key={row.id}
+                style={{
+                  ...S.card,
+                  margin: 0,
+                  display: "flex",
+                  flexWrap: "wrap",
+                  alignItems: "flex-start",
+                  justifyContent: "space-between",
+                  gap: 14,
+                  border: "1px solid rgba(255,255,255,.07)",
+                }}
+              >
+                <div style={{ flex: "1 1 220px", minWidth: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8, flexWrap: "wrap" }}>
+                    <span style={{ fontSize: "1.05em", fontWeight: 700, color: "#e2e8f0" }}>{row.title}</span>
+                    <span
+                      style={{
+                        fontSize: ".65em",
+                        fontWeight: 700,
+                        letterSpacing: ".08em",
+                        color: wt.color,
+                        border: `1px solid ${wt.color}55`,
+                        borderRadius: 6,
+                        padding: "3px 8px",
+                      }}
+                    >
+                      {wt.label}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: ".78em", color: "#64748b", marginBottom: 6 }}>{row.description}</div>
+                  <div style={{ fontSize: ".75em", color: "#94a3b8" }}>
+                    📍 {row.total_km} km · ⏱ {row.duration_min} min
+                    {row.created_at && (
+                      <span style={{ marginLeft: 10, color: "#475569" }}>
+                        · {new Date(row.created_at).toLocaleDateString("es", { dateStyle: "medium" })}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+                  <button
+                    type="button"
+                    onClick={() => onUseWorkout(row)}
+                    style={{
+                      background: "linear-gradient(135deg,#b45309,#f59e0b)",
+                      border: "none",
+                      borderRadius: 8,
+                      padding: "8px 14px",
+                      color: "white",
+                      fontWeight: 800,
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                      fontSize: ".8em",
+                    }}
+                  >
+                    Usar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => deleteRow(row.id)}
+                    disabled={deletingId === row.id}
+                    style={{
+                      background: "rgba(239,68,68,.1)",
+                      border: "1px solid rgba(239,68,68,.35)",
+                      borderRadius: 8,
+                      padding: "8px 14px",
+                      color: "#f87171",
+                      fontWeight: 700,
+                      cursor: deletingId === row.id ? "not-allowed" : "pointer",
+                      fontFamily: "inherit",
+                      fontSize: ".8em",
+                    }}
+                  >
+                    {deletingId === row.id ? "…" : "Eliminar"}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiLoading, setAiLoading, notify, onWorkoutAssigned, onSavedToLibrary }) {
   const S = styles;
   const [showAssignModal, setShowAssignModal] = useState(false);
+  const [savingLibrary, setSavingLibrary] = useState(false);
   const [assignAthleteId, setAssignAthleteId] = useState("");
   const [assignDate, setAssignDate] = useState(() => formatLocalYMD(new Date()));
   const [assignSaving, setAssignSaving] = useState(false);
@@ -3490,6 +3724,38 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
     notify("Exportado para Garmin ✓");
   };
 
+  const saveToLibrary = async () => {
+    if (!aiWorkout) return;
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+    if (userError || !userData?.user) {
+      alert(userError?.message || "No hay usuario autenticado.");
+      return;
+    }
+    const type = WORKOUT_TYPES.some((t) => t.id === aiWorkout.type) ? aiWorkout.type : "easy";
+    const row = {
+      coach_id: userData.user.id,
+      title: (aiWorkout.title && String(aiWorkout.title).trim()) || "Workout",
+      type,
+      total_km: Number.isFinite(Number(aiWorkout.total_km)) ? Number(aiWorkout.total_km) : 0,
+      duration_min: Number.isFinite(Number(aiWorkout.duration_min)) ? Math.round(Number(aiWorkout.duration_min)) : 0,
+      description: aiWorkout.description != null ? String(aiWorkout.description) : "",
+      structure: Array.isArray(aiWorkout.structure) ? aiWorkout.structure : [],
+    };
+    setSavingLibrary(true);
+    try {
+      const { error } = await supabase.from("workout_library").insert(row);
+      if (error) {
+        console.error("workout_library insert:", error);
+        notify(`Error al guardar en biblioteca: ${error.message}`);
+        return;
+      }
+      onSavedToLibrary?.();
+      notify("Guardado en biblioteca ✓");
+    } finally {
+      setSavingLibrary(false);
+    }
+  };
+
   return (
     <div style={S.page}>
       <div style={{ marginBottom: 28 }}>
@@ -3551,8 +3817,26 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
                 <div style={{ fontSize: ".78em", color: "#f59e0b", fontFamily: "monospace" }}>{step.pace}</div>
               </div>
             ))}
-            <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 16 }}>
               <button onClick={exportGarmin} style={{ background: "rgba(22,163,74,.12)", border: "1px solid rgba(22,163,74,.3)", borderRadius: 8, padding: "8px 14px", color: "#22c55e", cursor: "pointer", fontSize: ".78em", fontFamily: "inherit", fontWeight: 600 }}>⌚ Exportar a Garmin</button>
+              <button
+                type="button"
+                onClick={saveToLibrary}
+                disabled={savingLibrary}
+                style={{
+                  background: savingLibrary ? "rgba(255,255,255,.06)" : "rgba(168,85,247,.12)",
+                  border: `1px solid ${savingLibrary ? "rgba(255,255,255,.08)" : "rgba(168,85,247,.35)"}`,
+                  borderRadius: 8,
+                  padding: "8px 14px",
+                  color: savingLibrary ? "#64748b" : "#c084fc",
+                  cursor: savingLibrary ? "not-allowed" : "pointer",
+                  fontSize: ".78em",
+                  fontFamily: "inherit",
+                  fontWeight: 600,
+                }}
+              >
+                {savingLibrary ? "Guardando…" : "💾 Guardar en Biblioteca"}
+              </button>
               <button
                 onClick={openAssignModal}
                 disabled={!athletes?.length}
