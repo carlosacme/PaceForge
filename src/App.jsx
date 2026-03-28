@@ -1,6 +1,12 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { jsPDF } from "jspdf";
 import { supabase } from "./lib/supabase";
+import {
+  initMessaging,
+  onMessage,
+  refreshFcmTokenIfGranted,
+  requestNotificationPermission,
+} from "./firebase.js";
 
 const BRAND_NAME = "RunningApexFlow";
 
@@ -82,9 +88,34 @@ const normalizeAthlete = (athlete) => ({
   device: typeof athlete?.device === "string" ? athlete.device : "",
   plan: typeof athlete?.plan === "string" ? athlete.plan : "",
   coach_id: athlete?.coach_id ?? "",
+  user_id: athlete?.user_id ?? null,
   fc_max: Number.isFinite(Number(athlete?.fc_max)) && Number(athlete.fc_max) > 0 ? Math.round(Number(athlete.fc_max)) : null,
   fc_reposo: Number.isFinite(Number(athlete?.fc_reposo)) && Number(athlete.fc_reposo) > 0 ? Math.round(Number(athlete.fc_reposo)) : null,
 });
+
+const pushBodySnippet = (text, max = 400) => {
+  const s = String(text || "").trim();
+  if (s.length <= max) return s;
+  return `${s.slice(0, max - 1)}…`;
+};
+
+async function sendChatPushNotification({ token, title, body }) {
+  if (!token || typeof window === "undefined") return;
+  try {
+    const res = await fetch("/api/send-notification", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        token,
+        title,
+        body: pushBodySnippet(body),
+      }),
+    });
+    if (!res.ok) console.warn("send-notification", await res.text());
+  } catch (e) {
+    console.warn("send-notification", e);
+  }
+}
 
 /** Zonas % de FC máx (bpm). */
 const HR_ZONE_DEFS = [
@@ -658,8 +689,33 @@ export default function App() {
   const [authName, setAuthName] = useState("");
   const [profile, setProfile] = useState(null);
   const [profileLoading, setProfileLoading] = useState(false);
+  const [pushInviteDismissed, setPushInviteDismissed] = useState(() =>
+    typeof localStorage !== "undefined" && localStorage.getItem("raf_push_invite_dismissed") === "1",
+  );
 
-  const notify = (msg) => { setNotification(msg); setTimeout(() => setNotification(null), 3000); };
+  const notify = useCallback((msg) => {
+    setNotification(msg);
+    setTimeout(() => setNotification(null), 3000);
+  }, []);
+
+  const syncFcmTokenToProfile = useCallback(async () => {
+    try {
+      const { data: ures } = await supabase.auth.getUser();
+      const uid = ures?.user?.id;
+      if (!uid) return;
+      const token = await requestNotificationPermission();
+      if (token) {
+        await supabase.from("profiles").update({ fcm_token: token }).eq("user_id", uid);
+      }
+    } catch (e) {
+      console.warn("syncFcmTokenToProfile", e);
+    }
+  }, []);
+
+  const dismissPushInvite = useCallback(() => {
+    if (typeof localStorage !== "undefined") localStorage.setItem("raf_push_invite_dismissed", "1");
+    setPushInviteDismissed(true);
+  }, []);
 
   const coachNavItems = useMemo(() => {
     const list = [
@@ -731,6 +787,35 @@ export default function App() {
   }, [session]);
 
   useEffect(() => {
+    if (!session?.user?.id) return;
+    let cancelled = false;
+    (async () => {
+      const tok = await refreshFcmTokenIfGranted();
+      if (cancelled || !tok) return;
+      await supabase.from("profiles").update({ fcm_token: tok }).eq("user_id", session.user.id);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.user?.id]);
+
+  useEffect(() => {
+    if (!session) return undefined;
+    let unsub = () => {};
+    (async () => {
+      const m = await initMessaging();
+      if (!m) return;
+      unsub = onMessage(m, (payload) => {
+        const t = payload.notification?.title;
+        notify(t || "Nuevo mensaje");
+      });
+    })();
+    return () => {
+      if (typeof unsub === "function") unsub();
+    };
+  }, [session, notify]);
+
+  useEffect(() => {
     const em = session?.user?.email?.toLowerCase();
     if (view === "admin" && em !== ADMIN_EMAIL) {
       setView("dashboard");
@@ -800,6 +885,7 @@ export default function App() {
           alert(`Error en login: ${error.message}`);
           return;
         }
+        await syncFcmTokenToProfile();
       } else {
         const { data, error } = await supabase.auth.signUp({
           email: authEmail.trim(),
@@ -831,6 +917,7 @@ export default function App() {
           console.log("Error insertando en profiles:", profileError, { profilePayload });
         } else {
           console.log("Perfil creado en profiles:", { user_id: newUserId, role: authRole });
+          await syncFcmTokenToProfile();
         }
 
         alert("Registro exitoso. Revisa tu correo si la verificación está habilitada.");
@@ -1291,6 +1378,68 @@ export default function App() {
       </aside>
 
       <main className="pf-main-mobile-pad" style={{ flex: 1, overflowY: "auto", background: "#f8fafc" }}>
+        {typeof Notification !== "undefined" &&
+          session &&
+          Notification.permission !== "granted" &&
+          !pushInviteDismissed && (
+            <div
+              style={{
+                margin: "12px 16px 0",
+                padding: "12px 16px",
+                borderRadius: 12,
+                background: "#fffbeb",
+                border: "1px solid #fde68a",
+                display: "flex",
+                flexWrap: "wrap",
+                alignItems: "center",
+                gap: 12,
+                boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
+              }}
+            >
+              <span style={{ flex: "1 1 200px", color: "#78350f", fontSize: ".88em", fontWeight: 600 }}>
+                Activa las notificaciones para recibir mensajes
+              </span>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (typeof localStorage !== "undefined") localStorage.removeItem("raf_push_invite_dismissed");
+                    await syncFcmTokenToProfile();
+                  }}
+                  style={{
+                    padding: "8px 14px",
+                    borderRadius: 8,
+                    border: "none",
+                    background: "linear-gradient(135deg,#b45309,#f59e0b)",
+                    color: "#fff",
+                    fontWeight: 800,
+                    fontSize: ".8em",
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  Activar
+                </button>
+                <button
+                  type="button"
+                  onClick={dismissPushInvite}
+                  style={{
+                    padding: "8px 14px",
+                    borderRadius: 8,
+                    border: "1px solid #e2e8f0",
+                    background: "#fff",
+                    color: "#64748b",
+                    fontWeight: 700,
+                    fontSize: ".8em",
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  Ahora no
+                </button>
+              </div>
+            </div>
+          )}
         {loadingAthletes ? (
           <div style={S.page}>
             <h1 style={S.pageTitle}>Cargando atletas...</h1>
@@ -2027,6 +2176,15 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
         alert(`No se pudo enviar: ${error.message}`);
         return;
       }
+      const athleteUserId = athlete.user_id;
+      if (athleteUserId) {
+        const { data: prow } = await supabase.from("profiles").select("fcm_token").eq("user_id", athleteUserId).maybeSingle();
+        await sendChatPushNotification({
+          token: prow?.fcm_token,
+          title: "Nuevo mensaje de tu coach",
+          body,
+        });
+      }
       setChatDraft("");
       await loadCoachChat();
     } finally {
@@ -2562,6 +2720,9 @@ function AthleteHome({ profile }) {
   const [athleteChatDraft, setAthleteChatDraft] = useState("");
   const [athleteChatSending, setAthleteChatSending] = useState(false);
   const [athleteNotRegistered, setAthleteNotRegistered] = useState(false);
+  const [pushInviteDismissed, setPushInviteDismissed] = useState(() =>
+    typeof localStorage !== "undefined" && localStorage.getItem("raf_push_invite_dismissed") === "1",
+  );
   const athleteChatScrollRef = useRef(null);
 
   useEffect(() => {
@@ -2617,6 +2778,15 @@ function AthleteHome({ profile }) {
       }
 
       setAthleteInfo(athleteRow);
+
+      if (authData?.user?.id) {
+        const { error: linkErr } = await supabase.from("athletes").update({ user_id: authData.user.id }).eq("id", athleteRow.id);
+        if (linkErr) console.warn("[AthleteHome] link user_id:", linkErr);
+        const tok = await refreshFcmTokenIfGranted();
+        if (tok) {
+          await supabase.from("profiles").update({ fcm_token: tok }).eq("user_id", authData.user.id);
+        }
+      }
 
       const { data: workoutsRows, error: workoutsErr } = await supabase
         .from("workouts")
@@ -2765,6 +2935,12 @@ function AthleteHome({ profile }) {
         setMessage(`Error al enviar mensaje: ${error.message}`);
         return;
       }
+      const { data: coachProf } = await supabase.from("profiles").select("fcm_token").eq("user_id", coachIdForChat).maybeSingle();
+      await sendChatPushNotification({
+        token: coachProf?.fcm_token,
+        title: `Tu atleta ${athleteName} respondió`,
+        body,
+      });
       setAthleteChatDraft("");
       await loadAthleteChat();
     } finally {
@@ -2774,6 +2950,74 @@ function AthleteHome({ profile }) {
 
   return (
     <div style={S.page}>
+      {typeof Notification !== "undefined" &&
+        Notification.permission !== "granted" &&
+        !pushInviteDismissed && (
+          <div
+            style={{
+              marginBottom: 16,
+              padding: "12px 16px",
+              borderRadius: 12,
+              background: "#fffbeb",
+              border: "1px solid #fde68a",
+              display: "flex",
+              flexWrap: "wrap",
+              alignItems: "center",
+              gap: 12,
+              boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
+            }}
+          >
+            <span style={{ flex: "1 1 200px", color: "#78350f", fontSize: ".88em", fontWeight: 600 }}>
+              Activa las notificaciones para recibir mensajes
+            </span>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (typeof localStorage !== "undefined") localStorage.removeItem("raf_push_invite_dismissed");
+                  const { data: u } = await supabase.auth.getUser();
+                  const uid = u?.user?.id;
+                  if (!uid) return;
+                  const token = await requestNotificationPermission();
+                  if (token) await supabase.from("profiles").update({ fcm_token: token }).eq("user_id", uid);
+                }}
+                style={{
+                  padding: "8px 14px",
+                  borderRadius: 8,
+                  border: "none",
+                  background: "linear-gradient(135deg,#b45309,#f59e0b)",
+                  color: "#fff",
+                  fontWeight: 800,
+                  fontSize: ".8em",
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                }}
+              >
+                Activar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (typeof localStorage !== "undefined") localStorage.setItem("raf_push_invite_dismissed", "1");
+                  setPushInviteDismissed(true);
+                }}
+                style={{
+                  padding: "8px 14px",
+                  borderRadius: 8,
+                  border: "1px solid #e2e8f0",
+                  background: "#fff",
+                  color: "#64748b",
+                  fontWeight: 700,
+                  fontSize: ".8em",
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                }}
+              >
+                Ahora no
+              </button>
+            </div>
+          </div>
+        )}
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: 18 }}>
         <div>
           <h1 style={{ ...S.pageTitle, marginBottom: 6 }}>Hola, {athleteName}</h1>

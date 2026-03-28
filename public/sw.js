@@ -1,3 +1,30 @@
+importScripts("https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js");
+importScripts("https://www.gstatic.com/firebasejs/10.7.0/firebase-messaging-compat.js");
+
+if (!firebase.apps.length) {
+  firebase.initializeApp({
+    apiKey: "AIzaSyD1HwMxCRP-dmmyA89EJ3z22HXXaAVm6jo",
+    authDomain: "runningapexflow.firebaseapp.com",
+    projectId: "runningapexflow",
+    storageBucket: "runningapexflow.firebasestorage.app",
+    messagingSenderId: "224127738625",
+    appId: "1:224127738625:web:c91f1634b923e3318bf100",
+  });
+}
+
+try {
+  const messaging = firebase.messaging();
+  messaging.onBackgroundMessage((payload) => {
+    const { title, body } = payload.notification || {};
+    self.registration.showNotification(title || "RunningApexFlow", {
+      body: body || "",
+      icon: "/pwa-192.png",
+    });
+  });
+} catch {
+  /* Messaging no disponible en este contexto */
+}
+
 const CACHE_NAME = "runningapexflow-v1";
 const PRECACHE_URLS = [
   "/",
