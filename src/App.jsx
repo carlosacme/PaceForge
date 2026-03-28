@@ -776,9 +776,38 @@ export default function App() {
       if (error) {
         console.error("Error cargando perfil:", error);
         setProfile(null);
+        setProfileLoading(false);
+        return;
+      }
+
+      const roleMissing = data == null || data.role == null || String(data.role).trim() === "";
+      if (roleMissing) {
+        const u = session.user;
+        const displayName =
+          (typeof u.user_metadata?.full_name === "string" && u.user_metadata.full_name.trim()) ||
+          (u.email ? u.email.split("@")[0] : "") ||
+          "Coach";
+        const payload = {
+          user_id: u.id,
+          role: "coach",
+          coach_id: u.id,
+          name: (typeof data?.name === "string" && data.name.trim()) || displayName,
+        };
+        const { data: saved, error: upErr } = await supabase
+          .from("profiles")
+          .upsert(payload, { onConflict: "user_id" })
+          .select()
+          .single();
+        if (upErr) {
+          console.error("Error creando perfil coach por defecto:", upErr);
+          setProfile(data ?? null);
+        } else {
+          console.log("Perfil coach creado/actualizado (sin role previo):", saved?.user_id);
+          setProfile(saved);
+        }
       } else {
-        console.log("Perfil cargado, role:", data?.role);
-        setProfile(data || null);
+        console.log("Perfil cargado, role:", data.role);
+        setProfile(data);
       }
       setProfileLoading(false);
     };
