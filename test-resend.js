@@ -7,8 +7,8 @@ const response = await fetch('https://api.resend.com/emails', {
   body: JSON.stringify({
     from: 'onboarding@resend.dev',
     to: 'acostamerlano87@gmail.com',
-    subject: 'Test PaceForge',
-    html: '<p>Test desde PaceForge</p>'
+    subject: 'Test RunningApexFlow',
+    html: '<p>Test desde RunningApexFlow</p>'
   })
 });
 const data = await response.json();

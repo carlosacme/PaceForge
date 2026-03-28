@@ -9,7 +9,7 @@ export default async function handler(req, res) {
       "Authorization": "Bearer re_3CLu9n3j_LpDi3Hq9vXrC42tv6ycmMagz",
     },
     body: JSON.stringify({
-      from: "PaceForge <onboarding@resend.dev>",
+      from: "RunningApexFlow <onboarding@resend.dev>",
       to,
       subject,
       html,

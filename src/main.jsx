@@ -72,7 +72,7 @@ function InstallPwaBanner() {
     >
       <div style={{ flex: "1 1 180px", minWidth: 0 }}>
         <div style={{ fontWeight: 800, color: "#0f172a", fontSize: ".95rem", marginBottom: 4 }}>
-          Instalar PaceForge
+          Instalar RunningApexFlow
         </div>
         <div style={{ fontSize: ".78rem", color: "#64748b", lineHeight: 1.35 }}>
           Añade la app a tu pantalla de inicio para acceso rápido y mejor experiencia.

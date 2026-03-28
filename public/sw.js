@@ -1,4 +1,4 @@
-const CACHE_NAME = "paceforge-v1";
+const CACHE_NAME = "runningapexflow-v1";
 const PRECACHE_URLS = [
   "/",
   "/manifest.json",

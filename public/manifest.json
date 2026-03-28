@@ -1,7 +1,7 @@
 {
-  "name": "PaceForge",
-  "short_name": "PaceForge",
-  "description": "Plataforma de coaching y entrenamiento",
+  "name": "RunningApexFlow",
+  "short_name": "RunningApexFlow",
+  "description": "Plataforma de coaching y entrenamiento para runners",
   "theme_color": "#f59e0b",
   "background_color": "#080f18",
   "display": "standalone",

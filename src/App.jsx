@@ -2,6 +2,8 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { jsPDF } from "jspdf";
 import { supabase } from "./lib/supabase";
 
+const BRAND_NAME = "RunningApexFlow";
+
 const WORKOUT_TYPES = [
   { id: "easy", label: "Rodaje Suave", color: "#22c55e" },
   { id: "tempo", label: "Tempo", color: "#f59e0b" },
@@ -486,7 +488,7 @@ const exportAthletePlanToPdf = ({ athlete, workouts, coachDisplayName }) => {
   doc.setFont("helvetica", "bold");
   doc.setTextColor(245, 158, 11);
   doc.setFontSize(15);
-  doc.text("PaceForge", L + 9, y + 2.5);
+  doc.text(BRAND_NAME, L + 9, y + 2.5);
   doc.setDrawColor(200, 200, 200);
   doc.setLineWidth(0.25);
   doc.line(L, y + 6, pageW - R, y + 6);
@@ -1048,10 +1050,16 @@ export default function App() {
       <div style={S.root}>
         <main style={{ ...S.page, width: "100%" }}>
           <div style={{ marginTop: 10, marginBottom: 28 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 18 }}>
+              <span style={{ fontSize: "2.1em", color: "#f59e0b", lineHeight: 1 }} aria-hidden>▲</span>
+              <div style={{ fontSize: "1.35em", fontWeight: 800, letterSpacing: ".05em", color: "#0f172a" }}>
+                RUNNING<span style={{ color: "#f59e0b" }}>APEX</span>FLOW
+              </div>
+            </div>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
               <div style={{ maxWidth: 720 }}>
                 <div style={{ fontSize: "0.9em", color: "#f59e0b", letterSpacing: ".14em", textTransform: "uppercase", fontWeight: 800, marginBottom: 8 }}>
-                  Coach Platform
+                  {BRAND_NAME} · Coach Platform
                 </div>
                 <h1 style={{ fontSize: "2.2em", fontWeight: 900, color: "#0f172a", margin: "0 0 8px" }}>
                   La plataforma de coaching para todo tipo de runners
@@ -1155,7 +1163,7 @@ export default function App() {
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 18 }}>
               {[
-                { name: "Sofía Ríos", role: "Coach en Colombia", body: "La IA me ayuda a construir semanas completas. Ver el estado “done” en el calendario hace que mis atletas sigan el plan con claridad." },
+                { name: "Sofía Ríos", role: "Coach en Colombia", body: `Con ${BRAND_NAME}, la IA me ayuda a construir semanas completas. Ver el estado “done” en el calendario hace que mis atletas sigan el plan con claridad.` },
                 { name: "Luis Martínez", role: "Coach en México", body: "Ahora asigno workouts en minutos y sincronizo con relojes. La vista semanal hace que todo sea más transparente." },
                 { name: "María Torres", role: "Coach en España", body: "El seguimiento real y la exportación a dispositivos me permiten ajustar ritmos con confianza. Se nota el progreso semana a semana." },
               ].map((t) => (
@@ -1175,7 +1183,10 @@ export default function App() {
 
           <footer style={{ marginTop: 20, paddingTop: 18, borderTop: "1px solid #e2e8f0", color: "#64748b", fontSize: ".85em" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-              <div style={{ color: "#0f172a", fontWeight: 900 }}>PaceForge</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#0f172a", fontWeight: 900 }}>
+                <span style={{ color: "#f59e0b" }} aria-hidden>▲</span>
+                {BRAND_NAME}
+              </div>
               <div>© 2026</div>
             </div>
           </footer>
@@ -1186,7 +1197,7 @@ export default function App() {
             <div style={{ ...S.card, width: "100%", maxWidth: 520, margin: 0 }}>
               <div style={{ fontSize: "1.05em", fontWeight: 900, marginBottom: 6 }}>Demo simulada</div>
               <div style={{ color: "#94a3b8", fontSize: ".9em", marginBottom: 14 }}>
-                En esta demo podrás ver cómo un coach crea entrenamientos con IA, los asigna al atleta y marca progreso en el calendario.
+                En esta demo verás cómo, con {BRAND_NAME}, un coach crea entrenamientos con IA, los asigna al atleta y marca progreso en el calendario.
               </div>
               <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
                 <button
@@ -1225,9 +1236,11 @@ export default function App() {
 
       <aside className="pf-sidebar-desktop" style={S.sidebar}>
         <div style={S.logo}>
-          <span style={{ fontSize: "1.6em" }}>⚡</span>
+          <span style={{ fontSize: "1.5em", color: "#f59e0b", width: 26, textAlign: "center" }} aria-hidden>▲</span>
           <div>
-            <div style={S.logoTitle}>PACE<span style={{ color: "#f59e0b" }}>FORGE</span></div>
+            <div style={S.logoTitle}>
+              RUNNING<span style={{ color: "#f59e0b" }}>APEX</span>FLOW
+            </div>
             <div style={S.logoSub}>Coach Platform</div>
           </div>
         </div>
@@ -3096,7 +3109,7 @@ function Plan2Weeks({ athletes, notify, onPlanAssigned }) {
     });
   };
 
-  const plan2SystemPrompt = `You are an elite running coach for PaceForge. Output ONLY compact valid JSON. No markdown, no code fences, no extra text.
+  const plan2SystemPrompt = `You are an elite running coach for ${BRAND_NAME}. Output ONLY compact valid JSON. No markdown, no code fences, no extra text.
 weekday: always 1=Monday .. 7=Sunday.
 
 Fixed weekly template (same both weeks). Session types MUST match exactly:
@@ -3295,17 +3308,17 @@ Output 2 week objects with the correct ${daysPerWeek} workouts each; each workou
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               to: selectedAthlete.email,
-              subject: `Tu plan de 2 semanas: ${generatedPlan.plan_title || "PaceForge"}`,
+              subject: `Tu plan de 2 semanas: ${generatedPlan.plan_title || BRAND_NAME}`,
               html: `
                 <h2>Hola ${selectedAthlete.name} 👋</h2>
-                <p>Tu coach te ha asignado un <strong>plan de 2 semanas</strong> en PaceForge.</p>
+                <p>Tu coach te ha asignado un <strong>plan de 2 semanas</strong> en ${BRAND_NAME}.</p>
                 <p><strong>Objetivo:</strong> ${PLAN_12_GOALS.find((g) => g.id === goalId)?.label || goalId}<br/>
                 <strong>Carrera:</strong> ${raceDate}</p>
                 <p><strong>${generatedPlan.plan_title || "Plan personalizado"}</strong></p>
                 <ul>${weekSummary}</ul>
                 <p>Total: <strong>${rows.length}</strong> entrenamientos cargados en tu calendario.</p>
                 <p>¡Mucho éxito! 💪</p>
-                <p>— PaceForge</p>
+                <p>— ${BRAND_NAME}</p>
               `,
             }),
           });
@@ -4029,7 +4042,7 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
       <h4>Estructura:</h4>
       ${structureRows}
       <br/><p>¡Mucho éxito! 💪</p>
-      <p>— Tu coach en PaceForge</p>
+      <p>— Tu coach en ${BRAND_NAME}</p>
     `,
             }),
           });
@@ -4664,7 +4677,7 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, notif
   return (
     <div style={S.page}>
       <h1 style={S.pageTitle}>Configuración</h1>
-      <p style={{ color: "#475569", fontSize: ".85em", marginTop: 4, marginBottom: 22 }}>Perfil del coach y preferencias de PaceForge.</p>
+      <p style={{ color: "#475569", fontSize: ".85em", marginTop: 4, marginBottom: 22 }}>Perfil del coach y preferencias de {BRAND_NAME}.</p>
 
       {loading ? (
         <div style={{ color: "#64748b" }}>Cargando…</div>
@@ -4945,7 +4958,7 @@ function Plans({ athletes, notify }) {
       }
     }
 
-    const reference = `paceforge-${planObj.plan}-${Date.now()}`;
+    const reference = `runningapexflow-${planObj.plan}-${Date.now()}`;
 
     const params = new URLSearchParams({
       "public-key": WOMPI_PUBLIC_KEY,
