@@ -620,7 +620,9 @@ const ProgressBar = ({ value, total, color = "#f59e0b" }) => (
   </div>
 );
 
-const COACH_NAV_ITEMS = [
+const ADMIN_EMAIL = "acostamerlano87@gmail.com";
+
+const COACH_NAV_BASE_ITEMS = [
   { id: "dashboard", icon: "▤", label: "Dashboard", shortLabel: "Inicio", color: "#f59e0b" },
   { id: "athletes", icon: "◉", label: "Atletas", shortLabel: "Atletas", color: "#3b82f6" },
   { id: "plan12", icon: "◇", label: "Plan 2 Semanas", shortLabel: "2 sem.", color: "#8b5cf6" },
@@ -656,6 +658,18 @@ export default function App() {
   const [profileLoading, setProfileLoading] = useState(false);
 
   const notify = (msg) => { setNotification(msg); setTimeout(() => setNotification(null), 3000); };
+
+  const coachNavItems = useMemo(() => {
+    const list = [
+      ...COACH_NAV_BASE_ITEMS,
+      { id: "settings", icon: "⚙", label: "Configuración", shortLabel: "Ajustes", color: "#64748b" },
+    ];
+    const em = session?.user?.email?.toLowerCase();
+    if (em === ADMIN_EMAIL) {
+      list.push({ id: "admin", icon: "⚙️", label: "Admin", shortLabel: "Admin", color: "#7c3aed" });
+    }
+    return list;
+  }, [session?.user?.email]);
 
   const S = styles;
 
@@ -713,6 +727,13 @@ export default function App() {
 
     loadProfile();
   }, [session]);
+
+  useEffect(() => {
+    const em = session?.user?.email?.toLowerCase();
+    if (view === "admin" && em !== ADMIN_EMAIL) {
+      setView("dashboard");
+    }
+  }, [view, session?.user?.email]);
 
   useEffect(() => {
     const loadAthletes = async () => {
@@ -1211,7 +1232,7 @@ export default function App() {
           </div>
         </div>
         <nav style={{ flex: 1, paddingTop: 8 }}>
-          {COACH_NAV_ITEMS.map((item) => (
+          {coachNavItems.map((item) => (
             <button
               key={item.id}
               type="button"
@@ -1306,7 +1327,20 @@ export default function App() {
             onDeleteAthlete={handleDeleteAthlete}
           />
         )}
-        {view === "plans" && <Plans athletes={athletes} />}
+        {view === "plans" && <Plans athletes={athletes} notify={notify} />}
+        {view === "settings" && (
+          <CoachSettings
+            coachUserId={session?.user?.id ?? null}
+            sessionEmail={session?.user?.email ?? ""}
+            profileName={profile?.name ?? ""}
+            athletes={athletes}
+            notify={notify}
+            onSignOut={handleSignOut}
+          />
+        )}
+        {view === "admin" && session?.user?.email?.toLowerCase() === ADMIN_EMAIL && (
+          <AdminPromoCodes notify={notify} />
+        )}
         {view === "plan12" && (
           <Plan2Weeks athletes={athletes} notify={notify} onPlanAssigned={() => setWorkoutsRefresh((r) => r + 1)} />
         )}
@@ -1341,7 +1375,7 @@ export default function App() {
       </main>
 
       <nav className="pf-bottom-nav" aria-label="Navegación principal">
-        {COACH_NAV_ITEMS.map((item) => {
+        {coachNavItems.map((item) => {
           const active = view === item.id;
           return (
             <button
@@ -4250,12 +4284,593 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
   );
 }
 
-function Plans({ athletes }) {
+function AdminPromoCodes({ notify }) {
+  const S = styles;
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [form, setForm] = useState({ name: "", discount: "10", maxUses: "100", expires: "" });
+  const [saving, setSaving] = useState(false);
+
+  const loadRows = useCallback(async () => {
+    setLoading(true);
+    const { data, error } = await supabase.from("promo_codes").select("*").order("created_at", { ascending: false });
+    if (error) {
+      console.error(error);
+      notify("No se pudieron cargar los códigos. Verifica la tabla promo_codes en Supabase.");
+      setRows([]);
+    } else {
+      setRows(data || []);
+    }
+    setLoading(false);
+  }, [notify]);
+
+  useEffect(() => {
+    loadRows();
+  }, [loadRows]);
+
+  const submitCreate = async (e) => {
+    e.preventDefault();
+    const rawName = form.name.trim();
+    if (!rawName) {
+      notify("Indica el nombre del código");
+      return;
+    }
+    const code = rawName.toUpperCase().replace(/\s+/g, "");
+    const discount = Number(form.discount);
+    const maxUses = Math.max(0, Math.floor(Number(form.maxUses)));
+    if (!Number.isFinite(discount) || discount < 0 || discount > 100) {
+      notify("El descuento debe estar entre 0 y 100%");
+      return;
+    }
+    if (!Number.isFinite(maxUses)) {
+      notify("Usos máximos inválidos");
+      return;
+    }
+    setSaving(true);
+    const expires_at =
+      form.expires && String(form.expires).trim()
+        ? new Date(`${form.expires}T23:59:59`).toISOString()
+        : null;
+    const { error } = await supabase.from("promo_codes").insert({
+      code,
+      discount_percent: discount,
+      max_uses: maxUses,
+      expires_at,
+      active: true,
+      uses_count: 0,
+    });
+    setSaving(false);
+    if (error) {
+      console.error(error);
+      notify(error.message || "Error al crear código");
+      return;
+    }
+    notify("Código creado");
+    setForm((f) => ({ ...f, name: "" }));
+    loadRows();
+  };
+
+  const toggleActive = async (row) => {
+    const { error } = await supabase.from("promo_codes").update({ active: !row.active }).eq("id", row.id);
+    if (error) {
+      notify(error.message || "Error al actualizar");
+      return;
+    }
+    notify(!row.active ? "Código activado" : "Código desactivado");
+    loadRows();
+  };
+
+  const inputStyle = {
+    width: "100%",
+    padding: "10px 12px",
+    borderRadius: 8,
+    border: "1px solid #e2e8f0",
+    background: "#fff",
+    color: "#0f172a",
+    fontFamily: "inherit",
+    fontSize: ".88em",
+    boxSizing: "border-box",
+  };
+
+  return (
+    <div style={S.page}>
+      <h1 style={S.pageTitle}>Admin · Códigos promocionales</h1>
+      <p style={{ color: "#475569", fontSize: ".85em", marginTop: 4, marginBottom: 22 }}>
+        Crea y gestiona códigos de descuento para la vista Planes.
+      </p>
+
+      <div style={{ ...S.card, marginBottom: 22 }}>
+        <div style={{ fontSize: ".72em", letterSpacing: ".12em", color: "#64748b", fontWeight: 700, marginBottom: 14 }}>
+          NUEVO CÓDIGO
+        </div>
+        <form onSubmit={submitCreate} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 14, alignItems: "end" }}>
+          <div>
+            <label style={{ display: "block", fontSize: ".75em", color: "#64748b", marginBottom: 6, fontWeight: 600 }}>Nombre del código</label>
+            <input
+              value={form.name}
+              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+              placeholder="Ej. VERANO2026"
+              style={inputStyle}
+            />
+          </div>
+          <div>
+            <label style={{ display: "block", fontSize: ".75em", color: "#64748b", marginBottom: 6, fontWeight: 600 }}>% descuento</label>
+            <input
+              type="number"
+              min={0}
+              max={100}
+              value={form.discount}
+              onChange={(e) => setForm((f) => ({ ...f, discount: e.target.value }))}
+              style={inputStyle}
+            />
+          </div>
+          <div>
+            <label style={{ display: "block", fontSize: ".75em", color: "#64748b", marginBottom: 6, fontWeight: 600 }}>Usos máximos</label>
+            <input
+              type="number"
+              min={0}
+              value={form.maxUses}
+              onChange={(e) => setForm((f) => ({ ...f, maxUses: e.target.value }))}
+              style={inputStyle}
+            />
+          </div>
+          <div>
+            <label style={{ display: "block", fontSize: ".75em", color: "#64748b", marginBottom: 6, fontWeight: 600 }}>Expira</label>
+            <input type="date" value={form.expires} onChange={(e) => setForm((f) => ({ ...f, expires: e.target.value }))} style={inputStyle} />
+          </div>
+          <div>
+            <button
+              type="submit"
+              disabled={saving}
+              style={{
+                width: "100%",
+                padding: "11px 16px",
+                borderRadius: 10,
+                border: "none",
+                background: saving ? "#e2e8f0" : "linear-gradient(135deg,#7c3aed,#a78bfa)",
+                color: saving ? "#64748b" : "#fff",
+                fontWeight: 800,
+                cursor: saving ? "not-allowed" : "pointer",
+                fontFamily: "inherit",
+              }}
+            >
+              {saving ? "Guardando…" : "Crear código"}
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <div style={S.card}>
+        <div style={{ fontSize: ".72em", letterSpacing: ".12em", color: "#64748b", fontWeight: 700, marginBottom: 14 }}>
+          CÓDIGOS CREADOS
+        </div>
+        {loading ? (
+          <div style={{ color: "#64748b" }}>Cargando…</div>
+        ) : rows.length === 0 ? (
+          <div style={{ color: "#94a3b8", fontSize: ".9em" }}>Aún no hay códigos.</div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {rows.map((row) => {
+              const remaining = Math.max(0, (row.max_uses ?? 0) - (row.uses_count ?? 0));
+              const expired = row.expires_at && new Date(row.expires_at) < new Date();
+              const statusLabel = !row.active ? "Inactivo" : expired ? "Expirado" : "Activo";
+              const statusColor = !row.active ? "#94a3b8" : expired ? "#ef4444" : "#16a34a";
+              return (
+                <div
+                  key={row.id}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr auto auto",
+                    gap: 12,
+                    alignItems: "center",
+                    padding: "14px 16px",
+                    background: "#f8fafc",
+                    borderRadius: 10,
+                    border: "1px solid #e2e8f0",
+                  }}
+                >
+                  <div>
+                    <div style={{ fontWeight: 800, color: "#0f172a", letterSpacing: ".04em" }}>{row.code}</div>
+                    <div style={{ fontSize: ".8em", color: "#64748b", marginTop: 4 }}>
+                      {row.discount_percent}% desc. · {remaining} usos restantes
+                      {row.expires_at ? ` · exp. ${new Date(row.expires_at).toLocaleDateString("es")}` : ""}
+                    </div>
+                    <div style={{ fontSize: ".75em", color: statusColor, fontWeight: 700, marginTop: 6 }}>{statusLabel}</div>
+                  </div>
+                  <div style={{ fontSize: ".85em", fontWeight: 700, color: "#f59e0b" }}>{row.discount_percent}%</div>
+                  <button
+                    type="button"
+                    onClick={() => toggleActive(row)}
+                    style={{
+                      padding: "8px 14px",
+                      borderRadius: 8,
+                      border: "1px solid #e2e8f0",
+                      background: row.active ? "#fef2f2" : "#f0fdf4",
+                      color: row.active ? "#b91c1c" : "#15803d",
+                      fontWeight: 700,
+                      fontSize: ".78em",
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {row.active ? "Desactivar" : "Activar"}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, notify, onSignOut }) {
+  const S = styles;
+  const athletesRef = useRef(athletes);
+  athletesRef.current = athletes;
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [form, setForm] = useState({
+    avatar_url: "",
+    full_name: "",
+    email: "",
+    phone: "",
+    country: "",
+    city: "",
+    timezone: "America/Bogota",
+    language: "es",
+    currency: "COP",
+    notify_new_workouts: true,
+    notify_reminders: true,
+    subscription_plan: "",
+    subscription_renews_at: "",
+  });
+
+  const loadProfile = useCallback(async () => {
+    if (!coachUserId) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    const { data, error } = await supabase.from("coach_profiles").select("*").eq("user_id", coachUserId).maybeSingle();
+    if (error) {
+      console.error(error);
+      notify("No se pudo cargar la configuración. ¿Existe la tabla coach_profiles?");
+      setLoading(false);
+      return;
+    }
+    if (data) {
+      setForm({
+        avatar_url: data.avatar_url || "",
+        full_name: data.full_name || profileName || "",
+        email: data.email || sessionEmail || "",
+        phone: data.phone || "",
+        country: data.country || "",
+        city: data.city || "",
+        timezone: data.timezone || "America/Bogota",
+        language: data.language === "en" ? "en" : "es",
+        currency: data.currency === "USD" ? "USD" : "COP",
+        notify_new_workouts: data.notify_new_workouts !== false,
+        notify_reminders: data.notify_reminders !== false,
+        subscription_plan: data.subscription_plan || "",
+        subscription_renews_at: data.subscription_renews_at || "",
+      });
+    } else {
+      setForm({
+        avatar_url: "",
+        full_name: profileName || "",
+        email: sessionEmail || "",
+        phone: "",
+        country: "",
+        city: "",
+        timezone: "America/Bogota",
+        language: "es",
+        currency: "COP",
+        notify_new_workouts: true,
+        notify_reminders: true,
+        subscription_plan: athletesRef.current?.find((a) => a.plan)?.plan || "",
+        subscription_renews_at: "",
+      });
+    }
+    setLoading(false);
+  }, [coachUserId, sessionEmail, profileName, notify]);
+
+  useEffect(() => {
+    loadProfile();
+  }, [loadProfile]);
+
+  const onAvatarChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !coachUserId) return;
+    setUploading(true);
+    const ext = (file.name.split(".").pop() || "jpg").replace(/[^a-z0-9]/gi, "").slice(0, 5) || "jpg";
+    const path = `${coachUserId}/${Date.now()}.${ext}`;
+    const { error } = await supabase.storage.from("coach-avatars").upload(path, file, { upsert: true, cacheControl: "3600" });
+    if (error) {
+      console.error(error);
+      notify(error.message || "Error subiendo la foto (bucket coach-avatars)");
+      setUploading(false);
+      return;
+    }
+    const { data: pub } = supabase.storage.from("coach-avatars").getPublicUrl(path);
+    setForm((f) => ({ ...f, avatar_url: pub.publicUrl }));
+    setUploading(false);
+    notify("Foto actualizada (guarda para persistir el perfil)");
+  };
+
+  const saveProfile = async (e) => {
+    e.preventDefault();
+    if (!coachUserId) return;
+    setSaving(true);
+    const payload = {
+      user_id: coachUserId,
+      avatar_url: form.avatar_url || null,
+      full_name: form.full_name.trim() || null,
+      email: form.email.trim() || null,
+      phone: form.phone.trim() || null,
+      country: form.country.trim() || null,
+      city: form.city.trim() || null,
+      timezone: form.timezone || null,
+      language: form.language === "en" ? "en" : "es",
+      currency: form.currency === "USD" ? "USD" : "COP",
+      notify_new_workouts: form.notify_new_workouts,
+      notify_reminders: form.notify_reminders,
+      subscription_plan: form.subscription_plan.trim() || null,
+      subscription_renews_at: form.subscription_renews_at ? form.subscription_renews_at : null,
+      updated_at: new Date().toISOString(),
+    };
+    const { error } = await supabase.from("coach_profiles").upsert(payload, { onConflict: "user_id" });
+    setSaving(false);
+    if (error) {
+      console.error(error);
+      notify(error.message || "Error al guardar");
+      return;
+    }
+    notify("Cambios guardados");
+  };
+
+  const field = (label, child) => (
+    <div style={{ marginBottom: 16 }}>
+      <label style={{ display: "block", fontSize: ".75em", color: "#64748b", marginBottom: 6, fontWeight: 600 }}>{label}</label>
+      {child}
+    </div>
+  );
+
+  const inputStyle = {
+    width: "100%",
+    padding: "10px 12px",
+    borderRadius: 8,
+    border: "1px solid #e2e8f0",
+    background: "#fff",
+    color: "#0f172a",
+    fontFamily: "inherit",
+    fontSize: ".88em",
+    boxSizing: "border-box",
+  };
+
+  const athletePlanHint = athletes?.find((a) => a.plan)?.plan;
+
+  if (!coachUserId) {
+    return (
+      <div style={S.page}>
+        <p style={{ color: "#64748b" }}>Inicia sesión para ver la configuración.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div style={S.page}>
+      <h1 style={S.pageTitle}>Configuración</h1>
+      <p style={{ color: "#475569", fontSize: ".85em", marginTop: 4, marginBottom: 22 }}>Perfil del coach y preferencias de PaceForge.</p>
+
+      {loading ? (
+        <div style={{ color: "#64748b" }}>Cargando…</div>
+      ) : (
+        <form onSubmit={saveProfile}>
+          <div style={{ ...S.card, marginBottom: 18 }}>
+            <div style={{ fontSize: ".72em", letterSpacing: ".12em", color: "#64748b", fontWeight: 700, marginBottom: 16 }}>
+              PERFIL
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 20, alignItems: "flex-start" }}>
+              <div style={{ textAlign: "center" }}>
+                <div
+                  style={{
+                    width: 96,
+                    height: 96,
+                    borderRadius: "50%",
+                    overflow: "hidden",
+                    border: "2px solid #e2e8f0",
+                    background: "#f1f5f9",
+                    margin: "0 auto 10px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: "2em",
+                  }}
+                >
+                  {form.avatar_url ? (
+                    <img src={form.avatar_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  ) : (
+                    "👤"
+                  )}
+                </div>
+                <label style={{ cursor: uploading ? "wait" : "pointer" }}>
+                  <span
+                    style={{
+                      display: "inline-block",
+                      padding: "8px 14px",
+                      borderRadius: 8,
+                      background: "#eff6ff",
+                      color: "#2563eb",
+                      fontWeight: 700,
+                      fontSize: ".78em",
+                    }}
+                  >
+                    {uploading ? "Subiendo…" : "Subir foto"}
+                  </span>
+                  <input type="file" accept="image/*" style={{ display: "none" }} disabled={uploading} onChange={onAvatarChange} />
+                </label>
+              </div>
+              <div style={{ flex: "1 1 240px" }}>
+                {field(
+                  "Nombre completo",
+                  <input value={form.full_name} onChange={(e) => setForm((f) => ({ ...f, full_name: e.target.value }))} style={inputStyle} />,
+                )}
+                {field(
+                  "Email",
+                  <input type="email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} style={inputStyle} />,
+                )}
+                {field(
+                  "Teléfono",
+                  <input value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} style={inputStyle} />,
+                )}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                  {field(
+                    "País",
+                    <input value={form.country} onChange={(e) => setForm((f) => ({ ...f, country: e.target.value }))} style={inputStyle} />,
+                  )}
+                  {field(
+                    "Ciudad",
+                    <input value={form.city} onChange={(e) => setForm((f) => ({ ...f, city: e.target.value }))} style={inputStyle} />,
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ ...S.card, marginBottom: 18 }}>
+            <div style={{ fontSize: ".72em", letterSpacing: ".12em", color: "#64748b", fontWeight: 700, marginBottom: 16 }}>
+              PREFERENCIAS
+            </div>
+            {field(
+              "Zona horaria",
+              <select value={form.timezone} onChange={(e) => setForm((f) => ({ ...f, timezone: e.target.value }))} style={inputStyle}>
+                <option value="America/Bogota">America/Bogota</option>
+                <option value="America/Mexico_City">America/Mexico_City</option>
+                <option value="America/New_York">America/New_York</option>
+                <option value="America/Santiago">America/Santiago</option>
+                <option value="Europe/Madrid">Europe/Madrid</option>
+                <option value="UTC">UTC</option>
+              </select>,
+            )}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              {field(
+                "Idioma",
+                <select value={form.language} onChange={(e) => setForm((f) => ({ ...f, language: e.target.value }))} style={inputStyle}>
+                  <option value="es">Español</option>
+                  <option value="en">English</option>
+                </select>,
+              )}
+              {field(
+                "Moneda",
+                <select value={form.currency} onChange={(e) => setForm((f) => ({ ...f, currency: e.target.value }))} style={inputStyle}>
+                  <option value="COP">COP</option>
+                  <option value="USD">USD</option>
+                </select>,
+              )}
+            </div>
+          </div>
+
+          <div style={{ ...S.card, marginBottom: 18 }}>
+            <div style={{ fontSize: ".72em", letterSpacing: ".12em", color: "#64748b", fontWeight: 700, marginBottom: 16 }}>
+              NOTIFICACIONES
+            </div>
+            <label style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12, cursor: "pointer", fontSize: ".9em", color: "#0f172a" }}>
+              <input
+                type="checkbox"
+                checked={form.notify_new_workouts}
+                onChange={(e) => setForm((f) => ({ ...f, notify_new_workouts: e.target.checked }))}
+              />
+              Emails de nuevos workouts
+            </label>
+            <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", fontSize: ".9em", color: "#0f172a" }}>
+              <input type="checkbox" checked={form.notify_reminders} onChange={(e) => setForm((f) => ({ ...f, notify_reminders: e.target.checked }))} />
+              Recordatorios por email
+            </label>
+          </div>
+
+          <div style={{ ...S.card, marginBottom: 18 }}>
+            <div style={{ fontSize: ".72em", letterSpacing: ".12em", color: "#64748b", fontWeight: 700, marginBottom: 16 }}>
+              SUSCRIPCIÓN
+            </div>
+            {athletePlanHint ? (
+              <div style={{ fontSize: ".8em", color: "#64748b", marginBottom: 12 }}>
+                Plan detectado en un atleta: <strong style={{ color: "#0f172a" }}>{athletePlanHint}</strong>
+              </div>
+            ) : null}
+            {field(
+              "Plan actual",
+              <input
+                value={form.subscription_plan}
+                onChange={(e) => setForm((f) => ({ ...f, subscription_plan: e.target.value }))}
+                placeholder="Starter, Pro, Equipo…"
+                style={inputStyle}
+              />,
+            )}
+            {field(
+              "Fecha de renovación",
+              <input type="date" value={form.subscription_renews_at} onChange={(e) => setForm((f) => ({ ...f, subscription_renews_at: e.target.value }))} style={inputStyle} />,
+            )}
+          </div>
+
+          <button
+            type="submit"
+            disabled={saving}
+            style={{
+              padding: "12px 24px",
+              borderRadius: 10,
+              border: "none",
+              background: saving ? "#e2e8f0" : "linear-gradient(135deg,#b45309,#f59e0b)",
+              color: saving ? "#64748b" : "#fff",
+              fontWeight: 800,
+              cursor: saving ? "not-allowed" : "pointer",
+              fontFamily: "inherit",
+              marginBottom: 16,
+            }}
+          >
+            {saving ? "Guardando…" : "Guardar cambios"}
+          </button>
+        </form>
+      )}
+
+      <div style={{ ...S.card, marginTop: 8 }}>
+        <button
+          type="button"
+          onClick={onSignOut}
+          style={{
+            width: "100%",
+            padding: "12px 16px",
+            borderRadius: 10,
+            border: "1px solid #fecaca",
+            background: "#fef2f2",
+            color: "#dc2626",
+            fontWeight: 800,
+            cursor: "pointer",
+            fontFamily: "inherit",
+            fontSize: ".9em",
+          }}
+        >
+          Cerrar sesión
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function Plans({ athletes, notify }) {
   const S = styles;
 
   const WOMPI_PUBLIC_KEY = "pub_test_9yDINqJhS2WxJYpYtgzXkP5TKND5WQyf";
   const WompiCheckoutBase = "https://checkout.wompi.co/p/";
   const redirectUrl = "https://pace-forge-eta.vercel.app";
+
+  const [promoInput, setPromoInput] = useState("");
+  const [appliedPromo, setAppliedPromo] = useState(null);
+  const [promoError, setPromoError] = useState("");
+  const [promoLoading, setPromoLoading] = useState(false);
 
   const PLAN_CATALOG = useMemo(
     () => [
@@ -4275,9 +4890,60 @@ function Plans({ athletes }) {
     return 0;
   };
 
-  const openDirectWompiCheckout = (planObj) => {
-    const amountInCents = amountInCentsByPlan(planObj.plan);
-    if (!amountInCents) return;
+  const applyPromo = async () => {
+    const code = promoInput.trim();
+    setPromoError("");
+    if (!code) {
+      setPromoError("Escribe un código");
+      return;
+    }
+    setPromoLoading(true);
+    const { data, error } = await supabase.rpc("validate_promo_code", { code_input: code });
+    setPromoLoading(false);
+    if (error) {
+      console.error(error);
+      setPromoError(error.message || "No se pudo validar el código");
+      setAppliedPromo(null);
+      return;
+    }
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row || row.discount_percent == null) {
+      setPromoError("Código no válido o sin usos disponibles");
+      setAppliedPromo(null);
+      return;
+    }
+    setAppliedPromo({ code: code.toUpperCase().replace(/\s+/g, ""), discount_percent: Number(row.discount_percent) });
+    notify(`Código aplicado: ${row.discount_percent}% de descuento`);
+  };
+
+  const clearPromo = () => {
+    setAppliedPromo(null);
+    setPromoInput("");
+    setPromoError("");
+  };
+
+  const openDirectWompiCheckout = async (planObj) => {
+    const amountInCentsBase = amountInCentsByPlan(planObj.plan);
+    if (!amountInCentsBase) return;
+
+    let amountInCents = amountInCentsBase;
+    if (appliedPromo?.discount_percent != null) {
+      amountInCents = Math.max(0, Math.round((amountInCentsBase * (100 - appliedPromo.discount_percent)) / 100));
+    }
+
+    if (appliedPromo?.code) {
+      const { data: ok, error: redeemErr } = await supabase.rpc("redeem_promo_code", { code_input: appliedPromo.code });
+      if (redeemErr) {
+        console.error(redeemErr);
+        notify(redeemErr.message || "No se pudo registrar el uso del código");
+        return;
+      }
+      if (!ok) {
+        notify("El código ya no es válido o no tiene usos");
+        setAppliedPromo(null);
+        return;
+      }
+    }
 
     const reference = `paceforge-${planObj.plan}-${Date.now()}`;
 
@@ -4300,10 +4966,78 @@ function Plans({ athletes }) {
         <p style={{ color: "#475569", fontSize: ".82em", marginTop: 4 }}>Elige un plan para tu coach</p>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 18 }}>
+      <div style={{ ...S.card, marginBottom: 20 }}>
+        <div style={{ fontSize: ".72em", letterSpacing: ".12em", color: "#64748b", fontWeight: 700, marginBottom: 10 }}>CÓDIGO PROMOCIONAL</div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
+          <input
+            value={promoInput}
+            onChange={(e) => setPromoInput(e.target.value)}
+            placeholder="Ingresa tu código"
+            disabled={!!appliedPromo}
+            style={{
+              flex: "1 1 200px",
+              minWidth: 160,
+              padding: "10px 12px",
+              borderRadius: 8,
+              border: "1px solid #e2e8f0",
+              background: appliedPromo ? "#f1f5f9" : "#fff",
+              color: "#0f172a",
+              fontFamily: "inherit",
+              fontSize: ".88em",
+            }}
+          />
+          {appliedPromo ? (
+            <button
+              type="button"
+              onClick={clearPromo}
+              style={{
+                padding: "10px 16px",
+                borderRadius: 8,
+                border: "1px solid #e2e8f0",
+                background: "#fff",
+                color: "#64748b",
+                fontWeight: 700,
+                cursor: "pointer",
+                fontFamily: "inherit",
+              }}
+            >
+              Quitar
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={applyPromo}
+              disabled={promoLoading}
+              style={{
+                padding: "10px 18px",
+                borderRadius: 8,
+                border: "none",
+                background: promoLoading ? "#e2e8f0" : "linear-gradient(135deg,#2563eb,#3b82f6)",
+                color: promoLoading ? "#64748b" : "#fff",
+                fontWeight: 800,
+                cursor: promoLoading ? "not-allowed" : "pointer",
+                fontFamily: "inherit",
+              }}
+            >
+              {promoLoading ? "…" : "Aplicar"}
+            </button>
+          )}
+        </div>
+        {promoError ? <div style={{ color: "#dc2626", fontSize: ".8em", marginTop: 8 }}>{promoError}</div> : null}
+        {appliedPromo ? (
+          <div style={{ color: "#15803d", fontSize: ".82em", marginTop: 8, fontWeight: 600 }}>
+            Descuento del {appliedPromo.discount_percent}% aplicado a los precios mostrados.
+          </div>
+        ) : null}
+      </div>
+
+      <div className="pf-plans-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 18 }}>
         {PLAN_CATALOG.map((p) => {
           const isCurrent = coachPlan === p.plan;
           const copPretty = Number(p.priceCop).toLocaleString("es-CO");
+          const discountPct = appliedPromo?.discount_percent ?? 0;
+          const priceAfter = Math.max(0, Math.round((p.priceCop * (100 - discountPct)) / 100));
+          const copAfterPretty = Number(priceAfter).toLocaleString("es-CO");
 
           return (
             <div
@@ -4319,10 +5053,24 @@ function Plans({ athletes }) {
               }}
             >
               <div style={{ fontSize: "1.2em", fontWeight: 800, color: isCurrent ? "#f59e0b" : "#0f172a" }}>
-                {p.label} ($${copPretty} COP)
+                {p.label}
+                {discountPct > 0 ? (
+                  <span style={{ fontSize: ".65em", color: "#64748b", fontWeight: 600, marginLeft: 8 }}>
+                    (antes ${copPretty})
+                  </span>
+                ) : (
+                  <span style={{ fontSize: ".65em", color: "#64748b", fontWeight: 600, marginLeft: 8 }}>(${copPretty} COP)</span>
+                )}
               </div>
               <div style={{ fontSize: "2em", fontWeight: 900, color: "#f59e0b", fontFamily: "monospace" }}>
-                {`$${copPretty}`}
+                {discountPct > 0 ? (
+                  <>
+                    <span style={{ textDecoration: "line-through", color: "#94a3b8", fontSize: ".55em", marginRight: 8 }}>${copPretty}</span>
+                    <span>{`$${copAfterPretty}`}</span>
+                  </>
+                ) : (
+                  `$${copPretty}`
+                )}
                 <span style={{ fontSize: ".55em", color: "#64748b", fontFamily: "inherit", marginLeft: 6 }}>COP</span>
               </div>
               <div style={{ fontSize: ".8em", color: "#64748b" }}>{p.description}</div>

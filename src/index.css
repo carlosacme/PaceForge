@@ -93,6 +93,10 @@ body {
     grid-template-columns: 1fr !important;
   }
 
+  .pf-plans-grid {
+    grid-template-columns: 1fr !important;
+  }
+
   /* Sit above fixed bottom nav (~76px + safe area) */
   .pf-install-banner {
     bottom: calc(76px + max(12px, env(safe-area-inset-bottom, 0px))) !important;
