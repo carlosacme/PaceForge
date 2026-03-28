@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { jsPDF } from "jspdf";
 import { supabase } from "./lib/supabase";
 
 const WORKOUT_TYPES = [
@@ -421,6 +422,190 @@ const FormaFatigaLineChart = ({ chronological }) => {
       ))}
     </svg>
   );
+};
+
+const PDF_WEEKDAY_SHORT = ["Dom", "Lun", "Mar", "Mie", "Jue", "Vie", "Sab"];
+
+const pdfWeekdayFromYmd = (ymd) => {
+  const t = new Date(`${ymd}T12:00:00`).getTime();
+  if (Number.isNaN(t)) return "—";
+  return PDF_WEEKDAY_SHORT[new Date(t).getDay()];
+};
+
+const getCurrentMonthYmdRange = () => {
+  const now = new Date();
+  const y = now.getFullYear();
+  const mo = now.getMonth();
+  const p2 = (n) => String(n).padStart(2, "0");
+  const start = `${y}-${p2(mo + 1)}-01`;
+  const lastD = new Date(y, mo + 1, 0).getDate();
+  const end = `${y}-${p2(mo + 1)}-${p2(lastD)}`;
+  const label = now.toLocaleDateString("es", { month: "long", year: "numeric" });
+  return { start, end, label };
+};
+
+const sanitizePdfFilenamePart = (s) => {
+  const base = (s || "atleta")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9._-]+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_|_$/g, "")
+    .slice(0, 60);
+  return base || "atleta";
+};
+
+/** Plan del atleta: mes calendario actual, footer en todas las páginas. */
+const exportAthletePlanToPdf = ({ athlete, workouts, coachDisplayName }) => {
+  const { start, end, label: monthLabel } = getCurrentMonthYmdRange();
+  const monthWorkouts = workouts
+    .filter((w) => w.scheduled_date >= start && w.scheduled_date <= end)
+    .sort((a, b) => {
+      if (a.scheduled_date !== b.scheduled_date) return a.scheduled_date.localeCompare(b.scheduled_date);
+      return String(a.id).localeCompare(String(b.id));
+    });
+
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  const L = 16;
+  const R = 16;
+  let y = 14;
+  const coach = (coachDisplayName && String(coachDisplayName).trim()) || "Coach";
+  const genStamp = `${formatLocalYMD(new Date())} ${new Date().toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" })}`;
+
+  const checkPage = (needMm = 10) => {
+    if (y + needMm > pageH - 18) {
+      doc.addPage();
+      y = 14;
+    }
+  };
+
+  doc.setFillColor(245, 158, 11);
+  doc.roundedRect(L, y - 3, 7, 7, 1, 1, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(245, 158, 11);
+  doc.setFontSize(15);
+  doc.text("PaceForge", L + 9, y + 2.5);
+  doc.setDrawColor(200, 200, 200);
+  doc.setLineWidth(0.25);
+  doc.line(L, y + 6, pageW - R, y + 6);
+  y += 12;
+
+  doc.setTextColor(40, 40, 40);
+  doc.setFontSize(11);
+  doc.text(`Plan mensual — ${monthLabel}`, L, y);
+  y += 8;
+
+  doc.setFontSize(9);
+  doc.setFont("helvetica", "bold");
+  doc.text("Atleta:", L, y);
+  doc.setFont("helvetica", "normal");
+  doc.text(String(athlete.name || "—"), L + 22, y);
+  y += 5.5;
+  doc.setFont("helvetica", "bold");
+  doc.text("Objetivo:", L, y);
+  doc.setFont("helvetica", "normal");
+  const goalLines = doc.splitTextToSize(String(athlete.goal || "—"), pageW - L - R - 24);
+  doc.text(goalLines, L + 24, y);
+  y += Math.max(5.5, goalLines.length * 4.5);
+  doc.setFont("helvetica", "bold");
+  doc.text("Ritmo:", L, y);
+  doc.setFont("helvetica", "normal");
+  doc.text(String(athlete.pace || "—"), L + 22, y);
+  y += 5.5;
+  doc.setFont("helvetica", "bold");
+  doc.text("Km/semana:", L, y);
+  doc.setFont("helvetica", "normal");
+  doc.text(athlete.weekly_km != null ? `${athlete.weekly_km} km` : "—", L + 28, y);
+  y += 9;
+
+  checkPage(16);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10);
+  doc.text(`Workouts del mes (${monthWorkouts.length})`, L, y);
+  y += 6;
+
+  doc.setFillColor(241, 245, 249);
+  doc.rect(L, y - 4, pageW - L - R, 6.5, "F");
+  doc.setFontSize(7.5);
+  doc.setTextColor(50, 50, 50);
+  doc.setFont("helvetica", "bold");
+  const xDate = L;
+  const xDay = L + 24;
+  const xTitle = L + 36;
+  const xType = L + 118;
+  const xKm = L + 150;
+  const xMin = L + 166;
+  doc.text("Fecha", xDate, y);
+  doc.text("Dia", xDay, y);
+  doc.text("Titulo", xTitle, y);
+  doc.text("Tipo", xType, y);
+  doc.text("Km", xKm, y);
+  doc.text("Min", xMin, y);
+  y += 6;
+  doc.setFont("helvetica", "normal");
+
+  if (monthWorkouts.length === 0) {
+    doc.setFontSize(8.5);
+    doc.setTextColor(100, 100, 100);
+    doc.text("No hay entrenamientos programados en este mes.", L, y);
+    y += 6;
+  } else {
+    for (const w of monthWorkouts) {
+      const typeLabel = WORKOUT_TYPES.find((t) => t.id === w.type)?.label || w.type || "—";
+      const titleLines = doc.splitTextToSize(String(w.title || "—"), 78);
+      const rowH = Math.max(4.5, titleLines.length * 4);
+      checkPage(rowH + 4);
+      doc.setFontSize(7.5);
+      doc.setTextColor(30, 30, 30);
+      doc.text(w.scheduled_date, xDate, y);
+      doc.text(pdfWeekdayFromYmd(w.scheduled_date), xDay, y);
+      doc.text(titleLines, xTitle, y);
+      doc.text(String(typeLabel), xType, y);
+      doc.text(String(w.total_km ?? 0), xKm, y);
+      doc.text(String(w.duration_min ?? 0), xMin, y);
+      y += rowH + 1.5;
+    }
+  }
+
+  const zones = computeAthleteHrZones(athlete.fc_max);
+  if (zones?.length) {
+    y += 4;
+    checkPage(28);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.setTextColor(40, 40, 40);
+    doc.text("Zonas FC (segun FC max)", L, y);
+    y += 5;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8.5);
+    for (const z of zones) {
+      checkPage(6);
+      doc.text(
+        `Z${z.zone}: ${z.low}-${z.high} lpm  (${z.pctLabel})  ${z.label}`,
+        L,
+        y,
+      );
+      y += 4.5;
+    }
+    if (athlete.fc_reposo && athlete.fc_reposo > 0) {
+      doc.text(`FC reposo (referencia): ${athlete.fc_reposo} lpm`, L, y);
+      y += 5;
+    }
+  }
+
+  const totalPages = doc.getNumberOfPages();
+  for (let i = 1; i <= totalPages; i++) {
+    doc.setPage(i);
+    doc.setFontSize(7);
+    doc.setTextColor(110, 110, 110);
+    doc.setFont("helvetica", "normal");
+    doc.text(`Generado: ${genStamp}  ·  Coach: ${coach}`, L, pageH - 8);
+  }
+
+  const fname = `Plan_${sanitizePdfFilenamePart(athlete.name)}_${formatLocalYMD(new Date())}.pdf`;
+  doc.save(fname);
 };
 
 const StatusBadge = ({ status }) => {
@@ -1063,6 +1248,12 @@ export default function App() {
                 prev && String(prev.id) === String(athleteId) ? normalizeAthlete({ ...prev, fc_max, fc_reposo }) : prev,
               );
             }}
+            coachDisplayName={
+              profile?.name ||
+              session?.user?.user_metadata?.full_name ||
+              (session?.user?.email ? session.user.email.split("@")[0] : null) ||
+              "Coach"
+            }
           />
         )}
         {view === "plans" && <Plans athletes={athletes} />}
@@ -1483,7 +1674,7 @@ function Dashboard({
   );
 }
 
-function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWorkoutsDoneSync, onAthleteDeviceSync, onAthleteFcSync }) {
+function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWorkoutsDoneSync, onAthleteDeviceSync, onAthleteFcSync, coachDisplayName }) {
   const S = styles;
   const athlete = (selected ? athletes.find(a => String(a.id) === String(selected.id)) : athletes[0]) || null;
   const [searchQuery, setSearchQuery] = useState("");
@@ -1757,12 +1948,41 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
           )}
         </div>
         <div style={{ ...S.card }}>
-          <div style={{ display: "flex", gap: 16, alignItems: "center", marginBottom: 20 }}>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 14, alignItems: "center", marginBottom: 20 }}>
             <div style={{ ...S.avatar, width: 52, height: 52, fontSize: "1.8em" }}>{athlete.avatar}</div>
-            <div>
+            <div style={{ flex: "1 1 180px", minWidth: 0 }}>
               <div style={{ fontSize: "1.3em", fontWeight: 700, color: "#e2e8f0" }}>{athlete.name}</div>
               <div style={{ color: "#64748b", fontSize: ".85em" }}>{athlete.goal}</div>
             </div>
+            <button
+              type="button"
+              onClick={() => {
+                try {
+                  exportAthletePlanToPdf({
+                    athlete,
+                    workouts,
+                    coachDisplayName,
+                  });
+                } catch (e) {
+                  console.error(e);
+                  alert(`No se pudo generar el PDF: ${e?.message || e}`);
+                }
+              }}
+              style={{
+                background: "rgba(255,255,255,.04)",
+                border: "1px solid rgba(255,255,255,.12)",
+                borderRadius: 8,
+                padding: "8px 14px",
+                color: "#e2e8f0",
+                fontWeight: 700,
+                cursor: "pointer",
+                fontFamily: "inherit",
+                fontSize: ".8em",
+                whiteSpace: "nowrap",
+              }}
+            >
+              📄 Exportar PDF
+            </button>
             <StatusBadge status={athlete.status} />
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12, marginBottom: 24 }}>
