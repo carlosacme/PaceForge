@@ -99,8 +99,11 @@ const pushBodySnippet = (text, max = 400) => {
   return `${s.slice(0, max - 1)}…`;
 };
 
-async function sendChatPushNotification({ token, title, body }) {
-  if (!token || typeof window === "undefined") return;
+async function sendChatPushNotification({ token, title, body, logLabel = "chat push" }) {
+  const tokenOk = token != null && String(token).trim() !== "";
+  console.log(`[${logLabel}] Token FCM del destinatario:`, tokenOk ? token : "Token FCM no disponible");
+  if (!tokenOk || typeof window === "undefined") return;
+  console.log(`[${logLabel}] Llamando POST /api/send-notification`, { title });
   try {
     const res = await fetch("/api/send-notification", {
       method: "POST",
@@ -111,9 +114,10 @@ async function sendChatPushNotification({ token, title, body }) {
         body: pushBodySnippet(body),
       }),
     });
-    if (!res.ok) console.warn("send-notification", await res.text());
+    if (!res.ok) console.warn(`[${logLabel}] /api/send-notification respuesta no OK`, await res.text());
+    else console.log(`[${logLabel}] /api/send-notification OK`, res.status);
   } catch (e) {
-    console.warn("send-notification", e);
+    console.warn(`[${logLabel}] /api/send-notification error`, e);
   }
 }
 
@@ -2206,14 +2210,19 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
         return;
       }
       const athleteUserId = athlete.user_id;
+      let recipientFcmToken = null;
       if (athleteUserId) {
         const { data: prow } = await supabase.from("profiles").select("fcm_token").eq("user_id", athleteUserId).maybeSingle();
-        await sendChatPushNotification({
-          token: prow?.fcm_token,
-          title: "Nuevo mensaje de tu coach",
-          body,
-        });
+        recipientFcmToken = prow?.fcm_token ?? null;
+      } else {
+        console.log("[chat coach→atleta] Sin athletes.user_id vinculado; no se puede resolver token del atleta.");
       }
+      await sendChatPushNotification({
+        token: recipientFcmToken,
+        title: "Nuevo mensaje de tu coach",
+        body,
+        logLabel: "chat coach→atleta",
+      });
       setChatDraft("");
       await loadCoachChat();
     } finally {
@@ -2965,10 +2974,12 @@ function AthleteHome({ profile }) {
         return;
       }
       const { data: coachProf } = await supabase.from("profiles").select("fcm_token").eq("user_id", coachIdForChat).maybeSingle();
+      const recipientFcmToken = coachProf?.fcm_token ?? null;
       await sendChatPushNotification({
-        token: coachProf?.fcm_token,
+        token: recipientFcmToken,
         title: `Tu atleta ${athleteName} respondió`,
         body,
+        logLabel: "chat atleta→coach",
       });
       setAthleteChatDraft("");
       await loadAthleteChat();
