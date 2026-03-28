@@ -706,11 +706,37 @@ export default function App() {
     try {
       const { data: ures } = await supabase.auth.getUser();
       const uid = ures?.user?.id;
-      if (!uid) return;
-      const token = await requestNotificationPermission();
-      if (token) {
-        await supabase.from("profiles").update({ fcm_token: token }).eq("user_id", uid);
+      if (!uid) {
+        console.log("[FCM] syncFcmTokenToProfile: sin sesión (user_id)");
+        return;
       }
+      const token = await requestNotificationPermission();
+      if (!token) {
+        console.log("[FCM] No se obtuvo token FCM (permiso denegado, cancelado o no soportado en este navegador)");
+        return;
+      }
+      console.log("[FCM] Token FCM obtenido:", token);
+      const { data: updated, error } = await supabase
+        .from("profiles")
+        .update({ fcm_token: token })
+        .eq("user_id", uid)
+        .select("user_id, fcm_token")
+        .maybeSingle();
+      if (error) {
+        console.error("[FCM] Error al guardar fcm_token en profiles:", {
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          code: error.code,
+          fullError: error,
+        });
+        return;
+      }
+      if (!updated) {
+        console.warn("[FCM] UPDATE profiles no devolvió fila: ¿existe perfil para user_id?", uid);
+        return;
+      }
+      console.log("[FCM] fcm_token guardado en profiles para user_id:", updated.user_id);
     } catch (e) {
       console.warn("syncFcmTokenToProfile", e);
     }
