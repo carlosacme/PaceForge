@@ -2242,6 +2242,7 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
         alert(`No se pudo enviar: ${error.message}`);
         return;
       }
+      console.log("Intentando enviar notificación a atleta");
       const athleteUserId = athlete.user_id;
       let recipientFcmToken = null;
       if (athleteUserId) {
@@ -2250,6 +2251,11 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
       } else {
         console.log("[chat coach→atleta] Sin athletes.user_id vinculado; no se puede resolver token del atleta.");
       }
+      console.log("[chat coach→atleta] fcm_token atleta:", recipientFcmToken);
+      if (recipientFcmToken == null || String(recipientFcmToken).trim() === "") {
+        console.log("Atleta no tiene token FCM");
+      }
+      console.log("[chat coach→atleta] Verificando llamada a /api/send-notification");
       await sendChatPushNotification({
         token: recipientFcmToken,
         title: "Nuevo mensaje de tu coach",
