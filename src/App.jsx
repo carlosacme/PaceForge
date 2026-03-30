@@ -16,6 +16,7 @@ const WORKOUT_TYPES = [
   { id: "interval", label: "Intervalos", color: "#ef4444" },
   { id: "long", label: "Largo", color: "#3b82f6" },
   { id: "recovery", label: "Recuperación", color: "#8b5cf6" },
+  { id: "race", label: "Carrera", color: "#dc2626" },
 ];
 
 const DAYS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
@@ -446,6 +447,39 @@ const normalizeWorkoutRow = (row) => {
     done: Boolean(row.done),
     rpe: clampWorkoutRpe(row.rpe),
   };
+};
+
+const emptyWorkoutStructureRow = () => ({ phase: "", duration: "", pace: "", intensity: "" });
+
+/** Convierte structure del workout a filas editables (fases). */
+const workoutStructureToEditableRows = (structure) => {
+  const arr = Array.isArray(structure) ? structure : [];
+  return arr.map((s) => ({
+    phase: String(s?.phase ?? s?.name ?? ""),
+    duration: String(s?.duration ?? ""),
+    pace: String(s?.pace ?? ""),
+    intensity: String(s?.intensity ?? ""),
+  }));
+};
+
+/** Filas del formulario → JSON guardado en workouts.structure */
+const editableRowsToWorkoutStructure = (rows) => {
+  const out = (rows || [])
+    .map((r) => {
+      const phase = (r?.phase ?? "").trim();
+      const duration = (r?.duration ?? "").trim();
+      const pace = (r?.pace ?? "").trim();
+      const intensity = (r?.intensity ?? "").trim();
+      if (!phase && !duration && !pace && !intensity) return null;
+      const o = {};
+      if (phase) o.phase = phase;
+      if (duration) o.duration = duration;
+      if (pace) o.pace = pace;
+      if (intensity) o.intensity = intensity;
+      return Object.keys(o).length ? o : null;
+    })
+    .filter(Boolean);
+  return out;
 };
 
 const normalizeLibraryRow = (row) => {
@@ -2276,11 +2310,20 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
   const [achievementsCatalog, setAchievementsCatalog] = useState([]);
   const [earnedAchievements, setEarnedAchievements] = useState([]);
   const [achProgress, setAchProgress] = useState(null);
-  const [hoveredWorkoutId, setHoveredWorkoutId] = useState(null);
   const [dragWorkoutId, setDragWorkoutId] = useState(null);
-  const [workoutModal, setWorkoutModal] = useState({ open: false, workoutId: null, mode: "menu" });
+  const calendarDragRef = useRef(false);
+  const [calendarCtxMenu, setCalendarCtxMenu] = useState(null);
+  const calendarCtxMenuRef = useRef(null);
+  const [workoutPanel, setWorkoutPanel] = useState(null);
   const [workoutFormSaving, setWorkoutFormSaving] = useState(false);
-  const [workoutEditForm, setWorkoutEditForm] = useState({ title: "", type: "easy", total_km: "", duration_min: "", description: "" });
+  const [workoutEditForm, setWorkoutEditForm] = useState({
+    title: "",
+    type: "easy",
+    total_km: "",
+    duration_min: "",
+    description: "",
+    structureRows: [emptyWorkoutStructureRow()],
+  });
   const [moveDateInput, setMoveDateInput] = useState("");
   const [athletePayments, setAthletePayments] = useState([]);
   const [loadingPayments, setLoadingPayments] = useState(false);
@@ -2413,28 +2456,76 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
     }
   };
 
-  const openWorkoutModal = (w) => {
-    if (!w) return;
+  const closeCalendarCtxMenu = () => setCalendarCtxMenu(null);
+
+  const ctxMenuWorkout = useMemo(
+    () => (calendarCtxMenu ? workouts.find((x) => String(x.id) === String(calendarCtxMenu.workoutId)) || null : null),
+    [workouts, calendarCtxMenu],
+  );
+
+  const panelWorkout = useMemo(
+    () => (workoutPanel ? workouts.find((x) => String(x.id) === String(workoutPanel.workoutId)) || null : null),
+    [workouts, workoutPanel],
+  );
+
+  const populateEditFormFromWorkout = (w) => {
+    const rows = workoutStructureToEditableRows(w.structure);
     setWorkoutEditForm({
       title: w.title || "",
       type: WORKOUT_TYPES.some((t) => t.id === w.type) ? w.type : "easy",
       total_km: String(Number(w.total_km) || 0),
       duration_min: String(Number(w.duration_min) || 0),
       description: w.description || "",
+      structureRows: rows.length ? rows : [emptyWorkoutStructureRow()],
     });
     setMoveDateInput(w.scheduled_date || formatLocalYMD(new Date()));
-    setWorkoutModal({ open: true, workoutId: w.id, mode: "menu" });
   };
 
-  const closeWorkoutModal = () => {
-    setWorkoutModal({ open: false, workoutId: null, mode: "menu" });
+  const openCalendarWorkoutMenu = (e, w) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (calendarDragRef.current) return;
+    const pad = 8;
+    const mw = 280;
+    const mh = 200;
+    const vw = typeof window !== "undefined" ? window.innerWidth : 800;
+    const vh = typeof window !== "undefined" ? window.innerHeight : 600;
+    const x = Math.min(e.clientX, vw - mw - pad);
+    const y = Math.min(e.clientY, vh - mh - pad);
+    setCalendarCtxMenu({ x, y, workoutId: w.id });
+  };
+
+  const openWorkoutEditPanel = (w) => {
+    if (!w) return;
+    populateEditFormFromWorkout(w);
+    setWorkoutPanel({ mode: "edit", workoutId: w.id });
+    closeCalendarCtxMenu();
+  };
+
+  const openWorkoutMovePanel = (w) => {
+    if (!w) return;
+    populateEditFormFromWorkout(w);
+    setWorkoutPanel({ mode: "move", workoutId: w.id });
+    closeCalendarCtxMenu();
+  };
+
+  const closeWorkoutPanel = () => {
+    setWorkoutPanel(null);
     setWorkoutFormSaving(false);
   };
 
-  const modalWorkout = useMemo(
-    () => workouts.find((x) => String(x.id) === String(workoutModal.workoutId)) || null,
-    [workouts, workoutModal.workoutId],
-  );
+  useEffect(() => {
+    if (!calendarCtxMenu) return;
+    const onDown = (ev) => {
+      if (calendarCtxMenuRef.current?.contains(ev.target)) return;
+      closeCalendarCtxMenu();
+    };
+    const t = setTimeout(() => document.addEventListener("mousedown", onDown), 0);
+    return () => {
+      clearTimeout(t);
+      document.removeEventListener("mousedown", onDown);
+    };
+  }, [calendarCtxMenu]);
 
   const moveWorkoutToDate = async (workoutId, nextDate, withToast = true) => {
     const target = formatLocalYMD(new Date(`${nextDate}T12:00:00`));
@@ -2452,18 +2543,20 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
   };
 
   const saveWorkoutEdits = async () => {
-    if (!modalWorkout?.id) return;
+    if (!panelWorkout?.id) return;
+    const structure = editableRowsToWorkoutStructure(workoutEditForm.structureRows);
     const payload = {
-      title: workoutEditForm.title.trim() || modalWorkout.title,
-      type: WORKOUT_TYPES.some((t) => t.id === workoutEditForm.type) ? workoutEditForm.type : modalWorkout.type,
+      title: workoutEditForm.title.trim() || panelWorkout.title,
+      type: WORKOUT_TYPES.some((t) => t.id === workoutEditForm.type) ? workoutEditForm.type : panelWorkout.type,
       total_km: Number(workoutEditForm.total_km) || 0,
       duration_min: Math.round(Number(workoutEditForm.duration_min) || 0),
       description: workoutEditForm.description || "",
+      structure,
     };
     setWorkoutFormSaving(true);
     const prev = workouts;
-    setWorkouts((rows) => rows.map((x) => (String(x.id) === String(modalWorkout.id) ? { ...x, ...payload } : x)));
-    const { error } = await supabase.from("workouts").update(payload).eq("id", modalWorkout.id);
+    setWorkouts((rows) => rows.map((x) => (String(x.id) === String(panelWorkout.id) ? { ...x, ...payload } : x)));
+    const { error } = await supabase.from("workouts").update(payload).eq("id", panelWorkout.id);
     setWorkoutFormSaving(false);
     if (error) {
       console.error("Error editando workout:", error);
@@ -2472,13 +2565,15 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
       return;
     }
     notify?.("Workout actualizado");
-    closeWorkoutModal();
+    closeWorkoutPanel();
   };
 
-  const deleteWorkoutFromModal = async () => {
-    if (!modalWorkout?.id) return;
+  const deleteCalendarWorkout = async (w) => {
+    if (!w?.id) return;
     if (!window.confirm("¿Eliminar este workout? Esta acción no se puede deshacer.")) return;
-    const id = modalWorkout.id;
+    closeCalendarCtxMenu();
+    closeWorkoutPanel();
+    const id = w.id;
     setWorkoutFormSaving(true);
     const prev = workouts;
     setWorkouts((rows) => rows.filter((x) => String(x.id) !== String(id)));
@@ -2491,7 +2586,6 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
       return;
     }
     notify?.("Workout eliminado");
-    closeWorkoutModal();
   };
 
   const isCorosConnected = athlete?.device === "coros";
@@ -3219,11 +3313,22 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
                           key={w.id}
                           type="button"
                           draggable
-                          onDragStart={() => setDragWorkoutId(w.id)}
-                          onMouseEnter={() => setHoveredWorkoutId(w.id)}
-                          onMouseLeave={() => setHoveredWorkoutId((prev) => (String(prev) === String(w.id) ? null : prev))}
-                          onClick={() => openWorkoutModal(w)}
-                          title="Abrir opciones del workout"
+                          onDragStart={(e) => {
+                            calendarDragRef.current = true;
+                            setDragWorkoutId(w.id);
+                            try {
+                              e.dataTransfer.setData("text/plain", String(w.id));
+                              e.dataTransfer.effectAllowed = "move";
+                            } catch (_) {}
+                          }}
+                          onDragEnd={() => {
+                            setDragWorkoutId(null);
+                            setTimeout(() => {
+                              calendarDragRef.current = false;
+                            }, 0);
+                          }}
+                          onClick={(e) => openCalendarWorkoutMenu(e, w)}
+                          title="Opciones del workout"
                           style={{
                             border: `1px solid ${w.done ? "rgba(34,197,94,.55)" : `${wt.color}55`}`,
                             borderRadius: 5,
@@ -3237,9 +3342,6 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
                             position: "relative",
                           }}
                         >
-                          {String(hoveredWorkoutId) === String(w.id) ? (
-                            <span style={{ position: "absolute", top: 2, right: 3, fontSize: ".62em", color: "#334155" }}>✏️</span>
-                          ) : null}
                           <div style={{ width: 5, height: 5, borderRadius: "50%", background: wt.color, margin: "0 auto 2px" }} />
                           <div style={{ fontSize: ".52em", color: wt.color, fontWeight: 600, lineHeight: 1.15 }}>{w.title}</div>
                           <div style={{ fontSize: ".5em", color: "#475569" }}>{w.total_km} km</div>
@@ -3392,23 +3494,85 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
         </div>
       </div>
 
-      {workoutModal.open && modalWorkout ? (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 220, padding: 16 }}>
-          <div style={{ ...S.card, width: "100%", maxWidth: 540, margin: 0 }}>
+      {calendarCtxMenu && ctxMenuWorkout ? (
+        <div
+          ref={calendarCtxMenuRef}
+          style={{
+            position: "fixed",
+            left: calendarCtxMenu.x,
+            top: calendarCtxMenu.y,
+            zIndex: 300,
+            minWidth: 260,
+            maxWidth: "min(92vw, 320px)",
+            background: "#ffffff",
+            borderRadius: 10,
+            boxShadow: "0 10px 40px rgba(15,23,42,.2)",
+            border: "1px solid #e2e8f0",
+            padding: 6,
+          }}
+        >
+          {[
+            {
+              label: ctxMenuWorkout.done ? "✓ Marcar pendiente" : "✓ Marcar hecho",
+              onClick: () => {
+                toggleWorkoutDone(ctxMenuWorkout);
+                closeCalendarCtxMenu();
+              },
+            },
+            {
+              label: "✏️ Editar",
+              onClick: () => openWorkoutEditPanel(ctxMenuWorkout),
+            },
+            {
+              label: "📅 Mover a otra fecha",
+              onClick: () => openWorkoutMovePanel(ctxMenuWorkout),
+            },
+            {
+              label: "🗑 Eliminar",
+              danger: true,
+              onClick: () => deleteCalendarWorkout(ctxMenuWorkout),
+            },
+          ].map((item, i) => (
+            <button
+              key={i}
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={(e) => {
+                e.stopPropagation();
+                item.onClick();
+              }}
+              style={{
+                display: "block",
+                width: "100%",
+                textAlign: "left",
+                background: item.danger ? "transparent" : "transparent",
+                border: "none",
+                borderRadius: 8,
+                padding: "10px 12px",
+                color: item.danger ? "#b91c1c" : "#0f172a",
+                fontWeight: 600,
+                cursor: "pointer",
+                fontFamily: "inherit",
+                fontSize: ".82em",
+              }}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      {workoutPanel && panelWorkout ? (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 280, padding: 16, overflowY: "auto" }}>
+          <div style={{ ...S.card, width: "100%", maxWidth: workoutPanel.mode === "edit" ? 640 : 480, margin: "24px 0", maxHeight: "90vh", overflowY: "auto" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 10 }}>
-              <div style={{ fontSize: ".95em", fontWeight: 800, color: "#0f172a" }}>Workout: {modalWorkout.title}</div>
-              <button type="button" onClick={closeWorkoutModal} style={{ background: "transparent", border: "none", color: "#64748b", cursor: "pointer", fontFamily: "inherit", fontWeight: 700 }}>✕</button>
+              <div style={{ fontSize: ".95em", fontWeight: 800, color: "#0f172a" }}>
+                {workoutPanel.mode === "edit" ? "Editar workout" : "Mover workout"} · {panelWorkout.title}
+              </div>
+              <button type="button" onClick={closeWorkoutPanel} style={{ background: "transparent", border: "none", color: "#64748b", cursor: "pointer", fontFamily: "inherit", fontWeight: 700 }}>✕</button>
             </div>
 
-            {workoutModal.mode === "menu" ? (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 8 }}>
-                <button type="button" onClick={() => setWorkoutModal((m) => ({ ...m, mode: "edit" }))} style={{ background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 8, padding: "10px 12px", color: "#1d4ed8", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".8em" }}>Editar</button>
-                <button type="button" onClick={() => setWorkoutModal((m) => ({ ...m, mode: "move" }))} style={{ background: "#fef3c7", border: "1px solid #fde68a", borderRadius: 8, padding: "10px 12px", color: "#92400e", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".8em" }}>Mover</button>
-                <button type="button" disabled={workoutFormSaving} onClick={deleteWorkoutFromModal} style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "10px 12px", color: "#b91c1c", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".8em" }}>Eliminar</button>
-              </div>
-            ) : null}
-
-            {workoutModal.mode === "edit" ? (
+            {workoutPanel.mode === "edit" ? (
               <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 10 }}>
                 <div style={{ gridColumn: "1 / -1" }}>
                   <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Título</div>
@@ -3432,27 +3596,155 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
                   <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Descripción</div>
                   <textarea rows={3} value={workoutEditForm.description} onChange={(e) => setWorkoutEditForm((f) => ({ ...f, description: e.target.value }))} style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", color: "#0f172a", fontFamily: "inherit", fontSize: ".84em", boxSizing: "border-box", resize: "vertical" }} />
                 </div>
-                <div style={{ gridColumn: "1 / -1", display: "flex", justifyContent: "flex-end", gap: 8 }}>
-                  <button type="button" onClick={() => setWorkoutModal((m) => ({ ...m, mode: "menu" }))} style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 12px", color: "#64748b", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: ".8em" }}>Volver</button>
+                <div style={{ gridColumn: "1 / -1" }}>
+                  <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 8 }}>Estructura (fases, duración, ritmo objetivo)</div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    {workoutEditForm.structureRows.map((row, idx) => (
+                      <div
+                        key={idx}
+                        style={{
+                          border: "1px solid #e2e8f0",
+                          borderRadius: 8,
+                          padding: "10px 12px",
+                          background: "#f8fafc",
+                        }}
+                      >
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                          <span style={{ fontSize: ".75em", fontWeight: 700, color: "#334155" }}>Fase {idx + 1}</span>
+                          <button
+                            type="button"
+                            disabled={workoutEditForm.structureRows.length <= 1}
+                            onClick={() =>
+                              setWorkoutEditForm((f) => ({
+                                ...f,
+                                structureRows:
+                                  f.structureRows.length <= 1
+                                    ? f.structureRows
+                                    : f.structureRows.filter((_, j) => j !== idx),
+                              }))
+                            }
+                            style={{
+                              background: "transparent",
+                              border: "none",
+                              color: workoutEditForm.structureRows.length <= 1 ? "#cbd5e1" : "#b91c1c",
+                              cursor: workoutEditForm.structureRows.length <= 1 ? "not-allowed" : "pointer",
+                              fontSize: ".72em",
+                              fontWeight: 700,
+                              fontFamily: "inherit",
+                            }}
+                          >
+                            Quitar
+                          </button>
+                        </div>
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 8 }}>
+                          <div style={{ gridColumn: "1 / -1" }}>
+                            <div style={{ fontSize: ".65em", color: "#94a3b8", marginBottom: 4 }}>Nombre de la fase</div>
+                            <input
+                              value={row.phase}
+                              onChange={(e) =>
+                                setWorkoutEditForm((f) => {
+                                  const next = [...f.structureRows];
+                                  next[idx] = { ...next[idx], phase: e.target.value };
+                                  return { ...f, structureRows: next };
+                                })
+                              }
+                              style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", color: "#0f172a", fontFamily: "inherit", fontSize: ".82em", boxSizing: "border-box" }}
+                            />
+                          </div>
+                          <div>
+                            <div style={{ fontSize: ".65em", color: "#94a3b8", marginBottom: 4 }}>Duración</div>
+                            <input
+                              value={row.duration}
+                              onChange={(e) =>
+                                setWorkoutEditForm((f) => {
+                                  const next = [...f.structureRows];
+                                  next[idx] = { ...next[idx], duration: e.target.value };
+                                  return { ...f, structureRows: next };
+                                })
+                              }
+                              placeholder="ej. 10 min o 2 km"
+                              style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", color: "#0f172a", fontFamily: "inherit", fontSize: ".82em", boxSizing: "border-box" }}
+                            />
+                          </div>
+                          <div>
+                            <div style={{ fontSize: ".65em", color: "#94a3b8", marginBottom: 4 }}>Ritmo objetivo</div>
+                            <input
+                              value={row.pace}
+                              onChange={(e) =>
+                                setWorkoutEditForm((f) => {
+                                  const next = [...f.structureRows];
+                                  next[idx] = { ...next[idx], pace: e.target.value };
+                                  return { ...f, structureRows: next };
+                                })
+                              }
+                              placeholder="ej. 4:45/km"
+                              style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", color: "#0f172a", fontFamily: "inherit", fontSize: ".82em", boxSizing: "border-box" }}
+                            />
+                          </div>
+                          <div style={{ gridColumn: "1 / -1" }}>
+                            <div style={{ fontSize: ".65em", color: "#94a3b8", marginBottom: 4 }}>Intensidad / notas</div>
+                            <input
+                              value={row.intensity}
+                              onChange={(e) =>
+                                setWorkoutEditForm((f) => {
+                                  const next = [...f.structureRows];
+                                  next[idx] = { ...next[idx], intensity: e.target.value };
+                                  return { ...f, structureRows: next };
+                                })
+                              }
+                              placeholder="Z3, umbral…"
+                              style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", color: "#0f172a", fontFamily: "inherit", fontSize: ".82em", boxSizing: "border-box" }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setWorkoutEditForm((f) => ({
+                        ...f,
+                        structureRows: [...f.structureRows, emptyWorkoutStructureRow()],
+                      }))
+                    }
+                    style={{
+                      marginTop: 10,
+                      background: "#eff6ff",
+                      border: "1px solid #bfdbfe",
+                      borderRadius: 8,
+                      padding: "8px 12px",
+                      color: "#1d4ed8",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                      fontSize: ".78em",
+                    }}
+                  >
+                    + Añadir fase
+                  </button>
+                </div>
+                <div style={{ gridColumn: "1 / -1", display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
+                  <button type="button" onClick={closeWorkoutPanel} style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 12px", color: "#64748b", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: ".8em" }}>Cancelar</button>
                   <button type="button" disabled={workoutFormSaving} onClick={saveWorkoutEdits} style={{ background: workoutFormSaving ? "#e2e8f0" : "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 8, padding: "8px 12px", color: workoutFormSaving ? "#64748b" : "#fff", cursor: workoutFormSaving ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 800, fontSize: ".8em" }}>{workoutFormSaving ? "Guardando…" : "Guardar cambios"}</button>
                 </div>
               </div>
             ) : null}
 
-            {workoutModal.mode === "move" ? (
+            {workoutPanel.mode === "move" ? (
               <div>
                 <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Nueva fecha</div>
                 <input type="date" value={moveDateInput} onChange={(e) => setMoveDateInput(e.target.value)} style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", color: "#0f172a", fontFamily: "inherit", fontSize: ".84em", boxSizing: "border-box" }} />
                 <div style={{ marginTop: 10, display: "flex", justifyContent: "flex-end", gap: 8 }}>
-                  <button type="button" onClick={() => setWorkoutModal((m) => ({ ...m, mode: "menu" }))} style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 12px", color: "#64748b", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: ".8em" }}>Volver</button>
+                  <button type="button" onClick={closeWorkoutPanel} style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 12px", color: "#64748b", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: ".8em" }}>Cancelar</button>
                   <button
                     type="button"
                     disabled={workoutFormSaving}
                     onClick={async () => {
                       setWorkoutFormSaving(true);
-                      await moveWorkoutToDate(modalWorkout.id, moveDateInput, true);
+                      await moveWorkoutToDate(panelWorkout.id, moveDateInput, true);
                       setWorkoutFormSaving(false);
-                      closeWorkoutModal();
+                      closeWorkoutPanel();
                     }}
                     style={{ background: workoutFormSaving ? "#e2e8f0" : "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 8, padding: "8px 12px", color: workoutFormSaving ? "#64748b" : "#fff", cursor: workoutFormSaving ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 800, fontSize: ".8em" }}
                   >
@@ -3595,6 +3887,8 @@ function AthleteHome({ profile }) {
     typeof localStorage !== "undefined" && localStorage.getItem("raf_push_invite_dismissed") === "1",
   );
   const athleteChatScrollRef = useRef(null);
+  const [athleteCalendarCtxMenu, setAthleteCalendarCtxMenu] = useState(null);
+  const athleteCalendarCtxMenuRef = useRef(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -3723,6 +4017,42 @@ function AthleteHome({ profile }) {
     () => Array.from({ length: CALENDAR_DAYS }, (_, i) => addDays(weekStart, i)),
     [weekStart],
   );
+
+  const closeAthleteCalendarCtxMenu = () => setAthleteCalendarCtxMenu(null);
+
+  const ctxMenuAthleteWorkout = useMemo(
+    () =>
+      athleteCalendarCtxMenu
+        ? workouts.find((x) => String(x.id) === String(athleteCalendarCtxMenu.workoutId)) || null
+        : null,
+    [workouts, athleteCalendarCtxMenu],
+  );
+
+  const openAthleteWorkoutMenu = (e, w) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const pad = 8;
+    const mw = 260;
+    const mh = 52;
+    const vw = typeof window !== "undefined" ? window.innerWidth : 800;
+    const vh = typeof window !== "undefined" ? window.innerHeight : 600;
+    const x = Math.min(e.clientX, vw - mw - pad);
+    const y = Math.min(e.clientY, vh - mh - pad);
+    setAthleteCalendarCtxMenu({ x, y, workoutId: w.id });
+  };
+
+  useEffect(() => {
+    if (!athleteCalendarCtxMenu) return;
+    const onDown = (ev) => {
+      if (athleteCalendarCtxMenuRef.current?.contains(ev.target)) return;
+      closeAthleteCalendarCtxMenu();
+    };
+    const t = setTimeout(() => document.addEventListener("mousedown", onDown), 0);
+    return () => {
+      clearTimeout(t);
+      document.removeEventListener("mousedown", onDown);
+    };
+  }, [athleteCalendarCtxMenu]);
 
   const thisWeekStart = useMemo(() => startOfWeekMonday(new Date()), []);
   const thisWeekEnd = useMemo(() => addDays(thisWeekStart, 6), [thisWeekStart]);
@@ -4203,103 +4533,149 @@ function AthleteHome({ profile }) {
         {loading ? (
           <div style={{ color: "#64748b", fontSize: ".85em", padding: "20px 0" }}>Cargando...</div>
         ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 4 }}>
-            {DAYS.map(d => <div key={d} style={{ fontSize: ".65em", textAlign: "center", color: "#334155", padding: "4px 0" }}>{d}</div>)}
-            {calendarCells.map((cellDate, i) => {
-              const ymd = formatLocalYMD(cellDate);
-              const dayWorkouts = workoutsByDate[ymd] || [];
-              const hasWorkout = dayWorkouts.length > 0;
-              const hasDoneWorkout = dayWorkouts.some(w => w.done);
-              const borderColor = hasWorkout
-                ? `${WORKOUT_TYPES.find(t => t.id === dayWorkouts[0].type)?.color || "#64748b"}40`
-                : "#f1f5f9";
+          <>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 4 }}>
+              {DAYS.map(d => <div key={d} style={{ fontSize: ".65em", textAlign: "center", color: "#334155", padding: "4px 0" }}>{d}</div>)}
+              {calendarCells.map((cellDate, i) => {
+                const ymd = formatLocalYMD(cellDate);
+                const dayWorkouts = workoutsByDate[ymd] || [];
+                const hasWorkout = dayWorkouts.length > 0;
+                const hasDoneWorkout = dayWorkouts.some(w => w.done);
+                const borderColor = hasWorkout
+                  ? `${WORKOUT_TYPES.find(t => t.id === dayWorkouts[0].type)?.color || "#64748b"}40`
+                  : "#f1f5f9";
 
-              return (
-                <div
-                  key={i}
+                return (
+                  <div
+                    key={i}
+                    style={{
+                      minHeight: 72,
+                      border: `1px solid ${borderColor}`,
+                      borderRadius: 6,
+                      padding: "4px 3px",
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "stretch",
+                      gap: 3,
+                      background: hasDoneWorkout ? "rgba(34,197,94,.08)" : (hasWorkout ? "#f8fafc" : "transparent"),
+                    }}
+                  >
+                    <div style={{ fontSize: ".58em", color: "#475569", textAlign: "center", fontWeight: 600 }}>{cellDate.getDate()}</div>
+                    {dayWorkouts.map(w => {
+                      const wt = WORKOUT_TYPES.find(t => t.id === w.type) || WORKOUT_TYPES[0];
+                      return (
+                        <div key={w.id} style={{ display: "flex", flexDirection: "column", gap: 3, width: "100%", minWidth: 0 }}>
+                          <button
+                            type="button"
+                            onClick={(e) => openAthleteWorkoutMenu(e, w)}
+                            title="Opciones del entrenamiento"
+                            style={{
+                              border: `1px solid ${w.done ? "rgba(34,197,94,.55)" : `${wt.color}55`}`,
+                              borderRadius: 5,
+                              padding: "4px 3px",
+                              background: w.done ? "rgba(34,197,94,.16)" : `${wt.color}12`,
+                              cursor: "pointer",
+                              fontFamily: "inherit",
+                              textAlign: "center",
+                              width: "100%",
+                              boxSizing: "border-box",
+                            }}
+                          >
+                            <div style={{ width: 5, height: 5, borderRadius: "50%", background: wt.color, margin: "0 auto 2px" }} />
+                            <div style={{ fontSize: ".52em", color: wt.color, fontWeight: 600, lineHeight: 1.15 }}>{w.title}</div>
+                            <div style={{ fontSize: ".5em", color: "#475569" }}>{w.total_km} km</div>
+                            {w.done && <div style={{ fontSize: ".52em", color: "#22c55e", marginTop: 1 }}>✓ Hecho</div>}
+                          </button>
+                          {w.done && (
+                            <label style={{ display: "flex", flexDirection: "column", gap: 2, fontSize: ".48em", color: "#64748b", textAlign: "center" }}>
+                              <span style={{ letterSpacing: ".04em" }}>¿Cómo te sentiste? (RPE)</span>
+                              <select
+                                value={w.rpe ?? ""}
+                                onChange={(e) => {
+                                  const v = e.target.value;
+                                  if (v === "") return;
+                                  saveWorkoutRpe(w, v);
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                                style={{
+                                  width: "100%",
+                                  maxWidth: "100%",
+                                  background: "rgba(0,0,0,.35)",
+                                  border: "1px solid #cbd5e1",
+                                  borderRadius: 4,
+                                  padding: "3px 2px",
+                                  color: "#0f172a",
+                                  fontFamily: "inherit",
+                                  fontSize: "inherit",
+                                  cursor: "pointer",
+                                  boxSizing: "border-box",
+                                }}
+                              >
+                                <option value="">Elegir 1–10…</option>
+                                {Array.from({ length: 10 }, (_, i) => {
+                                  const n = i + 1;
+                                  const { emoji, label } = rpeBandMeta(n);
+                                  return (
+                                    <option key={n} value={String(n)}>
+                                      {n} {emoji} {label}
+                                    </option>
+                                  );
+                                })}
+                              </select>
+                            </label>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+            </div>
+            {athleteCalendarCtxMenu && ctxMenuAthleteWorkout ? (
+              <div
+                ref={athleteCalendarCtxMenuRef}
+                style={{
+                  position: "fixed",
+                  left: athleteCalendarCtxMenu.x,
+                  top: athleteCalendarCtxMenu.y,
+                  zIndex: 300,
+                  minWidth: 240,
+                  maxWidth: "min(92vw, 300px)",
+                  background: "#ffffff",
+                  borderRadius: 10,
+                  boxShadow: "0 10px 40px rgba(15,23,42,.2)",
+                  border: "1px solid #e2e8f0",
+                  padding: 6,
+                }}
+              >
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleDone(ctxMenuAthleteWorkout);
+                    closeAthleteCalendarCtxMenu();
+                  }}
                   style={{
-                    minHeight: 72,
-                    border: `1px solid ${borderColor}`,
-                    borderRadius: 6,
-                    padding: "4px 3px",
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "stretch",
-                    gap: 3,
-                    background: hasDoneWorkout ? "rgba(34,197,94,.08)" : (hasWorkout ? "#f8fafc" : "transparent"),
+                    display: "block",
+                    width: "100%",
+                    textAlign: "left",
+                    background: "transparent",
+                    border: "none",
+                    borderRadius: 8,
+                    padding: "10px 12px",
+                    color: "#0f172a",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                    fontSize: ".82em",
                   }}
                 >
-                  <div style={{ fontSize: ".58em", color: "#475569", textAlign: "center", fontWeight: 600 }}>{cellDate.getDate()}</div>
-                  {dayWorkouts.map(w => {
-                    const wt = WORKOUT_TYPES.find(t => t.id === w.type) || WORKOUT_TYPES[0];
-                    return (
-                      <div key={w.id} style={{ display: "flex", flexDirection: "column", gap: 3, width: "100%", minWidth: 0 }}>
-                        <button
-                          type="button"
-                          onClick={() => toggleDone(w)}
-                          title={w.done ? "Marcar como pendiente" : "Marcar como hecho"}
-                          style={{
-                            border: `1px solid ${w.done ? "rgba(34,197,94,.55)" : `${wt.color}55`}`,
-                            borderRadius: 5,
-                            padding: "4px 3px",
-                            background: w.done ? "rgba(34,197,94,.16)" : `${wt.color}12`,
-                            cursor: "pointer",
-                            fontFamily: "inherit",
-                            textAlign: "center",
-                            width: "100%",
-                            boxSizing: "border-box",
-                          }}
-                        >
-                          <div style={{ width: 5, height: 5, borderRadius: "50%", background: wt.color, margin: "0 auto 2px" }} />
-                          <div style={{ fontSize: ".52em", color: wt.color, fontWeight: 600, lineHeight: 1.15 }}>{w.title}</div>
-                          <div style={{ fontSize: ".5em", color: "#475569" }}>{w.total_km} km</div>
-                          {w.done && <div style={{ fontSize: ".52em", color: "#22c55e", marginTop: 1 }}>✓ Hecho</div>}
-                        </button>
-                        {w.done && (
-                          <label style={{ display: "flex", flexDirection: "column", gap: 2, fontSize: ".48em", color: "#64748b", textAlign: "center" }}>
-                            <span style={{ letterSpacing: ".04em" }}>¿Cómo te sentiste? (RPE)</span>
-                            <select
-                              value={w.rpe ?? ""}
-                              onChange={(e) => {
-                                const v = e.target.value;
-                                if (v === "") return;
-                                saveWorkoutRpe(w, v);
-                              }}
-                              onClick={(e) => e.stopPropagation()}
-                              style={{
-                                width: "100%",
-                                maxWidth: "100%",
-                                background: "rgba(0,0,0,.35)",
-                                border: "1px solid #cbd5e1",
-                                borderRadius: 4,
-                                padding: "3px 2px",
-                                color: "#0f172a",
-                                fontFamily: "inherit",
-                                fontSize: "inherit",
-                                cursor: "pointer",
-                                boxSizing: "border-box",
-                              }}
-                            >
-                              <option value="">Elegir 1–10…</option>
-                              {Array.from({ length: 10 }, (_, i) => {
-                                const n = i + 1;
-                                const { emoji, label } = rpeBandMeta(n);
-                                return (
-                                  <option key={n} value={String(n)}>
-                                    {n} {emoji} {label}
-                                  </option>
-                                );
-                              })}
-                            </select>
-                          </label>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              );
-            })}
-          </div>
+                  {ctxMenuAthleteWorkout.done ? "✓ Marcar pendiente" : "✓ Marcar hecho"}
+                </button>
+              </div>
+            ) : null}
+          </>
         )}
       </div>
       )}
@@ -5498,6 +5874,15 @@ function WorkoutLibrary({ coachUserId, libraryRefresh, onUseWorkout, athletes, n
 
 function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiLoading, setAiLoading, notify, coachUserId, coachPlan, onGoToPlans, onWorkoutAssigned, onSavedToLibrary }) {
   const S = styles;
+  const [builderTab, setBuilderTab] = useState("ai");
+  const [manualForm, setManualForm] = useState({
+    title: "",
+    type: "easy",
+    total_km: "",
+    duration_min: "",
+    description: "",
+    structureRows: [emptyWorkoutStructureRow()],
+  });
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [savingLibrary, setSavingLibrary] = useState(false);
   const [assignAthleteId, setAssignAthleteId] = useState("");
@@ -5562,8 +5947,24 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
     loadGenerationCounter();
   }, [loadGenerationCounter]);
 
+  const previewWorkout = useMemo(() => {
+    if (builderTab === "manual") {
+      if (!(manualForm.title || "").trim()) return null;
+      const type = WORKOUT_TYPES.some((t) => t.id === manualForm.type) ? manualForm.type : "easy";
+      return {
+        title: manualForm.title.trim() || "Workout",
+        type,
+        total_km: Number(manualForm.total_km) || 0,
+        duration_min: Math.round(Number(manualForm.duration_min)) || 0,
+        description: (manualForm.description || "").trim(),
+        structure: editableRowsToWorkoutStructure(manualForm.structureRows),
+      };
+    }
+    return aiWorkout;
+  }, [builderTab, manualForm, aiWorkout]);
+
   const openAssignModal = () => {
-    if (!aiWorkout) return;
+    if (!previewWorkout) return;
     setAssignDate(formatLocalYMD(new Date()));
     if (athletes?.length) setAssignAthleteId(String(athletes[0].id));
     else setAssignAthleteId("");
@@ -5571,7 +5972,8 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
   };
 
   const saveAssignedWorkout = async () => {
-    if (!aiWorkout) return;
+    const w = previewWorkout;
+    if (!w) return;
     if (!assignAthleteId) {
       alert("Selecciona un atleta.");
       return;
@@ -5593,7 +5995,7 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
     setAssignSaving(true);
     try {
       const payload = {
-        ...aiWorkout,
+        ...w,
         athlete_id: selectedAthlete.id,
         coach_id: userData.user.id,
         scheduled_date: assignDate,
@@ -5608,23 +6010,23 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
 
       if (selectedAthlete.email) {
         try {
-          const structureRows = Array.isArray(aiWorkout?.structure)
-            ? aiWorkout.structure.map((s) => `<p>• <strong>${s.phase}</strong>: ${s.duration} a ${s.pace}</p>`).join("")
+          const structureRows = Array.isArray(w?.structure)
+            ? w.structure.map((s) => `<p>• <strong>${s.phase || ""}</strong>: ${s.duration || ""} · ${s.pace || ""}</p>`).join("")
             : "";
           await fetch("/api/send-email", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               to: selectedAthlete.email,
-              subject: `Nuevo entrenamiento: ${aiWorkout.title}`,
+              subject: `Nuevo entrenamiento: ${w.title}`,
               html: `
       <h2>Hola ${selectedAthlete.name} 👋</h2>
       <p>Tu coach te ha asignado un nuevo entrenamiento:</p>
-      <h3>${aiWorkout.title}</h3>
+      <h3>${w.title}</h3>
       <p><strong>Fecha:</strong> ${assignDate}</p>
-      <p><strong>Descripción:</strong> ${aiWorkout.description}</p>
-      <p><strong>Distancia:</strong> ${aiWorkout.total_km} km</p>
-      <p><strong>Duración:</strong> ${aiWorkout.duration_min} minutos</p>
+      <p><strong>Descripción:</strong> ${w.description}</p>
+      <p><strong>Distancia:</strong> ${w.total_km} km</p>
+      <p><strong>Duración:</strong> ${w.duration_min} minutos</p>
       <h4>Estructura:</h4>
       ${structureRows}
       <br/><p>¡Mucho éxito! 💪</p>
@@ -5687,31 +6089,33 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
   };
 
   const exportGarmin = () => {
-    if (!aiWorkout) return;
-    const blob = new Blob([JSON.stringify(aiWorkout, null, 2)], { type: "application/json" });
+    const w = previewWorkout;
+    if (!w) return;
+    const blob = new Blob([JSON.stringify(w, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url; a.download = `${aiWorkout.title?.replace(/\s+/g,"_")}_garmin.json`; a.click();
+    a.href = url; a.download = `${String(w.title || "workout").replace(/\s+/g, "_")}_garmin.json`; a.click();
     URL.revokeObjectURL(url);
     notify("Exportado para Garmin ✓");
   };
 
   const saveToLibrary = async () => {
-    if (!aiWorkout) return;
+    const w = previewWorkout;
+    if (!w) return;
     const { data: userData, error: userError } = await supabase.auth.getUser();
     if (userError || !userData?.user) {
       alert(userError?.message || "No hay usuario autenticado.");
       return;
     }
-    const type = WORKOUT_TYPES.some((t) => t.id === aiWorkout.type) ? aiWorkout.type : "easy";
+    const type = WORKOUT_TYPES.some((t) => t.id === w.type) ? w.type : "easy";
     const row = {
       coach_id: userData.user.id,
-      title: (aiWorkout.title && String(aiWorkout.title).trim()) || "Workout",
+      title: (w.title && String(w.title).trim()) || "Workout",
       type,
-      total_km: Number.isFinite(Number(aiWorkout.total_km)) ? Number(aiWorkout.total_km) : 0,
-      duration_min: Number.isFinite(Number(aiWorkout.duration_min)) ? Math.round(Number(aiWorkout.duration_min)) : 0,
-      description: aiWorkout.description != null ? String(aiWorkout.description) : "",
-      structure: Array.isArray(aiWorkout.structure) ? aiWorkout.structure : [],
+      total_km: Number.isFinite(Number(w.total_km)) ? Number(w.total_km) : 0,
+      duration_min: Number.isFinite(Number(w.duration_min)) ? Math.round(Number(w.duration_min)) : 0,
+      description: w.description != null ? String(w.description) : "",
+      structure: Array.isArray(w.structure) ? w.structure : [],
     };
     setSavingLibrary(true);
     try {
@@ -5728,16 +6132,70 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
     }
   };
 
+  const moveManualPhase = (idx, dir) => {
+    setManualForm((f) => {
+      const next = [...f.structureRows];
+      const j = idx + dir;
+      if (j < 0 || j >= next.length) return f;
+      [next[idx], next[j]] = [next[j], next[idx]];
+      return { ...f, structureRows: next };
+    });
+  };
+
+  const wtPreview = previewWorkout ? WORKOUT_TYPES.find((t) => t.id === previewWorkout.type) || WORKOUT_TYPES[0] : null;
+
   return (
     <div style={S.page}>
-      <div style={{ marginBottom: 28 }}>
-        <h1 style={S.pageTitle}>Generador de Workouts IA</h1>
-        <p style={{ color: "#475569", fontSize: ".82em", marginTop: 4 }}>Describe el entrenamiento y la IA lo estructura automáticamente</p>
-        <div style={{ marginTop: 8, color: "#64748b", fontSize: ".8em", fontWeight: 600 }}>
-          {isBasicPlan ? `${loadingGenerations ? "…" : monthGenerations} / 100 generaciones usadas este mes` : "Ilimitado"}
+      <div style={{ marginBottom: 20 }}>
+        <h1 style={S.pageTitle}>Crear Workout</h1>
+        <p style={{ color: "#475569", fontSize: ".82em", marginTop: 4 }}>
+          {builderTab === "ai"
+            ? "Genera con IA o construye tu sesión paso a paso en modo manual."
+            : "Define título, tipo, volumen y fases; luego guarda, asigna o exporta."}
+        </p>
+        <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap" }}>
+          <button
+            type="button"
+            onClick={() => setBuilderTab("ai")}
+            style={{
+              padding: "10px 16px",
+              borderRadius: 10,
+              border: builderTab === "ai" ? "2px solid #f59e0b" : "1px solid #e2e8f0",
+              background: builderTab === "ai" ? "rgba(245,158,11,.12)" : "#ffffff",
+              color: "#0f172a",
+              fontWeight: 800,
+              cursor: "pointer",
+              fontFamily: "inherit",
+              fontSize: ".85em",
+            }}
+          >
+            ⚡ Generar con IA
+          </button>
+          <button
+            type="button"
+            onClick={() => setBuilderTab("manual")}
+            style={{
+              padding: "10px 16px",
+              borderRadius: 10,
+              border: builderTab === "manual" ? "2px solid #3b82f6" : "1px solid #e2e8f0",
+              background: builderTab === "manual" ? "rgba(59,130,246,.1)" : "#ffffff",
+              color: "#0f172a",
+              fontWeight: 800,
+              cursor: "pointer",
+              fontFamily: "inherit",
+              fontSize: ".85em",
+            }}
+          >
+            ✍️ Crear Manual
+          </button>
         </div>
+        {builderTab === "ai" ? (
+          <div style={{ marginTop: 10, color: "#64748b", fontSize: ".8em", fontWeight: 600 }}>
+            {isBasicPlan ? `${loadingGenerations ? "…" : monthGenerations} / 100 generaciones usadas este mes` : "Ilimitado"}
+          </div>
+        ) : null}
       </div>
-      {generationLimitMsg ? (
+      {builderTab === "ai" && generationLimitMsg ? (
         <div style={{ ...S.card, marginBottom: 14, border: "1px solid rgba(245,158,11,.4)", background: "#fffbeb" }}>
           <div style={{ color: "#92400e", fontSize: ".84em", fontWeight: 700, marginBottom: 10 }}>{generationLimitMsg}</div>
           <div style={{ display: "flex", justifyContent: "flex-end" }}>
@@ -5751,153 +6209,401 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
           </div>
         </div>
       ) : null}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 24 }}>
         <div style={S.card}>
-          <div style={{ fontSize: ".65em", letterSpacing: ".13em", color: "#475569", textTransform: "uppercase", marginBottom: 14 }}>⚡ DESCRIBE EL ENTRENAMIENTO</div>
-          <div style={{ marginBottom: 12 }}>
-            <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Zonas FC en el prompt (atleta con FC máx guardada)</div>
-            <select
-              value={builderHrAthleteId}
-              onChange={(e) => setBuilderHrAthleteId(e.target.value)}
-              style={{ width: "100%", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", color: "#0f172a", fontFamily: "inherit", fontSize: ".85em", outline: "none", boxSizing: "border-box" }}
-            >
-              <option value="">Sin zonas FC en el prompt</option>
-              {(athletes || []).map((a) => (
-                <option key={a.id} value={String(a.id)}>
-                  {a.name}{a.fc_max ? ` (${a.fc_max} lpm)` : " — sin FC máx"}
-                </option>
-              ))}
-            </select>
-          </div>
-          <textarea value={aiPrompt} onChange={e=>setAiPrompt(e.target.value)} placeholder="Ej: Intervalos 6x800m para atleta sub 4h maratón..." style={{ width: "100%", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "12px 14px", color: "#0f172a", fontFamily: "inherit", fontSize: ".85em", resize: "vertical", outline: "none", marginBottom: 12, boxSizing: "border-box" }} rows={5} />
-          <div style={{ marginBottom: 12 }}>
-            <div style={{ fontSize: ".72em", color: "#475569", marginBottom: 8 }}>SUGERENCIAS:</div>
-            {["Intervalos 6x800m para atleta sub 4h maratón", "Rodaje largo 28km semana 18 de plan", "Tempo 8km para media maratón zona 3-4"].map((s,i) => (
-              <div key={i} onClick={()=>setAiPrompt(s)} style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 6, padding: "8px 12px", fontSize: ".75em", color: "#64748b", cursor: "pointer", marginBottom: 6 }}>{s}</div>
-            ))}
-          </div>
-          <button
-            onClick={() => {
-              console.log("Botón clickeado, prompt:", aiPrompt);
-              generateWorkout();
-            }}
-            disabled={aiLoading || !aiPrompt.trim()}
-            style={{ width: "100%", background: !aiPrompt.trim() ? "#e2e8f0" : "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 8, padding: "11px 20px", color: !aiPrompt.trim() ? "#334155" : "white", fontWeight: 700, cursor: !aiPrompt.trim() ? "not-allowed" : "pointer", fontSize: ".85em", fontFamily: "inherit" }}>
-            {aiLoading ? "⏳ Generando..." : "⚡ GENERAR WORKOUT"}
-          </button>
-        </div>
-        <div style={S.card}>
-          {aiWorkout ? <>
-            <div style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: "1.1em", fontWeight: 700, color: "#0f172a" }}>{aiWorkout.title}</div>
-              <div style={{ fontSize: ".75em", color: "#64748b", marginTop: 2 }}>{aiWorkout.description}</div>
-            </div>
-            <div style={{ display: "flex", gap: 16, marginBottom: 16, fontSize: ".78em", color: "#94a3b8" }}>
-              <span>📍 {aiWorkout.total_km} km</span><span>⏱ {aiWorkout.duration_min} min</span>
-            </div>
-            <div style={{ fontSize: ".65em", letterSpacing: ".13em", color: "#475569", textTransform: "uppercase", marginBottom: 10 }}>ESTRUCTURA</div>
-            {(aiWorkout.structure||[]).map((step,i) => (
-              <div key={i} style={{ display: "flex", gap: 10, alignItems: "center", background: "#f8fafc", borderRadius: 7, padding: "8px 10px", marginBottom: 6 }}>
-                <div style={{ width: 22, height: 22, borderRadius: "50%", background: "rgba(245,158,11,.15)", color: "#f59e0b", display: "flex", alignItems: "center", justifyContent: "center", fontSize: ".7em", fontWeight: 700, flexShrink: 0 }}>{i+1}</div>
-                <div style={{ flex: 1, fontSize: ".85em" }}>
-                  <span style={{ color: "#0f172a", fontWeight: 600 }}>{step.phase}</span>
-                  <span style={{ color: "#64748b" }}> · {step.duration} · {step.intensity}</span>
-                </div>
-                <div style={{ fontSize: ".78em", color: "#f59e0b", fontFamily: "monospace" }}>{step.pace}</div>
+          {builderTab === "ai" ? (
+            <>
+              <div style={{ fontSize: ".65em", letterSpacing: ".13em", color: "#475569", textTransform: "uppercase", marginBottom: 14 }}>⚡ DESCRIBE EL ENTRENAMIENTO</div>
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Zonas FC en el prompt (atleta con FC máx guardada)</div>
+                <select
+                  value={builderHrAthleteId}
+                  onChange={(e) => setBuilderHrAthleteId(e.target.value)}
+                  style={{ width: "100%", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", color: "#0f172a", fontFamily: "inherit", fontSize: ".85em", outline: "none", boxSizing: "border-box" }}
+                >
+                  <option value="">Sin zonas FC en el prompt</option>
+                  {(athletes || []).map((a) => (
+                    <option key={a.id} value={String(a.id)}>
+                      {a.name}{a.fc_max ? ` (${a.fc_max} lpm)` : " — sin FC máx"}
+                    </option>
+                  ))}
+                </select>
               </div>
-            ))}
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 16 }}>
-              <button onClick={exportGarmin} style={{ background: "rgba(22,163,74,.12)", border: "1px solid rgba(22,163,74,.3)", borderRadius: 8, padding: "8px 14px", color: "#22c55e", cursor: "pointer", fontSize: ".78em", fontFamily: "inherit", fontWeight: 600 }}>⌚ Exportar a Garmin</button>
+              <textarea value={aiPrompt} onChange={(e) => setAiPrompt(e.target.value)} placeholder="Ej: Intervalos 6x800m para atleta sub 4h maratón..." style={{ width: "100%", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "12px 14px", color: "#0f172a", fontFamily: "inherit", fontSize: ".85em", resize: "vertical", outline: "none", marginBottom: 12, boxSizing: "border-box" }} rows={5} />
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: ".72em", color: "#475569", marginBottom: 8 }}>SUGERENCIAS:</div>
+                {["Intervalos 6x800m para atleta sub 4h maratón", "Rodaje largo 28km semana 18 de plan", "Tempo 8km para media maratón zona 3-4"].map((s, i) => (
+                  <div key={i} onClick={() => setAiPrompt(s)} style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 6, padding: "8px 12px", fontSize: ".75em", color: "#64748b", cursor: "pointer", marginBottom: 6 }}>{s}</div>
+                ))}
+              </div>
               <button
                 type="button"
-                onClick={saveToLibrary}
-                disabled={savingLibrary}
-                style={{
-                  background: savingLibrary ? "#e2e8f0" : "rgba(168,85,247,.12)",
-                  border: `1px solid ${savingLibrary ? "#e2e8f0" : "rgba(168,85,247,.35)"}`,
-                  borderRadius: 8,
-                  padding: "8px 14px",
-                  color: savingLibrary ? "#64748b" : "#c084fc",
-                  cursor: savingLibrary ? "not-allowed" : "pointer",
-                  fontSize: ".78em",
-                  fontFamily: "inherit",
-                  fontWeight: 600,
+                onClick={() => {
+                  console.log("Botón clickeado, prompt:", aiPrompt);
+                  generateWorkout();
                 }}
+                disabled={aiLoading || !aiPrompt.trim()}
+                style={{ width: "100%", background: !aiPrompt.trim() ? "#e2e8f0" : "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 8, padding: "11px 20px", color: !aiPrompt.trim() ? "#334155" : "white", fontWeight: 700, cursor: !aiPrompt.trim() ? "not-allowed" : "pointer", fontSize: ".85em", fontFamily: "inherit" }}
               >
-                {savingLibrary ? "Guardando…" : "💾 Guardar en Biblioteca"}
+                {aiLoading ? "⏳ Generando..." : "⚡ GENERAR WORKOUT"}
               </button>
-              <button
-                onClick={openAssignModal}
-                disabled={!athletes?.length}
-                style={{
-                  background: athletes?.length ? "rgba(59,130,246,.1)" : "#f1f5f9",
-                  border: `1px solid ${athletes?.length ? "rgba(59,130,246,.3)" : "#e2e8f0"}`,
-                  borderRadius: 8,
-                  padding: "8px 14px",
-                  color: athletes?.length ? "#3b82f6" : "#475569",
-                  cursor: athletes?.length ? "pointer" : "not-allowed",
-                  fontSize: ".78em",
-                  fontFamily: "inherit",
-                  fontWeight: 600,
-                }}
-              >
-                📤 Asignar a Atleta
-              </button>
-            </div>
-            {showAssignModal && (
-              <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 16 }}>
-                <div style={{ ...S.card, width: "100%", maxWidth: 400, margin: 0 }}>
-                  <div style={{ fontSize: ".85em", fontWeight: 700, color: "#0f172a", marginBottom: 8 }}>Asignar workout a un atleta</div>
-                  <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 14 }}>
-                    Se guardará en Supabase con todos los datos generados por la IA, más atleta, coach y fecha.
-                  </div>
-                  <div style={{ marginBottom: 12 }}>
-                    <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Atleta del coach</div>
-                    <select
-                      value={assignAthleteId}
-                      onChange={e => setAssignAthleteId(e.target.value)}
-                      style={{ width: "100%", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", color: "#0f172a", fontFamily: "inherit", fontSize: ".85em", outline: "none", boxSizing: "border-box" }}
-                    >
-                      <option value="" disabled>Selecciona un atleta</option>
-                      {(athletes || []).map(a => (
-                        <option key={a.id} value={String(a.id)}>{a.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div style={{ marginBottom: 16 }}>
-                    <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Fecha del workout</div>
-                    <input
-                      type="date"
-                      value={assignDate}
-                      onChange={e => setAssignDate(e.target.value)}
-                      style={{ width: "100%", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", color: "#0f172a", fontFamily: "inherit", fontSize: ".85em", outline: "none", boxSizing: "border-box" }}
-                    />
-                  </div>
-                  <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-                    <button
-                      type="button"
-                      onClick={() => setShowAssignModal(false)}
-                      disabled={assignSaving}
-                      style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 14px", color: "#94a3b8", cursor: assignSaving ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: ".82em" }}
-                    >
-                      Cancelar
-                    </button>
-                    <button
-                      type="button"
-                      onClick={saveAssignedWorkout}
-                      disabled={assignSaving}
-                      style={{ background: assignSaving ? "#e2e8f0" : "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 8, padding: "8px 14px", color: assignSaving ? "#334155" : "white", cursor: assignSaving ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 800, fontSize: ".82em" }}
-                    >
-                      {assignSaving ? "Guardando..." : "Confirmar"}
-                    </button>
-                  </div>
+            </>
+          ) : (
+            <>
+              <div style={{ fontSize: ".65em", letterSpacing: ".13em", color: "#475569", textTransform: "uppercase", marginBottom: 14 }}>✍️ DATOS DEL ENTRENAMIENTO</div>
+              <div style={{ marginBottom: 10 }}>
+                <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Título del workout</div>
+                <input
+                  value={manualForm.title}
+                  onChange={(e) => setManualForm((f) => ({ ...f, title: e.target.value }))}
+                  placeholder="Ej: Tempo 8 km + strides"
+                  style={{ width: "100%", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", color: "#0f172a", fontFamily: "inherit", fontSize: ".85em", boxSizing: "border-box" }}
+                />
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 10, marginBottom: 10 }}>
+                <div style={{ gridColumn: "1 / -1" }}>
+                  <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Tipo</div>
+                  <select
+                    value={manualForm.type}
+                    onChange={(e) => setManualForm((f) => ({ ...f, type: e.target.value }))}
+                    style={{ width: "100%", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", color: "#0f172a", fontFamily: "inherit", fontSize: ".85em", boxSizing: "border-box" }}
+                  >
+                    {WORKOUT_TYPES.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Distancia total (km)</div>
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.1"
+                    value={manualForm.total_km}
+                    onChange={(e) => setManualForm((f) => ({ ...f, total_km: e.target.value }))}
+                    style={{ width: "100%", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", color: "#0f172a", fontFamily: "inherit", fontSize: ".85em", boxSizing: "border-box" }}
+                  />
+                </div>
+                <div>
+                  <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Duración (min)</div>
+                  <input
+                    type="number"
+                    min={0}
+                    step="1"
+                    value={manualForm.duration_min}
+                    onChange={(e) => setManualForm((f) => ({ ...f, duration_min: e.target.value }))}
+                    style={{ width: "100%", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", color: "#0f172a", fontFamily: "inherit", fontSize: ".85em", boxSizing: "border-box" }}
+                  />
                 </div>
               </div>
-            )}
-          </> : (
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: 300, opacity: .4 }}>
-              <div style={{ fontSize: "3em", marginBottom: 12 }}>⚡</div>
-              <div style={{ color: "#475569", fontSize: ".85em" }}>El workout generado aparecerá aquí</div>
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Descripción general</div>
+                <textarea
+                  value={manualForm.description}
+                  onChange={(e) => setManualForm((f) => ({ ...f, description: e.target.value }))}
+                  rows={3}
+                  placeholder="Notas para el atleta, objetivo de la sesión…"
+                  style={{ width: "100%", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", color: "#0f172a", fontFamily: "inherit", fontSize: ".85em", resize: "vertical", boxSizing: "border-box" }}
+                />
+              </div>
+              <div style={{ fontSize: ".65em", letterSpacing: ".13em", color: "#475569", textTransform: "uppercase", marginBottom: 10 }}>ESTRUCTURA POR FASES</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {manualForm.structureRows.map((row, idx) => (
+                  <div
+                    key={idx}
+                    style={{
+                      border: "1px solid #e2e8f0",
+                      borderRadius: 10,
+                      padding: "12px 12px",
+                      background: "#f8fafc",
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 8 }}>
+                      <span style={{ fontSize: ".75em", fontWeight: 800, color: "#334155" }}>Fase {idx + 1}</span>
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                        <button
+                          type="button"
+                          disabled={idx === 0}
+                          onClick={() => moveManualPhase(idx, -1)}
+                          style={{
+                            background: idx === 0 ? "#f1f5f9" : "#fff",
+                            border: "1px solid #e2e8f0",
+                            borderRadius: 6,
+                            padding: "4px 10px",
+                            fontSize: ".72em",
+                            cursor: idx === 0 ? "not-allowed" : "pointer",
+                            fontFamily: "inherit",
+                            fontWeight: 700,
+                          }}
+                        >
+                          ↑
+                        </button>
+                        <button
+                          type="button"
+                          disabled={idx >= manualForm.structureRows.length - 1}
+                          onClick={() => moveManualPhase(idx, 1)}
+                          style={{
+                            background: idx >= manualForm.structureRows.length - 1 ? "#f1f5f9" : "#fff",
+                            border: "1px solid #e2e8f0",
+                            borderRadius: 6,
+                            padding: "4px 10px",
+                            fontSize: ".72em",
+                            cursor: idx >= manualForm.structureRows.length - 1 ? "not-allowed" : "pointer",
+                            fontFamily: "inherit",
+                            fontWeight: 700,
+                          }}
+                        >
+                          ↓
+                        </button>
+                        <button
+                          type="button"
+                          disabled={manualForm.structureRows.length <= 1}
+                          onClick={() =>
+                            setManualForm((f) => ({
+                              ...f,
+                              structureRows: f.structureRows.length <= 1 ? f.structureRows : f.structureRows.filter((_, j) => j !== idx),
+                            }))
+                          }
+                          style={{
+                            background: "transparent",
+                            border: "1px solid #fecaca",
+                            borderRadius: 6,
+                            padding: "4px 10px",
+                            fontSize: ".72em",
+                            color: manualForm.structureRows.length <= 1 ? "#cbd5e1" : "#b91c1c",
+                            cursor: manualForm.structureRows.length <= 1 ? "not-allowed" : "pointer",
+                            fontFamily: "inherit",
+                            fontWeight: 700,
+                          }}
+                        >
+                          Eliminar
+                        </button>
+                      </div>
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 8 }}>
+                      <div style={{ gridColumn: "1 / -1" }}>
+                        <div style={{ fontSize: ".65em", color: "#94a3b8", marginBottom: 4 }}>Nombre de la fase</div>
+                        <input
+                          value={row.phase}
+                          onChange={(e) =>
+                            setManualForm((f) => {
+                              const next = [...f.structureRows];
+                              next[idx] = { ...next[idx], phase: e.target.value };
+                              return { ...f, structureRows: next };
+                            })
+                          }
+                          placeholder="Calentamiento, Intervalos…"
+                          style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", fontSize: ".82em", fontFamily: "inherit", boxSizing: "border-box" }}
+                        />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: ".65em", color: "#94a3b8", marginBottom: 4 }}>Duración de la fase</div>
+                        <input
+                          value={row.duration}
+                          onChange={(e) =>
+                            setManualForm((f) => {
+                              const next = [...f.structureRows];
+                              next[idx] = { ...next[idx], duration: e.target.value };
+                              return { ...f, structureRows: next };
+                            })
+                          }
+                          placeholder="15 min, 2 km…"
+                          style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", fontSize: ".82em", fontFamily: "inherit", boxSizing: "border-box" }}
+                        />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: ".65em", color: "#94a3b8", marginBottom: 4 }}>Intensidad (Z1–Z5 o texto)</div>
+                        <input
+                          value={row.intensity}
+                          onChange={(e) =>
+                            setManualForm((f) => {
+                              const next = [...f.structureRows];
+                              next[idx] = { ...next[idx], intensity: e.target.value };
+                              return { ...f, structureRows: next };
+                            })
+                          }
+                          placeholder="Z3, umbral…"
+                          style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", fontSize: ".82em", fontFamily: "inherit", boxSizing: "border-box" }}
+                        />
+                      </div>
+                      <div style={{ gridColumn: "1 / -1" }}>
+                        <div style={{ fontSize: ".65em", color: "#94a3b8", marginBottom: 4 }}>Ritmo objetivo (min/km)</div>
+                        <input
+                          value={row.pace}
+                          onChange={(e) =>
+                            setManualForm((f) => {
+                              const next = [...f.structureRows];
+                              next[idx] = { ...next[idx], pace: e.target.value };
+                              return { ...f, structureRows: next };
+                            })
+                          }
+                          placeholder="5:00, 4:30/km…"
+                          style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", fontSize: ".82em", fontFamily: "inherit", boxSizing: "border-box" }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={() => setManualForm((f) => ({ ...f, structureRows: [...f.structureRows, emptyWorkoutStructureRow()] }))}
+                style={{
+                  marginTop: 12,
+                  width: "100%",
+                  background: "#eff6ff",
+                  border: "1px solid #bfdbfe",
+                  borderRadius: 8,
+                  padding: "10px 14px",
+                  color: "#1d4ed8",
+                  fontWeight: 800,
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                  fontSize: ".82em",
+                }}
+              >
+                ＋ Agregar fase
+              </button>
+            </>
+          )}
+        </div>
+        <div style={S.card}>
+          {previewWorkout ? (
+            <>
+              <div style={{ marginBottom: 12, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                <span style={{ fontSize: ".72em", padding: "4px 10px", borderRadius: 999, background: `${wtPreview?.color || "#64748b"}22`, color: wtPreview?.color || "#64748b", fontWeight: 800 }}>
+                  {wtPreview?.label || previewWorkout.type}
+                </span>
+              </div>
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: "1.1em", fontWeight: 700, color: "#0f172a" }}>{previewWorkout.title}</div>
+                <div style={{ fontSize: ".75em", color: "#64748b", marginTop: 2 }}>{previewWorkout.description || "—"}</div>
+              </div>
+              <div style={{ display: "flex", gap: 16, marginBottom: 16, fontSize: ".78em", color: "#94a3b8" }}>
+                <span>📍 {previewWorkout.total_km} km</span>
+                <span>⏱ {previewWorkout.duration_min} min</span>
+              </div>
+              <div style={{ fontSize: ".65em", letterSpacing: ".13em", color: "#475569", textTransform: "uppercase", marginBottom: 10 }}>ESTRUCTURA</div>
+              {(previewWorkout.structure || []).length === 0 ? (
+                <div style={{ fontSize: ".8em", color: "#94a3b8", marginBottom: 12 }}>Sin fases en estructura (opcional).</div>
+              ) : (
+                (previewWorkout.structure || []).map((step, i) => (
+                  <div key={i} style={{ display: "flex", gap: 10, alignItems: "center", background: "#f8fafc", borderRadius: 7, padding: "8px 10px", marginBottom: 6 }}>
+                    <div style={{ width: 22, height: 22, borderRadius: "50%", background: "rgba(245,158,11,.15)", color: "#f59e0b", display: "flex", alignItems: "center", justifyContent: "center", fontSize: ".7em", fontWeight: 700, flexShrink: 0 }}>{i + 1}</div>
+                    <div style={{ flex: 1, fontSize: ".85em" }}>
+                      <span style={{ color: "#0f172a", fontWeight: 600 }}>{step.phase}</span>
+                      <span style={{ color: "#64748b" }}>
+                        {" "}
+                        · {step.duration}
+                        {step.intensity ? ` · ${step.intensity}` : ""}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: ".78em", color: "#f59e0b", fontFamily: "monospace" }}>{step.pace}</div>
+                  </div>
+                ))
+              )}
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 16 }}>
+                <button type="button" onClick={exportGarmin} style={{ background: "rgba(22,163,74,.12)", border: "1px solid rgba(22,163,74,.3)", borderRadius: 8, padding: "8px 14px", color: "#22c55e", cursor: "pointer", fontSize: ".78em", fontFamily: "inherit", fontWeight: 600 }}>⌚ Exportar a Garmin</button>
+                <button
+                  type="button"
+                  onClick={saveToLibrary}
+                  disabled={savingLibrary}
+                  style={{
+                    background: savingLibrary ? "#e2e8f0" : "rgba(168,85,247,.12)",
+                    border: `1px solid ${savingLibrary ? "#e2e8f0" : "rgba(168,85,247,.35)"}`,
+                    borderRadius: 8,
+                    padding: "8px 14px",
+                    color: savingLibrary ? "#64748b" : "#c084fc",
+                    cursor: savingLibrary ? "not-allowed" : "pointer",
+                    fontSize: ".78em",
+                    fontFamily: "inherit",
+                    fontWeight: 600,
+                  }}
+                >
+                  {savingLibrary ? "Guardando…" : "💾 Guardar en Biblioteca"}
+                </button>
+                <button
+                  type="button"
+                  onClick={openAssignModal}
+                  disabled={!athletes?.length}
+                  style={{
+                    background: athletes?.length ? "rgba(59,130,246,.1)" : "#f1f5f9",
+                    border: `1px solid ${athletes?.length ? "rgba(59,130,246,.3)" : "#e2e8f0"}`,
+                    borderRadius: 8,
+                    padding: "8px 14px",
+                    color: athletes?.length ? "#3b82f6" : "#475569",
+                    cursor: athletes?.length ? "pointer" : "not-allowed",
+                    fontSize: ".78em",
+                    fontFamily: "inherit",
+                    fontWeight: 600,
+                  }}
+                >
+                  📤 Asignar a Atleta
+                </button>
+              </div>
+              {showAssignModal && (
+                <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 16 }}>
+                  <div style={{ ...S.card, width: "100%", maxWidth: 400, margin: 0 }}>
+                    <div style={{ fontSize: ".85em", fontWeight: 700, color: "#0f172a", marginBottom: 8 }}>Asignar workout a un atleta</div>
+                    <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 14 }}>
+                      Se guardará en Supabase con los datos del workout (IA o manual), más atleta, coach y fecha.
+                    </div>
+                    <div style={{ marginBottom: 12 }}>
+                      <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Atleta del coach</div>
+                      <select
+                        value={assignAthleteId}
+                        onChange={(e) => setAssignAthleteId(e.target.value)}
+                        style={{ width: "100%", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", color: "#0f172a", fontFamily: "inherit", fontSize: ".85em", outline: "none", boxSizing: "border-box" }}
+                      >
+                        <option value="" disabled>
+                          Selecciona un atleta
+                        </option>
+                        {(athletes || []).map((a) => (
+                          <option key={a.id} value={String(a.id)}>
+                            {a.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div style={{ marginBottom: 16 }}>
+                      <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Fecha del workout</div>
+                      <input
+                        type="date"
+                        value={assignDate}
+                        onChange={(e) => setAssignDate(e.target.value)}
+                        style={{ width: "100%", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", color: "#0f172a", fontFamily: "inherit", fontSize: ".85em", outline: "none", boxSizing: "border-box" }}
+                      />
+                    </div>
+                    <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+                      <button
+                        type="button"
+                        onClick={() => setShowAssignModal(false)}
+                        disabled={assignSaving}
+                        style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 14px", color: "#94a3b8", cursor: assignSaving ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: ".82em" }}
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={saveAssignedWorkout}
+                        disabled={assignSaving}
+                        style={{ background: assignSaving ? "#e2e8f0" : "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 8, padding: "8px 14px", color: assignSaving ? "#334155" : "white", cursor: assignSaving ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 800, fontSize: ".82em" }}
+                      >
+                        {assignSaving ? "Guardando..." : "Confirmar"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: 300, opacity: 0.45 }}>
+              <div style={{ fontSize: "3em", marginBottom: 12 }}>{builderTab === "manual" ? "✍️" : "⚡"}</div>
+              <div style={{ color: "#475569", fontSize: ".85em", textAlign: "center", maxWidth: 280 }}>
+                {builderTab === "manual" ? "Indica un título para ver la vista previa y usar guardar / asignar / exportar." : "El workout generado aparecerá aquí"}
+              </div>
             </div>
           )}
         </div>
