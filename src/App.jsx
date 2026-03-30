@@ -3547,7 +3547,13 @@ function AthleteHome({ profile }) {
                       <div style={{ fontSize: earned ? "2.5rem" : "2rem", lineHeight: 1, marginBottom: 8 }}>{earned ? a.icon : "🔒"}</div>
                       <div style={{ fontSize: ".76em", color: "#0f172a", fontWeight: 800, lineHeight: 1.25 }}>{a.name}</div>
                       <div style={{ fontSize: ".68em", color: "#64748b", marginTop: 6, lineHeight: 1.35 }}>
-                        {earned ? `Ganada el ${new Date(earned.awarded_at).toLocaleDateString("es", { day: "numeric", month: "short", year: "numeric" })}` : "Bloqueada"}
+                        {earned
+                          ? `Ganada el ${new Date(earned.earned_at).toLocaleDateString("es-CO", {
+                              day: "numeric",
+                              month: "short",
+                              year: "numeric",
+                            })}`
+                          : "Bloqueada"}
                       </div>
                     </div>
                   );
