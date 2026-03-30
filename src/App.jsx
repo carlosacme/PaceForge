@@ -126,8 +126,24 @@ const achievementKmTargets = [10, 50, 100, 500, 1000];
 const achievementJoinMeta = (row) => {
   if (!row) return null;
   const a = row.achievements;
-  if (a == null) return null;
-  return Array.isArray(a) ? a[0] : a;
+  if (a != null) return Array.isArray(a) ? a[0] : a;
+  if (row.achievement_code)
+    return { code: row.achievement_code, name: row.achievement_code, icon: "", description: "" };
+  return null;
+};
+
+const achievementAwardValue = (code, progress) => {
+  if (!progress) return 1;
+  const { totalKm, doneCount, longestStreak, rpeCount } = progress;
+  const km = Number(totalKm) || 0;
+  const done = Number(doneCount) || 0;
+  const streak = Number(longestStreak) || 0;
+  const rpe = Number(rpeCount) || 0;
+  if (String(code).startsWith("KM_")) return km;
+  if (code === "STREAK_7" || code === "STREAK_30") return streak;
+  if (code === "RPE_MASTER") return rpe;
+  if (code === "CONSISTENT") return done;
+  return done > 0 ? done : 1;
 };
 
 const getLongestConsecutiveDays = (ymdList) => {
@@ -192,7 +208,7 @@ async function loadAthleteAchievementSnapshot(athleteId) {
     supabase.from("achievements").select("*").order("created_at", { ascending: true }),
     supabase
       .from("athlete_achievements")
-      .select("id, awarded_at, achievement_id, achievements(code,name,icon,description)")
+      .select("id, awarded_at, achievement_code, value, achievements(code,name,icon,description)")
       .eq("athlete_id", athleteId)
       .order("awarded_at", { ascending: false }),
   ]);
@@ -205,27 +221,34 @@ async function evaluateAndAwardAthleteAchievements(athleteId) {
     await Promise.all([
       supabase.from("workouts").select("id, type, total_km, scheduled_date, rpe").eq("athlete_id", athleteId).eq("done", true),
       supabase.from("achievements").select("*"),
-      supabase.from("athlete_achievements").select("achievement_id").eq("athlete_id", athleteId),
+      supabase.from("athlete_achievements").select("achievement_code").eq("athlete_id", athleteId),
     ]);
+  if (earnedErr) console.log("[evaluateAndAwardAthleteAchievements] earnedErr JSON:", JSON.stringify(earnedErr));
   if (doneErr || achErr || earnedErr) {
     console.warn("evaluate achievements", { doneErr, achErr, earnedErr });
     return { newAwards: [], snapshot: { achievements: achievements || [], earned: [] }, progress: null };
   }
   const progress = computeAchievementProgress(doneWorkouts || []);
   const achievementByCode = new Map((achievements || []).map((a) => [a.code, a]));
-  const already = new Set((earnedRows || []).map((r) => r.achievement_id));
+  const already = new Set((earnedRows || []).map((r) => r.achievement_code).filter(Boolean));
   const toInsert = Object.entries(progress.unlockedByCode)
     .filter(([, ok]) => ok)
-    .map(([code]) => achievementByCode.get(code))
-    .filter(Boolean)
-    .filter((a) => !already.has(a.id))
-    .map((a) => ({ athlete_id: athleteId, achievement_id: a.id }));
+    .map(([code]) => code)
+    .filter((code) => achievementByCode.has(code))
+    .filter((code) => !already.has(code))
+    .map((code) => ({
+      athlete_id: athleteId,
+      achievement_code: code,
+      value: achievementAwardValue(code, progress),
+    }));
   if (toInsert.length) {
-    const { error } = await supabase.from("athlete_achievements").insert(toInsert);
-    if (error) console.warn("insert athlete achievements", error);
+    const { error: insertErr } = await supabase.from("athlete_achievements").insert(toInsert);
+    if (insertErr) console.log("[evaluateAndAwardAthleteAchievements] insertErr JSON:", JSON.stringify(insertErr));
   }
   const snapshot = await loadAthleteAchievementSnapshot(athleteId);
-  const newAwards = (snapshot.earned || []).filter((e) => toInsert.some((x) => x.achievement_id === e.achievement_id));
+  const newAwards = (snapshot.earned || []).filter((e) =>
+    toInsert.some((x) => x.achievement_code === e.achievement_code),
+  );
   return { newAwards, snapshot, progress };
 }
 
