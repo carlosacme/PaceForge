@@ -818,6 +818,7 @@ export default function App() {
   const [athletes, setAthletes] = useState([]);
   const [loadingAthletes, setLoadingAthletes] = useState(true);
   const [showAddAthleteForm, setShowAddAthleteForm] = useState(false);
+  const [planLimitWarning, setPlanLimitWarning] = useState("");
   const [newAthlete, setNewAthlete] = useState({ name: "", email: "", goal: "", pace: "", weekly_km: "" });
   const [session, setSession] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -1157,6 +1158,15 @@ export default function App() {
       return;
     }
 
+    const rawPlan = String(profile?.subscription_plan || athletes?.find((a) => a.plan)?.plan || "Basico").toLowerCase();
+    const isBasicPlan = rawPlan === "basico" || rawPlan === "básico" || rawPlan === "starter";
+    if (isBasicPlan && athletes.length >= 15) {
+      const limitMsg = "Has alcanzado el límite de tu plan. Actualiza al plan Pro para agregar más atletas.";
+      setPlanLimitWarning(limitMsg);
+      notify(limitMsg);
+      return;
+    }
+
     const { data: userData, error: userError } = await supabase.auth.getUser();
     if (userError || !userData?.user) {
       console.error("Error obteniendo usuario para guardar atleta:", userError);
@@ -1185,6 +1195,7 @@ export default function App() {
 
     setShowAddAthleteForm(false);
     setNewAthlete({ name: "", email: "", goal: "", pace: "", weekly_km: "" });
+    setPlanLimitWarning("");
     notify("Atleta agregado ✓");
   };
 
@@ -1337,9 +1348,10 @@ export default function App() {
         label: "Básico",
         priceCop: 70000,
         priceUsd: 18,
+        maxAthletes: 15,
         description: "Para coaches independientes que quieren profesionalizar su trabajo.",
         benefits: [
-          "Hasta 15 atletas",
+          "✓ Hasta 15 atletas",
           "Generador de workouts con IA",
           "Plan 2 semanas renovable",
           "Biblioteca personal de entrenamientos",
@@ -1354,9 +1366,10 @@ export default function App() {
         label: "Pro",
         priceCop: 150000,
         priceUsd: 39,
+        maxAthletes: null,
         description: "Para coaches y academias que quieren escalar sin límites.",
         benefits: [
-          "Atletas ilimitados",
+          "✓ Atletas ilimitados",
           "Todo lo del Básico",
           "Integración Garmin y COROS",
           "Notificaciones push",
@@ -1696,6 +1709,9 @@ export default function App() {
             onSelect={a => { setSelectedAthlete(a); setView("athletes"); setShowAddAthleteForm(false); }}
             onRequestAddAthlete={() => setShowAddAthleteForm(true)}
             showAddAthleteForm={showAddAthleteForm}
+            planLimitWarning={planLimitWarning}
+            onGoToPlans={() => setView("plans")}
+            onDismissPlanLimitWarning={() => setPlanLimitWarning("")}
             newAthlete={newAthlete}
             onChangeNewAthleteField={updateNewAthleteField}
             onSaveNewAthlete={saveNewAthlete}
@@ -1824,6 +1840,9 @@ function Dashboard({
   onSelect,
   onRequestAddAthlete,
   showAddAthleteForm,
+  planLimitWarning,
+  onGoToPlans,
+  onDismissPlanLimitWarning,
   newAthlete,
   onChangeNewAthleteField,
   onSaveNewAthlete,
@@ -1946,6 +1965,30 @@ function Dashboard({
           </button>
         </div>
       </div>
+
+      {planLimitWarning ? (
+        <div style={{ ...S.card, marginBottom: 16, border: "1px solid rgba(245,158,11,.4)", background: "#fffbeb" }}>
+          <div style={{ color: "#92400e", fontSize: ".86em", fontWeight: 700, marginBottom: 10 }}>
+            {planLimitWarning}
+          </div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}>
+            <button
+              type="button"
+              onClick={onDismissPlanLimitWarning}
+              style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 12px", color: "#64748b", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".8em" }}
+            >
+              Cerrar
+            </button>
+            <button
+              type="button"
+              onClick={onGoToPlans}
+              style={{ background: "linear-gradient(135deg,#0d9488,#14b8a6)", border: "none", borderRadius: 8, padding: "8px 12px", color: "#fff", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".8em" }}
+            >
+              Ver Planes
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       {showAddAthleteForm && (
         <div style={{ marginBottom: 22, background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 12, padding: 18 }}>
@@ -6560,9 +6603,10 @@ function Plans({ athletes, notify }) {
         label: "Básico",
         priceCop: 70000,
         priceUsd: 18,
+        maxAthletes: 15,
         description: "Para coaches independientes que quieren profesionalizar su trabajo.",
         benefits: [
-          "Hasta 15 atletas",
+          "✓ Hasta 15 atletas",
           "Generador de workouts con IA",
           "Plan 2 semanas renovable",
           "Biblioteca personal de entrenamientos",
@@ -6577,9 +6621,10 @@ function Plans({ athletes, notify }) {
         label: "Pro",
         priceCop: 150000,
         priceUsd: 39,
+        maxAthletes: null,
         description: "Para coaches y academias que quieren escalar sin límites.",
         benefits: [
-          "Atletas ilimitados",
+          "✓ Atletas ilimitados",
           "Todo lo del Básico",
           "Integración Garmin y COROS",
           "Notificaciones push",
