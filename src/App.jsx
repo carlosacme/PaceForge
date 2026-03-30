@@ -6133,9 +6133,34 @@ function Plans({ athletes, notify }) {
 
   const PLAN_CATALOG = useMemo(
     () => [
-      { plan: "Starter", label: "Starter", priceCop: 49000, description: "Ideal para empezar" },
-      { plan: "Pro", label: "Pro", priceCop: 129000, description: "Para entrenamientos avanzados" },
-      { plan: "Equipo", label: "Equipo", priceCop: 299000, description: "Para equipos y seguimiento completo" },
+      {
+        plan: "Starter",
+        label: "Starter",
+        priceCop: 49000,
+        description: "Ideal para empezar",
+        benefits: ["Hasta 5 atletas", "Generador de workouts con IA", "Plan 2 semanas", "Chat con atletas", "Exportar PDF"],
+      },
+      {
+        plan: "Pro",
+        label: "Pro",
+        priceCop: 129000,
+        description: "Para entrenamientos avanzados",
+        benefits: [
+          "Hasta 20 atletas",
+          "Todo lo del Starter",
+          "Garmin y COROS",
+          "Evaluación VDOT",
+          "Notificaciones push",
+          "Biblioteca de workouts",
+        ],
+      },
+      {
+        plan: "Equipo",
+        label: "Equipo",
+        priceCop: 299000,
+        description: "Para equipos y seguimiento completo",
+        benefits: ["Atletas ilimitados", "Todo lo del Pro", "Multi-coach", "Códigos promocionales", "Soporte prioritario"],
+      },
     ],
     [],
   );
@@ -6333,6 +6358,17 @@ function Plans({ athletes, notify }) {
                 <span style={{ fontSize: ".55em", color: "#64748b", fontFamily: "inherit", marginLeft: 6 }}>COP</span>
               </div>
               <div style={{ fontSize: ".8em", color: "#64748b" }}>{p.description}</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 5, marginTop: 2 }}>
+                {(p.benefits || []).map((benefit) => (
+                  <div
+                    key={benefit}
+                    style={{ fontSize: ".78em", color: "#334155", display: "flex", alignItems: "flex-start", gap: 6, lineHeight: 1.35 }}
+                  >
+                    <span style={{ color: "#22c55e", fontWeight: 900 }}>✓</span>
+                    <span>{benefit}</span>
+                  </div>
+                ))}
+              </div>
 
               <div style={{ marginTop: "auto" }}>
                 <button
