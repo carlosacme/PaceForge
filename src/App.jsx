@@ -123,7 +123,7 @@ async function sendChatPushNotification({ token, title, body, logLabel = "chat p
 
 const achievementKmTargets = [10, 50, 100, 500, 1000];
 const PAYMENT_METHOD_OPTIONS = ["Nequi", "Bancolombia", "Efectivo", "Transferencia", "Otro"];
-const PAYMENT_PLAN_OPTIONS = ["Starter", "Pro", "Equipo"];
+const PAYMENT_PLAN_OPTIONS = ["Basico", "Pro"];
 
 const paymentStatusLabel = (status) =>
   status === "confirmed" ? "Confirmado" : status === "rejected" ? "Rechazado" : "Pendiente";
@@ -1333,45 +1333,36 @@ export default function App() {
 
     const PLAN_CATALOG = [
       {
-        plan: "Starter",
-        label: "Starter",
-        priceCop: 49000,
-        priceUsd: 13,
-        description: "Ideal para coaches que están comenzando.",
+        plan: "Basico",
+        label: "Básico",
+        priceCop: 70000,
+        priceUsd: 18,
+        description: "Para coaches independientes que quieren profesionalizar su trabajo.",
         benefits: [
-          "Hasta 5 atletas",
+          "Hasta 15 atletas",
           "Generador de workouts con IA",
-          "Plan de entrenamiento 2 semanas",
+          "Plan 2 semanas renovable",
+          "Biblioteca personal de entrenamientos",
           "Chat con atletas",
-          "Exportar a PDF",
+          "Evaluación VDOT y zonas FC",
+          "Exportar PDF",
+          "App móvil",
         ],
       },
       {
         plan: "Pro",
         label: "Pro",
-        priceCop: 129000,
-        priceUsd: 34,
-        description: "Para coaches profesionales que quieren crecer.",
-        benefits: [
-          "Hasta 20 atletas",
-          "Todo lo del Starter",
-          "Integración Garmin y COROS",
-          "Evaluación VDOT y zonas FC",
-          "Notificaciones push",
-          "Biblioteca de workouts",
-        ],
-      },
-      {
-        plan: "Equipo",
-        label: "Equipo",
-        priceCop: 299000,
-        priceUsd: 79,
-        description: "Para academias y clubes de running.",
+        priceCop: 150000,
+        priceUsd: 39,
+        description: "Para coaches y academias que quieren escalar sin límites.",
         benefits: [
           "Atletas ilimitados",
-          "Todo lo del Pro",
-          "Multi-coach",
+          "Todo lo del Básico",
+          "Integración Garmin y COROS",
+          "Notificaciones push",
+          "Sistema de logros y medallas",
           "Códigos promocionales",
+          "Validación de pagos",
           "Soporte prioritario",
           "Panel de administración",
         ],
@@ -1446,7 +1437,7 @@ export default function App() {
             <div style={{ fontSize: ".85em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase", fontWeight: 900, marginBottom: 12 }}>
               Features
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 18 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 18 }}>
               {[
                 { title: "Generador IA", body: "Crea entrenamientos en segundos y ajusta estructura, ritmos y fases." },
                 { title: "Sync con relojes", body: "Exporta y sincroniza para que tu atleta entrene con precisión." },
@@ -1785,6 +1776,7 @@ export default function App() {
           <WorkoutLibrary
             coachUserId={session?.user?.id ?? null}
             libraryRefresh={libraryRefresh}
+            athletes={athletes}
             onUseWorkout={(row) => {
               setAiWorkout(libraryRowToBuilderWorkout(row));
               setView("builder");
@@ -2234,7 +2226,7 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
   const [paymentForm, setPaymentForm] = useState({
     amount: "",
     payment_method: "Nequi",
-    plan: "Starter",
+    plan: "Basico",
     payment_date: formatLocalYMD(new Date()),
     notes: "",
   });
@@ -2496,7 +2488,7 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
     setPaymentForm({
       amount: "",
       payment_method: "Nequi",
-      plan: "Starter",
+      plan: "Basico",
       payment_date: formatLocalYMD(new Date()),
       notes: "",
     });
@@ -4915,12 +4907,16 @@ Output 2 week objects with the correct ${daysPerWeek} workouts each; each workou
   );
 }
 
-function WorkoutLibrary({ coachUserId, libraryRefresh, onUseWorkout, notify }) {
+function WorkoutLibrary({ coachUserId, libraryRefresh, onUseWorkout, athletes, notify }) {
   const S = styles;
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [deletingId, setDeletingId] = useState(null);
+  const [assigningId, setAssigningId] = useState(null);
+  const [assignAthleteId, setAssignAthleteId] = useState("");
+  const [assignDate, setAssignDate] = useState(() => formatLocalYMD(new Date()));
+  const [assignSaving, setAssignSaving] = useState(false);
 
   const load = useCallback(async () => {
     if (!coachUserId) {
@@ -4973,6 +4969,39 @@ function WorkoutLibrary({ coachUserId, libraryRefresh, onUseWorkout, notify }) {
     }
     setItems((prev) => prev.filter((x) => x.id !== id));
     notify("Eliminado de la biblioteca");
+  };
+
+  const assignDirectly = async (row) => {
+    if (!coachUserId) return;
+    if (!assignAthleteId) {
+      notify("Selecciona un atleta");
+      return;
+    }
+    if (!assignDate) {
+      notify("Selecciona la fecha");
+      return;
+    }
+    setAssignSaving(true);
+    const payload = {
+      athlete_id: assignAthleteId,
+      coach_id: coachUserId,
+      title: row.title,
+      type: row.type,
+      total_km: Number(row.total_km) || 0,
+      duration_min: Number(row.duration_min) || 0,
+      description: row.description || "",
+      done: false,
+      scheduled_date: assignDate,
+    };
+    const { error } = await supabase.from("workouts").insert(payload);
+    setAssignSaving(false);
+    if (error) {
+      console.error(error);
+      notify(`Error al asignar: ${error.message}`);
+      return;
+    }
+    notify("Workout asignado directamente al atleta ✓");
+    setAssigningId(null);
   };
 
   return (
@@ -5079,6 +5108,27 @@ function WorkoutLibrary({ coachUserId, libraryRefresh, onUseWorkout, notify }) {
                   </button>
                   <button
                     type="button"
+                    onClick={() => {
+                      setAssigningId((prev) => (prev === row.id ? null : row.id));
+                      if ((athletes || []).length) setAssignAthleteId(String(athletes[0].id));
+                      setAssignDate(formatLocalYMD(new Date()));
+                    }}
+                    style={{
+                      background: "rgba(59,130,246,.12)",
+                      border: "1px solid rgba(59,130,246,.35)",
+                      borderRadius: 8,
+                      padding: "8px 12px",
+                      color: "#1d4ed8",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                      fontSize: ".78em",
+                    }}
+                  >
+                    Asignar directamente
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => deleteRow(row.id)}
                     disabled={deletingId === row.id}
                     style={{
@@ -5096,6 +5146,37 @@ function WorkoutLibrary({ coachUserId, libraryRefresh, onUseWorkout, notify }) {
                     {deletingId === row.id ? "…" : "Eliminar"}
                   </button>
                 </div>
+                {assigningId === row.id ? (
+                  <div style={{ width: "100%", borderTop: "1px dashed #cbd5e1", paddingTop: 10, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "end" }}>
+                    <div style={{ minWidth: 180, flex: "1 1 180px" }}>
+                      <div style={{ fontSize: ".7em", color: "#64748b", marginBottom: 4 }}>Atleta</div>
+                      <select
+                        value={assignAthleteId}
+                        onChange={(e) => setAssignAthleteId(e.target.value)}
+                        style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", color: "#0f172a", fontFamily: "inherit", fontSize: ".8em" }}
+                      >
+                        {(athletes || []).map((a) => <option key={a.id} value={String(a.id)}>{a.name}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: ".7em", color: "#64748b", marginBottom: 4 }}>Fecha</div>
+                      <input
+                        type="date"
+                        value={assignDate}
+                        onChange={(e) => setAssignDate(e.target.value)}
+                        style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", color: "#0f172a", fontFamily: "inherit", fontSize: ".8em" }}
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      disabled={assignSaving}
+                      onClick={() => assignDirectly(row)}
+                      style={{ background: assignSaving ? "#e2e8f0" : "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 8, padding: "8px 12px", color: assignSaving ? "#64748b" : "#fff", fontWeight: 800, cursor: assignSaving ? "not-allowed" : "pointer", fontFamily: "inherit", fontSize: ".78em" }}
+                    >
+                      {assignSaving ? "Asignando…" : "Asignar ahora"}
+                    </button>
+                  </div>
+                ) : null}
               </div>
             );
           })}
@@ -6475,32 +6556,39 @@ function Plans({ athletes, notify }) {
   const PLAN_CATALOG = useMemo(
     () => [
       {
-        plan: "Starter",
-        label: "Starter",
-        priceCop: 49000,
-        description: "Ideal para empezar",
-        benefits: ["Hasta 5 atletas", "Generador de workouts con IA", "Plan 2 semanas", "Chat con atletas", "Exportar PDF"],
+        plan: "Basico",
+        label: "Básico",
+        priceCop: 70000,
+        priceUsd: 18,
+        description: "Para coaches independientes que quieren profesionalizar su trabajo.",
+        benefits: [
+          "Hasta 15 atletas",
+          "Generador de workouts con IA",
+          "Plan 2 semanas renovable",
+          "Biblioteca personal de entrenamientos",
+          "Chat con atletas",
+          "Evaluación VDOT y zonas FC",
+          "Exportar PDF",
+          "App móvil",
+        ],
       },
       {
         plan: "Pro",
         label: "Pro",
-        priceCop: 129000,
-        description: "Para entrenamientos avanzados",
+        priceCop: 150000,
+        priceUsd: 39,
+        description: "Para coaches y academias que quieren escalar sin límites.",
         benefits: [
-          "Hasta 20 atletas",
-          "Todo lo del Starter",
-          "Garmin y COROS",
-          "Evaluación VDOT",
+          "Atletas ilimitados",
+          "Todo lo del Básico",
+          "Integración Garmin y COROS",
           "Notificaciones push",
-          "Biblioteca de workouts",
+          "Sistema de logros y medallas",
+          "Códigos promocionales",
+          "Validación de pagos",
+          "Soporte prioritario",
+          "Panel de administración",
         ],
-      },
-      {
-        plan: "Equipo",
-        label: "Equipo",
-        priceCop: 299000,
-        description: "Para equipos y seguimiento completo",
-        benefits: ["Atletas ilimitados", "Todo lo del Pro", "Multi-coach", "Códigos promocionales", "Soporte prioritario"],
       },
     ],
     [],
@@ -6509,9 +6597,8 @@ function Plans({ athletes, notify }) {
   const coachPlan = athletes?.[0]?.plan || "";
 
   const amountInCentsByPlan = (planName) => {
-    if (planName === "Starter") return 4900000;
-    if (planName === "Pro") return 12900000;
-    if (planName === "Equipo") return 29900000;
+    if (planName === "Basico") return 7000000;
+    if (planName === "Pro") return 15000000;
     return 0;
   };
 
@@ -6656,7 +6743,7 @@ function Plans({ athletes, notify }) {
         ) : null}
       </div>
 
-      <div className="pf-plans-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 18 }}>
+      <div className="pf-plans-grid" style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 18 }}>
         {PLAN_CATALOG.map((p) => {
           const isCurrent = coachPlan === p.plan;
           const copPretty = Number(p.priceCop).toLocaleString("es-CO");
@@ -6679,13 +6766,7 @@ function Plans({ athletes, notify }) {
             >
               <div style={{ fontSize: "1.2em", fontWeight: 800, color: isCurrent ? "#f59e0b" : "#0f172a" }}>
                 {p.label}
-                {discountPct > 0 ? (
-                  <span style={{ fontSize: ".65em", color: "#64748b", fontWeight: 600, marginLeft: 8 }}>
-                    (antes ${copPretty})
-                  </span>
-                ) : (
-                  <span style={{ fontSize: ".65em", color: "#64748b", fontWeight: 600, marginLeft: 8 }}>(${copPretty} COP)</span>
-                )}
+                <span style={{ fontSize: ".65em", color: "#64748b", fontWeight: 600, marginLeft: 8 }}>(${p.priceUsd} USD)</span>
               </div>
               <div style={{ fontSize: "2em", fontWeight: 900, color: "#f59e0b", fontFamily: "monospace" }}>
                 {discountPct > 0 ? (
