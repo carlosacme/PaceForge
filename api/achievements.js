@@ -17,7 +17,7 @@ export default async function handler(req, res) {
             .from("athlete_achievements")
             .select("*")
             .eq("athlete_id", athlete_id)
-            .order("awarded_at", { ascending: false })
+            .order("earned_at", { ascending: false })
         : Promise.resolve({ data: [], error: null }),
     ]);
     if (errAll) return res.status(500).json({ error: errAll });
