@@ -348,6 +348,13 @@ const daysBetweenYmd = (fromYmd, toYmd) => {
 
 const RACE_DISTANCE_PRESETS = ["5K", "10K", "21K", "42K", "Otro"];
 
+const raceDistanceToFormFields = (dist) => {
+  const d = String(dist || "").trim();
+  const fixed = RACE_DISTANCE_PRESETS.filter((x) => x !== "Otro");
+  if (fixed.includes(d)) return { distance: d, distanceOther: "" };
+  return { distance: "Otro", distanceOther: d };
+};
+
 const normalizeRaceRow = (row) => {
   const raw = row?.date;
   const dateStr =
@@ -2456,6 +2463,33 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
     distanceOther: "",
     city: "",
   });
+  const [raceCtxMenu, setRaceCtxMenu] = useState(null);
+  const raceCtxMenuRef = useRef(null);
+  const [racePanel, setRacePanel] = useState(null);
+  const [raceEditForm, setRaceEditForm] = useState({
+    name: "",
+    date: "",
+    distance: "21K",
+    distanceOther: "",
+    city: "",
+  });
+  const [raceMoveDate, setRaceMoveDate] = useState("");
+  const [raceActionBusy, setRaceActionBusy] = useState(false);
+  const [chatClearing, setChatClearing] = useState(false);
+
+  const refreshRacesList = useCallback(async () => {
+    if (!athlete?.id) return;
+    const { data, error } = await supabase
+      .from("races")
+      .select("*")
+      .eq("athlete_id", athlete.id)
+      .order("date", { ascending: true });
+    if (error) {
+      console.error("Error cargando carreras:", error);
+      return;
+    }
+    setRaces((data || []).map(normalizeRaceRow));
+  }, [athlete?.id]);
 
   useEffect(() => {
     if (!athlete?.id) {
@@ -2494,6 +2528,132 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
   }, [races]);
 
   const nextRaceCountdown = useMemo(() => getNextRaceCountdown(races, formatLocalYMD(new Date())), [races]);
+
+  const closeRaceCtxMenu = () => setRaceCtxMenu(null);
+
+  const ctxMenuRace = useMemo(
+    () => (raceCtxMenu ? races.find((r) => String(r.id) === String(raceCtxMenu.raceId)) || null : null),
+    [races, raceCtxMenu],
+  );
+
+  const panelRace = useMemo(
+    () => (racePanel ? races.find((r) => String(r.id) === String(racePanel.raceId)) || null : null),
+    [races, racePanel],
+  );
+
+  const openRaceCalendarMenu = (e, race) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const pad = 8;
+    const mw = 280;
+    const mh = 160;
+    const vw = typeof window !== "undefined" ? window.innerWidth : 800;
+    const vh = typeof window !== "undefined" ? window.innerHeight : 600;
+    const x = Math.min(e.clientX, vw - mw - pad);
+    const y = Math.min(e.clientY, vh - mh - pad);
+    setRaceCtxMenu({ x, y, raceId: race.id });
+  };
+
+  const openRaceEditPanel = (race) => {
+    if (!race) return;
+    const df = raceDistanceToFormFields(race.distance);
+    setRaceEditForm({
+      name: race.name || "",
+      date: race.date || formatLocalYMD(new Date()),
+      ...df,
+      city: race.city || "",
+    });
+    setRacePanel({ mode: "edit", raceId: race.id });
+    closeRaceCtxMenu();
+  };
+
+  const openRaceMovePanel = (race) => {
+    if (!race) return;
+    setRaceMoveDate(race.date || formatLocalYMD(new Date()));
+    setRacePanel({ mode: "move", raceId: race.id });
+    closeRaceCtxMenu();
+  };
+
+  const closeRacePanel = () => {
+    setRacePanel(null);
+    setRaceActionBusy(false);
+  };
+
+  const saveRaceEdits = async () => {
+    if (!panelRace?.id) return;
+    const dist =
+      raceEditForm.distance === "Otro"
+        ? (raceEditForm.distanceOther || "").trim() || "Otro"
+        : raceEditForm.distance;
+    if (raceEditForm.distance === "Otro" && !(raceEditForm.distanceOther || "").trim()) {
+      notify?.("Describe la distancia (Otro)");
+      return;
+    }
+    setRaceActionBusy(true);
+    const { error } = await supabase
+      .from("races")
+      .update({
+        name: raceEditForm.name.trim() || panelRace.name,
+        date: raceEditForm.date,
+        distance: dist,
+        city: raceEditForm.city.trim() || null,
+      })
+      .eq("id", panelRace.id);
+    setRaceActionBusy(false);
+    if (error) {
+      console.error(error);
+      notify?.(error.message || "Error al guardar");
+      return;
+    }
+    notify?.("Carrera actualizada");
+    closeRacePanel();
+    await refreshRacesList();
+  };
+
+  const applyRaceMoveDate = async () => {
+    if (!panelRace?.id || !raceMoveDate) return;
+    setRaceActionBusy(true);
+    const { error } = await supabase.from("races").update({ date: raceMoveDate }).eq("id", panelRace.id);
+    setRaceActionBusy(false);
+    if (error) {
+      console.error(error);
+      notify?.(error.message || "Error al mover");
+      return;
+    }
+    notify?.("Fecha actualizada");
+    closeRacePanel();
+    await refreshRacesList();
+  };
+
+  const deleteRaceFromCalendar = async (race) => {
+    if (!race?.id) return;
+    if (!window.confirm("¿Eliminar esta carrera?")) return;
+    closeRaceCtxMenu();
+    closeRacePanel();
+    setRaceActionBusy(true);
+    const { error } = await supabase.from("races").delete().eq("id", race.id);
+    setRaceActionBusy(false);
+    if (error) {
+      console.error(error);
+      notify?.(error.message || "No se pudo eliminar");
+      return;
+    }
+    notify?.("Carrera eliminada");
+    await refreshRacesList();
+  };
+
+  useEffect(() => {
+    if (!raceCtxMenu) return;
+    const onDown = (ev) => {
+      if (raceCtxMenuRef.current?.contains(ev.target)) return;
+      closeRaceCtxMenu();
+    };
+    const t = setTimeout(() => document.addEventListener("mousedown", onDown), 0);
+    return () => {
+      clearTimeout(t);
+      document.removeEventListener("mousedown", onDown);
+    };
+  }, [raceCtxMenu]);
 
   const formaFatigaPoints = useMemo(() => computeFormaFatigaWeeklyPoints(workouts), [workouts]);
   const formaFatigaChronological = useMemo(() => [...formaFatigaPoints].reverse(), [formaFatigaPoints]);
@@ -2805,10 +2965,27 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
       }
       notify?.("Carrera registrada");
       setRaceModalOpen(false);
-      const { data } = await supabase.from("races").select("*").eq("athlete_id", athlete.id).order("date", { ascending: true });
-      setRaces((data || []).map(normalizeRaceRow));
+      await refreshRacesList();
     } finally {
       setRaceSaving(false);
+    }
+  };
+
+  const clearCoachChat = async () => {
+    if (!athlete?.id || !coachId) return;
+    if (!window.confirm("¿Estás seguro? Esto eliminará todos los mensajes de esta conversación.")) return;
+    setChatClearing(true);
+    try {
+      const { error } = await supabase.from("messages").delete().eq("athlete_id", athlete.id).eq("coach_id", coachId);
+      if (error) {
+        console.error(error);
+        notify?.(error.message || "No se pudo limpiar el chat");
+        return;
+      }
+      setChatMessages([]);
+      notify?.("Chat eliminado");
+    } finally {
+      setChatClearing(false);
     }
   };
 
@@ -3536,8 +3713,10 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
                   >
                     <div style={{ fontSize: ".58em", color: inViewMonth ? "#475569" : "#94a3b8", textAlign: "center", fontWeight: 600 }}>{cellDate.getDate()}</div>
                     {dayRaces.map((race) => (
-                      <div
+                      <button
                         key={race.id}
+                        type="button"
+                        onClick={(e) => openRaceCalendarMenu(e, race)}
                         title={`${race.name} · ${race.distance}${race.city ? ` · ${race.city}` : ""}`}
                         style={{
                           fontSize: ".48em",
@@ -3549,10 +3728,14 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
                           borderRadius: 4,
                           background: "rgba(255,255,255,.65)",
                           border: "1px solid rgba(245,158,11,.35)",
+                          cursor: "pointer",
+                          fontFamily: "inherit",
+                          width: "100%",
+                          boxSizing: "border-box",
                         }}
                       >
                         🏁 {race.name}
-                      </div>
+                      </button>
                     ))}
                     {dayWorkouts.map(w => {
                       const wt = WORKOUT_TYPES.find(t => t.id === w.type) || WORKOUT_TYPES[0];
@@ -3649,8 +3832,28 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
           </div>
 
           <div style={{ marginTop: 22 }}>
-            <div style={{ fontSize: ".65em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase", marginBottom: 10 }}>
-              CHAT CON ATLETA
+            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 10 }}>
+              <div style={{ fontSize: ".65em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase" }}>
+                CHAT CON ATLETA
+              </div>
+              <button
+                type="button"
+                onClick={clearCoachChat}
+                disabled={chatClearing || !coachId || chatMessages.length === 0}
+                style={{
+                  background: chatClearing || chatMessages.length === 0 ? "#f1f5f9" : "#fef2f2",
+                  border: `1px solid ${chatMessages.length === 0 ? "#e2e8f0" : "#fecaca"}`,
+                  borderRadius: 8,
+                  padding: "6px 10px",
+                  color: chatMessages.length === 0 ? "#94a3b8" : "#b91c1c",
+                  fontWeight: 700,
+                  cursor: chatClearing || chatMessages.length === 0 ? "not-allowed" : "pointer",
+                  fontFamily: "inherit",
+                  fontSize: ".72em",
+                }}
+              >
+                🗑 Limpiar chat
+              </button>
             </div>
             <div
               ref={chatScrollRef}
@@ -3807,6 +4010,157 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
               {item.label}
             </button>
           ))}
+        </div>
+      ) : null}
+
+      {raceCtxMenu && ctxMenuRace ? (
+        <div
+          ref={raceCtxMenuRef}
+          style={{
+            position: "fixed",
+            left: raceCtxMenu.x,
+            top: raceCtxMenu.y,
+            zIndex: 305,
+            minWidth: 240,
+            maxWidth: "min(92vw, 300px)",
+            background: "#ffffff",
+            borderRadius: 10,
+            boxShadow: "0 10px 40px rgba(15,23,42,.2)",
+            border: "1px solid #e2e8f0",
+            padding: 6,
+          }}
+        >
+          {[
+            { label: "✏️ Editar", onClick: () => openRaceEditPanel(ctxMenuRace) },
+            { label: "📅 Mover fecha", onClick: () => openRaceMovePanel(ctxMenuRace) },
+            { label: "🗑 Eliminar", danger: true, onClick: () => deleteRaceFromCalendar(ctxMenuRace) },
+          ].map((item, i) => (
+            <button
+              key={i}
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={(e) => {
+                e.stopPropagation();
+                item.onClick();
+              }}
+              style={{
+                display: "block",
+                width: "100%",
+                textAlign: "left",
+                background: "transparent",
+                border: "none",
+                borderRadius: 8,
+                padding: "10px 12px",
+                color: item.danger ? "#b91c1c" : "#0f172a",
+                fontWeight: 600,
+                cursor: "pointer",
+                fontFamily: "inherit",
+                fontSize: ".82em",
+              }}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      {racePanel && panelRace ? (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 290, padding: 16 }}>
+          <div style={{ ...S.card, width: "100%", maxWidth: 480, margin: 0, maxHeight: "90vh", overflowY: "auto" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 10 }}>
+              <div style={{ fontSize: ".95em", fontWeight: 800, color: "#0f172a" }}>
+                {racePanel.mode === "edit" ? "Editar carrera" : "Mover fecha"} · {panelRace.name}
+              </div>
+              <button type="button" onClick={closeRacePanel} style={{ background: "transparent", border: "none", color: "#64748b", cursor: "pointer", fontFamily: "inherit", fontWeight: 700 }}>✕</button>
+            </div>
+            {racePanel.mode === "edit" ? (
+              <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 10 }}>
+                <div>
+                  <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Nombre</div>
+                  <input
+                    value={raceEditForm.name}
+                    onChange={(e) => setRaceEditForm((f) => ({ ...f, name: e.target.value }))}
+                    style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", color: "#0f172a", fontFamily: "inherit", fontSize: ".84em", boxSizing: "border-box" }}
+                  />
+                </div>
+                <div>
+                  <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Fecha</div>
+                  <input
+                    type="date"
+                    value={raceEditForm.date}
+                    onChange={(e) => setRaceEditForm((f) => ({ ...f, date: e.target.value }))}
+                    style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", color: "#0f172a", fontFamily: "inherit", fontSize: ".84em", boxSizing: "border-box" }}
+                  />
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 10 }}>
+                  <div>
+                    <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Distancia</div>
+                    <select
+                      value={raceEditForm.distance}
+                      onChange={(e) => setRaceEditForm((f) => ({ ...f, distance: e.target.value }))}
+                      style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", color: "#0f172a", fontFamily: "inherit", fontSize: ".84em", boxSizing: "border-box" }}
+                    >
+                      {RACE_DISTANCE_PRESETS.map((d) => (
+                        <option key={d} value={d}>
+                          {d}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Ciudad</div>
+                    <input
+                      value={raceEditForm.city}
+                      onChange={(e) => setRaceEditForm((f) => ({ ...f, city: e.target.value }))}
+                      style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", color: "#0f172a", fontFamily: "inherit", fontSize: ".84em", boxSizing: "border-box" }}
+                    />
+                  </div>
+                </div>
+                {raceEditForm.distance === "Otro" ? (
+                  <div>
+                    <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Describe la distancia</div>
+                    <input
+                      value={raceEditForm.distanceOther}
+                      onChange={(e) => setRaceEditForm((f) => ({ ...f, distanceOther: e.target.value }))}
+                      style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", color: "#0f172a", fontFamily: "inherit", fontSize: ".84em", boxSizing: "border-box" }}
+                    />
+                  </div>
+                ) : null}
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
+                  <button type="button" onClick={closeRacePanel} style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 12px", color: "#64748b", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: ".8em" }}>Cancelar</button>
+                  <button
+                    type="button"
+                    disabled={raceActionBusy}
+                    onClick={saveRaceEdits}
+                    style={{ background: raceActionBusy ? "#e2e8f0" : "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 8, padding: "8px 12px", color: raceActionBusy ? "#64748b" : "#fff", cursor: raceActionBusy ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 800, fontSize: ".8em" }}
+                  >
+                    {raceActionBusy ? "Guardando…" : "Guardar"}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div>
+                <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Nueva fecha</div>
+                <input
+                  type="date"
+                  value={raceMoveDate}
+                  onChange={(e) => setRaceMoveDate(e.target.value)}
+                  style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", color: "#0f172a", fontFamily: "inherit", fontSize: ".84em", boxSizing: "border-box" }}
+                />
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
+                  <button type="button" onClick={closeRacePanel} style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 12px", color: "#64748b", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: ".8em" }}>Cancelar</button>
+                  <button
+                    type="button"
+                    disabled={raceActionBusy}
+                    onClick={applyRaceMoveDate}
+                    style={{ background: raceActionBusy ? "#e2e8f0" : "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 8, padding: "8px 12px", color: raceActionBusy ? "#64748b" : "#fff", cursor: raceActionBusy ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 800, fontSize: ".8em" }}
+                  >
+                    {raceActionBusy ? "Guardando…" : "Guardar fecha"}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       ) : null}
 
@@ -4219,6 +4573,7 @@ function AthleteHome({ profile }) {
   const athleteChatScrollRef = useRef(null);
   const [athleteCalendarCtxMenu, setAthleteCalendarCtxMenu] = useState(null);
   const athleteCalendarCtxMenuRef = useRef(null);
+  const [athleteChatClearing, setAthleteChatClearing] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -4612,6 +4967,23 @@ function AthleteHome({ profile }) {
       await loadAthleteChat();
     } finally {
       setAthleteChatSending(false);
+    }
+  };
+
+  const clearAthleteChat = async () => {
+    if (!athleteInfo?.id || !coachIdForChat) return;
+    if (!window.confirm("¿Estás seguro? Esto eliminará todos los mensajes de esta conversación.")) return;
+    setAthleteChatClearing(true);
+    try {
+      const { error } = await supabase.from("messages").delete().eq("athlete_id", athleteInfo.id).eq("coach_id", coachIdForChat);
+      if (error) {
+        console.error(error);
+        setMessage(error.message || "No se pudo limpiar el chat");
+        return;
+      }
+      setAthleteChatMessages([]);
+    } finally {
+      setAthleteChatClearing(false);
     }
   };
 
@@ -5134,8 +5506,30 @@ function AthleteHome({ profile }) {
 
       {!athleteNotRegistered && (
       <div style={{ ...S.card, marginTop: 20 }}>
-        <div style={{ fontSize: ".65em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase", marginBottom: 10 }}>
-          CHAT CON TU COACH
+        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 10 }}>
+          <div style={{ fontSize: ".65em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase" }}>
+            CHAT CON TU COACH
+          </div>
+          {coachIdForChat ? (
+            <button
+              type="button"
+              onClick={clearAthleteChat}
+              disabled={athleteChatClearing || athleteChatMessages.length === 0}
+              style={{
+                background: athleteChatClearing || athleteChatMessages.length === 0 ? "#f1f5f9" : "#fef2f2",
+                border: `1px solid ${athleteChatMessages.length === 0 ? "#e2e8f0" : "#fecaca"}`,
+                borderRadius: 8,
+                padding: "6px 10px",
+                color: athleteChatMessages.length === 0 ? "#94a3b8" : "#b91c1c",
+                fontWeight: 700,
+                cursor: athleteChatClearing || athleteChatMessages.length === 0 ? "not-allowed" : "pointer",
+                fontFamily: "inherit",
+                fontSize: ".72em",
+              }}
+            >
+              🗑 Limpiar chat
+            </button>
+          ) : null}
         </div>
         {!coachIdForChat ? (
           <div style={{ color: "#64748b", fontSize: ".85em" }}>Sin datos de coach. Contacta a soporte si esto continúa.</div>
