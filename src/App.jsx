@@ -328,6 +328,56 @@ const addDays = (d, n) => {
   return x;
 };
 
+/** Lunes de la semana que contiene el primer día del mes */
+const startOfMonthWeekMonday = (year, monthIndex) => startOfWeekMonday(new Date(year, monthIndex, 1));
+
+/** 42 celdas (6 semanas), vista mensual */
+const getMonthGrid = (year, monthIndex) => {
+  const gridStart = startOfMonthWeekMonday(year, monthIndex);
+  return Array.from({ length: 42 }, (_, i) => addDays(gridStart, i));
+};
+
+const cellIsInViewMonth = (cellDate, year, monthIndex) =>
+  cellDate.getFullYear() === year && cellDate.getMonth() === monthIndex;
+
+const daysBetweenYmd = (fromYmd, toYmd) => {
+  const a = new Date(`${fromYmd}T12:00:00`);
+  const b = new Date(`${toYmd}T12:00:00`);
+  return Math.round((b.getTime() - a.getTime()) / 86400000);
+};
+
+const RACE_DISTANCE_PRESETS = ["5K", "10K", "21K", "42K", "Otro"];
+
+const normalizeRaceRow = (row) => {
+  const raw = row?.date;
+  const dateStr =
+    typeof raw === "string"
+      ? raw.slice(0, 10)
+      : raw
+        ? formatLocalYMD(new Date(raw))
+        : "";
+  return {
+    id: row.id,
+    athlete_id: row.athlete_id,
+    coach_id: row.coach_id,
+    name: row.name || "",
+    date: dateStr,
+    distance: row.distance != null ? String(row.distance) : "",
+    city: row.city != null ? String(row.city) : "",
+  };
+};
+
+/** Carreras con fecha >= todayYmd, la primera es la más próxima */
+const getNextRaceCountdown = (races, todayYmd) => {
+  const list = (races || [])
+    .filter((r) => r.date && r.date >= todayYmd)
+    .sort((a, b) => a.date.localeCompare(b.date));
+  if (!list.length) return null;
+  const r = list[0];
+  const days = daysBetweenYmd(todayYmd, r.date);
+  return { race: r, days };
+};
+
 const extractJsonFromAnthropicText = (text) => {
   const raw = (text || "").trim();
   if (!raw) return null;
@@ -2379,22 +2429,71 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
     return m;
   }, [workouts]);
 
-  const CALENDAR_DAYS = 42;
-  const weekStart = useMemo(() => {
-    const thisMonday = startOfWeekMonday(new Date());
-    if (!workouts.length) return thisMonday;
-    let minMs = Infinity;
-    for (const w of workouts) {
-      const t = new Date(`${w.scheduled_date}T12:00:00`).getTime();
-      if (t < minMs) minMs = t;
-    }
-    const firstMonday = startOfWeekMonday(new Date(minMs));
-    return firstMonday.getTime() < thisMonday.getTime() ? firstMonday : thisMonday;
-  }, [workouts]);
+  const [calendarViewMonth, setCalendarViewMonth] = useState(() => {
+    const n = new Date();
+    return { y: n.getFullYear(), m: n.getMonth() };
+  });
   const calendarCells = useMemo(
-    () => Array.from({ length: CALENDAR_DAYS }, (_, i) => addDays(weekStart, i)),
-    [weekStart],
+    () => getMonthGrid(calendarViewMonth.y, calendarViewMonth.m),
+    [calendarViewMonth],
   );
+  const calendarMonthLabel = useMemo(
+    () =>
+      new Date(calendarViewMonth.y, calendarViewMonth.m, 1).toLocaleDateString("es-CO", {
+        month: "long",
+        year: "numeric",
+      }),
+    [calendarViewMonth],
+  );
+
+  const [races, setRaces] = useState([]);
+  const [raceModalOpen, setRaceModalOpen] = useState(false);
+  const [raceSaving, setRaceSaving] = useState(false);
+  const [raceForm, setRaceForm] = useState({
+    name: "",
+    date: formatLocalYMD(new Date()),
+    distance: "21K",
+    distanceOther: "",
+    city: "",
+  });
+
+  useEffect(() => {
+    if (!athlete?.id) {
+      setRaces([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from("races")
+        .select("*")
+        .eq("athlete_id", athlete.id)
+        .order("date", { ascending: true });
+      if (cancelled) return;
+      if (error) {
+        console.error("Error cargando carreras:", error);
+        setRaces([]);
+        return;
+      }
+      setRaces((data || []).map(normalizeRaceRow));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [athlete?.id, workoutsRefresh]);
+
+  const racesByDate = useMemo(() => {
+    const m = {};
+    for (const r of races) {
+      const k = r.date;
+      if (!k) continue;
+      if (!m[k]) m[k] = [];
+      m[k].push(r);
+    }
+    return m;
+  }, [races]);
+
+  const nextRaceCountdown = useMemo(() => getNextRaceCountdown(races, formatLocalYMD(new Date())), [races]);
 
   const formaFatigaPoints = useMemo(() => computeFormaFatigaWeeklyPoints(workouts), [workouts]);
   const formaFatigaChronological = useMemo(() => [...formaFatigaPoints].reverse(), [formaFatigaPoints]);
@@ -2661,6 +2760,58 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
     setAthletePayments(data || []);
   }, [athlete?.id]);
 
+  const openRaceModal = () => {
+    setRaceForm({
+      name: "",
+      date: formatLocalYMD(new Date()),
+      distance: "21K",
+      distanceOther: "",
+      city: "",
+    });
+    setRaceModalOpen(true);
+  };
+
+  const saveRace = async () => {
+    if (!athlete?.id || !coachId) return;
+    const name = raceForm.name.trim();
+    if (!name) {
+      notify?.("Indica el nombre de la carrera");
+      return;
+    }
+    if (!raceForm.date) {
+      notify?.("Indica la fecha de la carrera");
+      return;
+    }
+    const dist =
+      raceForm.distance === "Otro" ? (raceForm.distanceOther || "").trim() || "Otro" : raceForm.distance;
+    if (raceForm.distance === "Otro" && !(raceForm.distanceOther || "").trim()) {
+      notify?.("Describe la distancia (Otro)");
+      return;
+    }
+    setRaceSaving(true);
+    try {
+      const { error } = await supabase.from("races").insert({
+        athlete_id: athlete.id,
+        coach_id: coachId,
+        name,
+        date: raceForm.date,
+        distance: dist,
+        city: raceForm.city.trim() || null,
+      });
+      if (error) {
+        console.error(error);
+        notify?.(error.message || "No se pudo guardar la carrera");
+        return;
+      }
+      notify?.("Carrera registrada");
+      setRaceModalOpen(false);
+      const { data } = await supabase.from("races").select("*").eq("athlete_id", athlete.id).order("date", { ascending: true });
+      setRaces((data || []).map(normalizeRaceRow));
+    } finally {
+      setRaceSaving(false);
+    }
+  };
+
   useEffect(() => {
     let cancelled = false;
     supabase.auth.getUser().then(({ data }) => {
@@ -2924,6 +3075,17 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
             <div style={{ flex: "1 1 180px", minWidth: 0 }}>
               <div style={{ fontSize: "1.3em", fontWeight: 700, color: "#0f172a" }}>{athlete.name}</div>
               <div style={{ color: "#64748b", fontSize: ".85em" }}>{athlete.goal}</div>
+              {nextRaceCountdown ? (
+                <div style={{ marginTop: 8, fontSize: ".88em", fontWeight: 700, color: "#b45309", lineHeight: 1.35 }}>
+                  🏁 {nextRaceCountdown.race.name}
+                  {" · "}
+                  {nextRaceCountdown.days === 0
+                    ? "¡Hoy es la carrera!"
+                    : nextRaceCountdown.days === 1
+                      ? "falta 1 día"
+                      : `faltan ${nextRaceCountdown.days} días`}
+                </div>
+              ) : null}
             </div>
             <button
               type="button"
@@ -3268,8 +3430,63 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
             )}
           </div>
 
-          <div style={{ fontSize: ".65em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase", marginBottom: 10 }}>
-            CALENDARIO — {formatLocalYMD(calendarCells[0])} → {formatLocalYMD(calendarCells[calendarCells.length - 1])}
+          <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 10 }}>
+            <div style={{ fontSize: ".65em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase" }}>
+              CALENDARIO · {calendarMonthLabel}
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+              <button
+                type="button"
+                onClick={() => setCalendarViewMonth(({ y, m }) => (m === 0 ? { y: y - 1, m: 11 } : { y, m: m - 1 }))}
+                style={{
+                  background: "#ffffff",
+                  border: "1px solid #e2e8f0",
+                  borderRadius: 8,
+                  padding: "6px 12px",
+                  color: "#0f172a",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                  fontSize: ".78em",
+                }}
+              >
+                ← Mes anterior
+              </button>
+              <button
+                type="button"
+                onClick={() => setCalendarViewMonth(({ y, m }) => (m === 11 ? { y: y + 1, m: 0 } : { y, m: m + 1 }))}
+                style={{
+                  background: "#ffffff",
+                  border: "1px solid #e2e8f0",
+                  borderRadius: 8,
+                  padding: "6px 12px",
+                  color: "#0f172a",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                  fontSize: ".78em",
+                }}
+              >
+                Mes siguiente →
+              </button>
+              <button
+                type="button"
+                onClick={openRaceModal}
+                style={{
+                  background: "linear-gradient(135deg,#fffbeb,#ffedd5)",
+                  border: "1px solid rgba(245,158,11,.45)",
+                  borderRadius: 8,
+                  padding: "6px 12px",
+                  color: "#b45309",
+                  fontWeight: 800,
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                  fontSize: ".78em",
+                }}
+              >
+                🏁 Agregar Carrera
+              </button>
+            </div>
           </div>
           {loadingWorkouts ? (
             <div style={{ color: "#64748b", fontSize: ".85em", padding: "20px 0" }}>Cargando...</div>
@@ -3279,14 +3496,25 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
               {calendarCells.map((cellDate, i) => {
                 const ymd = formatLocalYMD(cellDate);
                 const dayWorkouts = workoutsByDate[ymd] || [];
+                const dayRaces = racesByDate[ymd] || [];
                 const hasWorkout = dayWorkouts.length > 0;
                 const hasDoneWorkout = dayWorkouts.some(w => w.done);
-                const borderColor = hasWorkout
-                  ? `${WORKOUT_TYPES.find(t => t.id === dayWorkouts[0].type)?.color || "#64748b"}40`
-                  : "#f1f5f9";
+                const hasRace = dayRaces.length > 0;
+                const todayYmd = formatLocalYMD(new Date());
+                const isRaceToday = hasRace && ymd === todayYmd;
+                const inViewMonth = cellIsInViewMonth(cellDate, calendarViewMonth.y, calendarViewMonth.m);
+                let borderColor = "#f1f5f9";
+                if (hasRace) borderColor = "rgba(245,158,11,.55)";
+                else if (hasWorkout) borderColor = `${WORKOUT_TYPES.find(t => t.id === dayWorkouts[0].type)?.color || "#64748b"}40`;
+                let cellBackground = "transparent";
+                if (isRaceToday) cellBackground = "linear-gradient(160deg,#fffbeb 0%,#fde68a 55%,#fff7ed 100%)";
+                else if (hasRace) cellBackground = "linear-gradient(145deg,#fffbeb,#ffedd5)";
+                else if (hasDoneWorkout) cellBackground = "rgba(34,197,94,.08)";
+                else if (hasWorkout) cellBackground = "#f8fafc";
                 return (
                   <div
                     key={i}
+                    className={isRaceToday ? "raf-race-day" : undefined}
                     onDragOver={(e) => e.preventDefault()}
                     onDrop={async () => {
                       if (!dragWorkoutId) return;
@@ -3302,10 +3530,30 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
                       flexDirection: "column",
                       alignItems: "stretch",
                       gap: 3,
-                      background: hasDoneWorkout ? "rgba(34,197,94,.08)" : (hasWorkout ? "#f8fafc" : "transparent"),
+                      background: cellBackground,
+                      opacity: inViewMonth ? 1 : 0.42,
                     }}
                   >
-                    <div style={{ fontSize: ".58em", color: "#475569", textAlign: "center", fontWeight: 600 }}>{cellDate.getDate()}</div>
+                    <div style={{ fontSize: ".58em", color: inViewMonth ? "#475569" : "#94a3b8", textAlign: "center", fontWeight: 600 }}>{cellDate.getDate()}</div>
+                    {dayRaces.map((race) => (
+                      <div
+                        key={race.id}
+                        title={`${race.name} · ${race.distance}${race.city ? ` · ${race.city}` : ""}`}
+                        style={{
+                          fontSize: ".48em",
+                          fontWeight: 800,
+                          color: "#b45309",
+                          textAlign: "center",
+                          lineHeight: 1.2,
+                          padding: "2px 2px",
+                          borderRadius: 4,
+                          background: "rgba(255,255,255,.65)",
+                          border: "1px solid rgba(245,158,11,.35)",
+                        }}
+                      >
+                        🏁 {race.name}
+                      </div>
+                    ))}
                     {dayWorkouts.map(w => {
                       const wt = WORKOUT_TYPES.find(t => t.id === w.type) || WORKOUT_TYPES[0];
                       return (
@@ -3757,6 +4005,88 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
         </div>
       ) : null}
 
+      {raceModalOpen && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 215, padding: 16 }}>
+          <div style={{ ...S.card, width: "100%", maxWidth: 480, margin: 0 }}>
+            <div style={{ fontSize: ".95em", fontWeight: 800, color: "#0f172a", marginBottom: 10 }}>🏁 Nueva carrera</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 10 }}>
+              <div>
+                <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Nombre de la carrera</div>
+                <input
+                  value={raceForm.name}
+                  onChange={(e) => setRaceForm((f) => ({ ...f, name: e.target.value }))}
+                  placeholder="Ej: Media Maratón de Bogotá"
+                  style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", color: "#0f172a", fontFamily: "inherit", fontSize: ".84em", boxSizing: "border-box" }}
+                />
+              </div>
+              <div>
+                <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Fecha</div>
+                <input
+                  type="date"
+                  value={raceForm.date}
+                  onChange={(e) => setRaceForm((f) => ({ ...f, date: e.target.value }))}
+                  style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", color: "#0f172a", fontFamily: "inherit", fontSize: ".84em", boxSizing: "border-box" }}
+                />
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 10 }}>
+                <div>
+                  <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Distancia</div>
+                  <select
+                    value={raceForm.distance}
+                    onChange={(e) => setRaceForm((f) => ({ ...f, distance: e.target.value }))}
+                    style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", color: "#0f172a", fontFamily: "inherit", fontSize: ".84em", boxSizing: "border-box" }}
+                  >
+                    {RACE_DISTANCE_PRESETS.map((d) => (
+                      <option key={d} value={d}>
+                        {d}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Ciudad</div>
+                  <input
+                    value={raceForm.city}
+                    onChange={(e) => setRaceForm((f) => ({ ...f, city: e.target.value }))}
+                    placeholder="Ciudad"
+                    style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", color: "#0f172a", fontFamily: "inherit", fontSize: ".84em", boxSizing: "border-box" }}
+                  />
+                </div>
+              </div>
+              {raceForm.distance === "Otro" ? (
+                <div>
+                  <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Describe la distancia</div>
+                  <input
+                    value={raceForm.distanceOther}
+                    onChange={(e) => setRaceForm((f) => ({ ...f, distanceOther: e.target.value }))}
+                    placeholder="Ej: 15K, ultra 50K…"
+                    style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", color: "#0f172a", fontFamily: "inherit", fontSize: ".84em", boxSizing: "border-box" }}
+                  />
+                </div>
+              ) : null}
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 14 }}>
+              <button
+                type="button"
+                onClick={() => setRaceModalOpen(false)}
+                disabled={raceSaving}
+                style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 12px", color: "#64748b", cursor: raceSaving ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: ".82em" }}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={saveRace}
+                disabled={raceSaving}
+                style={{ background: raceSaving ? "#e2e8f0" : "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 8, padding: "8px 12px", color: raceSaving ? "#64748b" : "#fff", cursor: raceSaving ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 800, fontSize: ".82em" }}
+              >
+                {raceSaving ? "Guardando…" : "Guardar carrera"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {paymentModalOpen && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 210, padding: 16 }}>
           <div style={{ ...S.card, width: "100%", maxWidth: 520, margin: 0 }}>
@@ -4000,22 +4330,64 @@ function AthleteHome({ profile }) {
     return m;
   }, [workouts]);
 
-  const CALENDAR_DAYS = 42;
-  const weekStart = useMemo(() => {
-    const thisMonday = startOfWeekMonday(new Date());
-    if (!workouts.length) return thisMonday;
-    let minMs = Infinity;
-    for (const w of workouts) {
-      const t = new Date(`${w.scheduled_date}T12:00:00`).getTime();
-      if (t < minMs) minMs = t;
-    }
-    const firstMonday = startOfWeekMonday(new Date(minMs));
-    return firstMonday.getTime() < thisMonday.getTime() ? firstMonday : thisMonday;
-  }, [workouts]);
-
+  const [calendarViewMonth, setCalendarViewMonth] = useState(() => {
+    const n = new Date();
+    return { y: n.getFullYear(), m: n.getMonth() };
+  });
   const calendarCells = useMemo(
-    () => Array.from({ length: CALENDAR_DAYS }, (_, i) => addDays(weekStart, i)),
-    [weekStart],
+    () => getMonthGrid(calendarViewMonth.y, calendarViewMonth.m),
+    [calendarViewMonth],
+  );
+  const calendarMonthLabel = useMemo(
+    () =>
+      new Date(calendarViewMonth.y, calendarViewMonth.m, 1).toLocaleDateString("es-CO", {
+        month: "long",
+        year: "numeric",
+      }),
+    [calendarViewMonth],
+  );
+
+  const [races, setRaces] = useState([]);
+
+  useEffect(() => {
+    if (!athleteInfo?.id) {
+      setRaces([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from("races")
+        .select("*")
+        .eq("athlete_id", athleteInfo.id)
+        .order("date", { ascending: true });
+      if (cancelled) return;
+      if (error) {
+        console.error("Error cargando carreras (atleta):", error);
+        setRaces([]);
+        return;
+      }
+      setRaces((data || []).map(normalizeRaceRow));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [athleteInfo?.id]);
+
+  const racesByDate = useMemo(() => {
+    const m = {};
+    for (const r of races) {
+      const k = r.date;
+      if (!k) continue;
+      if (!m[k]) m[k] = [];
+      m[k].push(r);
+    }
+    return m;
+  }, [races]);
+
+  const nextRaceCountdownAthlete = useMemo(
+    () => getNextRaceCountdown(races, formatLocalYMD(new Date())),
+    [races],
   );
 
   const closeAthleteCalendarCtxMenu = () => setAthleteCalendarCtxMenu(null);
@@ -4341,6 +4713,17 @@ function AthleteHome({ profile }) {
         <div>
           <h1 style={{ ...S.pageTitle, marginBottom: 6 }}>Hola, {athleteName}</h1>
           <div style={{ color: "#94a3b8", fontSize: ".9em" }}>{nextRaceText}</div>
+          {nextRaceCountdownAthlete ? (
+            <div style={{ marginTop: 8, fontSize: ".92em", fontWeight: 700, color: "#b45309", lineHeight: 1.35 }}>
+              🏁 {nextRaceCountdownAthlete.race.name}
+              {" · "}
+              {nextRaceCountdownAthlete.days === 0
+                ? "¡Hoy es la carrera!"
+                : nextRaceCountdownAthlete.days === 1
+                  ? "falta 1 día"
+                  : `faltan ${nextRaceCountdownAthlete.days} días`}
+            </div>
+          ) : null}
         </div>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 10 }}>
           <button
@@ -4526,8 +4909,46 @@ function AthleteHome({ profile }) {
 
       {!athleteNotRegistered && (
       <div style={{ ...S.card }}>
-        <div style={{ fontSize: ".65em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase", marginBottom: 10 }}>
-          CALENDARIO — {formatLocalYMD(calendarCells[0])} → {formatLocalYMD(calendarCells[calendarCells.length - 1])}
+        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 10 }}>
+          <div style={{ fontSize: ".65em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase" }}>
+            CALENDARIO · {calendarMonthLabel}
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+            <button
+              type="button"
+              onClick={() => setCalendarViewMonth(({ y, m }) => (m === 0 ? { y: y - 1, m: 11 } : { y, m: m - 1 }))}
+              style={{
+                background: "#ffffff",
+                border: "1px solid #e2e8f0",
+                borderRadius: 8,
+                padding: "6px 12px",
+                color: "#0f172a",
+                fontWeight: 700,
+                cursor: "pointer",
+                fontFamily: "inherit",
+                fontSize: ".78em",
+              }}
+            >
+              ← Mes anterior
+            </button>
+            <button
+              type="button"
+              onClick={() => setCalendarViewMonth(({ y, m }) => (m === 11 ? { y: y + 1, m: 0 } : { y, m: m + 1 }))}
+              style={{
+                background: "#ffffff",
+                border: "1px solid #e2e8f0",
+                borderRadius: 8,
+                padding: "6px 12px",
+                color: "#0f172a",
+                fontWeight: 700,
+                cursor: "pointer",
+                fontFamily: "inherit",
+                fontSize: ".78em",
+              }}
+            >
+              Mes siguiente →
+            </button>
+          </div>
         </div>
 
         {loading ? (
@@ -4539,15 +4960,26 @@ function AthleteHome({ profile }) {
               {calendarCells.map((cellDate, i) => {
                 const ymd = formatLocalYMD(cellDate);
                 const dayWorkouts = workoutsByDate[ymd] || [];
+                const dayRaces = racesByDate[ymd] || [];
                 const hasWorkout = dayWorkouts.length > 0;
                 const hasDoneWorkout = dayWorkouts.some(w => w.done);
-                const borderColor = hasWorkout
-                  ? `${WORKOUT_TYPES.find(t => t.id === dayWorkouts[0].type)?.color || "#64748b"}40`
-                  : "#f1f5f9";
+                const hasRace = dayRaces.length > 0;
+                const todayYmd = formatLocalYMD(new Date());
+                const isRaceToday = hasRace && ymd === todayYmd;
+                const inViewMonth = cellIsInViewMonth(cellDate, calendarViewMonth.y, calendarViewMonth.m);
+                let borderColor = "#f1f5f9";
+                if (hasRace) borderColor = "rgba(245,158,11,.55)";
+                else if (hasWorkout) borderColor = `${WORKOUT_TYPES.find(t => t.id === dayWorkouts[0].type)?.color || "#64748b"}40`;
+                let cellBackground = "transparent";
+                if (isRaceToday) cellBackground = "linear-gradient(160deg,#fffbeb 0%,#fde68a 55%,#fff7ed 100%)";
+                else if (hasRace) cellBackground = "linear-gradient(145deg,#fffbeb,#ffedd5)";
+                else if (hasDoneWorkout) cellBackground = "rgba(34,197,94,.08)";
+                else if (hasWorkout) cellBackground = "#f8fafc";
 
                 return (
                   <div
                     key={i}
+                    className={isRaceToday ? "raf-race-day" : undefined}
                     style={{
                       minHeight: 72,
                       border: `1px solid ${borderColor}`,
@@ -4557,10 +4989,30 @@ function AthleteHome({ profile }) {
                       flexDirection: "column",
                       alignItems: "stretch",
                       gap: 3,
-                      background: hasDoneWorkout ? "rgba(34,197,94,.08)" : (hasWorkout ? "#f8fafc" : "transparent"),
+                      background: cellBackground,
+                      opacity: inViewMonth ? 1 : 0.42,
                     }}
                   >
-                    <div style={{ fontSize: ".58em", color: "#475569", textAlign: "center", fontWeight: 600 }}>{cellDate.getDate()}</div>
+                    <div style={{ fontSize: ".58em", color: inViewMonth ? "#475569" : "#94a3b8", textAlign: "center", fontWeight: 600 }}>{cellDate.getDate()}</div>
+                    {dayRaces.map((race) => (
+                      <div
+                        key={race.id}
+                        title={`${race.name} · ${race.distance}${race.city ? ` · ${race.city}` : ""}`}
+                        style={{
+                          fontSize: ".48em",
+                          fontWeight: 800,
+                          color: "#b45309",
+                          textAlign: "center",
+                          lineHeight: 1.2,
+                          padding: "2px 2px",
+                          borderRadius: 4,
+                          background: "rgba(255,255,255,.65)",
+                          border: "1px solid rgba(245,158,11,.35)",
+                        }}
+                      >
+                        🏁 {race.name}
+                      </div>
+                    ))}
                     {dayWorkouts.map(w => {
                       const wt = WORKOUT_TYPES.find(t => t.id === w.type) || WORKOUT_TYPES[0];
                       return (
