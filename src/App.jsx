@@ -3176,7 +3176,19 @@ function AthleteHome({ profile }) {
       return;
     }
     if (next && athleteInfo?.id) {
+      const doneAfterToggle = nextWorkouts.filter((x) => x.done);
+      const workoutsCompletadosTotales = doneAfterToggle.length;
+      const kmTotalesAcumulados = doneAfterToggle.reduce((s, x) => s + (Number(x.total_km) || 0), 0);
+      console.log(`[AthleteHome] Verificando logros para atleta_id: ${athleteInfo.id}`);
+      console.log("[AthleteHome] Workouts completados totales:", workoutsCompletadosTotales);
+      console.log("[AthleteHome] Km totales acumulados:", kmTotalesAcumulados);
+      console.log("[AthleteHome] toggleDone: llamando evaluateAndAwardAthleteAchievements tras marcar como hecho");
       const { newAwards, snapshot, progress } = await evaluateAndAwardAthleteAchievements(athleteInfo.id);
+      const hayLogroNuevo = newAwards.length > 0;
+      console.log("[AthleteHome] ¿Se detectó algún logro nuevo?:", hayLogroNuevo, hayLogroNuevo ? newAwards.map((row) => achievementJoinMeta(row)?.code).filter(Boolean) : []);
+      if (progress) {
+        console.log("[AthleteHome] Progreso tras evaluación (servidor): workouts hechos:", progress.doneCount, "km total:", progress.totalKm);
+      }
       setAchievementsCatalog(snapshot.achievements || []);
       setEarnedAchievements(snapshot.earned || []);
       setAchProgress(progress || computeAchievementProgress(nextWorkouts.filter((x) => x.done)));
