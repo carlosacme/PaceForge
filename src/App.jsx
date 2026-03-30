@@ -2276,6 +2276,12 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
   const [achievementsCatalog, setAchievementsCatalog] = useState([]);
   const [earnedAchievements, setEarnedAchievements] = useState([]);
   const [achProgress, setAchProgress] = useState(null);
+  const [hoveredWorkoutId, setHoveredWorkoutId] = useState(null);
+  const [dragWorkoutId, setDragWorkoutId] = useState(null);
+  const [workoutModal, setWorkoutModal] = useState({ open: false, workoutId: null, mode: "menu" });
+  const [workoutFormSaving, setWorkoutFormSaving] = useState(false);
+  const [workoutEditForm, setWorkoutEditForm] = useState({ title: "", type: "easy", total_km: "", duration_min: "", description: "" });
+  const [moveDateInput, setMoveDateInput] = useState("");
   const [athletePayments, setAthletePayments] = useState([]);
   const [loadingPayments, setLoadingPayments] = useState(false);
   const [paymentSaving, setPaymentSaving] = useState(false);
@@ -2405,6 +2411,87 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
         notify?.(`¡Nueva medalla desbloqueada! 🎉 ${first?.icon || ""} ${first?.name || ""}`.trim());
       }
     }
+  };
+
+  const openWorkoutModal = (w) => {
+    if (!w) return;
+    setWorkoutEditForm({
+      title: w.title || "",
+      type: WORKOUT_TYPES.some((t) => t.id === w.type) ? w.type : "easy",
+      total_km: String(Number(w.total_km) || 0),
+      duration_min: String(Number(w.duration_min) || 0),
+      description: w.description || "",
+    });
+    setMoveDateInput(w.scheduled_date || formatLocalYMD(new Date()));
+    setWorkoutModal({ open: true, workoutId: w.id, mode: "menu" });
+  };
+
+  const closeWorkoutModal = () => {
+    setWorkoutModal({ open: false, workoutId: null, mode: "menu" });
+    setWorkoutFormSaving(false);
+  };
+
+  const modalWorkout = useMemo(
+    () => workouts.find((x) => String(x.id) === String(workoutModal.workoutId)) || null,
+    [workouts, workoutModal.workoutId],
+  );
+
+  const moveWorkoutToDate = async (workoutId, nextDate, withToast = true) => {
+    const target = formatLocalYMD(new Date(`${nextDate}T12:00:00`));
+    if (!target) return;
+    const prev = workouts;
+    setWorkouts((rows) => rows.map((x) => (String(x.id) === String(workoutId) ? { ...x, scheduled_date: target } : x)));
+    const { error } = await supabase.from("workouts").update({ scheduled_date: target }).eq("id", workoutId);
+    if (error) {
+      console.error("Error moviendo workout:", error);
+      setWorkouts(prev);
+      notify?.(`Error moviendo workout: ${error.message}`);
+      return;
+    }
+    if (withToast) notify?.(`Workout movido al ${target}`);
+  };
+
+  const saveWorkoutEdits = async () => {
+    if (!modalWorkout?.id) return;
+    const payload = {
+      title: workoutEditForm.title.trim() || modalWorkout.title,
+      type: WORKOUT_TYPES.some((t) => t.id === workoutEditForm.type) ? workoutEditForm.type : modalWorkout.type,
+      total_km: Number(workoutEditForm.total_km) || 0,
+      duration_min: Math.round(Number(workoutEditForm.duration_min) || 0),
+      description: workoutEditForm.description || "",
+    };
+    setWorkoutFormSaving(true);
+    const prev = workouts;
+    setWorkouts((rows) => rows.map((x) => (String(x.id) === String(modalWorkout.id) ? { ...x, ...payload } : x)));
+    const { error } = await supabase.from("workouts").update(payload).eq("id", modalWorkout.id);
+    setWorkoutFormSaving(false);
+    if (error) {
+      console.error("Error editando workout:", error);
+      setWorkouts(prev);
+      notify?.(`Error editando workout: ${error.message}`);
+      return;
+    }
+    notify?.("Workout actualizado");
+    closeWorkoutModal();
+  };
+
+  const deleteWorkoutFromModal = async () => {
+    if (!modalWorkout?.id) return;
+    if (!window.confirm("¿Eliminar este workout? Esta acción no se puede deshacer.")) return;
+    const id = modalWorkout.id;
+    setWorkoutFormSaving(true);
+    const prev = workouts;
+    setWorkouts((rows) => rows.filter((x) => String(x.id) !== String(id)));
+    const { error } = await supabase.from("workouts").delete().eq("id", id);
+    setWorkoutFormSaving(false);
+    if (error) {
+      console.error("Error eliminando workout:", error);
+      setWorkouts(prev);
+      notify?.(`Error eliminando workout: ${error.message}`);
+      return;
+    }
+    notify?.("Workout eliminado");
+    closeWorkoutModal();
   };
 
   const isCorosConnected = athlete?.device === "coros";
@@ -3106,6 +3193,12 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
                 return (
                   <div
                     key={i}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={async () => {
+                      if (!dragWorkoutId) return;
+                      await moveWorkoutToDate(dragWorkoutId, ymd, true);
+                      setDragWorkoutId(null);
+                    }}
                     style={{
                       minHeight: 72,
                       border: `1px solid ${borderColor}`,
@@ -3125,8 +3218,12 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
                         <button
                           key={w.id}
                           type="button"
-                          onClick={() => toggleWorkoutDone(w)}
-                          title={w.done ? "Marcar como pendiente" : "Marcar como hecho"}
+                          draggable
+                          onDragStart={() => setDragWorkoutId(w.id)}
+                          onMouseEnter={() => setHoveredWorkoutId(w.id)}
+                          onMouseLeave={() => setHoveredWorkoutId((prev) => (String(prev) === String(w.id) ? null : prev))}
+                          onClick={() => openWorkoutModal(w)}
+                          title="Abrir opciones del workout"
                           style={{
                             border: `1px solid ${w.done ? "rgba(34,197,94,.55)" : `${wt.color}55`}`,
                             borderRadius: 5,
@@ -3137,8 +3234,12 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
                             textAlign: "center",
                             width: "100%",
                             boxSizing: "border-box",
+                            position: "relative",
                           }}
                         >
+                          {String(hoveredWorkoutId) === String(w.id) ? (
+                            <span style={{ position: "absolute", top: 2, right: 3, fontSize: ".62em", color: "#334155" }}>✏️</span>
+                          ) : null}
                           <div style={{ width: 5, height: 5, borderRadius: "50%", background: wt.color, margin: "0 auto 2px" }} />
                           <div style={{ fontSize: ".52em", color: wt.color, fontWeight: 600, lineHeight: 1.15 }}>{w.title}</div>
                           <div style={{ fontSize: ".5em", color: "#475569" }}>{w.total_km} km</div>
@@ -3290,6 +3391,79 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
           </div>
         </div>
       </div>
+
+      {workoutModal.open && modalWorkout ? (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 220, padding: 16 }}>
+          <div style={{ ...S.card, width: "100%", maxWidth: 540, margin: 0 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 10 }}>
+              <div style={{ fontSize: ".95em", fontWeight: 800, color: "#0f172a" }}>Workout: {modalWorkout.title}</div>
+              <button type="button" onClick={closeWorkoutModal} style={{ background: "transparent", border: "none", color: "#64748b", cursor: "pointer", fontFamily: "inherit", fontWeight: 700 }}>✕</button>
+            </div>
+
+            {workoutModal.mode === "menu" ? (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 8 }}>
+                <button type="button" onClick={() => setWorkoutModal((m) => ({ ...m, mode: "edit" }))} style={{ background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 8, padding: "10px 12px", color: "#1d4ed8", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".8em" }}>Editar</button>
+                <button type="button" onClick={() => setWorkoutModal((m) => ({ ...m, mode: "move" }))} style={{ background: "#fef3c7", border: "1px solid #fde68a", borderRadius: 8, padding: "10px 12px", color: "#92400e", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".8em" }}>Mover</button>
+                <button type="button" disabled={workoutFormSaving} onClick={deleteWorkoutFromModal} style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "10px 12px", color: "#b91c1c", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".8em" }}>Eliminar</button>
+              </div>
+            ) : null}
+
+            {workoutModal.mode === "edit" ? (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 10 }}>
+                <div style={{ gridColumn: "1 / -1" }}>
+                  <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Título</div>
+                  <input value={workoutEditForm.title} onChange={(e) => setWorkoutEditForm((f) => ({ ...f, title: e.target.value }))} style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", color: "#0f172a", fontFamily: "inherit", fontSize: ".84em", boxSizing: "border-box" }} />
+                </div>
+                <div>
+                  <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Tipo</div>
+                  <select value={workoutEditForm.type} onChange={(e) => setWorkoutEditForm((f) => ({ ...f, type: e.target.value }))} style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", color: "#0f172a", fontFamily: "inherit", fontSize: ".84em", boxSizing: "border-box" }}>
+                    {WORKOUT_TYPES.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Km</div>
+                  <input type="number" min={0} step="0.1" value={workoutEditForm.total_km} onChange={(e) => setWorkoutEditForm((f) => ({ ...f, total_km: e.target.value }))} style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", color: "#0f172a", fontFamily: "inherit", fontSize: ".84em", boxSizing: "border-box" }} />
+                </div>
+                <div>
+                  <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Duración (min)</div>
+                  <input type="number" min={0} step="1" value={workoutEditForm.duration_min} onChange={(e) => setWorkoutEditForm((f) => ({ ...f, duration_min: e.target.value }))} style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", color: "#0f172a", fontFamily: "inherit", fontSize: ".84em", boxSizing: "border-box" }} />
+                </div>
+                <div style={{ gridColumn: "1 / -1" }}>
+                  <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Descripción</div>
+                  <textarea rows={3} value={workoutEditForm.description} onChange={(e) => setWorkoutEditForm((f) => ({ ...f, description: e.target.value }))} style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", color: "#0f172a", fontFamily: "inherit", fontSize: ".84em", boxSizing: "border-box", resize: "vertical" }} />
+                </div>
+                <div style={{ gridColumn: "1 / -1", display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                  <button type="button" onClick={() => setWorkoutModal((m) => ({ ...m, mode: "menu" }))} style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 12px", color: "#64748b", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: ".8em" }}>Volver</button>
+                  <button type="button" disabled={workoutFormSaving} onClick={saveWorkoutEdits} style={{ background: workoutFormSaving ? "#e2e8f0" : "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 8, padding: "8px 12px", color: workoutFormSaving ? "#64748b" : "#fff", cursor: workoutFormSaving ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 800, fontSize: ".8em" }}>{workoutFormSaving ? "Guardando…" : "Guardar cambios"}</button>
+                </div>
+              </div>
+            ) : null}
+
+            {workoutModal.mode === "move" ? (
+              <div>
+                <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Nueva fecha</div>
+                <input type="date" value={moveDateInput} onChange={(e) => setMoveDateInput(e.target.value)} style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", color: "#0f172a", fontFamily: "inherit", fontSize: ".84em", boxSizing: "border-box" }} />
+                <div style={{ marginTop: 10, display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                  <button type="button" onClick={() => setWorkoutModal((m) => ({ ...m, mode: "menu" }))} style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 12px", color: "#64748b", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: ".8em" }}>Volver</button>
+                  <button
+                    type="button"
+                    disabled={workoutFormSaving}
+                    onClick={async () => {
+                      setWorkoutFormSaving(true);
+                      await moveWorkoutToDate(modalWorkout.id, moveDateInput, true);
+                      setWorkoutFormSaving(false);
+                      closeWorkoutModal();
+                    }}
+                    style={{ background: workoutFormSaving ? "#e2e8f0" : "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 8, padding: "8px 12px", color: workoutFormSaving ? "#64748b" : "#fff", cursor: workoutFormSaving ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 800, fontSize: ".8em" }}
+                  >
+                    {workoutFormSaving ? "Moviendo…" : "Mover workout"}
+                  </button>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
 
       {paymentModalOpen && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 210, padding: 16 }}>
