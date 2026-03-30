@@ -1327,9 +1327,33 @@ export default function App() {
     }
 
     const PLAN_CATALOG = [
-      { plan: "Starter", label: "Starter", priceCop: 49000, priceUsd: 13, description: "Ideal para empezar" },
-      { plan: "Pro", label: "Pro", priceCop: 129000, priceUsd: 34, description: "Para entrenamientos avanzados" },
-      { plan: "Equipo", label: "Equipo", priceCop: 299000, priceUsd: 79, description: "Para equipos y seguimiento completo" },
+      {
+        plan: "Starter",
+        label: "Starter",
+        priceCop: 49000,
+        priceUsd: 13,
+        description:
+          "Ideal para coaches que están comenzando. Gestiona hasta 5 atletas con todas las herramientas esenciales.",
+        benefits: ["Hasta 5 atletas activos", "Calendario y asignación de workouts", "Chat coach-atleta integrado"],
+      },
+      {
+        plan: "Pro",
+        label: "Pro",
+        priceCop: 129000,
+        priceUsd: 34,
+        description:
+          "Para coaches profesionales. Hasta 20 atletas, todas las integraciones con relojes y análisis avanzado.",
+        benefits: ["Hasta 20 atletas activos", "Integraciones completas con Garmin y COROS", "Métricas y análisis avanzado"],
+      },
+      {
+        plan: "Equipo",
+        label: "Equipo",
+        priceCop: 299000,
+        priceUsd: 79,
+        description:
+          "Para academias y clubes de running. Atletas ilimitados, multi-coach y soporte prioritario.",
+        benefits: ["Atletas ilimitados", "Soporte multi-coach", "Soporte prioritario"],
+      },
     ];
 
     return (
@@ -1428,7 +1452,15 @@ export default function App() {
                     {`$${Number(p.priceCop).toLocaleString("es-CO")}`}
                     <span style={{ fontSize: ".55em", color: "#64748b", fontFamily: "inherit", marginLeft: 6 }}>COP</span>
                   </div>
-                  <div style={{ color: "#94a3b8", fontSize: ".9em", marginTop: 8 }}>{p.description}</div>
+                  <div style={{ color: "#64748b", fontSize: ".88em", marginTop: 8, lineHeight: 1.45 }}>{p.description}</div>
+                  <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 6 }}>
+                    {(p.benefits || []).map((benefit) => (
+                      <div key={benefit} style={{ color: "#334155", fontSize: ".82em", display: "flex", alignItems: "flex-start", gap: 6, lineHeight: 1.35 }}>
+                        <span style={{ color: "#22c55e", fontWeight: 900 }}>✓</span>
+                        <span>{benefit}</span>
+                      </div>
+                    ))}
+                  </div>
                   <div style={{ marginTop: 14 }}>
                     <button
                       type="button"
