@@ -662,6 +662,7 @@ const ADMIN_EMAIL = "acostamerlano87@gmail.com";
 const COACH_NAV_BASE_ITEMS = [
   { id: "dashboard", icon: "▤", label: "Dashboard", shortLabel: "Inicio", color: "#f59e0b" },
   { id: "athletes", icon: "◉", label: "Atletas", shortLabel: "Atletas", color: "#3b82f6" },
+  { id: "evaluation", icon: "📊", label: "Evaluación", shortLabel: "Eval", color: "#0ea5e9" },
   { id: "plan12", icon: "◇", label: "Plan 2 Semanas", shortLabel: "2 sem.", color: "#8b5cf6" },
   { id: "plans", icon: "◆", label: "Planes", shortLabel: "Planes", color: "#0d9488" },
   { id: "builder", icon: "◎", label: "Crear Workout", shortLabel: "IA", color: "#ea580c" },
@@ -1553,6 +1554,13 @@ export default function App() {
               "Coach"
             }
             onDeleteAthlete={handleDeleteAthlete}
+          />
+        )}
+        {view === "evaluation" && (
+          <EvaluationView
+            athletes={athletes}
+            currentUserId={session?.user?.id ?? null}
+            notify={notify}
           />
         )}
         {view === "plans" && <Plans athletes={athletes} notify={notify} />}
@@ -2797,6 +2805,7 @@ function AthleteHome({ profile }) {
   const [athleteChatDraft, setAthleteChatDraft] = useState("");
   const [athleteChatSending, setAthleteChatSending] = useState(false);
   const [athleteNotRegistered, setAthleteNotRegistered] = useState(false);
+  const [showEvaluation, setShowEvaluation] = useState(false);
   const [pushInviteDismissed, setPushInviteDismissed] = useState(() =>
     typeof localStorage !== "undefined" && localStorage.getItem("raf_push_invite_dismissed") === "1",
   );
@@ -3029,6 +3038,16 @@ function AthleteHome({ profile }) {
 
   return (
     <div style={S.page}>
+      {showEvaluation && athleteInfo?.id && (
+        <div style={{ marginBottom: 18 }}>
+          <EvaluationView
+            athletes={[normalizeAthlete(athleteInfo)]}
+            currentUserId={profile?.user_id ?? null}
+            notify={(msg) => setMessage(msg)}
+            athleteOnlyId={athleteInfo.id}
+          />
+        </div>
+      )}
       {typeof Notification !== "undefined" &&
         Notification.permission !== "granted" &&
         !pushInviteDismissed && (
@@ -3103,6 +3122,24 @@ function AthleteHome({ profile }) {
           <div style={{ color: "#94a3b8", fontSize: ".9em" }}>{nextRaceText}</div>
         </div>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 10 }}>
+          <button
+            type="button"
+            onClick={() => setShowEvaluation((v) => !v)}
+            style={{
+              background: showEvaluation ? "rgba(14,165,233,.12)" : "#f8fafc",
+              border: showEvaluation ? "1px solid rgba(14,165,233,.45)" : "1px solid #e2e8f0",
+              borderRadius: 8,
+              padding: "8px 14px",
+              color: showEvaluation ? "#0369a1" : "#0f172a",
+              cursor: "pointer",
+              fontFamily: "inherit",
+              fontSize: ".8em",
+              fontWeight: 700,
+              whiteSpace: "nowrap",
+            }}
+          >
+            {showEvaluation ? "Ocultar evaluación" : "Hacer mi evaluación"}
+          </button>
           <button
             type="button"
             onClick={async () => {
@@ -4615,6 +4652,434 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
             </div>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+const EVAL_DISTANCES = [
+  { id: "5k", label: "5K", meters: 5000 },
+  { id: "10k", label: "10K", meters: 10000 },
+  { id: "21k", label: "21K", meters: 21097.5 },
+  { id: "42k", label: "42K", meters: 42195 },
+];
+
+const parseHmsToSeconds = (raw) => {
+  const parts = String(raw || "").trim().split(":").map((x) => Number(x));
+  if (parts.some((n) => !Number.isFinite(n) || n < 0)) return null;
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  if (parts.length === 2) return parts[0] * 60 + parts[1];
+  if (parts.length === 1) return parts[0];
+  return null;
+};
+
+const formatSeconds = (totalSec) => {
+  const sec = Math.max(0, Math.round(Number(totalSec) || 0));
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+};
+
+const formatPaceMinKm = (paceMinPerKm) => {
+  if (!Number.isFinite(paceMinPerKm) || paceMinPerKm <= 0) return "—";
+  const totalSec = Math.round(paceMinPerKm * 60);
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return `${m}:${String(s).padStart(2, "0")} /km`;
+};
+
+const velocityToVo2 = (vMetersPerMin) => -4.6 + 0.182258 * vMetersPerMin + 0.000104 * vMetersPerMin * vMetersPerMin;
+
+const timePercentVo2 = (tMin) => 0.8 + 0.1894393 * Math.exp(-0.012778 * tMin) + 0.2989558 * Math.exp(-0.1932605 * tMin);
+
+const vdotFromRace = (distanceMeters, totalSeconds) => {
+  const tMin = Number(totalSeconds) / 60;
+  if (!Number.isFinite(distanceMeters) || !Number.isFinite(tMin) || distanceMeters <= 0 || tMin <= 0) return null;
+  const v = distanceMeters / tMin;
+  const vo2 = velocityToVo2(v);
+  const pct = timePercentVo2(tMin);
+  if (!Number.isFinite(vo2) || !Number.isFinite(pct) || pct <= 0) return null;
+  return vo2 / pct;
+};
+
+const vdotFromCooper = (distanceMeters) => {
+  const d = Number(distanceMeters);
+  if (!Number.isFinite(d) || d <= 0) return null;
+  return (d - 504.9) / 44.73;
+};
+
+const velocityFromVo2 = (targetVo2) => {
+  const a = 0.000104;
+  const b = 0.182258;
+  const c = -(targetVo2 + 4.6);
+  const disc = b * b - 4 * a * c;
+  if (disc <= 0) return null;
+  return (-b + Math.sqrt(disc)) / (2 * a);
+};
+
+const predictTimeFromVdot = (vdot, distanceMeters) => {
+  if (!Number.isFinite(vdot) || vdot <= 0) return null;
+  let lo = 5;
+  let hi = 360;
+  for (let i = 0; i < 60; i++) {
+    const mid = (lo + hi) / 2;
+    const v = distanceMeters / mid;
+    const current = velocityToVo2(v) / timePercentVo2(mid);
+    if (current > vdot) lo = mid;
+    else hi = mid;
+  }
+  return hi * 60;
+};
+
+const computeHrZones = (fcMax, fcRest) => {
+  const max = Number(fcMax);
+  if (!Number.isFinite(max) || max <= 0) return [];
+  const rest = Number(fcRest);
+  const useKarvonen = Number.isFinite(rest) && rest > 0 && rest < max;
+  const ranges = [
+    { z: "Z1", low: 0.5, high: 0.6, color: "#22c55e" },
+    { z: "Z2", low: 0.6, high: 0.7, color: "#3b82f6" },
+    { z: "Z3", low: 0.7, high: 0.8, color: "#f59e0b" },
+    { z: "Z4", low: 0.8, high: 0.9, color: "#f97316" },
+    { z: "Z5", low: 0.9, high: 1.0, color: "#ef4444" },
+  ];
+  return ranges.map((r) => {
+    if (useKarvonen) {
+      const reserve = max - rest;
+      return {
+        ...r,
+        lowBpm: Math.round(rest + reserve * r.low),
+        highBpm: Math.round(rest + reserve * r.high),
+      };
+    }
+    return {
+      ...r,
+      lowBpm: Math.round(max * r.low),
+      highBpm: Math.round(max * r.high),
+    };
+  });
+};
+
+function EvaluationView({ athletes, currentUserId, notify, athleteOnlyId = null }) {
+  const S = styles;
+  const canSelect = !athleteOnlyId;
+  const athleteOptions = useMemo(
+    () => (athleteOnlyId ? (athletes || []).filter((a) => String(a.id) === String(athleteOnlyId)) : athletes || []),
+    [athletes, athleteOnlyId],
+  );
+  const [athleteId, setAthleteId] = useState(athleteOnlyId ? String(athleteOnlyId) : String(athleteOptions[0]?.id || ""));
+  const [tab, setTab] = useState("race");
+  const [raceDistance, setRaceDistance] = useState("10k");
+  const [raceTime, setRaceTime] = useState("00:45:00");
+  const [cooperDistance, setCooperDistance] = useState("2800");
+  const [thresholdTime, setThresholdTime] = useState("00:30:00");
+  const [thresholdDistance, setThresholdDistance] = useState("7000");
+  const [fcMax, setFcMax] = useState("");
+  const [fcRest, setFcRest] = useState("");
+  const [results, setResults] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [history, setHistory] = useState([]);
+  const [openHistoryId, setOpenHistoryId] = useState(null);
+
+  useEffect(() => {
+    if (!athleteOptions.length) return;
+    if (!athleteId) setAthleteId(String(athleteOptions[0].id));
+  }, [athleteOptions, athleteId]);
+
+  const selectedAthlete = useMemo(
+    () => athleteOptions.find((a) => String(a.id) === String(athleteId)) || null,
+    [athleteOptions, athleteId],
+  );
+
+  useEffect(() => {
+    if (!selectedAthlete) return;
+    setFcMax(selectedAthlete.fc_max ? String(selectedAthlete.fc_max) : "");
+    setFcRest(selectedAthlete.fc_reposo ? String(selectedAthlete.fc_reposo) : "");
+  }, [selectedAthlete?.id]);
+
+  const loadHistory = useCallback(async () => {
+    if (!athleteId) {
+      setHistory([]);
+      return;
+    }
+    const { data, error } = await supabase
+      .from("athlete_evaluations")
+      .select("*")
+      .eq("athlete_id", athleteId)
+      .order("created_at", { ascending: false });
+    if (error) {
+      console.warn("load evaluations", error);
+      setHistory([]);
+      return;
+    }
+    setHistory(data || []);
+  }, [athleteId]);
+
+  useEffect(() => {
+    loadHistory();
+  }, [loadHistory]);
+
+  const calculate = () => {
+    let vdot = null;
+    let source = {};
+    if (tab === "race") {
+      const dist = EVAL_DISTANCES.find((d) => d.id === raceDistance)?.meters;
+      const sec = parseHmsToSeconds(raceTime);
+      vdot = vdotFromRace(dist, sec);
+      source = { method: "race", distance_id: raceDistance, time: raceTime };
+    } else if (tab === "cooper") {
+      const dist = Number(cooperDistance);
+      vdot = vdotFromCooper(dist);
+      source = { method: "cooper", distance_m: dist };
+    } else {
+      const sec = parseHmsToSeconds(thresholdTime);
+      const dist = Number(thresholdDistance);
+      vdot = vdotFromRace(dist, sec);
+      source = { method: "threshold", distance_m: dist, time: thresholdTime };
+    }
+    if (!Number.isFinite(vdot) || vdot <= 0) {
+      notify?.("No se pudo calcular VDOT. Revisa los datos.");
+      return;
+    }
+
+    const paceFractions = [
+      { key: "Easy", frac: 0.74, color: "#22c55e" },
+      { key: "Maratón", frac: 0.83, color: "#3b82f6" },
+      { key: "Umbral", frac: 0.88, color: "#f59e0b" },
+      { key: "Intervalos", frac: 0.98, color: "#ef4444" },
+      { key: "Repeticiones", frac: 1.05, color: "#8b5cf6" },
+    ];
+    const paces = paceFractions.map((p) => {
+      const v = velocityFromVo2(vdot * p.frac);
+      const pace = v ? 1000 / v : null;
+      return { ...p, paceMinKm: pace };
+    });
+    const predictions = EVAL_DISTANCES.map((d) => ({
+      ...d,
+      seconds: predictTimeFromVdot(vdot, d.meters),
+    }));
+    const zones = computeHrZones(fcMax, fcRest);
+    setResults({
+      vdot,
+      source,
+      paces,
+      zones,
+      predictions,
+      fc_max: Number(fcMax) || null,
+      fc_reposo: Number(fcRest) || null,
+      method: tab,
+    });
+  };
+
+  const saveAndApply = async () => {
+    if (!results || !athleteId) {
+      notify?.("Primero calcula la evaluación");
+      return;
+    }
+    setSaving(true);
+    const payload = {
+      athlete_id: athleteId,
+      coach_id: currentUserId,
+      method: results.method,
+      input_data: results.source,
+      vdot: Number(results.vdot.toFixed(2)),
+      paces: results.paces,
+      hr_zones: results.zones,
+      predicted_times: results.predictions.map((p) => ({ id: p.id, seconds: p.seconds })),
+      fc_max: results.fc_max,
+      fc_reposo: results.fc_reposo,
+    };
+    const { error: insErr } = await supabase.from("athlete_evaluations").insert(payload);
+    if (insErr) {
+      setSaving(false);
+      console.error(insErr);
+      notify?.(`No se pudo guardar evaluación: ${insErr.message}`);
+      return;
+    }
+    const { error: updErr } = await supabase
+      .from("athletes")
+      .update({ fc_max: results.fc_max, fc_reposo: results.fc_reposo })
+      .eq("id", athleteId);
+    setSaving(false);
+    if (updErr) {
+      console.error(updErr);
+      notify?.(`Evaluación guardada, pero no se pudo actualizar FC: ${updErr.message}`);
+    } else {
+      notify?.("Evaluación guardada y aplicada al atleta");
+    }
+    loadHistory();
+  };
+
+  return (
+    <div style={S.page}>
+      <div style={{ marginBottom: 16 }}>
+        <h1 style={S.pageTitle}>Evaluación</h1>
+        <p style={{ color: "#64748b", fontSize: ".86em", marginTop: 4 }}>
+          Calcula VDOT, ritmos y zonas para actualizar el plan del atleta.
+        </p>
+      </div>
+
+      <div style={{ ...S.card, marginBottom: 16 }}>
+        <div style={{ display: "grid", gap: 14, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
+          <div>
+            <div style={{ fontSize: ".74em", color: "#64748b", marginBottom: 6, fontWeight: 700 }}>Atleta</div>
+            <select
+              value={athleteId}
+              disabled={!canSelect}
+              onChange={(e) => setAthleteId(e.target.value)}
+              style={{ width: "100%", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", fontFamily: "inherit" }}
+            >
+              {athleteOptions.map((a) => (
+                <option key={a.id} value={String(a.id)}>{a.name}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <div style={{ fontSize: ".74em", color: "#64748b", marginBottom: 6, fontWeight: 700 }}>FC máxima</div>
+            <input value={fcMax} onChange={(e) => setFcMax(e.target.value)} placeholder="Ej. 188" style={{ width: "100%", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", fontFamily: "inherit" }} />
+          </div>
+          <div>
+            <div style={{ fontSize: ".74em", color: "#64748b", marginBottom: 6, fontWeight: 700 }}>FC reposo</div>
+            <input value={fcRest} onChange={(e) => setFcRest(e.target.value)} placeholder="Ej. 52" style={{ width: "100%", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", fontFamily: "inherit" }} />
+          </div>
+        </div>
+
+        <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
+          {[
+            { id: "race", label: "Carrera Reciente" },
+            { id: "cooper", label: "Test Cooper" },
+            { id: "threshold", label: "Test Umbral" },
+          ].map((x) => (
+            <button
+              key={x.id}
+              type="button"
+              onClick={() => setTab(x.id)}
+              style={{
+                border: "1px solid #e2e8f0",
+                borderRadius: 8,
+                padding: "8px 12px",
+                background: tab === x.id ? "rgba(245,158,11,.14)" : "#fff",
+                color: tab === x.id ? "#b45309" : "#475569",
+                fontWeight: 700,
+                fontFamily: "inherit",
+                cursor: "pointer",
+              }}
+            >
+              {x.label}
+            </button>
+          ))}
+        </div>
+
+        {tab === "race" && (
+          <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", marginTop: 14 }}>
+            <select value={raceDistance} onChange={(e) => setRaceDistance(e.target.value)} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", fontFamily: "inherit" }}>
+              {EVAL_DISTANCES.map((d) => (
+                <option key={d.id} value={d.id}>{d.label}</option>
+              ))}
+            </select>
+            <input value={raceTime} onChange={(e) => setRaceTime(e.target.value)} placeholder="hh:mm:ss" style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", fontFamily: "inherit" }} />
+          </div>
+        )}
+        {tab === "cooper" && (
+          <div style={{ marginTop: 14 }}>
+            <input value={cooperDistance} onChange={(e) => setCooperDistance(e.target.value)} placeholder="Distancia en 12 minutos (m)" style={{ width: "100%", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", fontFamily: "inherit" }} />
+          </div>
+        )}
+        {tab === "threshold" && (
+          <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", marginTop: 14 }}>
+            <input value={thresholdTime} onChange={(e) => setThresholdTime(e.target.value)} placeholder="Tiempo hh:mm:ss" style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", fontFamily: "inherit" }} />
+            <input value={thresholdDistance} onChange={(e) => setThresholdDistance(e.target.value)} placeholder="Distancia (m)" style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", fontFamily: "inherit" }} />
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 10, marginTop: 16, flexWrap: "wrap" }}>
+          <button type="button" onClick={calculate} style={{ background: "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 10, padding: "10px 16px", color: "#fff", fontFamily: "inherit", fontWeight: 800, cursor: "pointer" }}>
+            Calcular
+          </button>
+          <button type="button" disabled={!results || saving} onClick={saveAndApply} style={{ background: !results || saving ? "#e2e8f0" : "#0ea5e9", border: "none", borderRadius: 10, padding: "10px 16px", color: !results || saving ? "#64748b" : "#fff", fontFamily: "inherit", fontWeight: 800, cursor: !results || saving ? "not-allowed" : "pointer" }}>
+            Guardar y Aplicar al Atleta
+          </button>
+        </div>
+      </div>
+
+      {results && (
+        <>
+          <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", marginBottom: 16 }}>
+            <div style={{ ...S.card, padding: 16 }}>
+              <div style={{ color: "#64748b", fontSize: ".75em", fontWeight: 700 }}>VDOT</div>
+              <div style={{ fontSize: "2em", fontWeight: 900, color: "#0f172a" }}>{results.vdot.toFixed(2)}</div>
+            </div>
+            {results.paces.map((p) => (
+              <div key={p.key} style={{ ...S.card, padding: 16 }}>
+                <div style={{ color: p.color, fontSize: ".75em", fontWeight: 700 }}>{p.key}</div>
+                <div style={{ fontSize: "1.2em", fontWeight: 800, color: "#0f172a" }}>{formatPaceMinKm(p.paceMinKm)}</div>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ ...S.card, marginBottom: 16 }}>
+            <div style={{ fontSize: ".76em", color: "#64748b", fontWeight: 700, marginBottom: 10 }}>ZONAS DE FC</div>
+            <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))" }}>
+              {results.zones.map((z) => (
+                <div key={z.z} style={{ border: `1px solid ${z.color}66`, borderRadius: 10, padding: "10px 12px", background: `${z.color}14` }}>
+                  <div style={{ color: z.color, fontWeight: 800 }}>{z.z}</div>
+                  <div style={{ color: "#0f172a", fontSize: ".9em" }}>{z.lowBpm}-{z.highBpm} lpm</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ ...S.card, marginBottom: 16 }}>
+            <div style={{ fontSize: ".76em", color: "#64748b", fontWeight: 700, marginBottom: 10 }}>TIEMPOS PREDICHOS</div>
+            <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))" }}>
+              {results.predictions.map((p) => (
+                <div key={p.id} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: "10px 12px", background: "#f8fafc" }}>
+                  <div style={{ color: "#64748b", fontSize: ".75em", fontWeight: 700 }}>{p.label}</div>
+                  <div style={{ color: "#0f172a", fontWeight: 800 }}>{formatSeconds(p.seconds)}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+
+      <div style={{ ...S.card }}>
+        <div style={{ fontSize: ".76em", color: "#64748b", fontWeight: 700, marginBottom: 10 }}>Historial de evaluaciones</div>
+        {history.length === 0 ? (
+          <div style={{ color: "#94a3b8", fontSize: ".9em" }}>Sin evaluaciones previas.</div>
+        ) : (
+          history.map((h) => (
+            <div key={h.id} style={{ border: "1px solid #e2e8f0", borderRadius: 10, marginBottom: 8, overflow: "hidden" }}>
+              <button
+                type="button"
+                onClick={() => setOpenHistoryId((prev) => (prev === h.id ? null : h.id))}
+                style={{ width: "100%", textAlign: "left", padding: "10px 12px", border: "none", background: "#f8fafc", fontFamily: "inherit", cursor: "pointer", display: "flex", justifyContent: "space-between" }}
+              >
+                <span style={{ color: "#0f172a", fontWeight: 700 }}>
+                  {new Date(h.created_at).toLocaleString("es")} · {String(h.method || "").toUpperCase()} · VDOT {Number(h.vdot || 0).toFixed(2)}
+                </span>
+                <span style={{ color: "#64748b" }}>{openHistoryId === h.id ? "▲" : "▼"}</span>
+              </button>
+              {openHistoryId === h.id && (
+                <div style={{ padding: "10px 12px", background: "#fff" }}>
+                  <pre style={{ margin: 0, fontSize: ".75em", color: "#475569", whiteSpace: "pre-wrap" }}>
+                    {JSON.stringify(
+                      {
+                        input: h.input_data,
+                        paces: h.paces,
+                        zones: h.hr_zones,
+                        predictions: h.predicted_times,
+                      },
+                      null,
+                      2,
+                    )}
+                  </pre>
+                </div>
+              )}
+            </div>
+          ))
+        )}
       </div>
     </div>
   );
