@@ -121,6 +121,114 @@ async function sendChatPushNotification({ token, title, body, logLabel = "chat p
   }
 }
 
+const achievementKmTargets = [10, 50, 100, 500, 1000];
+
+const achievementJoinMeta = (row) => {
+  if (!row) return null;
+  const a = row.achievements;
+  if (a == null) return null;
+  return Array.isArray(a) ? a[0] : a;
+};
+
+const getLongestConsecutiveDays = (ymdList) => {
+  if (!Array.isArray(ymdList) || ymdList.length === 0) return 0;
+  const uniq = [...new Set(ymdList)].sort();
+  let best = 1;
+  let current = 1;
+  for (let i = 1; i < uniq.length; i++) {
+    const prev = new Date(`${uniq[i - 1]}T12:00:00`);
+    const now = new Date(`${uniq[i]}T12:00:00`);
+    const diffDays = Math.round((now.getTime() - prev.getTime()) / (1000 * 60 * 60 * 24));
+    if (diffDays === 1) current += 1;
+    else current = 1;
+    if (current > best) best = current;
+  }
+  return best;
+};
+
+const computeAchievementProgress = (doneWorkouts) => {
+  const done = doneWorkouts || [];
+  const totalKm = done.reduce((s, w) => s + (Number(w.total_km) || 0), 0);
+  const doneCount = done.length;
+  const rpeCount = done.filter((w) => clampWorkoutRpe(w.rpe) != null).length;
+  const longestStreak = getLongestConsecutiveDays(done.map((w) => w.scheduled_date).filter(Boolean));
+  const hasLong15 = done.some((w) => (Number(w.total_km) || 0) >= 15);
+  const hasHalf = done.some((w) => (Number(w.total_km) || 0) >= 21);
+  const has30 = done.some((w) => (Number(w.total_km) || 0) >= 30);
+  const hasInterval = done.some((w) => w.type === "interval");
+  const hasEarlyBird = done.some((w) => {
+    const raw = String(w.scheduled_date || "");
+    if (!raw.includes("T")) return false;
+    const d = new Date(raw);
+    if (Number.isNaN(d.getTime())) return false;
+    return d.getHours() < 7;
+  });
+
+  const unlockedByCode = {
+    FIRST_KM: doneCount >= 1,
+    KM_10: totalKm >= 10,
+    KM_50: totalKm >= 50,
+    KM_100: totalKm >= 100,
+    KM_500: totalKm >= 500,
+    KM_1000: totalKm >= 1000,
+    FIRST_WORKOUT: doneCount >= 1,
+    STREAK_7: longestStreak >= 7,
+    STREAK_30: longestStreak >= 30,
+    FIRST_LONG: hasLong15,
+    SPEED_DEMON: hasInterval,
+    CONSISTENT: doneCount >= 10,
+    HALF_WARRIOR: hasHalf,
+    MARATHON_READY: has30,
+    EARLY_BIRD: hasEarlyBird,
+    RPE_MASTER: rpeCount >= 10,
+  };
+
+  return { unlockedByCode, totalKm, doneCount, longestStreak, rpeCount };
+};
+
+async function loadAthleteAchievementSnapshot(athleteId) {
+  if (!athleteId) return { achievements: [], earned: [] };
+  const [{ data: achievements }, { data: earned }] = await Promise.all([
+    supabase.from("achievements").select("*").order("created_at", { ascending: true }),
+    supabase
+      .from("athlete_achievements")
+      .select("id, awarded_at, achievement_id, achievements(code,name,icon,description)")
+      .eq("athlete_id", athleteId)
+      .order("awarded_at", { ascending: false }),
+  ]);
+  return { achievements: achievements || [], earned: earned || [] };
+}
+
+async function evaluateAndAwardAthleteAchievements(athleteId) {
+  if (!athleteId) return { newAwards: [], snapshot: { achievements: [], earned: [] }, progress: null };
+  const [{ data: doneWorkouts, error: doneErr }, { data: achievements, error: achErr }, { data: earnedRows, error: earnedErr }] =
+    await Promise.all([
+      supabase.from("workouts").select("id, type, total_km, scheduled_date, rpe").eq("athlete_id", athleteId).eq("done", true),
+      supabase.from("achievements").select("*"),
+      supabase.from("athlete_achievements").select("achievement_id").eq("athlete_id", athleteId),
+    ]);
+  if (doneErr || achErr || earnedErr) {
+    console.warn("evaluate achievements", { doneErr, achErr, earnedErr });
+    return { newAwards: [], snapshot: { achievements: achievements || [], earned: [] }, progress: null };
+  }
+  const progress = computeAchievementProgress(doneWorkouts || []);
+  const achievementByCode = new Map((achievements || []).map((a) => [a.code, a]));
+  const already = new Set((earnedRows || []).map((r) => r.achievement_id));
+  const toInsert = Object.entries(progress.unlockedByCode)
+    .filter(([, ok]) => ok)
+    .map(([code]) => achievementByCode.get(code))
+    .filter(Boolean)
+    .filter((a) => !already.has(a.id))
+    .map((a) => ({ athlete_id: athleteId, achievement_id: a.id }));
+  if (toInsert.length) {
+    const { error } = await supabase.from("athlete_achievements").insert(toInsert);
+    if (error) console.warn("insert athlete achievements", error);
+  }
+  const snapshot = await loadAthleteAchievementSnapshot(athleteId);
+  const newAwards = (snapshot.earned || []).filter((e) => toInsert.some((x) => x.achievement_id === e.achievement_id));
+  return { newAwards, snapshot, progress };
+}
+
 /** Zonas % de FC máx (bpm). */
 const HR_ZONE_DEFS = [
   { z: 1, lowPct: 0.5, highPct: 0.6, label: "Recuperación activa", color: "#22c55e" },
@@ -1554,6 +1662,7 @@ export default function App() {
               "Coach"
             }
             onDeleteAthlete={handleDeleteAthlete}
+            notify={notify}
           />
         )}
         {view === "evaluation" && (
@@ -2021,7 +2130,7 @@ function Dashboard({
   );
 }
 
-function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWorkoutsDoneSync, onAthleteDeviceSync, onAthleteFcSync, coachDisplayName, onDeleteAthlete }) {
+function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWorkoutsDoneSync, onAthleteDeviceSync, onAthleteFcSync, coachDisplayName, onDeleteAthlete, notify }) {
   const S = styles;
   const athlete = (selected ? athletes.find(a => String(a.id) === String(selected.id)) : athletes[0]) || null;
   const [searchQuery, setSearchQuery] = useState("");
@@ -2036,6 +2145,9 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
   const [chatMessages, setChatMessages] = useState([]);
   const [chatDraft, setChatDraft] = useState("");
   const [chatSending, setChatSending] = useState(false);
+  const [achievementsCatalog, setAchievementsCatalog] = useState([]);
+  const [earnedAchievements, setEarnedAchievements] = useState([]);
+  const [achProgress, setAchProgress] = useState(null);
   const chatScrollRef = useRef(null);
   const normalized = searchQuery.trim().toLowerCase();
   const filteredAthletes = normalized
@@ -2100,6 +2212,27 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
   const formaFatigaStatus = useMemo(() => formaFatigaStatusFromPoint(formaFatigaPoints[0]), [formaFatigaPoints]);
   const formaFatigaTableRows = useMemo(() => formaFatigaPoints.slice(0, 4), [formaFatigaPoints]);
 
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      if (!athlete?.id) {
+        setAchievementsCatalog([]);
+        setEarnedAchievements([]);
+        setAchProgress(null);
+        return;
+      }
+      const snapshot = await loadAthleteAchievementSnapshot(athlete.id);
+      if (cancelled) return;
+      setAchievementsCatalog(snapshot.achievements || []);
+      setEarnedAchievements(snapshot.earned || []);
+      setAchProgress(computeAchievementProgress((workouts || []).filter((w) => w.done)));
+    };
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [athlete?.id, workouts]);
+
   const toggleWorkoutDone = async (w) => {
     const next = !w.done;
     const payload = next ? { done: true } : { done: false, rpe: null };
@@ -2121,6 +2254,16 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
       .eq("id", athlete.id);
     if (athleteUpdateError) {
       console.error("Error actualizando workouts_done en athletes:", athleteUpdateError);
+    }
+    if (next) {
+      const { newAwards, snapshot, progress } = await evaluateAndAwardAthleteAchievements(athlete.id);
+      setAchievementsCatalog(snapshot.achievements || []);
+      setEarnedAchievements(snapshot.earned || []);
+      setAchProgress(progress);
+      if (newAwards.length > 0) {
+        const first = achievementJoinMeta(newAwards[0]);
+        notify?.(`¡Nueva medalla desbloqueada! 🎉 ${first?.icon || ""} ${first?.name || ""}`.trim());
+      }
     }
   };
 
@@ -2475,6 +2618,70 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
 
           <div style={{ marginBottom: 24, paddingBottom: 20, borderBottom: "1px solid #e2e8f0" }}>
             <div style={{ fontSize: ".65em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase", marginBottom: 10 }}>
+              MEDALLAS DEL ATLETA
+            </div>
+            {(() => {
+              const earnedMap = new Map(
+                (earnedAchievements || []).map((e) => {
+                  const meta = achievementJoinMeta(e);
+                  return [meta?.code, e];
+                }),
+              );
+              const totalKm = achProgress?.totalKm || 0;
+              const nextKm = achievementKmTargets.find((x) => totalKm < x) || null;
+              return (
+                <>
+                  <div style={{ marginBottom: 12 }}>
+                    <div style={{ fontSize: ".75em", color: "#64748b", marginBottom: 4 }}>
+                      {nextKm
+                        ? `Progreso km: ${totalKm.toFixed(1)} / ${nextKm} km`
+                        : `Total: ${totalKm.toFixed(1)} km · hitos km completos`}
+                    </div>
+                    <div style={{ height: 8, borderRadius: 999, background: "#e2e8f0", overflow: "hidden" }}>
+                      <div
+                        style={{
+                          width: `${nextKm ? Math.min(100, (totalKm / nextKm) * 100) : 100}%`,
+                          height: "100%",
+                          background: "linear-gradient(90deg,#f59e0b,#fbbf24)",
+                        }}
+                      />
+                    </div>
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(112px,1fr))", gap: 10 }}>
+                    {(achievementsCatalog || []).map((a) => {
+                      const earned = earnedMap.get(a.code);
+                      return (
+                        <div
+                          key={a.id}
+                          className={earned ? "raf-medal-earned" : undefined}
+                          style={{
+                            border: earned ? "1px solid rgba(245,158,11,.35)" : "1px solid #e2e8f0",
+                            borderRadius: 10,
+                            padding: "10px 8px",
+                            background: earned ? "linear-gradient(145deg,#fffbeb,#fff7ed)" : "#f8fafc",
+                            opacity: earned ? 1 : 0.55,
+                            filter: earned ? "none" : "grayscale(1)",
+                            textAlign: "center",
+                          }}
+                        >
+                          <div style={{ fontSize: earned ? "1.75em" : "1.35em", marginBottom: 4 }}>{earned ? a.icon : "🔒"}</div>
+                          <div style={{ fontSize: ".7em", color: "#0f172a", fontWeight: 700, lineHeight: 1.2 }}>{a.name}</div>
+                          <div style={{ fontSize: ".63em", color: "#64748b", marginTop: 4 }}>
+                            {earned
+                              ? new Date(earned.awarded_at).toLocaleDateString("es", { day: "numeric", month: "short", year: "numeric" })
+                              : "Bloqueada"}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+
+          <div style={{ marginBottom: 24, paddingBottom: 20, borderBottom: "1px solid #e2e8f0" }}>
+            <div style={{ fontSize: ".65em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase", marginBottom: 10 }}>
               FORMA Y FATIGA
             </div>
             <div style={{ fontSize: ".78em", color: "#64748b", marginBottom: 12, lineHeight: 1.45 }}>
@@ -2806,6 +3013,10 @@ function AthleteHome({ profile }) {
   const [athleteChatSending, setAthleteChatSending] = useState(false);
   const [athleteNotRegistered, setAthleteNotRegistered] = useState(false);
   const [showEvaluation, setShowEvaluation] = useState(false);
+  const [achievementsCatalog, setAchievementsCatalog] = useState([]);
+  const [earnedAchievements, setEarnedAchievements] = useState([]);
+  const [achProgress, setAchProgress] = useState(null);
+  const [medalToast, setMedalToast] = useState("");
   const [pushInviteDismissed, setPushInviteDismissed] = useState(() =>
     typeof localStorage !== "undefined" && localStorage.getItem("raf_push_invite_dismissed") === "1",
   );
@@ -2892,7 +3103,16 @@ function AthleteHome({ profile }) {
         console.error("Error cargando workouts atleta:", workoutsErr);
         setWorkouts([]);
       } else {
-        setWorkouts((workoutsRows || []).map(normalizeWorkoutRow));
+        const normalizedWorkouts = (workoutsRows || []).map(normalizeWorkoutRow);
+        setWorkouts(normalizedWorkouts);
+        if ((normalizedWorkouts || []).some((w) => w.done)) {
+          const { snapshot, progress } = await evaluateAndAwardAthleteAchievements(athleteRow.id);
+          if (!cancelled) {
+            setAchievementsCatalog(snapshot.achievements || []);
+            setEarnedAchievements(snapshot.earned || []);
+            setAchProgress(progress || computeAchievementProgress(normalizedWorkouts.filter((w) => w.done)));
+          }
+        }
       }
 
       setLoading(false);
@@ -2946,12 +3166,25 @@ function AthleteHome({ profile }) {
   const toggleDone = async (w) => {
     const next = !w.done;
     const payload = next ? { done: true } : { done: false, rpe: null };
-    setWorkouts(prev => prev.map(x => (x.id === w.id ? { ...x, done: next, rpe: next ? x.rpe : null } : x)));
+    const nextWorkouts = workouts.map((x) => (x.id === w.id ? { ...x, done: next, rpe: next ? x.rpe : null } : x));
+    setWorkouts(nextWorkouts);
     const { error } = await supabase.from("workouts").update(payload).eq("id", w.id);
     if (error) {
       console.error("Error actualizando workout:", error);
       setWorkouts(prev => prev.map(x => (x.id === w.id ? { ...x, done: !next, rpe: w.rpe } : x)));
       setMessage(`Error actualizando workout: ${error.message}`);
+      return;
+    }
+    if (next && athleteInfo?.id) {
+      const { newAwards, snapshot, progress } = await evaluateAndAwardAthleteAchievements(athleteInfo.id);
+      setAchievementsCatalog(snapshot.achievements || []);
+      setEarnedAchievements(snapshot.earned || []);
+      setAchProgress(progress || computeAchievementProgress(nextWorkouts.filter((x) => x.done)));
+      if (newAwards.length > 0) {
+        const first = achievementJoinMeta(newAwards[0]);
+        setMedalToast(`¡Nueva medalla desbloqueada! 🎉 ${first?.icon || ""} ${first?.name || ""}`.trim());
+        setTimeout(() => setMedalToast(""), 4200);
+      }
     }
   };
 
@@ -2965,6 +3198,18 @@ function AthleteHome({ profile }) {
       console.error("Error guardando RPE:", error);
       setWorkouts((prev) => prev.map((x) => (x.id === w.id ? { ...x, rpe: w.rpe } : x)));
       setMessage(`Error guardando RPE: ${error.message}`);
+      return;
+    }
+    if (athleteInfo?.id) {
+      const { newAwards, snapshot, progress } = await evaluateAndAwardAthleteAchievements(athleteInfo.id);
+      setAchievementsCatalog(snapshot.achievements || []);
+      setEarnedAchievements(snapshot.earned || []);
+      setAchProgress(progress);
+      if (newAwards.length > 0) {
+        const first = achievementJoinMeta(newAwards[0]);
+        setMedalToast(`¡Nueva medalla desbloqueada! 🎉 ${first?.icon || ""} ${first?.name || ""}`.trim());
+        setTimeout(() => setMedalToast(""), 4200);
+      }
     }
   };
 
@@ -2994,6 +3239,27 @@ function AthleteHome({ profile }) {
   useEffect(() => {
     loadAthleteChat();
   }, [loadAthleteChat]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      if (!athleteInfo?.id) {
+        setAchievementsCatalog([]);
+        setEarnedAchievements([]);
+        setAchProgress(null);
+        return;
+      }
+      const snapshot = await loadAthleteAchievementSnapshot(athleteInfo.id);
+      if (cancelled) return;
+      setAchievementsCatalog(snapshot.achievements || []);
+      setEarnedAchievements(snapshot.earned || []);
+      setAchProgress(computeAchievementProgress((workouts || []).filter((w) => w.done)));
+    };
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [athleteInfo?.id, workouts]);
 
   useEffect(() => {
     const t = setInterval(() => loadAthleteChat(), 10000);
@@ -3038,6 +3304,20 @@ function AthleteHome({ profile }) {
 
   return (
     <div style={S.page}>
+      {medalToast ? (
+        <div
+          className="raf-medal-toast"
+          style={{
+            ...S.card,
+            marginBottom: 14,
+            border: "1px solid rgba(245,158,11,.5)",
+            background: "linear-gradient(135deg,#fffbeb 0%,#fef3c7 100%)",
+            boxShadow: "0 4px 24px rgba(245,158,11,.4)",
+          }}
+        >
+          <div style={{ color: "#b45309", fontWeight: 800, fontSize: "1.05em", letterSpacing: ".01em" }}>{medalToast}</div>
+        </div>
+      ) : null}
       {showEvaluation && athleteInfo?.id && (
         <div style={{ marginBottom: 18 }}>
           <EvaluationView
@@ -3174,6 +3454,72 @@ function AthleteHome({ profile }) {
             </div>
           </div>
         </div>
+      </div>
+
+      <div style={{ ...S.card, marginBottom: 18 }}>
+        <div style={{ fontSize: ".72em", letterSpacing: ".13em", color: "#475569", textTransform: "uppercase", marginBottom: 12 }}>Mis Logros</div>
+        {(() => {
+          const earnedMap = new Map(
+            (earnedAchievements || []).map((e) => {
+              const meta = achievementJoinMeta(e);
+              return [meta?.code, e];
+            }),
+          );
+          const totalKm = achProgress?.totalKm || 0;
+          const nextKm = achievementKmTargets.find((x) => totalKm < x) || null;
+          return (
+            <>
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: ".78em", color: "#64748b", marginBottom: 6 }}>
+                  {nextKm
+                    ? `Progreso al siguiente logro de km: ${totalKm.toFixed(1)} / ${nextKm} km`
+                    : `Kilómetros acumulados: ${totalKm.toFixed(1)} km · máximo de hitos alcanzado`}
+                </div>
+                <div style={{ height: 10, borderRadius: 999, background: "#e2e8f0", overflow: "hidden" }}>
+                  <div
+                    style={{
+                      width: `${nextKm ? Math.min(100, (totalKm / nextKm) * 100) : 100}%`,
+                      height: "100%",
+                      background: "linear-gradient(90deg,#f59e0b,#fbbf24)",
+                      transition: "width .4s ease",
+                    }}
+                  />
+                </div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(148px,1fr))", gap: 12 }}>
+                {(achievementsCatalog || []).map((a) => {
+                  const earned = earnedMap.get(a.code);
+                  return (
+                    <div
+                      key={a.id}
+                      className={earned ? "raf-medal-earned" : undefined}
+                      style={{
+                        border: earned ? "1px solid rgba(245,158,11,.35)" : "1px solid #e2e8f0",
+                        borderRadius: 12,
+                        padding: earned ? "16px 14px" : "16px 14px",
+                        background: earned ? "linear-gradient(145deg,#fffbeb,#fff7ed)" : "#f8fafc",
+                        opacity: earned ? 1 : 0.52,
+                        filter: earned ? "none" : "grayscale(1)",
+                        transition: "opacity .2s ease",
+                        minHeight: earned ? 132 : 120,
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        textAlign: "center",
+                      }}
+                    >
+                      <div style={{ fontSize: earned ? "2.5rem" : "2rem", lineHeight: 1, marginBottom: 8 }}>{earned ? a.icon : "🔒"}</div>
+                      <div style={{ fontSize: ".76em", color: "#0f172a", fontWeight: 800, lineHeight: 1.25 }}>{a.name}</div>
+                      <div style={{ fontSize: ".68em", color: "#64748b", marginTop: 6, lineHeight: 1.35 }}>
+                        {earned ? `Ganada el ${new Date(earned.awarded_at).toLocaleDateString("es", { day: "numeric", month: "short", year: "numeric" })}` : "Bloqueada"}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          );
+        })()}
       </div>
 
       {message && <div style={{ ...S.card, border: "1px solid rgba(239,68,68,.35)", background: "rgba(239,68,68,.08)", color: "#fecaca", marginBottom: 14 }}>{message}</div>}
