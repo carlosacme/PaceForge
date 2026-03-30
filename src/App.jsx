@@ -2896,9 +2896,7 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
                           <div style={{ fontSize: earned ? "1.75em" : "1.35em", marginBottom: 4 }}>{earned ? a.icon : "🔒"}</div>
                           <div style={{ fontSize: ".7em", color: "#0f172a", fontWeight: 700, lineHeight: 1.2 }}>{a.name}</div>
                           <div style={{ fontSize: ".63em", color: "#64748b", marginTop: 4 }}>
-                            {earned
-                              ? new Date(earned.awarded_at).toLocaleDateString("es", { day: "numeric", month: "short", year: "numeric" })
-                              : "Bloqueada"}
+                            {earned ? (earned.earned_at ? new Date(earned.earned_at).toLocaleDateString("es-CO") : "") : "Bloqueada"}
                           </div>
                         </div>
                       );
