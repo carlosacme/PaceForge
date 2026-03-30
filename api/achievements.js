@@ -1,34 +1,32 @@
-import { createClient } from "@supabase/supabase-js";
-
 export default async function handler(req, res) {
-  const url = process.env.VITE_SUPABASE_URL;
-  const key = process.env.VITE_SUPABASE_KEY;
-  if (!url || !key) {
+  const SUPA_URL = process.env.VITE_SUPABASE_URL;
+  const SUPA_KEY = process.env.VITE_SUPABASE_KEY;
+  const headers = { apikey: SUPA_KEY, Authorization: `Bearer ${SUPA_KEY}`, "Content-Type": "application/json" };
+
+  if (!SUPA_URL || !SUPA_KEY) {
     return res.status(500).json({ error: "VITE_SUPABASE_URL o VITE_SUPABASE_KEY no configuradas" });
   }
-  const supabase = createClient(url, key);
 
   if (req.method === "GET") {
     const { athlete_id } = req.query;
-    const [{ data: all, error: errAll }, { data: earned, error: errEarned }] = await Promise.all([
-      supabase.from("achievements").select("*").order("created_at", { ascending: true }),
-      athlete_id
-        ? supabase
-            .from("athlete_achievements")
-            .select("*")
-            .eq("athlete_id", athlete_id)
-            .order("earned_at", { ascending: false })
-        : Promise.resolve({ data: [], error: null }),
+    const [r1, r2] = await Promise.all([
+      fetch(`${SUPA_URL}/rest/v1/achievements?select=*`, { headers }),
+      fetch(`${SUPA_URL}/rest/v1/athlete_achievements?select=*&athlete_id=eq.${athlete_id}`, { headers }),
     ]);
-    if (errAll) return res.status(500).json({ error: errAll });
-    if (errEarned) return res.status(500).json({ error: errEarned });
-    return res.status(200).json({ all: all || [], earned: earned || [] });
+    const all = await r1.json();
+    const earned = await r2.json();
+    return res.status(200).json({ all, earned });
   }
 
   if (req.method === "POST") {
     const { athlete_id, achievement_code, value } = req.body || {};
-    const { data, error } = await supabase.from("athlete_achievements").insert({ athlete_id, achievement_code, value });
-    return res.status(200).json({ data, error });
+    const r = await fetch(`${SUPA_URL}/rest/v1/athlete_achievements`, {
+      method: "POST",
+      headers: { ...headers, Prefer: "return=representation" },
+      body: JSON.stringify({ athlete_id, achievement_code, value }),
+    });
+    const data = await r.json();
+    return res.status(200).json({ data });
   }
 
   res.status(405).end();
