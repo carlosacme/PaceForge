@@ -1332,27 +1332,44 @@ export default function App() {
         label: "Starter",
         priceCop: 49000,
         priceUsd: 13,
-        description:
-          "Ideal para coaches que están comenzando. Gestiona hasta 5 atletas con todas las herramientas esenciales.",
-        benefits: ["Hasta 5 atletas activos", "Calendario y asignación de workouts", "Chat coach-atleta integrado"],
+        description: "Ideal para coaches que están comenzando.",
+        benefits: [
+          "Hasta 5 atletas",
+          "Generador de workouts con IA",
+          "Plan de entrenamiento 2 semanas",
+          "Chat con atletas",
+          "Exportar a PDF",
+        ],
       },
       {
         plan: "Pro",
         label: "Pro",
         priceCop: 129000,
         priceUsd: 34,
-        description:
-          "Para coaches profesionales. Hasta 20 atletas, todas las integraciones con relojes y análisis avanzado.",
-        benefits: ["Hasta 20 atletas activos", "Integraciones completas con Garmin y COROS", "Métricas y análisis avanzado"],
+        description: "Para coaches profesionales que quieren crecer.",
+        benefits: [
+          "Hasta 20 atletas",
+          "Todo lo del Starter",
+          "Integración Garmin y COROS",
+          "Evaluación VDOT y zonas FC",
+          "Notificaciones push",
+          "Biblioteca de workouts",
+        ],
       },
       {
         plan: "Equipo",
         label: "Equipo",
         priceCop: 299000,
         priceUsd: 79,
-        description:
-          "Para academias y clubes de running. Atletas ilimitados, multi-coach y soporte prioritario.",
-        benefits: ["Atletas ilimitados", "Soporte multi-coach", "Soporte prioritario"],
+        description: "Para academias y clubes de running.",
+        benefits: [
+          "Atletas ilimitados",
+          "Todo lo del Pro",
+          "Multi-coach",
+          "Códigos promocionales",
+          "Soporte prioritario",
+          "Panel de administración",
+        ],
       },
     ];
 
