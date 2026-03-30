@@ -4782,6 +4782,13 @@ function EvaluationView({ athletes, currentUserId, notify, athleteOnlyId = null 
   const [history, setHistory] = useState([]);
   const [openHistoryId, setOpenHistoryId] = useState(null);
 
+  const methodDescription =
+    tab === "race"
+      ? "Ingresa tu mejor tiempo reciente en una carrera oficial o entrenamiento de tiempo. Cuanto más reciente, más preciso será el cálculo."
+      : tab === "cooper"
+      ? "Corre durante exactamente 12 minutos al máximo esfuerzo sostenible e ingresa la distancia total recorrida en metros."
+      : "Corre durante 30 minutos al máximo esfuerzo que puedas mantener de forma constante e ingresa la distancia total y tu FC promedio si tienes monitor.";
+
   useEffect(() => {
     if (!athleteOptions.length) return;
     if (!athleteId) setAthleteId(String(athleteOptions[0].id));
@@ -4911,6 +4918,57 @@ function EvaluationView({ athletes, currentUserId, notify, athleteOnlyId = null 
     loadHistory();
   };
 
+  const renderEvaluationCards = (dataObj) => {
+    const paces = Array.isArray(dataObj?.paces) ? dataObj.paces : [];
+    const zones = Array.isArray(dataObj?.zones) ? dataObj.zones : [];
+    const predictions = Array.isArray(dataObj?.predictions) ? dataObj.predictions : [];
+    const vdot = Number(dataObj?.vdot);
+    return (
+      <>
+        <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", marginBottom: 16 }}>
+          <div style={{ ...S.card, padding: 16 }}>
+            <div style={{ color: "#64748b", fontSize: ".75em", fontWeight: 700 }}>VDOT</div>
+            <div style={{ fontSize: "2em", fontWeight: 900, color: "#0f172a" }}>{Number.isFinite(vdot) ? vdot.toFixed(2) : "—"}</div>
+          </div>
+          {paces.map((p) => (
+            <div key={p.key} style={{ ...S.card, padding: 16 }}>
+              <div style={{ color: p.color || "#64748b", fontSize: ".75em", fontWeight: 700 }}>{p.key || "Ritmo"}</div>
+              <div style={{ fontSize: "1.2em", fontWeight: 800, color: "#0f172a" }}>
+                {p.paceMinKm != null ? formatPaceMinKm(p.paceMinKm) : "—"}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ ...S.card, marginBottom: 16 }}>
+          <div style={{ fontSize: ".76em", color: "#64748b", fontWeight: 700, marginBottom: 10 }}>ZONAS DE FC</div>
+          <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))" }}>
+            {zones.map((z) => (
+              <div key={z.z} style={{ border: `1px solid ${(z.color || "#94a3b8")}66`, borderRadius: 10, padding: "10px 12px", background: `${z.color || "#94a3b8"}14` }}>
+                <div style={{ color: z.color || "#64748b", fontWeight: 800 }}>{z.z || "Z"}</div>
+                <div style={{ color: "#0f172a", fontSize: ".9em" }}>
+                  {z.lowBpm ?? "—"}-{z.highBpm ?? "—"} lpm
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ ...S.card, marginBottom: 16 }}>
+          <div style={{ fontSize: ".76em", color: "#64748b", fontWeight: 700, marginBottom: 10 }}>TIEMPOS PREDICHOS</div>
+          <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))" }}>
+            {predictions.map((p) => (
+              <div key={p.id || p.label} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: "10px 12px", background: "#f8fafc" }}>
+                <div style={{ color: "#64748b", fontSize: ".75em", fontWeight: 700 }}>{p.label || String(p.id || "").toUpperCase()}</div>
+                <div style={{ color: "#0f172a", fontWeight: 800 }}>{formatSeconds(p.seconds)}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </>
+    );
+  };
+
   return (
     <div style={S.page}>
       <div style={{ marginBottom: 16 }}>
@@ -4970,6 +5028,7 @@ function EvaluationView({ athletes, currentUserId, notify, athleteOnlyId = null 
             </button>
           ))}
         </div>
+        <div style={{ marginTop: 10, color: "#64748b", fontSize: ".84em", lineHeight: 1.35 }}>{methodDescription}</div>
 
         {tab === "race" && (
           <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", marginTop: 14 }}>
@@ -5003,46 +5062,7 @@ function EvaluationView({ athletes, currentUserId, notify, athleteOnlyId = null 
         </div>
       </div>
 
-      {results && (
-        <>
-          <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", marginBottom: 16 }}>
-            <div style={{ ...S.card, padding: 16 }}>
-              <div style={{ color: "#64748b", fontSize: ".75em", fontWeight: 700 }}>VDOT</div>
-              <div style={{ fontSize: "2em", fontWeight: 900, color: "#0f172a" }}>{results.vdot.toFixed(2)}</div>
-            </div>
-            {results.paces.map((p) => (
-              <div key={p.key} style={{ ...S.card, padding: 16 }}>
-                <div style={{ color: p.color, fontSize: ".75em", fontWeight: 700 }}>{p.key}</div>
-                <div style={{ fontSize: "1.2em", fontWeight: 800, color: "#0f172a" }}>{formatPaceMinKm(p.paceMinKm)}</div>
-              </div>
-            ))}
-          </div>
-
-          <div style={{ ...S.card, marginBottom: 16 }}>
-            <div style={{ fontSize: ".76em", color: "#64748b", fontWeight: 700, marginBottom: 10 }}>ZONAS DE FC</div>
-            <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))" }}>
-              {results.zones.map((z) => (
-                <div key={z.z} style={{ border: `1px solid ${z.color}66`, borderRadius: 10, padding: "10px 12px", background: `${z.color}14` }}>
-                  <div style={{ color: z.color, fontWeight: 800 }}>{z.z}</div>
-                  <div style={{ color: "#0f172a", fontSize: ".9em" }}>{z.lowBpm}-{z.highBpm} lpm</div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div style={{ ...S.card, marginBottom: 16 }}>
-            <div style={{ fontSize: ".76em", color: "#64748b", fontWeight: 700, marginBottom: 10 }}>TIEMPOS PREDICHOS</div>
-            <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))" }}>
-              {results.predictions.map((p) => (
-                <div key={p.id} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: "10px 12px", background: "#f8fafc" }}>
-                  <div style={{ color: "#64748b", fontSize: ".75em", fontWeight: 700 }}>{p.label}</div>
-                  <div style={{ color: "#0f172a", fontWeight: 800 }}>{formatSeconds(p.seconds)}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </>
-      )}
+      {results && renderEvaluationCards(results)}
 
       <div style={{ ...S.card }}>
         <div style={{ fontSize: ".76em", color: "#64748b", fontWeight: 700, marginBottom: 10 }}>Historial de evaluaciones</div>
@@ -5063,18 +5083,19 @@ function EvaluationView({ athletes, currentUserId, notify, athleteOnlyId = null 
               </button>
               {openHistoryId === h.id && (
                 <div style={{ padding: "10px 12px", background: "#fff" }}>
-                  <pre style={{ margin: 0, fontSize: ".75em", color: "#475569", whiteSpace: "pre-wrap" }}>
-                    {JSON.stringify(
-                      {
-                        input: h.input_data,
-                        paces: h.paces,
-                        zones: h.hr_zones,
-                        predictions: h.predicted_times,
-                      },
-                      null,
-                      2,
-                    )}
-                  </pre>
+                  <div style={{ fontSize: ".78em", color: "#64748b", marginBottom: 10 }}>
+                    Método: <strong style={{ color: "#0f172a" }}>{String(h.method || "").toUpperCase()}</strong>
+                  </div>
+                  {renderEvaluationCards({
+                    vdot: h.vdot,
+                    paces: h.paces,
+                    zones: h.hr_zones,
+                    predictions: (h.predicted_times || []).map((p) => ({
+                      id: p.id,
+                      label: EVAL_DISTANCES.find((d) => d.id === p.id)?.label || String(p.id || "").toUpperCase(),
+                      seconds: p.seconds,
+                    })),
+                  })}
                 </div>
               )}
             </div>
