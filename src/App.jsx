@@ -127,6 +127,11 @@ const PAYMENT_PLAN_OPTIONS = ["Basico", "Pro"];
 
 const paymentStatusLabel = (status) =>
   status === "confirmed" ? "Confirmado" : status === "rejected" ? "Rechazado" : "Pendiente";
+const getCurrentMonthKey = () => {
+  const d = new Date();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  return `${d.getFullYear()}-${m}`;
+};
 
 const achievementJoinMeta = (row) => {
   if (!row) return null;
@@ -1772,7 +1777,14 @@ export default function App() {
           <AdminPromoCodes notify={notify} />
         )}
         {view === "plan12" && (
-          <Plan2Weeks athletes={athletes} notify={notify} onPlanAssigned={() => setWorkoutsRefresh((r) => r + 1)} />
+          <Plan2Weeks
+            athletes={athletes}
+            notify={notify}
+            coachUserId={session?.user?.id ?? null}
+            coachPlan={String(profile?.subscription_plan || athletes?.find((a) => a.plan)?.plan || "Basico")}
+            onGoToPlans={() => setView("plans")}
+            onPlanAssigned={() => setWorkoutsRefresh((r) => r + 1)}
+          />
         )}
         {view === "builder" && (
           <Builder
@@ -1784,6 +1796,9 @@ export default function App() {
             aiLoading={aiLoading}
             setAiLoading={setAiLoading}
             notify={notify}
+            coachUserId={session?.user?.id ?? null}
+            coachPlan={String(profile?.subscription_plan || athletes?.find((a) => a.plan)?.plan || "Basico")}
+            onGoToPlans={() => setView("plans")}
             onWorkoutAssigned={() => setWorkoutsRefresh(r => r + 1)}
             onSavedToLibrary={() => setLibraryRefresh((r) => r + 1)}
           />
@@ -4218,7 +4233,7 @@ function AthleteHome({ profile }) {
   );
 }
 
-function Plan2Weeks({ athletes, notify, onPlanAssigned }) {
+function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, onGoToPlans, onPlanAssigned }) {
   const S = styles;
   const [athleteId, setAthleteId] = useState("");
   const [goalId, setGoalId] = useState(PLAN_12_GOALS[0]?.id || "maraton_sub4");
@@ -4238,6 +4253,63 @@ function Plan2Weeks({ athletes, notify, onPlanAssigned }) {
     duration_min: 0,
     weekday: 2,
   });
+  const [monthGenerations, setMonthGenerations] = useState(0);
+  const [loadingGenerations, setLoadingGenerations] = useState(false);
+  const [generationLimitMsg, setGenerationLimitMsg] = useState("");
+  const monthKey = useMemo(() => getCurrentMonthKey(), []);
+  const isBasicPlan = useMemo(() => {
+    const p = String(coachPlan || "").toLowerCase();
+    return p === "basico" || p === "básico" || p === "starter" || p === "";
+  }, [coachPlan]);
+
+  const loadGenerationCounter = useCallback(async () => {
+    if (!coachUserId) {
+      setMonthGenerations(0);
+      return;
+    }
+    setLoadingGenerations(true);
+    const { data, error } = await supabase
+      .from("ai_generations")
+      .select("count")
+      .eq("coach_id", coachUserId)
+      .eq("month", monthKey)
+      .maybeSingle();
+    setLoadingGenerations(false);
+    if (error) {
+      console.error("ai_generations load (plan2):", error);
+      return;
+    }
+    setMonthGenerations(Number(data?.count) || 0);
+  }, [coachUserId, monthKey]);
+
+  const incrementGenerationCounter = useCallback(async () => {
+    if (!coachUserId) return;
+    const nextCount = (Number(monthGenerations) || 0) + 1;
+    const { error: updErr } = await supabase
+      .from("ai_generations")
+      .update({ count: nextCount, updated_at: new Date().toISOString() })
+      .eq("coach_id", coachUserId)
+      .eq("month", monthKey);
+    if (updErr) {
+      const { error: insErr } = await supabase.from("ai_generations").insert({
+        coach_id: coachUserId,
+        month: monthKey,
+        count: 1,
+        updated_at: new Date().toISOString(),
+      });
+      if (insErr) {
+        console.error("ai_generations increment (plan2):", insErr);
+        return;
+      }
+      setMonthGenerations(1);
+      return;
+    }
+    setMonthGenerations(nextCount);
+  }, [coachUserId, monthGenerations, monthKey]);
+
+  useEffect(() => {
+    loadGenerationCounter();
+  }, [loadGenerationCounter]);
 
   useEffect(() => {
     if (athletes?.length && !athleteId) {
@@ -4335,6 +4407,11 @@ Output 2 week objects with the correct ${daysPerWeek} workouts each; each workou
   }, [goalId, levelId, daysPerWeek, raceDate]);
 
   const generatePlan2 = async () => {
+    if (isBasicPlan && monthGenerations >= 100) {
+      setGenerationLimitMsg("Has alcanzado el límite de 100 generaciones del plan Básico. Actualiza al plan Pro para generaciones ilimitadas.");
+      return;
+    }
+    setGenerationLimitMsg("");
     setPlanAssignedSuccess(false);
     setPlanEditModal(null);
     setPlanLoading(true);
@@ -4377,6 +4454,7 @@ Output 2 week objects with the correct ${daysPerWeek} workouts each; each workou
       }
       setGeneratedPlan({ ...parsed, weeks: orderedWeeks });
       setOpenWeeks(new Set([1, 2]));
+      await incrementGenerationCounter();
       notify("Plan de 2 semanas generado ✓");
     } catch (e) {
       console.error(e);
@@ -4567,7 +4645,24 @@ Output 2 week objects with the correct ${daysPerWeek} workouts each; each workou
         <p style={{ color: "#475569", fontSize: ".82em", marginTop: 4 }}>
           Distribución fija: mar largo · mié tempo · jue recuperación · sáb intervalos · dom largo. Con menos de 5 sesiones se quitan primero domingo, luego jueves y miércoles. Semana 2 = semana de carrera.
         </p>
+        <div style={{ marginTop: 8, color: "#64748b", fontSize: ".8em", fontWeight: 600 }}>
+          {isBasicPlan ? `${loadingGenerations ? "…" : monthGenerations} / 100 generaciones usadas este mes` : "Ilimitado"}
+        </div>
       </div>
+      {generationLimitMsg ? (
+        <div style={{ ...S.card, marginBottom: 14, border: "1px solid rgba(245,158,11,.4)", background: "#fffbeb" }}>
+          <div style={{ color: "#92400e", fontSize: ".84em", fontWeight: 700, marginBottom: 10 }}>{generationLimitMsg}</div>
+          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+            <button
+              type="button"
+              onClick={onGoToPlans}
+              style={{ background: "linear-gradient(135deg,#0d9488,#14b8a6)", border: "none", borderRadius: 8, padding: "8px 12px", color: "#fff", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".78em" }}
+            >
+              Ver Planes
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       <div style={{ display: "grid", gridTemplateColumns: "minmax(280px, 360px) 1fr", gap: 22, alignItems: "start" }}>
         <div style={S.card}>
@@ -5227,7 +5322,7 @@ function WorkoutLibrary({ coachUserId, libraryRefresh, onUseWorkout, athletes, n
   );
 }
 
-function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiLoading, setAiLoading, notify, onWorkoutAssigned, onSavedToLibrary }) {
+function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiLoading, setAiLoading, notify, coachUserId, coachPlan, onGoToPlans, onWorkoutAssigned, onSavedToLibrary }) {
   const S = styles;
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [savingLibrary, setSavingLibrary] = useState(false);
@@ -5235,6 +5330,63 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
   const [assignDate, setAssignDate] = useState(() => formatLocalYMD(new Date()));
   const [assignSaving, setAssignSaving] = useState(false);
   const [builderHrAthleteId, setBuilderHrAthleteId] = useState("");
+  const [monthGenerations, setMonthGenerations] = useState(0);
+  const [loadingGenerations, setLoadingGenerations] = useState(false);
+  const [generationLimitMsg, setGenerationLimitMsg] = useState("");
+  const monthKey = useMemo(() => getCurrentMonthKey(), []);
+  const isBasicPlan = useMemo(() => {
+    const p = String(coachPlan || "").toLowerCase();
+    return p === "basico" || p === "básico" || p === "starter" || p === "";
+  }, [coachPlan]);
+
+  const loadGenerationCounter = useCallback(async () => {
+    if (!coachUserId) {
+      setMonthGenerations(0);
+      return;
+    }
+    setLoadingGenerations(true);
+    const { data, error } = await supabase
+      .from("ai_generations")
+      .select("count")
+      .eq("coach_id", coachUserId)
+      .eq("month", monthKey)
+      .maybeSingle();
+    setLoadingGenerations(false);
+    if (error) {
+      console.error("ai_generations load (builder):", error);
+      return;
+    }
+    setMonthGenerations(Number(data?.count) || 0);
+  }, [coachUserId, monthKey]);
+
+  const incrementGenerationCounter = useCallback(async () => {
+    if (!coachUserId) return;
+    const nextCount = (Number(monthGenerations) || 0) + 1;
+    const { error: updErr } = await supabase
+      .from("ai_generations")
+      .update({ count: nextCount, updated_at: new Date().toISOString() })
+      .eq("coach_id", coachUserId)
+      .eq("month", monthKey);
+    if (updErr) {
+      const { error: insErr } = await supabase.from("ai_generations").insert({
+        coach_id: coachUserId,
+        month: monthKey,
+        count: 1,
+        updated_at: new Date().toISOString(),
+      });
+      if (insErr) {
+        console.error("ai_generations increment (builder):", insErr);
+        return;
+      }
+      setMonthGenerations(1);
+      return;
+    }
+    setMonthGenerations(nextCount);
+  }, [coachUserId, monthGenerations, monthKey]);
+
+  useEffect(() => {
+    loadGenerationCounter();
+  }, [loadGenerationCounter]);
 
   const openAssignModal = () => {
     if (!aiWorkout) return;
@@ -5321,6 +5473,11 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
 
   const generateWorkout = async () => {
     if (!aiPrompt.trim()) return;
+    if (isBasicPlan && monthGenerations >= 100) {
+      setGenerationLimitMsg("Has alcanzado el límite de 100 generaciones del plan Básico. Actualiza al plan Pro para generaciones ilimitadas.");
+      return;
+    }
+    setGenerationLimitMsg("");
     setAiLoading(true);
     setAiWorkout(null);
     try {
@@ -5350,6 +5507,7 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
       }
       const text = data.content?.find(b => b.type === "text")?.text || "";
       setAiWorkout(JSON.parse(text));
+      await incrementGenerationCounter();
     } catch { setAiWorkout(null); }
     finally { setAiLoading(false); }
   };
@@ -5401,7 +5559,24 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
       <div style={{ marginBottom: 28 }}>
         <h1 style={S.pageTitle}>Generador de Workouts IA</h1>
         <p style={{ color: "#475569", fontSize: ".82em", marginTop: 4 }}>Describe el entrenamiento y la IA lo estructura automáticamente</p>
+        <div style={{ marginTop: 8, color: "#64748b", fontSize: ".8em", fontWeight: 600 }}>
+          {isBasicPlan ? `${loadingGenerations ? "…" : monthGenerations} / 100 generaciones usadas este mes` : "Ilimitado"}
+        </div>
       </div>
+      {generationLimitMsg ? (
+        <div style={{ ...S.card, marginBottom: 14, border: "1px solid rgba(245,158,11,.4)", background: "#fffbeb" }}>
+          <div style={{ color: "#92400e", fontSize: ".84em", fontWeight: 700, marginBottom: 10 }}>{generationLimitMsg}</div>
+          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+            <button
+              type="button"
+              onClick={onGoToPlans}
+              style={{ background: "linear-gradient(135deg,#0d9488,#14b8a6)", border: "none", borderRadius: 8, padding: "8px 12px", color: "#fff", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".78em" }}
+            >
+              Ver Planes
+            </button>
+          </div>
+        </div>
+      ) : null}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
         <div style={S.card}>
           <div style={{ fontSize: ".65em", letterSpacing: ".13em", color: "#475569", textTransform: "uppercase", marginBottom: 14 }}>⚡ DESCRIBE EL ENTRENAMIENTO</div>
