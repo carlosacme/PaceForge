@@ -217,12 +217,58 @@ async function loadAthleteAchievementSnapshot(athleteId) {
 
 async function evaluateAndAwardAthleteAchievements(athleteId) {
   if (!athleteId) return { newAwards: [], snapshot: { achievements: [], earned: [] }, progress: null };
-  const [{ data: doneWorkouts, error: doneErr }, { data: achievements, error: achErr }, { data: earnedRows, error: earnedErr }] =
-    await Promise.all([
-      supabase.from("workouts").select("id, type, total_km, scheduled_date, rpe").eq("athlete_id", athleteId).eq("done", true),
-      supabase.from("achievements").select("*"),
-      supabase.from("athlete_achievements").select("achievement_code").eq("athlete_id", athleteId),
-    ]);
+  const [{ data: doneWorkouts, error: doneErr }, achievementsFetch, earnedFetch] = await Promise.all([
+    supabase.from("workouts").select("id, type, total_km, scheduled_date, rpe").eq("athlete_id", athleteId).eq("done", true),
+    (async () => {
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/rest/v1/achievements?select=*`, {
+        headers: {
+          apikey: import.meta.env.VITE_SUPABASE_KEY,
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_KEY}`,
+        },
+      });
+      const allAchievements = await res.json();
+      return { res, allAchievements };
+    })(),
+    (async () => {
+      const res = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/athlete_achievements?select=achievement_code&athlete_id=eq.${encodeURIComponent(athleteId)}`,
+        {
+          headers: {
+            apikey: import.meta.env.VITE_SUPABASE_KEY,
+            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_KEY}`,
+          },
+        },
+      );
+      const allEarned = await res.json();
+      return { res, allEarned };
+    })(),
+  ]);
+  let achievements = [];
+  let achErr = null;
+  if (!achievementsFetch.res.ok) {
+    achErr = {
+      message: achievementsFetch.allAchievements?.message || achievementsFetch.res.statusText,
+      status: achievementsFetch.res.status,
+      body: achievementsFetch.allAchievements,
+    };
+  } else if (!Array.isArray(achievementsFetch.allAchievements)) {
+    achErr = { message: "Respuesta de achievements no es un array" };
+  } else {
+    achievements = achievementsFetch.allAchievements;
+  }
+  let earnedRows = [];
+  let earnedErr = null;
+  if (!earnedFetch.res.ok) {
+    earnedErr = {
+      message: earnedFetch.allEarned?.message || earnedFetch.res.statusText,
+      status: earnedFetch.res.status,
+      body: earnedFetch.allEarned,
+    };
+  } else if (!Array.isArray(earnedFetch.allEarned)) {
+    earnedErr = { message: "Respuesta de athlete_achievements no es un array" };
+  } else {
+    earnedRows = earnedFetch.allEarned;
+  }
   if (earnedErr) console.log("[evaluateAndAwardAthleteAchievements] earnedErr JSON:", JSON.stringify(earnedErr));
   if (doneErr || achErr || earnedErr) {
     console.warn("evaluate achievements", { doneErr, achErr, earnedErr });
