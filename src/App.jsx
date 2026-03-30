@@ -132,20 +132,6 @@ const achievementJoinMeta = (row) => {
   return null;
 };
 
-const achievementAwardValue = (code, progress) => {
-  if (!progress) return 1;
-  const { totalKm, doneCount, longestStreak, rpeCount } = progress;
-  const km = Number(totalKm) || 0;
-  const done = Number(doneCount) || 0;
-  const streak = Number(longestStreak) || 0;
-  const rpe = Number(rpeCount) || 0;
-  if (String(code).startsWith("KM_")) return km;
-  if (code === "STREAK_7" || code === "STREAK_30") return streak;
-  if (code === "RPE_MASTER") return rpe;
-  if (code === "CONSISTENT") return done;
-  return done > 0 ? done : 1;
-};
-
 const getLongestConsecutiveDays = (ymdList) => {
   if (!Array.isArray(ymdList) || ymdList.length === 0) return 0;
   const uniq = [...new Set(ymdList)].sort();
@@ -204,98 +190,67 @@ const computeAchievementProgress = (doneWorkouts) => {
 
 async function loadAthleteAchievementSnapshot(athleteId) {
   if (!athleteId) return { achievements: [], earned: [] };
-  const [{ data: achievements }, { data: earned }] = await Promise.all([
-    supabase.from("achievements").select("*").order("created_at", { ascending: true }),
-    supabase
-      .from("athlete_achievements")
-      .select("id, awarded_at, achievement_code, value, achievements(code,name,icon,description)")
-      .eq("athlete_id", athleteId)
-      .order("awarded_at", { ascending: false }),
-  ]);
-  return { achievements: achievements || [], earned: earned || [] };
+  try {
+    const res = await fetch(`/api/achievements?athlete_id=${encodeURIComponent(athleteId)}`);
+    const json = await res.json();
+    if (!res.ok) {
+      console.warn("loadAthleteAchievementSnapshot", json);
+      return { achievements: [], earned: [] };
+    }
+    return { achievements: json.all || [], earned: json.earned || [] };
+  } catch (e) {
+    console.warn("loadAthleteAchievementSnapshot", e);
+    return { achievements: [], earned: [] };
+  }
 }
 
 async function evaluateAndAwardAthleteAchievements(athleteId) {
   if (!athleteId) return { newAwards: [], snapshot: { achievements: [], earned: [] }, progress: null };
-  const [{ data: doneWorkouts, error: doneErr }, achievementsFetch, earnedFetch] = await Promise.all([
-    supabase.from("workouts").select("id, type, total_km, scheduled_date, rpe").eq("athlete_id", athleteId).eq("done", true),
-    (async () => {
-      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/rest/v1/achievements?select=*`, {
-        headers: {
-          apikey: import.meta.env.VITE_SUPABASE_KEY,
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_KEY}`,
-        },
-      });
-      const allAchievements = await res.json();
-      return { res, allAchievements };
-    })(),
-    (async () => {
-      const res = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/athlete_achievements?select=achievement_code&athlete_id=eq.${encodeURIComponent(athleteId)}`,
-        {
-          headers: {
-            apikey: import.meta.env.VITE_SUPABASE_KEY,
-            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_KEY}`,
-          },
-        },
-      );
-      const allEarned = await res.json();
-      return { res, allEarned };
-    })(),
-  ]);
-  let achievements = [];
-  let achErr = null;
-  if (!achievementsFetch.res.ok) {
-    achErr = {
-      message: achievementsFetch.allAchievements?.message || achievementsFetch.res.statusText,
-      status: achievementsFetch.res.status,
-      body: achievementsFetch.allAchievements,
-    };
-  } else if (!Array.isArray(achievementsFetch.allAchievements)) {
-    achErr = { message: "Respuesta de achievements no es un array" };
-  } else {
-    achievements = achievementsFetch.allAchievements;
-  }
-  let earnedRows = [];
-  let earnedErr = null;
-  if (!earnedFetch.res.ok) {
-    earnedErr = {
-      message: earnedFetch.allEarned?.message || earnedFetch.res.statusText,
-      status: earnedFetch.res.status,
-      body: earnedFetch.allEarned,
-    };
-  } else if (!Array.isArray(earnedFetch.allEarned)) {
-    earnedErr = { message: "Respuesta de athlete_achievements no es un array" };
-  } else {
-    earnedRows = earnedFetch.allEarned;
-  }
-  if (earnedErr) console.log("[evaluateAndAwardAthleteAchievements] earnedErr JSON:", JSON.stringify(earnedErr));
-  if (doneErr || achErr || earnedErr) {
-    console.warn("evaluate achievements", { doneErr, achErr, earnedErr });
-    return { newAwards: [], snapshot: { achievements: achievements || [], earned: [] }, progress: null };
-  }
-  const progress = computeAchievementProgress(doneWorkouts || []);
-  const achievementByCode = new Map((achievements || []).map((a) => [a.code, a]));
-  const already = new Set((earnedRows || []).map((r) => r.achievement_code).filter(Boolean));
-  const toInsert = Object.entries(progress.unlockedByCode)
-    .filter(([, ok]) => ok)
-    .map(([code]) => code)
-    .filter((code) => achievementByCode.has(code))
-    .filter((code) => !already.has(code))
-    .map((code) => ({
-      athlete_id: athleteId,
-      achievement_code: code,
-      value: achievementAwardValue(code, progress),
+  try {
+    const [achRes, workRes] = await Promise.all([
+      fetch(`/api/achievements?athlete_id=${encodeURIComponent(athleteId)}`),
+      supabase.from("workouts").select("*").eq("athlete_id", athleteId).eq("done", true),
+    ]);
+    if (!achRes.ok) {
+      const err = await achRes.json().catch(() => ({}));
+      console.warn("evaluateAndAwardAthleteAchievements achievements API", err);
+      return { newAwards: [], snapshot: { achievements: [], earned: [] }, progress: null };
+    }
+    const { all: allAchievements, earned: earnedList } = await achRes.json();
+    const { data: doneWorkouts, error: doneErr } = workRes;
+    if (doneErr) console.warn("evaluateAndAwardAthleteAchievements workouts", doneErr);
+    const dw = doneWorkouts || [];
+    const totalKm = dw.reduce((s, w) => s + (Number(w.total_km) || 0), 0);
+    const earnedCodes = new Set((earnedList || []).map((e) => e.achievement_code));
+    const newAchievements = [];
+    for (const ach of allAchievements || []) {
+      if (earnedCodes.has(ach.code)) continue;
+      let earned = false;
+      if (ach.condition_type === "total_km" && totalKm >= Number(ach.condition_value)) earned = true;
+      if (ach.condition_type === "workout_count" && dw.length >= Number(ach.condition_value)) earned = true;
+      if (ach.condition_type === "single_km" && dw.some((w) => (Number(w.total_km) || 0) >= Number(ach.condition_value))) earned = true;
+      if (ach.condition_type === "interval" && dw.some((w) => w.type === "interval")) earned = true;
+      if (earned) {
+        await fetch("/api/achievements", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ athlete_id: athleteId, achievement_code: ach.code, value: totalKm }),
+        });
+        newAchievements.push(ach);
+      }
+    }
+    const snapshot = await loadAthleteAchievementSnapshot(athleteId);
+    const progress = computeAchievementProgress(dw);
+    const newAwards = newAchievements.map((ach) => ({
+      achievement_code: ach.code,
+      awarded_at: new Date().toISOString(),
+      achievements: ach,
     }));
-  if (toInsert.length) {
-    const { error: insertErr } = await supabase.from("athlete_achievements").insert(toInsert);
-    if (insertErr) console.log("[evaluateAndAwardAthleteAchievements] insertErr JSON:", JSON.stringify(insertErr));
+    return { newAwards, snapshot, progress };
+  } catch (e) {
+    console.error("achievements error:", e);
+    return { newAwards: [], snapshot: { achievements: [], earned: [] }, progress: null };
   }
-  const snapshot = await loadAthleteAchievementSnapshot(athleteId);
-  const newAwards = (snapshot.earned || []).filter((e) =>
-    toInsert.some((x) => x.achievement_code === e.achievement_code),
-  );
-  return { newAwards, snapshot, progress };
 }
 
 /** Zonas % de FC máx (bpm). */
