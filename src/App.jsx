@@ -963,12 +963,20 @@ export default function App() {
   const [demoModalOpen, setDemoModalOpen] = useState(false);
   const [authRole, setAuthRole] = useState("");
   const [authName, setAuthName] = useState("");
+  const [authCoachCode, setAuthCoachCode] = useState("");
   const [profile, setProfile] = useState(null);
   const [profileLoading, setProfileLoading] = useState(false);
   const [pushInviteDismissed, setPushInviteDismissed] = useState(() =>
     typeof localStorage !== "undefined" && localStorage.getItem("raf_push_invite_dismissed") === "1",
   );
   const [stravaRefreshTick, setStravaRefreshTick] = useState(0);
+  const [inviteCodeFromUrl, setInviteCodeFromUrl] = useState("");
+  const [inviteModalOpen, setInviteModalOpen] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteSending, setInviteSending] = useState(false);
+  const [publicCoaches, setPublicCoaches] = useState([]);
+  const [loadingPublicCoaches, setLoadingPublicCoaches] = useState(false);
+  const [pendingCoachRequestId, setPendingCoachRequestId] = useState("");
 
   const notify = useCallback((msg) => {
     setNotification(msg);
@@ -1038,6 +1046,63 @@ export default function App() {
     setNewAthlete(prev => ({ ...prev, [field]: value }));
   };
 
+  const coachCodeFromId = useCallback((userId) => String(userId || "").replace(/-/g, "").slice(0, 8).toUpperCase(), []);
+
+  const resolveCoachIdByCode = useCallback(async (codeInput) => {
+    const code = String(codeInput || "").trim().replace(/-/g, "").toUpperCase();
+    if (!code) return null;
+    const { data, error } = await supabase.from("coach_profiles").select("user_id");
+    if (error) {
+      console.error("Error resolviendo código de coach:", error);
+      return null;
+    }
+    const row = (data || []).find((r) => coachCodeFromId(r.user_id) === code);
+    return row?.user_id || null;
+  }, [coachCodeFromId]);
+
+  const sendAthleteInvitation = useCallback(async () => {
+    const email = inviteEmail.trim().toLowerCase();
+    if (!email || !session?.user?.id) {
+      notify("Completa el email del atleta.");
+      return;
+    }
+    setInviteSending(true);
+    try {
+      const code =
+        (typeof crypto !== "undefined" && crypto.randomUUID && crypto.randomUUID()) ||
+        `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      const inviteLink = `https://pace-forge-eta.vercel.app?invite=${encodeURIComponent(code)}`;
+      const { error: insError } = await supabase.from("invitations").insert({
+        coach_id: session.user.id,
+        email,
+        code,
+        status: "pending",
+      });
+      if (insError) {
+        console.error("Error guardando invitación:", insError);
+        notify(insError.message || "No se pudo guardar la invitación.");
+        return;
+      }
+      await fetch("/api/send-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to: email,
+          subject: "Invitación para entrenar en RunningApexFlow",
+          html: `<div style="font-family:Arial,sans-serif"><h2>¡Tu coach te invitó! 🏃</h2><p>Haz clic aquí para registrarte y vincularte automáticamente:</p><p><a href="${inviteLink}">${inviteLink}</a></p></div>`,
+        }),
+      });
+      notify("Invitación enviada ✓");
+      setInviteModalOpen(false);
+      setInviteEmail("");
+    } catch (e) {
+      console.error("sendAthleteInvitation:", e);
+      notify("No se pudo enviar la invitación.");
+    } finally {
+      setInviteSending(false);
+    }
+  }, [inviteEmail, notify, session?.user?.id]);
+
   useEffect(() => {
     let mounted = true;
     const bootstrapAuth = async () => {
@@ -1062,6 +1127,17 @@ export default function App() {
       mounted = false;
       data.subscription.unsubscribe();
     };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const invite = (params.get("invite") || "").trim();
+    if (!invite) return;
+    setInviteCodeFromUrl(invite);
+    setAuthMode("register");
+    setAuthRole("athlete");
+    setLandingAuthOpen(true);
   }, []);
 
   useEffect(() => {
@@ -1124,6 +1200,30 @@ export default function App() {
 
     loadProfile();
   }, [session]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoadingPublicCoaches(true);
+      const { data, error } = await supabase
+        .from("coach_profiles")
+        .select("user_id, full_name, city, country, avatar_url, is_public")
+        .eq("is_public", true)
+        .order("updated_at", { ascending: false })
+        .limit(12);
+      if (cancelled) return;
+      if (error) {
+        console.error("Error cargando coaches públicos:", error);
+        setPublicCoaches([]);
+      } else {
+        setPublicCoaches(data || []);
+      }
+      setLoadingPublicCoaches(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!session?.user?.id) return;
@@ -1322,10 +1422,45 @@ export default function App() {
           return;
         }
 
+        let linkedCoachId = authRole === "coach" ? newUserId : null;
+        let inviteRow = null;
+        if (authRole === "athlete") {
+          if (inviteCodeFromUrl) {
+            const { data: inv, error: invErr } = await supabase
+              .from("invitations")
+              .select("*")
+              .eq("code", inviteCodeFromUrl)
+              .eq("status", "pending")
+              .maybeSingle();
+            if (invErr) {
+              console.error("Error consultando invitación:", invErr);
+            }
+            if (inv) {
+              const inviteEmail = String(inv.email || "").trim().toLowerCase();
+              const regEmail = authEmail.trim().toLowerCase();
+              if (inviteEmail && inviteEmail !== regEmail) {
+                alert("Este link de invitación fue emitido para otro email.");
+                setAuthSubmitting(false);
+                return;
+              }
+              linkedCoachId = inv.coach_id || null;
+              inviteRow = inv;
+            }
+          } else if (authCoachCode.trim()) {
+            const coachIdFromCode = await resolveCoachIdByCode(authCoachCode);
+            if (!coachIdFromCode) {
+              alert("No encontramos un coach con ese código.");
+              setAuthSubmitting(false);
+              return;
+            }
+            linkedCoachId = coachIdFromCode;
+          }
+        }
+
         const profilePayload = {
           user_id: newUserId,
           role: authRole,
-          coach_id: authRole === "coach" ? newUserId : null,
+          coach_id: linkedCoachId,
           name: authName.trim(),
         };
 
@@ -1337,10 +1472,48 @@ export default function App() {
           await syncFcmTokenToProfile();
         }
 
+        if (authRole === "athlete") {
+          const athletePayload = {
+            name: authName.trim(),
+            email: authEmail.trim().toLowerCase(),
+            goal: "Objetivo pendiente",
+            pace: "Pendiente",
+            weekly_km: 0,
+            coach_id: linkedCoachId,
+            user_id: newUserId,
+          };
+          const { data: athleteRow, error: athleteErr } = await supabase.from("athletes").insert(athletePayload).select().maybeSingle();
+          if (athleteErr) {
+            console.error("Error creando athlete al registrar:", athleteErr);
+          } else if (pendingCoachRequestId && athleteRow?.id) {
+            await supabase.from("coach_requests").upsert(
+              {
+                athlete_id: athleteRow.id,
+                coach_id: pendingCoachRequestId,
+                status: "pending",
+              },
+              { onConflict: "athlete_id,coach_id" },
+            );
+            setPendingCoachRequestId("");
+          }
+        }
+
+        if (inviteRow?.id) {
+          await supabase
+            .from("invitations")
+            .update({ status: "accepted", accepted_at: new Date().toISOString() })
+            .eq("id", inviteRow.id);
+          setInviteCodeFromUrl("");
+          if (typeof window !== "undefined") {
+            window.history.replaceState({}, "", "/");
+          }
+        }
+
         alert("Registro exitoso. Revisa tu correo si la verificación está habilitada.");
         setAuthMode("login");
         setAuthRole("");
         setAuthName("");
+        setAuthCoachCode("");
       }
     } finally {
       setAuthSubmitting(false);
@@ -1512,6 +1685,23 @@ export default function App() {
                         style={{ width: "100%", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", color: "#0f172a", fontFamily: "inherit", fontSize: ".85em", outline: "none", boxSizing: "border-box" }}
                       />
                     </div>
+                    {authRole === "athlete" && (
+                      <div style={{ marginBottom: 10 }}>
+                        <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Código de tu coach (opcional)</div>
+                        <input
+                          type="text"
+                          value={authCoachCode}
+                          onChange={e => setAuthCoachCode(e.target.value.toUpperCase())}
+                          placeholder="Ej: A1B2C3D4"
+                          style={{ width: "100%", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", color: "#0f172a", fontFamily: "inherit", fontSize: ".85em", outline: "none", boxSizing: "border-box" }}
+                        />
+                        {inviteCodeFromUrl ? (
+                          <div style={{ marginTop: 6, fontSize: ".7em", color: "#b45309", fontWeight: 700 }}>
+                            Invitación detectada por link: se priorizará esa vinculación.
+                          </div>
+                        ) : null}
+                      </div>
+                    )}
                   </>
                 )}
                 <div style={{ marginBottom: 10 }}>
@@ -1660,6 +1850,49 @@ export default function App() {
 
           <div style={{ marginBottom: 24 }}>
             <div style={{ fontSize: ".85em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase", fontWeight: 900, marginBottom: 12 }}>
+              Encuentra tu coach
+            </div>
+            {loadingPublicCoaches ? (
+              <div style={{ ...S.card, color: "#64748b", fontSize: ".88em" }}>Cargando coaches públicos…</div>
+            ) : publicCoaches.length === 0 ? (
+              <div style={{ ...S.card, color: "#64748b", fontSize: ".88em" }}>Aún no hay coaches públicos disponibles.</div>
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 18 }}>
+                {publicCoaches.map((c) => (
+                  <div key={c.user_id} style={{ ...S.card, padding: 16 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                      <div style={{ width: 42, height: 42, borderRadius: "50%", overflow: "hidden", background: "#f1f5f9", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        {c.avatar_url ? <img src={c.avatar_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : "👤"}
+                      </div>
+                      <div>
+                        <div style={{ color: "#0f172a", fontWeight: 800, fontSize: ".9em" }}>{c.full_name || "Coach"}</div>
+                        <div style={{ color: "#64748b", fontSize: ".75em" }}>{[c.city, c.country].filter(Boolean).join(", ") || "Ubicación no especificada"}</div>
+                      </div>
+                    </div>
+                    <div style={{ color: "#64748b", fontSize: ".78em", marginBottom: 12 }}>
+                      Código: <strong>{coachCodeFromId(c.user_id)}</strong>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPendingCoachRequestId(c.user_id);
+                        setAuthCoachCode(coachCodeFromId(c.user_id));
+                        setAuthMode("register");
+                        setAuthRole("athlete");
+                        setLandingAuthOpen(true);
+                      }}
+                      style={{ width: "100%", background: "linear-gradient(135deg,#0d9488,#14b8a6)", border: "none", borderRadius: 8, padding: "9px 12px", color: "#fff", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".8em" }}
+                    >
+                      Solicitar unirme
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div style={{ marginBottom: 24 }}>
+            <div style={{ fontSize: ".85em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase", fontWeight: 900, marginBottom: 12 }}>
               Features
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 18 }}>
@@ -1789,6 +2022,32 @@ export default function App() {
   return (
     <div style={S.root}>
       {notification && <div style={S.notification}>✓ {notification}</div>}
+      {inviteModalOpen ? (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 500, padding: 16 }}>
+          <div style={{ ...S.card, width: "100%", maxWidth: 460, margin: 0 }}>
+            <div style={{ fontSize: ".95em", fontWeight: 800, color: "#0f172a", marginBottom: 10 }}>📧 Invitar Atleta</div>
+            <div style={{ fontSize: ".8em", color: "#64748b", marginBottom: 8 }}>Email del atleta</div>
+            <input
+              type="email"
+              value={inviteEmail}
+              onChange={(e) => setInviteEmail(e.target.value)}
+              placeholder="atleta@email.com"
+              style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", color: "#0f172a", fontFamily: "inherit", fontSize: ".85em", boxSizing: "border-box" }}
+            />
+            <div style={{ marginTop: 12, display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <button type="button" onClick={() => setInviteModalOpen(false)} style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 12px", color: "#64748b", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: ".8em" }}>Cancelar</button>
+              <button
+                type="button"
+                onClick={sendAthleteInvitation}
+                disabled={inviteSending}
+                style={{ background: inviteSending ? "#e2e8f0" : "linear-gradient(135deg,#0d9488,#14b8a6)", border: "none", borderRadius: 8, padding: "8px 12px", color: inviteSending ? "#64748b" : "#fff", cursor: inviteSending ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 800, fontSize: ".8em" }}
+              >
+                {inviteSending ? "Enviando..." : "Enviar invitación"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <aside className="pf-sidebar-desktop" style={S.sidebar}>
         <div style={S.logo}>
@@ -1956,6 +2215,7 @@ export default function App() {
             }
             onDeleteAthlete={handleDeleteAthlete}
             notify={notify}
+            onOpenInviteModal={() => setInviteModalOpen(true)}
           />
         )}
         {view === "evaluation" && (
@@ -1972,6 +2232,7 @@ export default function App() {
             sessionEmail={session?.user?.email ?? ""}
             profileName={profile?.name ?? ""}
             athletes={athletes}
+            setAthletes={setAthletes}
             stravaRefreshTick={stravaRefreshTick}
             notify={notify}
             onSignOut={handleSignOut}
@@ -2462,7 +2723,7 @@ function Dashboard({
   );
 }
 
-function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWorkoutsDoneSync, onAthleteFcSync, coachDisplayName, onDeleteAthlete, notify }) {
+function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWorkoutsDoneSync, onAthleteFcSync, coachDisplayName, onDeleteAthlete, notify, onOpenInviteModal }) {
   const S = styles;
   const athlete = (selected ? athletes.find(a => String(a.id) === String(selected.id)) : athletes[0]) || null;
   const [searchQuery, setSearchQuery] = useState("");
@@ -3255,14 +3516,32 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
   if (!athlete) {
     return (
       <div style={S.page}>
-        <h1 style={{ ...S.pageTitle, marginBottom: 20 }}>Atletas</h1>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 20 }}>
+          <h1 style={{ ...S.pageTitle, marginBottom: 0 }}>Atletas</h1>
+          <button
+            type="button"
+            onClick={onOpenInviteModal}
+            style={{ background: "linear-gradient(135deg,#0d9488,#14b8a6)", border: "none", borderRadius: 8, padding: "8px 12px", color: "#fff", fontSize: ".8em", fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}
+          >
+            📧 Invitar Atleta
+          </button>
+        </div>
         <div style={{ color: "#64748b", fontSize: ".9em" }}>No se encontraron atletas</div>
       </div>
     );
   }
   return (
     <div style={S.page}>
-      <h1 style={{ ...S.pageTitle, marginBottom: 20 }}>Atletas</h1>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 20 }}>
+        <h1 style={{ ...S.pageTitle, marginBottom: 0 }}>Atletas</h1>
+        <button
+          type="button"
+          onClick={onOpenInviteModal}
+          style={{ background: "linear-gradient(135deg,#0d9488,#14b8a6)", border: "none", borderRadius: 8, padding: "8px 12px", color: "#fff", fontSize: ".8em", fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}
+        >
+          📧 Invitar Atleta
+        </button>
+      </div>
       <div className="pf-stack-mobile" style={{ display: "grid", gridTemplateColumns: "220px 1fr", gap: 20 }}>
         <div>
           <div style={{ marginBottom: 10 }}>
@@ -8384,7 +8663,7 @@ function AdminPromoCodes({ notify }) {
   );
 }
 
-function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, stravaRefreshTick, notify, onSignOut }) {
+function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAthletes, stravaRefreshTick, notify, onSignOut }) {
   const S = styles;
   const athletesRef = useRef(athletes);
   athletesRef.current = athletes;
@@ -8403,6 +8682,7 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, strav
     currency: "COP",
     notify_new_workouts: true,
     notify_reminders: true,
+    is_public: false,
     subscription_plan: "",
     subscription_renews_at: "",
   });
@@ -8411,6 +8691,8 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, strav
   const [deviceOverrides, setDeviceOverrides] = useState({});
   const [stravaActivitiesByAthlete, setStravaActivitiesByAthlete] = useState({});
   const [loadingActivitiesByAthlete, setLoadingActivitiesByAthlete] = useState({});
+  const [coachRequests, setCoachRequests] = useState([]);
+  const [requestsBusyId, setRequestsBusyId] = useState("");
 
   const loadProfile = useCallback(async () => {
     if (!coachUserId) {
@@ -8438,6 +8720,7 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, strav
         currency: data.currency === "USD" ? "USD" : "COP",
         notify_new_workouts: data.notify_new_workouts !== false,
         notify_reminders: data.notify_reminders !== false,
+        is_public: data.is_public === true,
         subscription_plan: data.subscription_plan || "",
         subscription_renews_at: data.subscription_renews_at || "",
       });
@@ -8454,6 +8737,7 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, strav
         currency: "COP",
         notify_new_workouts: true,
         notify_reminders: true,
+        is_public: false,
         subscription_plan: athletesRef.current?.find((a) => a.plan)?.plan || "",
         subscription_renews_at: "",
       });
@@ -8468,6 +8752,55 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, strav
   useEffect(() => {
     setDeviceOverrides({});
   }, [athletes]);
+
+  const coachCode = useMemo(() => String(coachUserId || "").replace(/-/g, "").slice(0, 8).toUpperCase(), [coachUserId]);
+
+  const loadCoachRequests = useCallback(async () => {
+    if (!coachUserId) return;
+    const { data, error } = await supabase
+      .from("coach_requests")
+      .select("id, athlete_id, coach_id, status, created_at")
+      .eq("coach_id", coachUserId)
+      .order("created_at", { ascending: false });
+    if (error) {
+      console.error("Error cargando coach_requests:", error);
+      setCoachRequests([]);
+      return;
+    }
+    setCoachRequests(data || []);
+  }, [coachUserId]);
+
+  useEffect(() => {
+    loadCoachRequests();
+  }, [loadCoachRequests]);
+
+  const updateCoachRequestStatus = async (row, status) => {
+    if (!row?.id || !coachUserId) return;
+    setRequestsBusyId(row.id);
+    const { error } = await supabase
+      .from("coach_requests")
+      .update({ status })
+      .eq("id", row.id)
+      .eq("coach_id", coachUserId);
+    if (error) {
+      console.error("Error actualizando solicitud:", error);
+      notify(error.message || "No se pudo actualizar la solicitud");
+      setRequestsBusyId("");
+      return;
+    }
+    if (status === "accepted") {
+      const { data: athleteRow } = await supabase.from("athletes").select("id, user_id").eq("id", row.athlete_id).maybeSingle();
+      await supabase.from("athletes").update({ coach_id: coachUserId }).eq("id", row.athlete_id);
+      if (athleteRow?.user_id) {
+        await supabase.from("profiles").update({ coach_id: coachUserId }).eq("user_id", athleteRow.user_id);
+      }
+      if (typeof setAthletes === "function") {
+        setAthletes((prev) => prev.map((a) => (String(a.id) === String(row.athlete_id) ? { ...a, coach_id: coachUserId } : a)));
+      }
+    }
+    await loadCoachRequests();
+    setRequestsBusyId("");
+  };
 
   const setAthleteDeviceConnection = async (athleteId, deviceValue) => {
     const { error } = await supabase.from("athletes").update({ device: deviceValue }).eq("id", athleteId);
@@ -8586,6 +8919,7 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, strav
       currency: form.currency === "USD" ? "USD" : "COP",
       notify_new_workouts: form.notify_new_workouts,
       notify_reminders: form.notify_reminders,
+      is_public: form.is_public === true,
       subscription_plan: form.subscription_plan.trim() || null,
       subscription_renews_at: form.subscription_renews_at ? form.subscription_renews_at : null,
       updated_at: new Date().toISOString(),
@@ -8710,6 +9044,33 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, strav
           </div>
 
           <div style={{ ...S.card, marginBottom: 18 }}>
+            <div style={{ fontSize: ".72em", letterSpacing: ".12em", color: "#64748b", fontWeight: 700, marginBottom: 12 }}>
+              CÓDIGO DE COACH
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 10 }}>
+              <div style={{ color: "#0f172a", fontWeight: 800, fontFamily: "monospace", fontSize: "1.1em" }}>{coachCode || "--------"}</div>
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(coachCode || "");
+                    notify("Código copiado");
+                  } catch {
+                    notify("No se pudo copiar el código");
+                  }
+                }}
+                style={{ background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 8, padding: "6px 10px", color: "#1d4ed8", fontWeight: 700, fontSize: ".75em", cursor: "pointer", fontFamily: "inherit" }}
+              >
+                Copiar
+              </button>
+            </div>
+            <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", fontSize: ".85em", color: "#0f172a" }}>
+              <input type="checkbox" checked={form.is_public} onChange={(e) => setForm((f) => ({ ...f, is_public: e.target.checked }))} />
+              Mostrar mi perfil en "Encuentra tu coach"
+            </label>
+          </div>
+
+          <div style={{ ...S.card, marginBottom: 18 }}>
             <div style={{ fontSize: ".72em", letterSpacing: ".12em", color: "#64748b", fontWeight: 700, marginBottom: 16 }}>
               PREFERENCIAS
             </div>
@@ -8758,6 +9119,35 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, strav
               <input type="checkbox" checked={form.notify_reminders} onChange={(e) => setForm((f) => ({ ...f, notify_reminders: e.target.checked }))} />
               Recordatorios por email
             </label>
+          </div>
+
+          <div style={{ ...S.card, marginBottom: 18 }}>
+            <div style={{ fontSize: ".72em", letterSpacing: ".12em", color: "#64748b", fontWeight: 700, marginBottom: 16 }}>
+              SOLICITUDES DE ATLETAS
+            </div>
+            {coachRequests.filter((r) => r.status === "pending").length === 0 ? (
+              <div style={{ color: "#64748b", fontSize: ".84em" }}>No tienes solicitudes pendientes.</div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {coachRequests
+                  .filter((r) => r.status === "pending")
+                  .map((r) => {
+                    const athlete = (athletes || []).find((a) => String(a.id) === String(r.athlete_id));
+                    return (
+                      <div key={r.id} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: "10px 12px", background: "#f8fafc", display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                        <div>
+                          <div style={{ color: "#0f172a", fontWeight: 700, fontSize: ".82em" }}>{athlete?.name || "Atleta"}</div>
+                          <div style={{ color: "#64748b", fontSize: ".72em" }}>{athlete?.email || r.athlete_id}</div>
+                        </div>
+                        <div style={{ display: "flex", gap: 8 }}>
+                          <button type="button" disabled={requestsBusyId === r.id} onClick={() => updateCoachRequestStatus(r, "accepted")} style={{ background: "rgba(34,197,94,.14)", border: "1px solid rgba(34,197,94,.35)", borderRadius: 8, padding: "6px 10px", color: "#15803d", fontSize: ".72em", fontWeight: 700, cursor: requestsBusyId === r.id ? "not-allowed" : "pointer", fontFamily: "inherit" }}>Aceptar</button>
+                          <button type="button" disabled={requestsBusyId === r.id} onClick={() => updateCoachRequestStatus(r, "rejected")} style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "6px 10px", color: "#b91c1c", fontSize: ".72em", fontWeight: 700, cursor: requestsBusyId === r.id ? "not-allowed" : "pointer", fontFamily: "inherit" }}>Rechazar</button>
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            )}
           </div>
 
           <div style={{ ...S.card, marginBottom: 18 }}>
