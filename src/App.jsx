@@ -1203,6 +1203,7 @@ export default function App() {
         console.log("[STRAVA CALLBACK][App] requesting /api/strava token exchange");
         const r = await fetch(`/api/strava?code=${encodeURIComponent(code)}`);
         const data = await r.json();
+        console.log("[STRAVA CALLBACK][App] raw JSON", JSON.stringify(data));
         console.log("[STRAVA CALLBACK][App] /api/strava response", {
           status: r.status,
           ok: r.ok,

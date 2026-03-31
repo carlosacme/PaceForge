@@ -1,4 +1,4 @@
-﻿export default async function handler(req, res) {
+export default async function handler(req, res) {
   const CLIENT_ID = process.env.STRAVA_CLIENT_ID;
   const CLIENT_SECRET = process.env.STRAVA_CLIENT_SECRET;
   const REDIRECT_URI = 'https://pace-forge-eta.vercel.app/api/strava/callback';
@@ -14,7 +14,13 @@
     const r = await fetch('https://www.strava.com/oauth/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ client_id: CLIENT_ID, client_secret: CLIENT_SECRET, code: req.query.code, grant_type: 'authorization_code' })
+      body: JSON.stringify({
+        client_id: CLIENT_ID,
+        client_secret: CLIENT_SECRET,
+        code: req.query.code,
+        grant_type: 'authorization_code',
+        redirect_uri: 'https://pace-forge-eta.vercel.app/api/strava/callback'
+      })
     });
     const data = await r.json();
     return res.status(200).json(data);
