@@ -9,6 +9,7 @@ import {
 } from "./firebase.js";
 
 const BRAND_NAME = "RunningApexFlow";
+const STRAVA_CALLBACK_URL = "https://pace-forge-eta.vercel.app/api/strava/callback";
 
 const WORKOUT_TYPES = [
   { id: "easy", label: "Rodaje Suave", color: "#22c55e" },
@@ -1188,6 +1189,12 @@ export default function App() {
       try {
         const r = await fetch(`/api/strava?code=${encodeURIComponent(code)}`);
         const data = await r.json();
+        console.log("[STRAVA CALLBACK][App] /api/strava response", {
+          status: r.status,
+          ok: r.ok,
+          data,
+          callback_url_expected: STRAVA_CALLBACK_URL,
+        });
         if (!r.ok || !data?.access_token) {
           notify("No se pudo conectar Strava.");
           return;
@@ -3311,7 +3318,8 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
             ))
           )}
         </div>
-        <div style={{ ...S.card }}>
+        <div style={{ ...S.card, display: "flex", flexDirection: "column", gap: 0 }}>
+          <div style={{ order: 1 }}>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 14, alignItems: "center", marginBottom: 20 }}>
             <div style={{ ...S.avatar, width: 52, height: 52, fontSize: "1.8em" }}>{athlete.avatar}</div>
             <div style={{ flex: "1 1 180px", minWidth: 0 }}>
@@ -3369,8 +3377,9 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
               </div>
             ))}
           </div>
+          </div>
 
-          <div style={{ marginBottom: 24, paddingBottom: 20, borderBottom: "1px solid #e2e8f0" }}>
+          <div style={{ order: 3, marginBottom: 24, paddingBottom: 20, borderBottom: "1px solid #e2e8f0" }}>
             <div style={{ fontSize: ".65em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase", marginBottom: 12 }}>
               ZONAS FC
             </div>
@@ -3445,7 +3454,7 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
             })()}
           </div>
 
-          <div style={{ marginBottom: 24, paddingBottom: 20, borderBottom: "1px solid #e2e8f0" }}>
+          <div style={{ order: 5, marginBottom: 24, paddingBottom: 20, borderBottom: "1px solid #e2e8f0" }}>
             <div style={{ fontSize: ".65em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase", marginBottom: 10 }}>
               MEDALLAS DEL ATLETA
             </div>
@@ -3507,7 +3516,7 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
             })()}
           </div>
 
-          <div style={{ marginBottom: 24, paddingBottom: 20, borderBottom: "1px solid #e2e8f0" }}>
+          <div style={{ order: 6, marginBottom: 24, paddingBottom: 20, borderBottom: "1px solid #e2e8f0" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 10 }}>
               <div style={{ fontSize: ".65em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase" }}>
                 PAGOS
@@ -3588,7 +3597,7 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
             )}
           </div>
 
-          <div style={{ marginBottom: 24, paddingBottom: 20, borderBottom: "1px solid #e2e8f0" }}>
+          <div style={{ order: 4, marginBottom: 24, paddingBottom: 20, borderBottom: "1px solid #e2e8f0" }}>
             <div style={{ fontSize: ".65em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase", marginBottom: 10 }}>
               FORMA Y FATIGA
             </div>
@@ -3672,6 +3681,7 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
             )}
           </div>
 
+          <div style={{ order: 2, marginBottom: 24, paddingBottom: 20, borderBottom: "1px solid #e2e8f0" }}>
           <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 10 }}>
             <div style={{ fontSize: ".65em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase" }}>
               CALENDARIO · {calendarMonthLabel}
@@ -3855,8 +3865,9 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
               })}
             </div>
           )}
+          </div>
 
-          <div style={{ marginTop: 22 }}>
+          <div style={{ order: 7, marginTop: 22 }}>
             <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 10 }}>
               <div style={{ fontSize: ".65em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase" }}>
                 CHAT CON ATLETA
@@ -4983,6 +4994,12 @@ function AthleteHome({ profile }) {
       try {
         const r = await fetch(`/api/strava?code=${encodeURIComponent(code)}`);
         const data = await r.json();
+        console.log("[STRAVA CALLBACK][AthleteHome] /api/strava response", {
+          status: r.status,
+          ok: r.ok,
+          data,
+          callback_url_expected: STRAVA_CALLBACK_URL,
+        });
         if (!r.ok || !data?.access_token) {
           setMessage("No se pudo conectar Strava.");
           return;
@@ -8392,6 +8409,7 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, strav
   });
   const [stravaByUserId, setStravaByUserId] = useState({});
   const [loadingStravaByAthlete, setLoadingStravaByAthlete] = useState(false);
+  const [deviceOverrides, setDeviceOverrides] = useState({});
 
   const loadProfile = useCallback(async () => {
     if (!coachUserId) {
@@ -8445,6 +8463,21 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, strav
   useEffect(() => {
     loadProfile();
   }, [loadProfile]);
+
+  useEffect(() => {
+    setDeviceOverrides({});
+  }, [athletes]);
+
+  const setAthleteDeviceConnection = async (athleteId, deviceValue) => {
+    const { error } = await supabase.from("athletes").update({ device: deviceValue }).eq("id", athleteId);
+    if (error) {
+      console.error("Error actualizando dispositivo:", error);
+      notify(error.message || "No se pudo actualizar el dispositivo");
+      return;
+    }
+    setDeviceOverrides((prev) => ({ ...prev, [athleteId]: deviceValue || "" }));
+    notify("Dispositivo actualizado");
+  };
 
   useEffect(() => {
     const userIds = (athletes || []).map((a) => a?.user_id).filter(Boolean);
@@ -8694,7 +8727,8 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, strav
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 {athletes.map((a) => {
-                  const device = String(a?.device || "").trim();
+                  const currentDeviceRaw = deviceOverrides[a.id] ?? a?.device ?? "";
+                  const device = String(currentDeviceRaw).trim();
                   const stravaConn = a?.user_id ? stravaByUserId[a.user_id] : null;
                   const corosConnected = device.toLowerCase() === "coros";
                   const garminConnected = device.toLowerCase() === "garmin";
@@ -8702,6 +8736,27 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, strav
                     <div key={a.id} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: "10px 12px", background: "#f8fafc" }}>
                       <div style={{ color: "#0f172a", fontSize: ".84em", fontWeight: 700, marginBottom: 8 }}>{a.name || "Atleta"}</div>
                       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+                        <button
+                          type="button"
+                          onClick={() => setAthleteDeviceConnection(a.id, "coros")}
+                          style={{ background: corosConnected ? "rgba(34,197,94,.16)" : "#ffffff", border: `1px solid ${corosConnected ? "rgba(34,197,94,.35)" : "#e2e8f0"}`, borderRadius: 8, padding: "6px 9px", color: corosConnected ? "#15803d" : "#475569", fontSize: ".72em", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}
+                        >
+                          Conectar COROS
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setAthleteDeviceConnection(a.id, "garmin")}
+                          style={{ background: garminConnected ? "rgba(34,197,94,.16)" : "#ffffff", border: `1px solid ${garminConnected ? "rgba(34,197,94,.35)" : "#e2e8f0"}`, borderRadius: 8, padding: "6px 9px", color: garminConnected ? "#15803d" : "#475569", fontSize: ".72em", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}
+                        >
+                          Conectar Garmin
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setAthleteDeviceConnection(a.id, null)}
+                          style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "6px 9px", color: "#64748b", fontSize: ".72em", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}
+                        >
+                          Desconectar dispositivo
+                        </button>
                         <span style={{ background: corosConnected ? "rgba(34,197,94,.14)" : "#f1f5f9", border: `1px solid ${corosConnected ? "rgba(34,197,94,.35)" : "#e2e8f0"}`, borderRadius: 999, padding: "4px 9px", color: corosConnected ? "#15803d" : "#64748b", fontSize: ".72em", fontWeight: 700 }}>
                           COROS: {corosConnected ? "conectado" : "no conectado"}
                         </span>
@@ -8719,7 +8774,7 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, strav
                         <button
                           type="button"
                           onClick={() => {
-                            const authUrl = `https://www.strava.com/oauth/authorize?client_id=218467&redirect_uri=https://pace-forge-eta.vercel.app/api/strava/callback&response_type=code&scope=activity:read_all&state=${encodeURIComponent(String(a.id))}`;
+                            const authUrl = `https://www.strava.com/oauth/authorize?client_id=218467&redirect_uri=${encodeURIComponent(STRAVA_CALLBACK_URL)}&response_type=code&scope=activity:read_all&state=${encodeURIComponent(String(a.id))}`;
                             window.open(authUrl, "_blank", "noopener,noreferrer");
                           }}
                           style={{ background: "linear-gradient(135deg,#ea580c,#f97316)", border: "none", borderRadius: 8, padding: "7px 11px", color: "#fff", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".74em" }}
