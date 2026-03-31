@@ -3961,7 +3961,26 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
                   )}
                 </>
               ) : (
-                <div style={{ color: "#94a3b8", fontSize: ".78em" }}>⚪ Strava no conectado</div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const authUrl = `https://www.strava.com/oauth/authorize?client_id=218467&redirect_uri=https://pace-forge-eta.vercel.app/api/strava/callback&response_type=code&scope=activity:read_all&state=${encodeURIComponent(String(athlete?.id || ""))}`;
+                    window.open(authUrl, "_blank", "noopener,noreferrer");
+                  }}
+                  style={{
+                    background: "linear-gradient(135deg,#ea580c,#f97316)",
+                    border: "none",
+                    borderRadius: 8,
+                    padding: "8px 12px",
+                    color: "#fff",
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                    fontSize: ".78em",
+                    fontWeight: 800,
+                  }}
+                >
+                  🟠 Conectar Strava
+                </button>
               )}
             </div>
           </div>
