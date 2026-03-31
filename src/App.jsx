@@ -2521,6 +2521,9 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
   const [raceMoveDate, setRaceMoveDate] = useState("");
   const [raceActionBusy, setRaceActionBusy] = useState(false);
   const [chatClearing, setChatClearing] = useState(false);
+  const [athleteStravaConnection, setAthleteStravaConnection] = useState(null);
+  const [athleteStravaActivities, setAthleteStravaActivities] = useState([]);
+  const [loadingAthleteStrava, setLoadingAthleteStrava] = useState(false);
 
   const refreshRacesList = useCallback(async () => {
     if (!athlete?.id) return;
@@ -3069,6 +3072,60 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
     if (!chatScrollRef.current) return;
     chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
   }, [chatMessages]);
+
+  useEffect(() => {
+    if (!athlete?.id || !athlete?.user_id) {
+      setAthleteStravaConnection(null);
+      setAthleteStravaActivities([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      setLoadingAthleteStrava(true);
+      const { data: conn, error: connErr } = await supabase
+        .from("strava_connections")
+        .select("*")
+        .eq("user_id", athlete.user_id)
+        .maybeSingle();
+      if (cancelled) return;
+      if (connErr || !conn) {
+        if (connErr) console.error("Error cargando conexión Strava del atleta:", connErr);
+        setAthleteStravaConnection(null);
+        setAthleteStravaActivities([]);
+        setLoadingAthleteStrava(false);
+        return;
+      }
+      setAthleteStravaConnection(conn);
+      if (!conn.access_token) {
+        setAthleteStravaActivities([]);
+        setLoadingAthleteStrava(false);
+        return;
+      }
+      try {
+        const r = await fetch("/api/strava?action=activities", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ access_token: conn.access_token }),
+        });
+        const data = await r.json();
+        if (cancelled) return;
+        if (!r.ok || !Array.isArray(data)) {
+          setAthleteStravaActivities([]);
+          setLoadingAthleteStrava(false);
+          return;
+        }
+        setAthleteStravaActivities(data.slice(0, 5).map(normalizeStravaActivity).filter(Boolean));
+      } catch (e) {
+        console.error("Error cargando actividades Strava del atleta:", e);
+        if (!cancelled) setAthleteStravaActivities([]);
+      } finally {
+        if (!cancelled) setLoadingAthleteStrava(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [athlete?.id, athlete?.user_id]);
 
   const saveAthleteFc = async () => {
     if (!athlete?.id) return;
@@ -3874,6 +3931,39 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
               </button>
             )}
             {!!deviceMessage && <div style={{ marginTop: 10, color: "#22c55e", fontSize: ".78em" }}>{deviceMessage}</div>}
+
+            <div style={{ marginTop: 14 }}>
+              <div style={{ fontSize: ".62em", letterSpacing: ".14em", color: "#475569", textTransform: "uppercase", marginBottom: 8 }}>
+                Strava
+              </div>
+              {loadingAthleteStrava ? (
+                <div style={{ color: "#64748b", fontSize: ".78em" }}>Cargando estado de Strava…</div>
+              ) : athleteStravaConnection ? (
+                <>
+                  <div style={{ color: "#15803d", fontWeight: 700, fontSize: ".78em", marginBottom: 8 }}>
+                    ✅ Conectado como {athleteStravaConnection.strava_athlete_name || "atleta"}
+                  </div>
+                  {athleteStravaActivities.length === 0 ? (
+                    <div style={{ color: "#64748b", fontSize: ".76em" }}>Sin actividades recientes.</div>
+                  ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                      {athleteStravaActivities.map((a) => (
+                        <div key={a.id} style={{ border: "1px solid #fed7aa", borderRadius: 8, padding: "6px 8px", background: "#fff7ed" }}>
+                          <div style={{ fontSize: ".74em", color: "#9a3412", fontWeight: 700 }}>
+                            {a.icon} {a.name}
+                          </div>
+                          <div style={{ fontSize: ".7em", color: "#7c2d12" }}>
+                            {a.distanceKm.toFixed(2)} km · {formatDurationClock(a.movingTime)} · {a.pace}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div style={{ color: "#94a3b8", fontSize: ".78em" }}>⚪ Strava no conectado</div>
+              )}
+            </div>
           </div>
 
           <div style={{ marginTop: 22 }}>
@@ -5442,54 +5532,6 @@ function AthleteHome({ profile }) {
       </div>
 
       <div style={{ ...S.card, marginBottom: 18 }}>
-        <div style={{ fontSize: ".72em", letterSpacing: ".13em", color: "#475569", textTransform: "uppercase", marginBottom: 12 }}>Integraciones</div>
-        {stravaConnection ? (
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-            <div style={{ color: "#15803d", fontWeight: 700, fontSize: ".86em" }}>
-              ✅ Strava conectado como {stravaConnection.strava_athlete_name || "atleta"}
-            </div>
-            <button
-              type="button"
-              onClick={disconnectStrava}
-              disabled={stravaDisconnecting}
-              style={{
-                background: stravaDisconnecting ? "#e2e8f0" : "#fef2f2",
-                border: "1px solid #fecaca",
-                borderRadius: 8,
-                padding: "8px 12px",
-                color: stravaDisconnecting ? "#64748b" : "#b91c1c",
-                cursor: stravaDisconnecting ? "not-allowed" : "pointer",
-                fontFamily: "inherit",
-                fontSize: ".8em",
-                fontWeight: 700,
-              }}
-            >
-              Desconectar
-            </button>
-          </div>
-        ) : (
-          <button
-            type="button"
-            onClick={() => { window.location.href = "/api/strava?action=auth"; }}
-            disabled={stravaSyncingCode}
-            style={{
-              background: "linear-gradient(135deg,#ea580c,#f97316)",
-              border: "none",
-              borderRadius: 8,
-              padding: "10px 14px",
-              color: "#fff",
-              cursor: stravaSyncingCode ? "not-allowed" : "pointer",
-              fontFamily: "inherit",
-              fontSize: ".84em",
-              fontWeight: 800,
-            }}
-          >
-            🟠 Conectar con Strava
-          </button>
-        )}
-      </div>
-
-      <div style={{ ...S.card, marginBottom: 18 }}>
         <div style={{ fontSize: ".72em", letterSpacing: ".13em", color: "#475569", textTransform: "uppercase", marginBottom: 12 }}>
           Mis Actividades Strava
         </div>
@@ -5906,6 +5948,61 @@ function AthleteHome({ profile }) {
             </div>
           </>
         )}
+      </div>
+      )}
+
+      {!athleteNotRegistered && (
+      <div style={{ ...S.card, marginTop: 20 }}>
+        <div style={{ fontSize: ".65em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase", marginBottom: 10 }}>
+          INTEGRACIONES
+        </div>
+        {stravaConnection ? (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+            <div style={{ color: "#15803d", fontWeight: 700, fontSize: ".86em" }}>
+              ✅ Strava conectado como {stravaConnection.strava_athlete_name || "atleta"}
+            </div>
+            <button
+              type="button"
+              onClick={disconnectStrava}
+              disabled={stravaDisconnecting}
+              style={{
+                background: stravaDisconnecting ? "#e2e8f0" : "#fef2f2",
+                border: "1px solid #fecaca",
+                borderRadius: 8,
+                padding: "8px 12px",
+                color: stravaDisconnecting ? "#64748b" : "#b91c1c",
+                cursor: stravaDisconnecting ? "not-allowed" : "pointer",
+                fontFamily: "inherit",
+                fontSize: ".8em",
+                fontWeight: 700,
+              }}
+            >
+              Desconectar
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => { window.location.href = "/api/strava?action=auth"; }}
+            disabled={stravaSyncingCode}
+            style={{
+              background: "linear-gradient(135deg,#ea580c,#f97316)",
+              border: "none",
+              borderRadius: 8,
+              padding: "10px 14px",
+              color: "#fff",
+              cursor: stravaSyncingCode ? "not-allowed" : "pointer",
+              fontFamily: "inherit",
+              fontSize: ".84em",
+              fontWeight: 800,
+            }}
+          >
+            🟠 Conectar con Strava
+          </button>
+        )}
+        <div style={{ marginTop: 10, color: "#64748b", fontSize: ".8em", lineHeight: 1.4 }}>
+          Conecta Strava para sincronizar tus actividades de Apple Watch, Garmin y otros dispositivos automaticamente.
+        </div>
       </div>
       )}
     </div>
