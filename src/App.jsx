@@ -8764,7 +8764,7 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, strav
                                   callback_url: STRAVA_CALLBACK_URL,
                                 });
                                 const authUrl = `https://www.strava.com/oauth/authorize?client_id=218467&redirect_uri=${encodeURIComponent(STRAVA_CALLBACK_URL)}&response_type=code&scope=activity:read_all&state=${encodeURIComponent(String(a.id))}`;
-                                window.open(authUrl, "_blank", "noopener,noreferrer");
+                                window.location.href = authUrl;
                               }}
                               style={{ background: "linear-gradient(135deg,#ea580c,#f97316)", border: "none", borderRadius: 8, padding: "6px 10px", color: "#fff", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".74em" }}
                             >
