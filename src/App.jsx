@@ -1198,7 +1198,10 @@ export default function App() {
           access_token: data.access_token ?? null,
           refresh_token: data.refresh_token ?? null,
           expires_at: data.expires_at ?? null,
-          strava_athlete_name: `${data.athlete?.firstname || ""} ${data.athlete?.lastname || ""}`.trim() || null,
+          strava_athlete_name:
+            (typeof data.athlete?.name === "string" && data.athlete.name.trim()) ||
+            `${data.athlete?.firstname || ""} ${data.athlete?.lastname || ""}`.trim() ||
+            null,
         };
         const { error } = await supabase.from("strava_connections").upsert(payload, { onConflict: "user_id" });
         if (error) {
@@ -1207,16 +1210,13 @@ export default function App() {
           return;
         }
         setStravaRefreshTick((n) => n + 1);
-        notify(`Strava conectado para ${currentAthlete.name || "atleta"}.`);
+        notify("✅ Strava conectado exitosamente");
       } catch (e) {
         console.error("Error conectando Strava en App:", e);
         notify("No se pudo completar la conexión de Strava.");
       } finally {
         if (!cancelled) {
-          const clean = new URL(window.location.href);
-          clean.searchParams.delete("strava_code");
-          clean.searchParams.delete("state");
-          window.history.replaceState({}, "", clean.toString());
+          window.history.replaceState({}, "", "/");
         }
       }
     })();
