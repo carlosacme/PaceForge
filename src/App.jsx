@@ -3719,22 +3719,18 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
                 const ymd = formatLocalYMD(cellDate);
                 const dayWorkouts = workoutsByDate[ymd] || [];
                 const dayRaces = racesByDate[ymd] || [];
-                const dayStrava = stravaActivitiesByDate[ymd] || [];
                 const hasWorkout = dayWorkouts.length > 0;
                 const hasDoneWorkout = dayWorkouts.some(w => w.done);
                 const hasRace = dayRaces.length > 0;
-                const hasStrava = dayStrava.length > 0;
                 const todayYmd = formatLocalYMD(new Date());
                 const isRaceToday = hasRace && ymd === todayYmd;
                 const inViewMonth = cellIsInViewMonth(cellDate, calendarViewMonth.y, calendarViewMonth.m);
                 let borderColor = "#f1f5f9";
                 if (hasRace) borderColor = "rgba(245,158,11,.55)";
-                else if (hasStrava) borderColor = "rgba(249,115,22,.45)";
                 else if (hasWorkout) borderColor = `${WORKOUT_TYPES.find(t => t.id === dayWorkouts[0].type)?.color || "#64748b"}40`;
                 let cellBackground = "transparent";
                 if (isRaceToday) cellBackground = "linear-gradient(160deg,#fffbeb 0%,#fde68a 55%,#fff7ed 100%)";
                 else if (hasRace) cellBackground = "linear-gradient(145deg,#fffbeb,#ffedd5)";
-                else if (hasStrava) cellBackground = "linear-gradient(145deg,#fff7ed,#ffedd5)";
                 else if (hasDoneWorkout) cellBackground = "rgba(34,197,94,.08)";
                 else if (hasWorkout) cellBackground = "#f8fafc";
                 return (
@@ -4626,6 +4622,7 @@ function AthleteHome({ profile }) {
   const [stravaConnection, setStravaConnection] = useState(null);
   const [stravaSyncingCode, setStravaSyncingCode] = useState(false);
   const [stravaActivities, setStravaActivities] = useState([]);
+  const [stravaActivitiesByDate, setStravaActivitiesByDate] = useState([]);
   const [stravaLoadingActivities, setStravaLoadingActivities] = useState(false);
   const [stravaDisconnecting, setStravaDisconnecting] = useState(false);
 
@@ -4794,14 +4791,14 @@ function AthleteHome({ profile }) {
     return m;
   }, [races]);
 
-  const stravaActivitiesByDate = useMemo(() => {
-    const m = {};
+  useEffect(() => {
+    const grouped = {};
     for (const a of stravaActivities) {
       if (!a?.ymd) continue;
-      if (!m[a.ymd]) m[a.ymd] = [];
-      m[a.ymd].push(a);
+      if (!grouped[a.ymd]) grouped[a.ymd] = [];
+      grouped[a.ymd].push(a);
     }
-    return m;
+    setStravaActivitiesByDate(grouped);
   }, [stravaActivities]);
 
   const nextRaceCountdownAthlete = useMemo(
@@ -5596,18 +5593,22 @@ function AthleteHome({ profile }) {
                 const ymd = formatLocalYMD(cellDate);
                 const dayWorkouts = workoutsByDate[ymd] || [];
                 const dayRaces = racesByDate[ymd] || [];
+                const dayStrava = stravaActivitiesByDate[ymd] || [];
                 const hasWorkout = dayWorkouts.length > 0;
                 const hasDoneWorkout = dayWorkouts.some(w => w.done);
                 const hasRace = dayRaces.length > 0;
+                const hasStrava = dayStrava.length > 0;
                 const todayYmd = formatLocalYMD(new Date());
                 const isRaceToday = hasRace && ymd === todayYmd;
                 const inViewMonth = cellIsInViewMonth(cellDate, calendarViewMonth.y, calendarViewMonth.m);
                 let borderColor = "#f1f5f9";
                 if (hasRace) borderColor = "rgba(245,158,11,.55)";
+                else if (hasStrava) borderColor = "rgba(249,115,22,.45)";
                 else if (hasWorkout) borderColor = `${WORKOUT_TYPES.find(t => t.id === dayWorkouts[0].type)?.color || "#64748b"}40`;
                 let cellBackground = "transparent";
                 if (isRaceToday) cellBackground = "linear-gradient(160deg,#fffbeb 0%,#fde68a 55%,#fff7ed 100%)";
                 else if (hasRace) cellBackground = "linear-gradient(145deg,#fffbeb,#ffedd5)";
+                else if (hasStrava) cellBackground = "linear-gradient(145deg,#fff7ed,#ffedd5)";
                 else if (hasDoneWorkout) cellBackground = "rgba(34,197,94,.08)";
                 else if (hasWorkout) cellBackground = "#f8fafc";
 
