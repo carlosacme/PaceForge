@@ -1748,8 +1748,8 @@ export default function App() {
       {
         plan: "Basico",
         label: "Básico",
-        priceCop: 70000,
-        priceUsd: 18,
+        priceCop: 100000,
+        priceUsd: 24,
         maxAthletes: 15,
         description: "Para coaches independientes que quieren profesionalizar su trabajo.",
         benefits: [
@@ -1766,7 +1766,7 @@ export default function App() {
       {
         plan: "Pro",
         label: "Pro",
-        priceCop: 150000,
+        priceCop: 160000,
         priceUsd: 39,
         maxAthletes: null,
         description: "Para coaches y academias que quieren escalar sin límites.",
@@ -1808,17 +1808,17 @@ export default function App() {
                 <div style={{ display: "flex", gap: 12, marginTop: 18, flexWrap: "wrap" }}>
                   <button
                     type="button"
-                    onClick={() => { setAuthMode("register"); setLandingAuthOpen(true); }}
+                    onClick={() => { setAuthMode("register"); setAuthRole("coach"); setLandingAuthOpen(true); }}
                     style={{ background: "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 10, padding: "12px 16px", color: "white", cursor: "pointer", fontFamily: "inherit", fontWeight: 900, fontSize: ".9em" }}
                   >
                     Empezar gratis
                   </button>
                   <button
                     type="button"
-                    onClick={() => setDemoModalOpen(true)}
+                    onClick={() => { setAuthMode("register"); setAuthRole("athlete"); setLandingAuthOpen(true); }}
                     style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 10, padding: "12px 16px", color: "#0f172a", cursor: "pointer", fontFamily: "inherit", fontWeight: 900, fontSize: ".9em" }}
                   >
-                    Ver demo
+                    Regístrate aquí como atleta
                   </button>
                 </div>
               </div>
@@ -1832,11 +1832,12 @@ export default function App() {
                 <div style={{ color: "#64748b", fontSize: ".9em" }}>
                   Asignación de workouts con IA, calendario y sincronización con dispositivos.
                 </div>
-                <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}>
+                <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10 }}>
                   {[
                     { t: "IA", c: "#f59e0b", s: "Workouts inteligentes" },
                     { t: "Garmin", c: "#3b82f6", s: "Sync & seguimiento" },
                     { t: "COROS", c: "#22c55e", s: "Conexión flexible" },
+                    { t: "Strava", c: "#f97316", s: "Sincroniza tus actividades de Apple Watch, Garmin y más dispositivos automáticamente" },
                   ].map((x) => (
                     <div key={x.t} style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 12, padding: 12 }}>
                       <div style={{ fontSize: "1.2em", fontWeight: 900, color: x.c, fontFamily: "monospace" }}>{x.t}</div>
@@ -1935,10 +1936,10 @@ export default function App() {
                   <div style={{ marginTop: 14 }}>
                     <button
                       type="button"
-                      onClick={() => { setAuthMode("register"); setLandingAuthOpen(true); }}
+                      onClick={() => { setAuthMode("register"); setAuthRole("coach"); setLandingAuthOpen(true); }}
                       style={{ width: "100%", background: "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 10, padding: "10px 14px", color: "white", cursor: "pointer", fontFamily: "inherit", fontWeight: 900, fontSize: ".85em" }}
                     >
-                      Empezar gratis
+                      Regístrate aquí como coach
                     </button>
                   </div>
                 </div>
@@ -9344,8 +9345,8 @@ function Plans({ athletes, notify }) {
       {
         plan: "Basico",
         label: "Básico",
-        priceCop: 70000,
-        priceUsd: 18,
+        priceCop: 100000,
+        priceUsd: 24,
         maxAthletes: 15,
         description: "Para coaches independientes que quieren profesionalizar su trabajo.",
         benefits: [
@@ -9362,7 +9363,7 @@ function Plans({ athletes, notify }) {
       {
         plan: "Pro",
         label: "Pro",
-        priceCop: 150000,
+        priceCop: 160000,
         priceUsd: 39,
         maxAthletes: null,
         description: "Para coaches y academias que quieren escalar sin límites.",
@@ -9385,8 +9386,8 @@ function Plans({ athletes, notify }) {
   const coachPlan = athletes?.[0]?.plan || "";
 
   const amountInCentsByPlan = (planName) => {
-    if (planName === "Basico") return 7000000;
-    if (planName === "Pro") return 15000000;
+    if (planName === "Basico") return 10000000;
+    if (planName === "Pro") return 16000000;
     return 0;
   };
 
