@@ -1175,6 +1175,11 @@ export default function App() {
     const params = new URLSearchParams(window.location.search);
     const code = params.get("strava_code");
     const athleteIdFromState = params.get("state");
+    console.log("[STRAVA CALLBACK][App] search params", {
+      search: window.location.search,
+      has_code: Boolean(code),
+      state: athleteIdFromState,
+    });
     if (!code) return;
     const currentAthlete =
       (athleteIdFromState
@@ -1183,10 +1188,20 @@ export default function App() {
       (selectedAthlete && selectedAthlete.user_id ? selectedAthlete : null) ||
       (athletes || []).find((a) => a?.user_id) ||
       null;
-    if (!currentAthlete?.user_id) return;
+    if (!currentAthlete?.user_id) {
+      console.log("[STRAVA CALLBACK][App] no athlete user_id found");
+      return;
+    }
+    console.log("[STRAVA CALLBACK][App] processing athlete", {
+      athlete_id: currentAthlete.id,
+      athlete_name: currentAthlete.name,
+      athlete_user_id: currentAthlete.user_id,
+      callback_url_expected: STRAVA_CALLBACK_URL,
+    });
     let cancelled = false;
     (async () => {
       try {
+        console.log("[STRAVA CALLBACK][App] requesting /api/strava token exchange");
         const r = await fetch(`/api/strava?code=${encodeURIComponent(code)}`);
         const data = await r.json();
         console.log("[STRAVA CALLBACK][App] /api/strava response", {
@@ -1216,6 +1231,7 @@ export default function App() {
           notify(error.message || "No se pudo guardar la conexión Strava.");
           return;
         }
+        console.log("[STRAVA CALLBACK][App] strava_connections upsert OK", payload);
         setStravaRefreshTick((n) => n + 1);
         notify("✅ Strava conectado exitosamente");
       } catch (e) {
@@ -4984,60 +5000,6 @@ function AthleteHome({ profile }) {
   }, [loadStravaActivities]);
 
   useEffect(() => {
-    if (!profile?.user_id || !athleteInfo?.id || typeof window === "undefined") return;
-    const params = new URLSearchParams(window.location.search);
-    const code = params.get("strava_code");
-    if (!code) return;
-    let cancelled = false;
-    (async () => {
-      setStravaSyncingCode(true);
-      try {
-        const r = await fetch(`/api/strava?code=${encodeURIComponent(code)}`);
-        const data = await r.json();
-        console.log("[STRAVA CALLBACK][AthleteHome] /api/strava response", {
-          status: r.status,
-          ok: r.ok,
-          data,
-          callback_url_expected: STRAVA_CALLBACK_URL,
-        });
-        if (!r.ok || !data?.access_token) {
-          setMessage("No se pudo conectar Strava.");
-          return;
-        }
-        const payload = {
-          user_id: profile.user_id,
-          athlete_id_strava: data.athlete?.id ?? null,
-          access_token: data.access_token ?? null,
-          refresh_token: data.refresh_token ?? null,
-          expires_at: data.expires_at ?? null,
-          strava_athlete_name: `${data.athlete?.firstname || ""} ${data.athlete?.lastname || ""}`.trim() || null,
-        };
-        const { error: upsertErr } = await supabase.from("strava_connections").upsert(payload, { onConflict: "user_id" });
-        if (upsertErr) {
-          console.error("Error guardando conexión Strava:", upsertErr);
-          setMessage(`No se pudo guardar la conexión Strava: ${upsertErr.message}`);
-          return;
-        }
-        await loadStravaConnection();
-        setMessage("Strava conectado correctamente.");
-      } catch (e) {
-        console.error("Error conectando Strava:", e);
-        setMessage("No se pudo completar la conexión de Strava.");
-      } finally {
-        if (!cancelled) {
-          const clean = new URL(window.location.href);
-          clean.searchParams.delete("strava_code");
-          window.history.replaceState({}, "", clean.toString());
-          setStravaSyncingCode(false);
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [profile?.user_id, athleteInfo?.id, loadStravaConnection]);
-
-  useEffect(() => {
     let cancelled = false;
     const load = async () => {
       if (!athleteInfo?.id) {
@@ -5828,7 +5790,14 @@ function AthleteHome({ profile }) {
         ) : (
           <button
             type="button"
-            onClick={() => { window.location.href = "/api/strava?action=auth"; }}
+            onClick={() => {
+              console.log("[STRAVA CONNECT][AthleteHome] opening /api/strava?action=auth", {
+                callback_url: STRAVA_CALLBACK_URL,
+                athlete_id: athleteInfo?.id,
+                user_id: profile?.user_id,
+              });
+              window.location.href = "/api/strava?action=auth";
+            }}
             disabled={stravaSyncingCode}
             style={{
               background: "linear-gradient(135deg,#ea580c,#f97316)",
@@ -8718,7 +8687,7 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, strav
 
           <div style={{ ...S.card, marginBottom: 18 }}>
             <div style={{ fontSize: ".72em", letterSpacing: ".12em", color: "#64748b", fontWeight: 700, marginBottom: 16 }}>
-              INTEGRACIONES Y DISPOSITIVOS
+              INTEGRACIONES
             </div>
             {!athletes || athletes.length === 0 ? (
               <div style={{ color: "#94a3b8", fontSize: ".86em" }}>Aún no tienes atletas registrados.</div>
@@ -8774,6 +8743,11 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, strav
                         <button
                           type="button"
                           onClick={() => {
+                            console.log("[STRAVA CONNECT][Settings] opening authorize URL", {
+                              athlete_id: a.id,
+                              athlete_name: a.name,
+                              callback_url: STRAVA_CALLBACK_URL,
+                            });
                             const authUrl = `https://www.strava.com/oauth/authorize?client_id=218467&redirect_uri=${encodeURIComponent(STRAVA_CALLBACK_URL)}&response_type=code&scope=activity:read_all&state=${encodeURIComponent(String(a.id))}`;
                             window.open(authUrl, "_blank", "noopener,noreferrer");
                           }}
