@@ -5113,6 +5113,23 @@ function AthleteHome({ profile }) {
           <div style={{ color: "#b45309", fontWeight: 800, fontSize: "1.05em", letterSpacing: ".01em" }}>{medalToast}</div>
         </div>
       ) : null}
+      {message && <div style={{ ...S.card, border: "1px solid rgba(239,68,68,.35)", background: "rgba(239,68,68,.08)", color: "#fecaca", marginBottom: 14 }}>{message}</div>}
+
+      {athleteNotRegistered && !loading && (
+        <div
+          style={{
+            ...S.card,
+            marginBottom: 14,
+            border: "1px solid rgba(245,158,11,.35)",
+            background: "rgba(245,158,11,.08)",
+            color: "#fde68a",
+            fontSize: ".95em",
+            lineHeight: 1.45,
+          }}
+        >
+          Tu coach aún no te ha registrado en la plataforma
+        </div>
+      )}
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: 18, order: 1 }}>
         <div>
           <h1 style={{ ...S.pageTitle, marginBottom: 6 }}>Hola, {athleteName}</h1>
@@ -5140,235 +5157,6 @@ function AthleteHome({ profile }) {
           Semana {thisWeekStartYmd} → {thisWeekEndYmd}
         </div>
       </div>
-
-      <div style={{ ...S.card, marginBottom: 18, order: 5 }}>
-        <div style={{ fontSize: ".72em", letterSpacing: ".13em", color: "#475569", textTransform: "uppercase", marginBottom: 12 }}>MIS LOGROS</div>
-        {(() => {
-          const earnedMap = new Map(
-            (earnedAchievements || []).map((e) => {
-              const meta = achievementJoinMeta(e);
-              return [meta?.code, e];
-            }),
-          );
-          const totalKm = achProgress?.totalKm || 0;
-          const nextKm = achievementKmTargets.find((x) => totalKm < x) || null;
-          return (
-            <>
-              <div style={{ marginBottom: 14 }}>
-                <div style={{ fontSize: ".78em", color: "#64748b", marginBottom: 6 }}>
-                  {nextKm
-                    ? `Progreso al siguiente logro de km: ${totalKm.toFixed(1)} / ${nextKm} km`
-                    : `Kilómetros acumulados: ${totalKm.toFixed(1)} km · máximo de hitos alcanzado`}
-                </div>
-                <div style={{ height: 10, borderRadius: 999, background: "#e2e8f0", overflow: "hidden" }}>
-                  <div
-                    style={{
-                      width: `${nextKm ? Math.min(100, (totalKm / nextKm) * 100) : 100}%`,
-                      height: "100%",
-                      background: "linear-gradient(90deg,#f59e0b,#fbbf24)",
-                      transition: "width .4s ease",
-                    }}
-                  />
-                </div>
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(148px,1fr))", gap: 12 }}>
-                {(achievementsCatalog || []).map((a) => {
-                  const earned = earnedMap.get(a.code);
-                  return (
-                    <div
-                      key={a.id}
-                      className={earned ? "raf-medal-earned" : undefined}
-                      style={{
-                        border: earned ? "1px solid rgba(245,158,11,.35)" : "1px solid #e2e8f0",
-                        borderRadius: 12,
-                        padding: earned ? "16px 14px" : "16px 14px",
-                        background: earned ? "linear-gradient(145deg,#fffbeb,#fff7ed)" : "#f8fafc",
-                        opacity: earned ? 1 : 0.52,
-                        filter: earned ? "none" : "grayscale(1)",
-                        transition: "opacity .2s ease",
-                        minHeight: earned ? 132 : 120,
-                        display: "flex",
-                        flexDirection: "column",
-                        alignItems: "center",
-                        textAlign: "center",
-                      }}
-                    >
-                      <div style={{ fontSize: earned ? "2.5rem" : "2rem", lineHeight: 1, marginBottom: 8 }}>{earned ? a.icon : "🔒"}</div>
-                      <div style={{ fontSize: ".76em", color: "#0f172a", fontWeight: 800, lineHeight: 1.25 }}>{a.name}</div>
-                      <div style={{ fontSize: ".68em", color: "#64748b", marginTop: 6, lineHeight: 1.35 }}>
-                        {earned
-                          ? `Ganada el ${new Date(earned.earned_at).toLocaleDateString("es-CO", {
-                              day: "numeric",
-                              month: "short",
-                              year: "numeric",
-                            })}`
-                          : "Bloqueada"}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </>
-          );
-        })()}
-      </div>
-
-      {showEvaluation && athleteInfo?.id && (
-        <div style={{ marginBottom: 18, order: 6 }}>
-          <EvaluationView
-            athletes={[normalizeAthlete(athleteInfo)]}
-            currentUserId={profile?.user_id ?? null}
-            notify={(msg) => setMessage(msg)}
-            athleteOnlyId={athleteInfo.id}
-          />
-        </div>
-      )}
-
-      {typeof Notification !== "undefined" &&
-        Notification.permission !== "granted" &&
-        !pushInviteDismissed && (
-          <div
-            style={{
-              marginBottom: 16,
-              padding: "12px 16px",
-              borderRadius: 12,
-              background: "#fffbeb",
-              border: "1px solid #fde68a",
-              display: "flex",
-              flexWrap: "wrap",
-              alignItems: "center",
-              gap: 12,
-              boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
-              order: 7,
-            }}
-          >
-            <span style={{ flex: "1 1 200px", color: "#78350f", fontSize: ".88em", fontWeight: 600 }}>
-              Activa las notificaciones para recibir mensajes
-            </span>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <button
-                type="button"
-                onClick={async () => {
-                  if (typeof localStorage !== "undefined") localStorage.removeItem("raf_push_invite_dismissed");
-                  const { data: u } = await supabase.auth.getUser();
-                  const uid = u?.user?.id;
-                  if (!uid) return;
-                  const token = await requestNotificationPermission();
-                  if (token) await supabase.from("profiles").update({ fcm_token: token }).eq("user_id", uid);
-                }}
-                style={{
-                  padding: "8px 14px",
-                  borderRadius: 8,
-                  border: "none",
-                  background: "linear-gradient(135deg,#b45309,#f59e0b)",
-                  color: "#fff",
-                  fontWeight: 800,
-                  fontSize: ".8em",
-                  cursor: "pointer",
-                  fontFamily: "inherit",
-                }}
-              >
-                Activar
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (typeof localStorage !== "undefined") localStorage.setItem("raf_push_invite_dismissed", "1");
-                  setPushInviteDismissed(true);
-                }}
-                style={{
-                  padding: "8px 14px",
-                  borderRadius: 8,
-                  border: "1px solid #e2e8f0",
-                  background: "#fff",
-                  color: "#64748b",
-                  fontWeight: 700,
-                  fontSize: ".8em",
-                  cursor: "pointer",
-                  fontFamily: "inherit",
-                }}
-              >
-                Ahora no
-              </button>
-            </div>
-          </div>
-        )}
-
-      <div style={{ ...S.card, marginBottom: 18, order: 6 }}>
-        <button
-          type="button"
-          onClick={() => setShowEvaluation((v) => !v)}
-          style={{
-            width: "100%",
-            background: showEvaluation ? "rgba(14,165,233,.12)" : "#f8fafc",
-            border: showEvaluation ? "1px solid rgba(14,165,233,.45)" : "1px solid #e2e8f0",
-            borderRadius: 8,
-            padding: "10px 14px",
-            color: showEvaluation ? "#0369a1" : "#0f172a",
-            cursor: "pointer",
-            fontFamily: "inherit",
-            fontSize: ".82em",
-            fontWeight: 700,
-          }}
-        >
-          {showEvaluation ? "Ocultar evaluación" : "Hacer mi evaluación"}
-        </button>
-      </div>
-
-      <div style={{ ...S.card, marginBottom: 18, order: 9 }}>
-        <div style={{ fontSize: ".72em", letterSpacing: ".13em", color: "#475569", textTransform: "uppercase", marginBottom: 12 }}>Mis Pagos</div>
-        {loadingAthletePayments ? (
-          <div style={{ color: "#64748b", fontSize: ".84em" }}>Cargando pagos…</div>
-        ) : athletePayments.length === 0 ? (
-          <div style={{ color: "#64748b", fontSize: ".84em" }}>Tu coach aún no ha registrado pagos.</div>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {athletePayments.map((p) => (
-              <div key={p.id} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: "10px 12px", background: "#f8fafc" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                  <div style={{ color: "#0f172a", fontWeight: 700, fontSize: ".84em" }}>
-                    ${Number(p.amount || 0).toLocaleString("es-CO")} {p.currency || "COP"} · {p.plan}
-                  </div>
-                  <span
-                    style={{
-                      padding: "3px 8px",
-                      borderRadius: 999,
-                      fontSize: ".68em",
-                      fontWeight: 700,
-                      background: p.status === "confirmed" ? "rgba(34,197,94,.16)" : p.status === "rejected" ? "rgba(239,68,68,.14)" : "rgba(245,158,11,.16)",
-                      color: p.status === "confirmed" ? "#15803d" : p.status === "rejected" ? "#b91c1c" : "#b45309",
-                    }}
-                  >
-                    {paymentStatusLabel(p.status)}
-                  </span>
-                </div>
-                <div style={{ marginTop: 4, color: "#64748b", fontSize: ".74em" }}>
-                  {new Date(p.payment_date).toLocaleDateString("es-CO")} · {p.payment_method}
-                </div>
-                {p.notes ? <div style={{ marginTop: 4, color: "#475569", fontSize: ".74em" }}>Notas: {p.notes}</div> : null}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {message && <div style={{ ...S.card, border: "1px solid rgba(239,68,68,.35)", background: "rgba(239,68,68,.08)", color: "#fecaca", marginBottom: 14 }}>{message}</div>}
-
-      {athleteNotRegistered && !loading && (
-        <div
-          style={{
-            ...S.card,
-            marginBottom: 14,
-            border: "1px solid rgba(245,158,11,.35)",
-            background: "rgba(245,158,11,.08)",
-            color: "#fde68a",
-            fontSize: ".95em",
-            lineHeight: 1.45,
-          }}
-        >
-          Tu coach aún no te ha registrado en la plataforma
-        </div>
-      )}
 
       {!athleteNotRegistered && (
       <div style={{ ...S.card, order: 3 }}>
@@ -5740,6 +5528,110 @@ function AthleteHome({ profile }) {
       </div>
       )}
 
+      <div style={{ ...S.card, marginBottom: 18, order: 5 }}>
+        <div style={{ fontSize: ".72em", letterSpacing: ".13em", color: "#475569", textTransform: "uppercase", marginBottom: 12 }}>MIS LOGROS</div>
+        {(() => {
+          const earnedMap = new Map(
+            (earnedAchievements || []).map((e) => {
+              const meta = achievementJoinMeta(e);
+              return [meta?.code, e];
+            }),
+          );
+          const totalKm = achProgress?.totalKm || 0;
+          const nextKm = achievementKmTargets.find((x) => totalKm < x) || null;
+          return (
+            <>
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: ".78em", color: "#64748b", marginBottom: 6 }}>
+                  {nextKm
+                    ? `Progreso al siguiente logro de km: ${totalKm.toFixed(1)} / ${nextKm} km`
+                    : `Kilómetros acumulados: ${totalKm.toFixed(1)} km · máximo de hitos alcanzado`}
+                </div>
+                <div style={{ height: 10, borderRadius: 999, background: "#e2e8f0", overflow: "hidden" }}>
+                  <div
+                    style={{
+                      width: `${nextKm ? Math.min(100, (totalKm / nextKm) * 100) : 100}%`,
+                      height: "100%",
+                      background: "linear-gradient(90deg,#f59e0b,#fbbf24)",
+                      transition: "width .4s ease",
+                    }}
+                  />
+                </div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(148px,1fr))", gap: 12 }}>
+                {(achievementsCatalog || []).map((a) => {
+                  const earned = earnedMap.get(a.code);
+                  return (
+                    <div
+                      key={a.id}
+                      className={earned ? "raf-medal-earned" : undefined}
+                      style={{
+                        border: earned ? "1px solid rgba(245,158,11,.35)" : "1px solid #e2e8f0",
+                        borderRadius: 12,
+                        padding: earned ? "16px 14px" : "16px 14px",
+                        background: earned ? "linear-gradient(145deg,#fffbeb,#fff7ed)" : "#f8fafc",
+                        opacity: earned ? 1 : 0.52,
+                        filter: earned ? "none" : "grayscale(1)",
+                        transition: "opacity .2s ease",
+                        minHeight: earned ? 132 : 120,
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        textAlign: "center",
+                      }}
+                    >
+                      <div style={{ fontSize: earned ? "2.5rem" : "2rem", lineHeight: 1, marginBottom: 8 }}>{earned ? a.icon : "🔒"}</div>
+                      <div style={{ fontSize: ".76em", color: "#0f172a", fontWeight: 800, lineHeight: 1.25 }}>{a.name}</div>
+                      <div style={{ fontSize: ".68em", color: "#64748b", marginTop: 6, lineHeight: 1.35 }}>
+                        {earned
+                          ? `Ganada el ${new Date(earned.earned_at).toLocaleDateString("es-CO", {
+                              day: "numeric",
+                              month: "short",
+                              year: "numeric",
+                            })}`
+                          : "Bloqueada"}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          );
+        })()}
+      </div>
+
+      <div style={{ ...S.card, marginBottom: 18, order: 6 }}>
+        <button
+          type="button"
+          onClick={() => setShowEvaluation((v) => !v)}
+          style={{
+            width: "100%",
+            background: showEvaluation ? "rgba(14,165,233,.12)" : "#f8fafc",
+            border: showEvaluation ? "1px solid rgba(14,165,233,.45)" : "1px solid #e2e8f0",
+            borderRadius: 8,
+            padding: "10px 14px",
+            color: showEvaluation ? "#0369a1" : "#0f172a",
+            cursor: "pointer",
+            fontFamily: "inherit",
+            fontSize: ".82em",
+            fontWeight: 700,
+          }}
+        >
+          {showEvaluation ? "Ocultar evaluación" : "Hacer mi evaluación"}
+        </button>
+      </div>
+
+      {showEvaluation && athleteInfo?.id && (
+        <div style={{ marginBottom: 18, order: 7 }}>
+          <EvaluationView
+            athletes={[normalizeAthlete(athleteInfo)]}
+            currentUserId={profile?.user_id ?? null}
+            notify={(msg) => setMessage(msg)}
+            athleteOnlyId={athleteInfo.id}
+          />
+        </div>
+      )}
+
       {!athleteNotRegistered && (
       <div style={{ ...S.card, marginTop: 20, order: 8 }}>
         <div style={{ fontSize: ".65em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase", marginBottom: 10 }}>
@@ -5833,7 +5725,114 @@ function AthleteHome({ profile }) {
       </div>
       )}
 
-      <div style={{ ...S.card, marginBottom: 18, order: 10 }}>
+      <div style={{ ...S.card, marginBottom: 18, order: 9 }}>
+        <div style={{ fontSize: ".72em", letterSpacing: ".13em", color: "#475569", textTransform: "uppercase", marginBottom: 12 }}>Mis Pagos</div>
+        {loadingAthletePayments ? (
+          <div style={{ color: "#64748b", fontSize: ".84em" }}>Cargando pagos…</div>
+        ) : athletePayments.length === 0 ? (
+          <div style={{ color: "#64748b", fontSize: ".84em" }}>Tu coach aún no ha registrado pagos.</div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {athletePayments.map((p) => (
+              <div key={p.id} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: "10px 12px", background: "#f8fafc" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                  <div style={{ color: "#0f172a", fontWeight: 700, fontSize: ".84em" }}>
+                    ${Number(p.amount || 0).toLocaleString("es-CO")} {p.currency || "COP"} · {p.plan}
+                  </div>
+                  <span
+                    style={{
+                      padding: "3px 8px",
+                      borderRadius: 999,
+                      fontSize: ".68em",
+                      fontWeight: 700,
+                      background: p.status === "confirmed" ? "rgba(34,197,94,.16)" : p.status === "rejected" ? "rgba(239,68,68,.14)" : "rgba(245,158,11,.16)",
+                      color: p.status === "confirmed" ? "#15803d" : p.status === "rejected" ? "#b91c1c" : "#b45309",
+                    }}
+                  >
+                    {paymentStatusLabel(p.status)}
+                  </span>
+                </div>
+                <div style={{ marginTop: 4, color: "#64748b", fontSize: ".74em" }}>
+                  {new Date(p.payment_date).toLocaleDateString("es-CO")} · {p.payment_method}
+                </div>
+                {p.notes ? <div style={{ marginTop: 4, color: "#475569", fontSize: ".74em" }}>Notas: {p.notes}</div> : null}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {typeof Notification !== "undefined" &&
+        Notification.permission !== "granted" &&
+        !pushInviteDismissed && (
+          <div
+            style={{
+              marginBottom: 16,
+              padding: "12px 16px",
+              borderRadius: 12,
+              background: "#fffbeb",
+              border: "1px solid #fde68a",
+              display: "flex",
+              flexWrap: "wrap",
+              alignItems: "center",
+              gap: 12,
+              boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
+              order: 10,
+            }}
+          >
+            <span style={{ flex: "1 1 200px", color: "#78350f", fontSize: ".88em", fontWeight: 600 }}>
+              Activa las notificaciones para recibir mensajes
+            </span>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (typeof localStorage !== "undefined") localStorage.removeItem("raf_push_invite_dismissed");
+                  const { data: u } = await supabase.auth.getUser();
+                  const uid = u?.user?.id;
+                  if (!uid) return;
+                  const token = await requestNotificationPermission();
+                  if (token) await supabase.from("profiles").update({ fcm_token: token }).eq("user_id", uid);
+                }}
+                style={{
+                  padding: "8px 14px",
+                  borderRadius: 8,
+                  border: "none",
+                  background: "linear-gradient(135deg,#b45309,#f59e0b)",
+                  color: "#fff",
+                  fontWeight: 800,
+                  fontSize: ".8em",
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                }}
+              >
+                Activar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (typeof localStorage !== "undefined") localStorage.setItem("raf_push_invite_dismissed", "1");
+                  setPushInviteDismissed(true);
+                }}
+                style={{
+                  padding: "8px 14px",
+                  borderRadius: 8,
+                  border: "1px solid #e2e8f0",
+                  background: "#fff",
+                  color: "#64748b",
+                  fontWeight: 700,
+                  fontSize: ".8em",
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                }}
+              >
+                Ahora no
+              </button>
+            </div>
+          </div>
+        )}
+
+      <div style={{ ...S.card, marginBottom: 18, order: 11 }}>
         <button
           type="button"
           onClick={async () => {
