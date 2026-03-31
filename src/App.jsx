@@ -2167,7 +2167,7 @@ function Dashboard({
   }, [dashAthletes]);
 
   return (
-    <div style={S.page}>
+    <div style={{ ...S.page, display: "flex", flexDirection: "column" }}>
       <div style={{ marginBottom: 28 }}>
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16 }}>
           <div>
@@ -3395,7 +3395,7 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
           </div>
           </div>
 
-          <div style={{ order: 3, marginBottom: 24, paddingBottom: 20, borderBottom: "1px solid #e2e8f0" }}>
+          <div style={{ order: 5, marginBottom: 24, paddingBottom: 20, borderBottom: "1px solid #e2e8f0" }}>
             <div style={{ fontSize: ".65em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase", marginBottom: 12 }}>
               ZONAS FC
             </div>
@@ -3470,7 +3470,7 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
             })()}
           </div>
 
-          <div style={{ order: 5, marginBottom: 24, paddingBottom: 20, borderBottom: "1px solid #e2e8f0" }}>
+          <div style={{ order: 4, marginBottom: 24, paddingBottom: 20, borderBottom: "1px solid #e2e8f0" }}>
             <div style={{ fontSize: ".65em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase", marginBottom: 10 }}>
               MEDALLAS DEL ATLETA
             </div>
@@ -3532,7 +3532,7 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
             })()}
           </div>
 
-          <div style={{ order: 6, marginBottom: 24, paddingBottom: 20, borderBottom: "1px solid #e2e8f0" }}>
+          <div style={{ order: 7, marginBottom: 24, paddingBottom: 20, borderBottom: "1px solid #e2e8f0" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 10 }}>
               <div style={{ fontSize: ".65em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase" }}>
                 PAGOS
@@ -3613,7 +3613,7 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
             )}
           </div>
 
-          <div style={{ order: 4, marginBottom: 24, paddingBottom: 20, borderBottom: "1px solid #e2e8f0" }}>
+          <div style={{ order: 6, marginBottom: 24, paddingBottom: 20, borderBottom: "1px solid #e2e8f0" }}>
             <div style={{ fontSize: ".65em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase", marginBottom: 10 }}>
               FORMA Y FATIGA
             </div>
@@ -3883,7 +3883,7 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
           )}
           </div>
 
-          <div style={{ order: 7, marginTop: 22 }}>
+          <div style={{ order: 3, marginTop: 22 }}>
             <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 10 }}>
               <div style={{ fontSize: ".65em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase" }}>
                 CHAT CON ATLETA
@@ -3992,6 +3992,15 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
               >
                 Enviar
               </button>
+            </div>
+          </div>
+
+          <div style={{ order: 8, marginTop: 22, paddingTop: 20, borderTop: "1px solid #e2e8f0" }}>
+            <div style={{ fontSize: ".65em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase", marginBottom: 10 }}>
+              EVALUACIONES
+            </div>
+            <div style={{ color: "#64748b", fontSize: ".82em", lineHeight: 1.45 }}>
+              Revisa y registra evaluaciones del atleta desde la vista "Evaluación".
             </div>
           </div>
         </div>
@@ -5190,7 +5199,7 @@ function AthleteHome({ profile }) {
             </div>
           </div>
         )}
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: 18 }}>
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: 18, order: 1 }}>
         <div>
           <h1 style={{ ...S.pageTitle, marginBottom: 6 }}>Hola, {athleteName}</h1>
           <div style={{ color: "#94a3b8", fontSize: ".9em" }}>{nextRaceText}</div>
@@ -5207,24 +5216,6 @@ function AthleteHome({ profile }) {
           ) : null}
         </div>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 10 }}>
-          <button
-            type="button"
-            onClick={() => setShowEvaluation((v) => !v)}
-            style={{
-              background: showEvaluation ? "rgba(14,165,233,.12)" : "#f8fafc",
-              border: showEvaluation ? "1px solid rgba(14,165,233,.45)" : "1px solid #e2e8f0",
-              borderRadius: 8,
-              padding: "8px 14px",
-              color: showEvaluation ? "#0369a1" : "#0f172a",
-              cursor: "pointer",
-              fontFamily: "inherit",
-              fontSize: ".8em",
-              fontWeight: 700,
-              whiteSpace: "nowrap",
-            }}
-          >
-            {showEvaluation ? "Ocultar evaluación" : "Hacer mi evaluación"}
-          </button>
           <button
             type="button"
             onClick={async () => {
@@ -5249,19 +5240,20 @@ function AthleteHome({ profile }) {
           >
             Cerrar sesión
           </button>
-          <div style={{ ...S.card, padding: 14, minWidth: 260 }}>
-            <div style={{ fontSize: ".72em", letterSpacing: ".13em", color: "#475569", textTransform: "uppercase", marginBottom: 8 }}>PROGRESO SEMANAL</div>
-            <div style={{ fontSize: "1.6em", fontWeight: 900, color: "#22c55e", fontFamily: "monospace" }}>
-              {weeklyDoneKm} / {weeklyTotalKm} km
-            </div>
-            <div style={{ color: "#64748b", fontSize: ".8em", marginTop: 6 }}>
-              Semana {thisWeekStartYmd} → {thisWeekEndYmd}
-            </div>
-          </div>
         </div>
       </div>
 
-      <div style={{ ...S.card, marginBottom: 18 }}>
+      <div style={{ ...S.card, marginBottom: 18, order: 2 }}>
+        <div style={{ fontSize: ".72em", letterSpacing: ".13em", color: "#475569", textTransform: "uppercase", marginBottom: 8 }}>PROGRESO SEMANAL</div>
+        <div style={{ fontSize: "1.6em", fontWeight: 900, color: "#22c55e", fontFamily: "monospace" }}>
+          {weeklyDoneKm} / {weeklyTotalKm} km
+        </div>
+        <div style={{ color: "#64748b", fontSize: ".8em", marginTop: 6 }}>
+          Semana {thisWeekStartYmd} → {thisWeekEndYmd}
+        </div>
+      </div>
+
+      <div style={{ ...S.card, marginBottom: 18, order: 5 }}>
         <div style={{ fontSize: ".72em", letterSpacing: ".13em", color: "#475569", textTransform: "uppercase", marginBottom: 12 }}>Mis Logros</div>
         {(() => {
           const earnedMap = new Map(
@@ -5333,7 +5325,28 @@ function AthleteHome({ profile }) {
         })()}
       </div>
 
-      <div style={{ ...S.card, marginBottom: 18 }}>
+      <div style={{ ...S.card, marginBottom: 18, order: 6 }}>
+        <button
+          type="button"
+          onClick={() => setShowEvaluation((v) => !v)}
+          style={{
+            width: "100%",
+            background: showEvaluation ? "rgba(14,165,233,.12)" : "#f8fafc",
+            border: showEvaluation ? "1px solid rgba(14,165,233,.45)" : "1px solid #e2e8f0",
+            borderRadius: 8,
+            padding: "10px 14px",
+            color: showEvaluation ? "#0369a1" : "#0f172a",
+            cursor: "pointer",
+            fontFamily: "inherit",
+            fontSize: ".82em",
+            fontWeight: 700,
+          }}
+        >
+          {showEvaluation ? "Ocultar evaluación" : "Hacer mi evaluación"}
+        </button>
+      </div>
+
+      <div style={{ ...S.card, marginBottom: 18, order: 8 }}>
         <div style={{ fontSize: ".72em", letterSpacing: ".13em", color: "#475569", textTransform: "uppercase", marginBottom: 12 }}>Mis Pagos</div>
         {loadingAthletePayments ? (
           <div style={{ color: "#64748b", fontSize: ".84em" }}>Cargando pagos…</div>
@@ -5389,7 +5402,7 @@ function AthleteHome({ profile }) {
       )}
 
       {!athleteNotRegistered && (
-      <div style={{ ...S.card }}>
+      <div style={{ ...S.card, order: 3 }}>
         <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 10 }}>
           <div style={{ fontSize: ".65em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase" }}>
             CALENDARIO · {calendarMonthLabel}
@@ -5637,7 +5650,7 @@ function AthleteHome({ profile }) {
       )}
 
       {!athleteNotRegistered && (
-      <div style={{ ...S.card, marginTop: 20 }}>
+      <div style={{ ...S.card, marginTop: 20, order: 4 }}>
         <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 10 }}>
           <div style={{ fontSize: ".65em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase" }}>
             CHAT CON TU COACH
@@ -5759,7 +5772,7 @@ function AthleteHome({ profile }) {
       )}
 
       {!athleteNotRegistered && (
-      <div style={{ ...S.card, marginTop: 20 }}>
+      <div style={{ ...S.card, marginTop: 20, order: 7 }}>
         <div style={{ fontSize: ".65em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase", marginBottom: 10 }}>
           MI CONFIGURACIÓN
         </div>
