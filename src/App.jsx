@@ -2572,16 +2572,6 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
     return m;
   }, [races]);
 
-  const stravaActivitiesByDate = useMemo(() => {
-    const m = {};
-    for (const a of stravaActivities) {
-      if (!a?.ymd) continue;
-      if (!m[a.ymd]) m[a.ymd] = [];
-      m[a.ymd].push(a);
-    }
-    return m;
-  }, [stravaActivities]);
-
   const nextRaceCountdown = useMemo(() => getNextRaceCountdown(races, formatLocalYMD(new Date())), [races]);
 
   const closeRaceCtxMenu = () => setRaceCtxMenu(null);
@@ -4803,6 +4793,16 @@ function AthleteHome({ profile }) {
     }
     return m;
   }, [races]);
+
+  const stravaActivitiesByDate = useMemo(() => {
+    const m = {};
+    for (const a of stravaActivities) {
+      if (!a?.ymd) continue;
+      if (!m[a.ymd]) m[a.ymd] = [];
+      m[a.ymd].push(a);
+    }
+    return m;
+  }, [stravaActivities]);
 
   const nextRaceCountdownAthlete = useMemo(
     () => getNextRaceCountdown(races, formatLocalYMD(new Date())),
