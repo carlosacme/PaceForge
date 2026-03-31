@@ -5096,6 +5096,17 @@ function AthleteHome({ profile }) {
     }
   };
 
+  const setAthleteDeviceConnection = async (deviceValue) => {
+    if (!athleteInfo?.id) return;
+    const { error } = await supabase.from("athletes").update({ device: deviceValue }).eq("id", athleteInfo.id);
+    if (error) {
+      console.error("Error actualizando dispositivo atleta:", error);
+      setMessage(error.message || "No se pudo actualizar el dispositivo");
+      return;
+    }
+    setAthleteInfo((prev) => (prev ? { ...prev, device: deviceValue } : prev));
+  };
+
   return (
     <div style={S.page}>
       {/* ORDEN: header, progreso, calendario, chat, logros, evaluacion, cerrar sesion */}
@@ -5637,91 +5648,70 @@ function AthleteHome({ profile }) {
         <div style={{ fontSize: ".65em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase", marginBottom: 10 }}>
           MI CONFIGURACIÓN
         </div>
-        {stravaConnection ? (
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-            <div style={{ color: "#15803d", fontWeight: 700, fontSize: ".86em" }}>
-              ✅ Strava conectado como {stravaConnection.strava_athlete_name || "atleta"}
-            </div>
-            <button
-              type="button"
-              onClick={disconnectStrava}
-              disabled={stravaDisconnecting}
-              style={{
-                background: stravaDisconnecting ? "#e2e8f0" : "#fef2f2",
-                border: "1px solid #fecaca",
-                borderRadius: 8,
-                padding: "8px 12px",
-                color: stravaDisconnecting ? "#64748b" : "#b91c1c",
-                cursor: stravaDisconnecting ? "not-allowed" : "pointer",
-                fontFamily: "inherit",
-                fontSize: ".8em",
-                fontWeight: 700,
-              }}
-            >
-              Desconectar
-            </button>
-          </div>
-        ) : (
-          <button
-            type="button"
-            onClick={() => {
-              console.log("[STRAVA CONNECT][AthleteHome] opening /api/strava?action=auth", {
-                callback_url: STRAVA_CALLBACK_URL,
-                athlete_id: athleteInfo?.id,
-              });
-              const state = encodeURIComponent(String(athleteInfo?.id || ""));
-              window.location.href = `/api/strava?action=auth&state=${state}`;
-            }}
-            disabled={stravaSyncingCode}
-            style={{
-              background: "linear-gradient(135deg,#ea580c,#f97316)",
-              border: "none",
-              borderRadius: 8,
-              padding: "10px 14px",
-              color: "#fff",
-              cursor: stravaSyncingCode ? "not-allowed" : "pointer",
-              fontFamily: "inherit",
-              fontSize: ".84em",
-              fontWeight: 800,
-            }}
-          >
-            🟠 Conectar con Strava
-          </button>
-        )}
-        <div style={{ marginTop: 10, color: "#64748b", fontSize: ".8em", lineHeight: 1.4 }}>
-          Conecta Strava para sincronizar tus actividades de Apple Watch, Garmin y otros dispositivos automaticamente.
-        </div>
-        <div style={{ marginTop: 12 }}>
-          <div style={{ fontSize: ".72em", letterSpacing: ".12em", color: "#64748b", textTransform: "uppercase", marginBottom: 8 }}>
-            Actividades Strava
-          </div>
-          {!stravaConnection ? (
-            <div style={{ color: "#64748b", fontSize: ".84em" }}>Conecta tu cuenta de Strava para ver tus actividades.</div>
-          ) : stravaLoadingActivities ? (
-            <div style={{ color: "#64748b", fontSize: ".84em" }}>Cargando actividades…</div>
-          ) : stravaActivities.length === 0 ? (
-            <div style={{ color: "#64748b", fontSize: ".84em" }}>No encontramos actividades recientes.</div>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {stravaActivities.map((a) => (
-                <div key={a.id} style={{ border: "1px solid #fed7aa", borderRadius: 10, padding: "10px 12px", background: "#fff7ed" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                    <div style={{ color: "#9a3412", fontWeight: 800, fontSize: ".82em" }}>
-                      {a.icon} {a.name}
+        {(() => {
+          const currentDevice = String(athleteInfo?.device || "").trim().toLowerCase();
+          const corosConnected = currentDevice === "coros";
+          return (
+            <div style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: "10px 12px", background: "#f8fafc" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+                  <div style={{ fontSize: ".74em", color: "#0f172a", fontWeight: 700 }}>COROS</div>
+                  {corosConnected ? (
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ background: "rgba(34,197,94,.14)", border: "1px solid rgba(34,197,94,.35)", borderRadius: 999, padding: "4px 9px", color: "#15803d", fontSize: ".72em", fontWeight: 700 }}>
+                        ✅ COROS conectado
+                      </span>
+                      <button type="button" onClick={() => setAthleteDeviceConnection(null)} style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "6px 9px", color: "#b91c1c", fontSize: ".72em", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Desconectar</button>
                     </div>
-                    <div style={{ color: "#c2410c", fontSize: ".72em", fontWeight: 700 }}>{a.type}</div>
-                  </div>
-                  <div style={{ marginTop: 4, color: "#7c2d12", fontSize: ".75em" }}>
-                    {a.distanceKm.toFixed(2)} km · {formatDurationClock(a.movingTime)} · {a.pace}
-                  </div>
-                  <div style={{ marginTop: 2, color: "#9a3412", fontSize: ".7em" }}>
-                    {a.dateIso ? new Date(a.dateIso).toLocaleDateString("es-CO", { day: "numeric", month: "short", year: "numeric" }) : "Fecha no disponible"}
+                  ) : (
+                    <button type="button" onClick={() => setAthleteDeviceConnection("coros")} style={{ background: "linear-gradient(135deg,#2563eb,#3b82f6)", border: "none", borderRadius: 8, padding: "6px 10px", color: "#fff", fontSize: ".72em", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Conectar COROS</button>
+                  )}
+                </div>
+
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+                  <div style={{ fontSize: ".74em", color: "#0f172a", fontWeight: 700 }}>Garmin</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <button type="button" style={{ background: "linear-gradient(135deg,#1d4ed8,#3b82f6)", border: "none", borderRadius: 8, padding: "6px 10px", color: "#fff", fontSize: ".72em", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Conectar Garmin</button>
+                    <span style={{ background: "rgba(245,158,11,.14)", border: "1px solid rgba(245,158,11,.35)", borderRadius: 999, padding: "4px 9px", color: "#b45309", fontSize: ".72em", fontWeight: 700 }}>
+                      Próximamente
+                    </span>
                   </div>
                 </div>
-              ))}
+
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+                  <div style={{ fontSize: ".74em", color: "#0f172a", fontWeight: 700 }}>Strava</div>
+                  {stravaConnection ? (
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                      <span style={{ background: "rgba(34,197,94,.14)", border: "1px solid rgba(34,197,94,.35)", borderRadius: 999, padding: "4px 9px", color: "#15803d", fontSize: ".72em", fontWeight: 700 }}>
+                        ✅ Strava conectado como {stravaConnection.strava_athlete_name || "atleta"}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={disconnectStrava}
+                        disabled={stravaDisconnecting}
+                        style={{ background: stravaDisconnecting ? "#e2e8f0" : "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "6px 9px", color: stravaDisconnecting ? "#64748b" : "#b91c1c", fontSize: ".72em", fontWeight: 700, cursor: stravaDisconnecting ? "not-allowed" : "pointer", fontFamily: "inherit" }}
+                      >
+                        Desconectar
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const authUrl = `https://www.strava.com/oauth/authorize?client_id=218467&redirect_uri=${encodeURIComponent(STRAVA_CALLBACK_URL)}&response_type=code&scope=activity:read_all&state=${encodeURIComponent(String(athleteInfo?.id || ""))}`;
+                        window.location.href = authUrl;
+                      }}
+                      disabled={stravaSyncingCode}
+                      style={{ background: "linear-gradient(135deg,#ea580c,#f97316)", border: "none", borderRadius: 8, padding: "6px 10px", color: "#fff", fontWeight: 800, cursor: stravaSyncingCode ? "not-allowed" : "pointer", fontFamily: "inherit", fontSize: ".74em" }}
+                    >
+                      🟠 Conectar Strava
+                    </button>
+                  )}
+                </div>
+              </div>
             </div>
-          )}
-        </div>
+          );
+        })()}
       </div>
       )}
 
