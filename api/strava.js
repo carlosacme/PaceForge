@@ -4,7 +4,9 @@
   const REDIRECT_URI = 'https://pace-forge-eta.vercel.app/api/strava/callback';
   
   if (req.method === 'GET' && req.query.action === 'auth') {
-    const url = `https://www.strava.com/oauth/authorize?client_id=${CLIENT_ID}&redirect_uri=${REDIRECT_URI}&response_type=code&scope=activity:read_all`;
+    const state = typeof req.query.state === 'string' ? req.query.state : '';
+    const stateParam = state ? `&state=${encodeURIComponent(state)}` : '';
+    const url = `https://www.strava.com/oauth/authorize?client_id=${CLIENT_ID}&redirect_uri=${REDIRECT_URI}&response_type=code&scope=activity:read_all${stateParam}`;
     return res.redirect(url);
   }
   

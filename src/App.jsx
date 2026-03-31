@@ -1185,17 +1185,16 @@ export default function App() {
       (athleteIdFromState
         ? (athletes || []).find((a) => String(a.id) === String(athleteIdFromState))
         : null) ||
-      (selectedAthlete && selectedAthlete.user_id ? selectedAthlete : null) ||
-      (athletes || []).find((a) => a?.user_id) ||
+      selectedAthlete ||
+      (athletes || [])[0] ||
       null;
-    if (!currentAthlete?.user_id) {
-      console.log("[STRAVA CALLBACK][App] no athlete user_id found");
+    if (!currentAthlete?.id) {
+      console.log("[STRAVA CALLBACK][App] no athlete id found");
       return;
     }
     console.log("[STRAVA CALLBACK][App] processing athlete", {
       athlete_id: currentAthlete.id,
       athlete_name: currentAthlete.name,
-      athlete_user_id: currentAthlete.user_id,
       callback_url_expected: STRAVA_CALLBACK_URL,
     });
     let cancelled = false;
@@ -1215,7 +1214,7 @@ export default function App() {
           return;
         }
         const payload = {
-          user_id: currentAthlete.user_id,
+          athlete_id: currentAthlete.id,
           athlete_id_strava: data.athlete?.id ?? null,
           access_token: data.access_token ?? null,
           refresh_token: data.refresh_token ?? null,
@@ -1225,7 +1224,7 @@ export default function App() {
             `${data.athlete?.firstname || ""} ${data.athlete?.lastname || ""}`.trim() ||
             null,
         };
-        const { error } = await supabase.from("strava_connections").upsert(payload, { onConflict: "user_id" });
+        const { error } = await supabase.from("strava_connections").upsert(payload, { onConflict: "athlete_id" });
         if (error) {
           console.error("Error guardando conexión Strava:", error);
           notify(error.message || "No se pudo guardar la conexión Strava.");
@@ -1246,7 +1245,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [selectedAthlete?.id, selectedAthlete?.user_id, athletes, notify]);
+  }, [selectedAthlete?.id, athletes, notify]);
 
   useEffect(() => {
     const loadAthletes = async () => {
@@ -4939,14 +4938,14 @@ function AthleteHome({ profile }) {
   }, [athleteInfo?.id]);
 
   const loadStravaConnection = useCallback(async () => {
-    if (!profile?.user_id) {
+    if (!athleteInfo?.id) {
       setStravaConnection(null);
       return;
     }
     const { data, error } = await supabase
       .from("strava_connections")
       .select("*")
-      .eq("user_id", profile.user_id)
+      .eq("athlete_id", athleteInfo.id)
       .maybeSingle();
     if (error) {
       console.error("Error cargando conexión Strava:", error);
@@ -4954,7 +4953,7 @@ function AthleteHome({ profile }) {
       return;
     }
     setStravaConnection(data || null);
-  }, [profile?.user_id]);
+  }, [athleteInfo?.id]);
 
   const loadStravaActivities = useCallback(async () => {
     if (!stravaConnection?.access_token) {
@@ -5079,11 +5078,11 @@ function AthleteHome({ profile }) {
   };
 
   const disconnectStrava = async () => {
-    if (!profile?.user_id) return;
+    if (!athleteInfo?.id) return;
     if (!window.confirm("¿Desconectar Strava de tu cuenta?")) return;
     setStravaDisconnecting(true);
     try {
-      const { error } = await supabase.from("strava_connections").delete().eq("user_id", profile.user_id);
+      const { error } = await supabase.from("strava_connections").delete().eq("athlete_id", athleteInfo.id);
       if (error) {
         console.error(error);
         setMessage(error.message || "No se pudo desconectar Strava");
@@ -5794,9 +5793,9 @@ function AthleteHome({ profile }) {
               console.log("[STRAVA CONNECT][AthleteHome] opening /api/strava?action=auth", {
                 callback_url: STRAVA_CALLBACK_URL,
                 athlete_id: athleteInfo?.id,
-                user_id: profile?.user_id,
               });
-              window.location.href = "/api/strava?action=auth";
+              const state = encodeURIComponent(String(athleteInfo?.id || ""));
+              window.location.href = `/api/strava?action=auth&state=${state}`;
             }}
             disabled={stravaSyncingCode}
             style={{
@@ -8448,16 +8447,31 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, strav
     notify("Dispositivo actualizado");
   };
 
+  const disconnectStravaForAthlete = async (athleteId) => {
+    const { error } = await supabase.from("strava_connections").delete().eq("athlete_id", athleteId);
+    if (error) {
+      console.error("Error desconectando Strava:", error);
+      notify(error.message || "No se pudo desconectar Strava");
+      return;
+    }
+    setStravaByUserId((prev) => {
+      const next = { ...prev };
+      delete next[athleteId];
+      return next;
+    });
+    notify("Strava desconectado");
+  };
+
   useEffect(() => {
-    const userIds = (athletes || []).map((a) => a?.user_id).filter(Boolean);
-    if (!userIds.length) {
+    const athleteIds = (athletes || []).map((a) => a?.id).filter(Boolean);
+    if (!athleteIds.length) {
       setStravaByUserId({});
       return;
     }
     let cancelled = false;
     (async () => {
       setLoadingStravaByAthlete(true);
-      const { data, error } = await supabase.from("strava_connections").select("*").in("user_id", userIds);
+      const { data, error } = await supabase.from("strava_connections").select("*").in("athlete_id", athleteIds);
       if (cancelled) return;
       if (error) {
         console.error("Error cargando conexiones Strava en settings:", error);
@@ -8466,7 +8480,7 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, strav
         return;
       }
       const map = {};
-      for (const row of data || []) map[row.user_id] = row;
+      for (const row of data || []) map[row.athlete_id] = row;
       setStravaByUserId(map);
       setLoadingStravaByAthlete(false);
     })();
@@ -8698,63 +8712,72 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, strav
                 {athletes.map((a) => {
                   const currentDeviceRaw = deviceOverrides[a.id] ?? a?.device ?? "";
                   const device = String(currentDeviceRaw).trim();
-                  const stravaConn = a?.user_id ? stravaByUserId[a.user_id] : null;
+                  const stravaConn = a?.id ? stravaByUserId[a.id] : null;
                   const corosConnected = device.toLowerCase() === "coros";
                   const garminConnected = device.toLowerCase() === "garmin";
                   return (
                     <div key={a.id} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: "10px 12px", background: "#f8fafc" }}>
                       <div style={{ color: "#0f172a", fontSize: ".84em", fontWeight: 700, marginBottom: 8 }}>{a.name || "Atleta"}</div>
-                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
-                        <button
-                          type="button"
-                          onClick={() => setAthleteDeviceConnection(a.id, "coros")}
-                          style={{ background: corosConnected ? "rgba(34,197,94,.16)" : "#ffffff", border: `1px solid ${corosConnected ? "rgba(34,197,94,.35)" : "#e2e8f0"}`, borderRadius: 8, padding: "6px 9px", color: corosConnected ? "#15803d" : "#475569", fontSize: ".72em", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}
-                        >
-                          Conectar COROS
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setAthleteDeviceConnection(a.id, "garmin")}
-                          style={{ background: garminConnected ? "rgba(34,197,94,.16)" : "#ffffff", border: `1px solid ${garminConnected ? "rgba(34,197,94,.35)" : "#e2e8f0"}`, borderRadius: 8, padding: "6px 9px", color: garminConnected ? "#15803d" : "#475569", fontSize: ".72em", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}
-                        >
-                          Conectar Garmin
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setAthleteDeviceConnection(a.id, null)}
-                          style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "6px 9px", color: "#64748b", fontSize: ".72em", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}
-                        >
-                          Desconectar dispositivo
-                        </button>
-                        <span style={{ background: corosConnected ? "rgba(34,197,94,.14)" : "#f1f5f9", border: `1px solid ${corosConnected ? "rgba(34,197,94,.35)" : "#e2e8f0"}`, borderRadius: 999, padding: "4px 9px", color: corosConnected ? "#15803d" : "#64748b", fontSize: ".72em", fontWeight: 700 }}>
-                          COROS: {corosConnected ? "conectado" : "no conectado"}
-                        </span>
-                        <span style={{ background: garminConnected ? "rgba(34,197,94,.14)" : "#f1f5f9", border: `1px solid ${garminConnected ? "rgba(34,197,94,.35)" : "#e2e8f0"}`, borderRadius: 999, padding: "4px 9px", color: garminConnected ? "#15803d" : "#64748b", fontSize: ".72em", fontWeight: 700 }}>
-                          Garmin: {garminConnected ? "conectado" : "no conectado"}
-                        </span>
-                        <span style={{ background: stravaConn ? "rgba(34,197,94,.14)" : "#f1f5f9", border: `1px solid ${stravaConn ? "rgba(34,197,94,.35)" : "#e2e8f0"}`, borderRadius: 999, padding: "4px 9px", color: stravaConn ? "#15803d" : "#64748b", fontSize: ".72em", fontWeight: 700 }}>
-                          Strava: {stravaConn ? "conectado" : "no conectado"}
-                        </span>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 8 }}>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+                          <div style={{ fontSize: ".74em", color: "#0f172a", fontWeight: 700 }}>COROS</div>
+                          {corosConnected ? (
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <span style={{ background: "rgba(34,197,94,.14)", border: "1px solid rgba(34,197,94,.35)", borderRadius: 999, padding: "4px 9px", color: "#15803d", fontSize: ".72em", fontWeight: 700 }}>
+                                ✅ Conectado
+                              </span>
+                              <button type="button" onClick={() => setAthleteDeviceConnection(a.id, null)} style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "6px 9px", color: "#b91c1c", fontSize: ".72em", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Desconectar</button>
+                            </div>
+                          ) : (
+                            <button type="button" onClick={() => setAthleteDeviceConnection(a.id, "coros")} style={{ background: "linear-gradient(135deg,#2563eb,#3b82f6)", border: "none", borderRadius: 8, padding: "6px 10px", color: "#fff", fontSize: ".72em", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Conectar COROS</button>
+                          )}
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+                          <div style={{ fontSize: ".74em", color: "#0f172a", fontWeight: 700 }}>Garmin</div>
+                          {garminConnected ? (
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <span style={{ background: "rgba(34,197,94,.14)", border: "1px solid rgba(34,197,94,.35)", borderRadius: 999, padding: "4px 9px", color: "#15803d", fontSize: ".72em", fontWeight: 700 }}>
+                                ✅ Conectado
+                              </span>
+                              <button type="button" onClick={() => setAthleteDeviceConnection(a.id, null)} style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "6px 9px", color: "#b91c1c", fontSize: ".72em", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Desconectar</button>
+                            </div>
+                          ) : (
+                            <button type="button" onClick={() => setAthleteDeviceConnection(a.id, "garmin")} style={{ background: "linear-gradient(135deg,#1d4ed8,#3b82f6)", border: "none", borderRadius: 8, padding: "6px 10px", color: "#fff", fontSize: ".72em", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Conectar Garmin</button>
+                          )}
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+                          <div style={{ fontSize: ".74em", color: "#0f172a", fontWeight: 700 }}>Strava</div>
+                          {stravaConn ? (
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <span style={{ background: "rgba(34,197,94,.14)", border: "1px solid rgba(34,197,94,.35)", borderRadius: 999, padding: "4px 9px", color: "#15803d", fontSize: ".72em", fontWeight: 700 }}>
+                                ✅ Conectado
+                              </span>
+                              <button type="button" onClick={() => disconnectStravaForAthlete(a.id)} style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "6px 9px", color: "#b91c1c", fontSize: ".72em", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Desconectar</button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                console.log("[STRAVA CONNECT][Settings] opening authorize URL", {
+                                  athlete_id: a.id,
+                                  athlete_name: a.name,
+                                  callback_url: STRAVA_CALLBACK_URL,
+                                });
+                                const authUrl = `https://www.strava.com/oauth/authorize?client_id=218467&redirect_uri=${encodeURIComponent(STRAVA_CALLBACK_URL)}&response_type=code&scope=activity:read_all&state=${encodeURIComponent(String(a.id))}`;
+                                window.open(authUrl, "_blank", "noopener,noreferrer");
+                              }}
+                              style={{ background: "linear-gradient(135deg,#ea580c,#f97316)", border: "none", borderRadius: 8, padding: "6px 10px", color: "#fff", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".74em" }}
+                            >
+                              🟠 Conectar Strava
+                            </button>
+                          )}
+                        </div>
                       </div>
                       <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                         <div style={{ color: "#64748b", fontSize: ".75em" }}>
                           {stravaConn?.strava_athlete_name ? `Cuenta: ${stravaConn.strava_athlete_name}` : "Sin cuenta Strava enlazada"}
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            console.log("[STRAVA CONNECT][Settings] opening authorize URL", {
-                              athlete_id: a.id,
-                              athlete_name: a.name,
-                              callback_url: STRAVA_CALLBACK_URL,
-                            });
-                            const authUrl = `https://www.strava.com/oauth/authorize?client_id=218467&redirect_uri=${encodeURIComponent(STRAVA_CALLBACK_URL)}&response_type=code&scope=activity:read_all&state=${encodeURIComponent(String(a.id))}`;
-                            window.open(authUrl, "_blank", "noopener,noreferrer");
-                          }}
-                          style={{ background: "linear-gradient(135deg,#ea580c,#f97316)", border: "none", borderRadius: 8, padding: "7px 11px", color: "#fff", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".74em" }}
-                        >
-                          🟠 Conectar Strava
-                        </button>
+                        <div style={{ color: "#94a3b8", fontSize: ".72em" }}>Atleta ID: {a.id}</div>
                       </div>
                     </div>
                   );
