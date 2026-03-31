@@ -422,15 +422,6 @@ const extractJsonFromAnthropicText = (text) => {
   return null;
 };
 
-const PLAN_12_GOALS = [
-  { id: "maraton_sub4", label: "Maratón sub 4h" },
-  { id: "maraton_sub330", label: "Maratón sub 3:30" },
-  { id: "maraton_sub3", label: "Maratón sub 3h" },
-  { id: "media", label: "Media maratón" },
-  { id: "10k", label: "10K" },
-  { id: "5k", label: "5K" },
-];
-
 const PLAN_12_LEVELS = [
   { id: "principiante", label: "Principiante" },
   { id: "intermedio", label: "Intermedio" },
@@ -5870,7 +5861,8 @@ function AthleteHome({ profile }) {
 function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, onGoToPlans, onPlanAssigned }) {
   const S = styles;
   const [athleteId, setAthleteId] = useState("");
-  const [goalId, setGoalId] = useState(PLAN_12_GOALS[0]?.id || "maraton_sub4");
+  const [competition, setCompetition] = useState("Maratón");
+  const [targetTime, setTargetTime] = useState("");
   const [levelId, setLevelId] = useState("intermedio");
   const [daysPerWeek, setDaysPerWeek] = useState(3);
   const [raceDate, setRaceDate] = useState(() => formatLocalYMD(addDays(new Date(), 14)));
@@ -5895,6 +5887,18 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, onGoToPlans, onP
     const p = String(coachPlan || "").toLowerCase();
     return p === "basico" || p === "básico" || p === "starter" || p === "";
   }, [coachPlan]);
+  const competitionOptions = useMemo(
+    () => ["Maratón", "Media Maratón", "10K", "5K", "Trail Running", "Otro"],
+    [],
+  );
+  const targetTimePlaceholder = useMemo(() => {
+    if (competition === "Maratón") return "3:45:00";
+    if (competition === "Media Maratón") return "1:45:00";
+    if (competition === "10K") return "00:45:00";
+    if (competition === "5K") return "00:22:00";
+    if (competition === "Trail Running") return "05:30:00";
+    return "hh:mm:ss";
+  }, [competition]);
 
   const loadGenerationCounter = useCallback(async () => {
     if (!coachUserId) {
@@ -6020,11 +6024,10 @@ Rules:
 - No extra JSON keys. All numeric fields must be numbers.`;
 
   const plan2UserPrompt = useMemo(() => {
-    const goalLabel = PLAN_12_GOALS.find((g) => g.id === goalId)?.label || goalId;
     const levelLabel = PLAN_12_LEVELS.find((l) => l.id === levelId)?.label || levelId;
     return `2-week running plan JSON only.
 
-Goal: ${goalLabel}. Level: ${levelLabel}.
+Goal: ${competition} in ${targetTime}. Level: ${levelLabel}.
 Sessions per week (N): ${daysPerWeek} — same N in week 1 and week 2.
 Race date (week 2 contains this date): ${raceDate}
 
@@ -6038,9 +6041,18 @@ Follow the FIXED calendar exactly:
 If N<5, drop sessions in order: first domingo (7), then jueves (4), then miércoles (3). N=4 → keep 2,3,4,6. N=3 → keep 2,3,6.
 
 Output 2 week objects with the correct ${daysPerWeek} workouts each; each workout: weekday, title, type, total_km, duration_min, short description.`;
-  }, [goalId, levelId, daysPerWeek, raceDate]);
+  }, [competition, targetTime, levelId, daysPerWeek, raceDate]);
 
   const generatePlan2 = async () => {
+    const timeOk = /^\d{1,2}:\d{2}:\d{2}$/.test(String(targetTime || "").trim());
+    if (!competition || !String(competition).trim() || !String(targetTime || "").trim()) {
+      notify("Completa competencia y tiempo objetivo antes de generar.");
+      return;
+    }
+    if (!timeOk) {
+      notify("El tiempo objetivo debe tener formato hh:mm:ss.");
+      return;
+    }
     if (isBasicPlan && monthGenerations >= 100) {
       setGenerationLimitMsg("Has alcanzado el límite de 100 generaciones del plan Básico. Actualiza al plan Pro para generaciones ilimitadas.");
       return;
@@ -6195,7 +6207,7 @@ Output 2 week objects with the correct ${daysPerWeek} workouts each; each workou
               html: `
                 <h2>Hola ${selectedAthlete.name} 👋</h2>
                 <p>Tu coach te ha asignado un <strong>plan de 2 semanas</strong> en ${BRAND_NAME}.</p>
-                <p><strong>Objetivo:</strong> ${PLAN_12_GOALS.find((g) => g.id === goalId)?.label || goalId}<br/>
+                <p><strong>Objetivo:</strong> ${competition} en ${targetTime}<br/>
                 <strong>Carrera:</strong> ${raceDate}</p>
                 <p><strong>${generatedPlan.plan_title || "Plan personalizado"}</strong></p>
                 <ul>${weekSummary}</ul>
@@ -6312,12 +6324,22 @@ Output 2 week objects with the correct ${daysPerWeek} workouts each; each workou
               </select>
             </div>
             <div>
-              <div style={labelStyle}>Objetivo</div>
-              <select value={goalId} onChange={(e) => setGoalId(e.target.value)} style={inputStyle}>
-                {PLAN_12_GOALS.map((g) => (
-                  <option key={g.id} value={g.id}>{g.label}</option>
+              <div style={labelStyle}>Competencia</div>
+              <select value={competition} onChange={(e) => setCompetition(e.target.value)} style={inputStyle}>
+                {competitionOptions.map((c) => (
+                  <option key={c} value={c}>{c}</option>
                 ))}
               </select>
+            </div>
+            <div>
+              <div style={labelStyle}>Tiempo objetivo</div>
+              <input
+                type="text"
+                value={targetTime}
+                onChange={(e) => setTargetTime(e.target.value)}
+                placeholder={targetTimePlaceholder}
+                style={inputStyle}
+              />
             </div>
             <div>
               <div style={labelStyle}>Nivel</div>
