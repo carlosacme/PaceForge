@@ -5206,32 +5206,6 @@ function AthleteHome({ profile }) {
             </div>
           ) : null}
         </div>
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 10 }}>
-          <button
-            type="button"
-            onClick={async () => {
-              const { error } = await supabase.auth.signOut();
-              if (error) {
-                console.error("Error al cerrar sesión:", error);
-                alert(`Error al cerrar sesión: ${error.message}`);
-              }
-            }}
-            style={{
-              background: "rgba(239,68,68,.08)",
-              border: "1px solid rgba(239,68,68,.25)",
-              borderRadius: 8,
-              padding: "8px 14px",
-              color: "#ef4444",
-              cursor: "pointer",
-              fontFamily: "inherit",
-              fontSize: ".8em",
-              fontWeight: 700,
-              whiteSpace: "nowrap",
-            }}
-          >
-            Cerrar sesión
-          </button>
-        </div>
       </div>
 
       <div style={{ ...S.card, marginBottom: 18, order: 2 }}>
@@ -5245,7 +5219,7 @@ function AthleteHome({ profile }) {
       </div>
 
       <div style={{ ...S.card, marginBottom: 18, order: 5 }}>
-        <div style={{ fontSize: ".72em", letterSpacing: ".13em", color: "#475569", textTransform: "uppercase", marginBottom: 12 }}>Mis Logros</div>
+        <div style={{ fontSize: ".72em", letterSpacing: ".13em", color: "#475569", textTransform: "uppercase", marginBottom: 12 }}>MIS LOGROS</div>
         {(() => {
           const earnedMap = new Map(
             (earnedAchievements || []).map((e) => {
@@ -5337,7 +5311,35 @@ function AthleteHome({ profile }) {
         </button>
       </div>
 
-      <div style={{ ...S.card, marginBottom: 18, order: 8 }}>
+      <div style={{ ...S.card, marginBottom: 18, order: 7 }}>
+        <button
+          type="button"
+          onClick={async () => {
+            const { error } = await supabase.auth.signOut();
+            if (error) {
+              console.error("Error al cerrar sesión:", error);
+              alert(`Error al cerrar sesión: ${error.message}`);
+            }
+          }}
+          style={{
+            width: "100%",
+            background: "rgba(239,68,68,.08)",
+            border: "1px solid rgba(239,68,68,.25)",
+            borderRadius: 8,
+            padding: "10px 14px",
+            color: "#ef4444",
+            cursor: "pointer",
+            fontFamily: "inherit",
+            fontSize: ".82em",
+            fontWeight: 700,
+            whiteSpace: "nowrap",
+          }}
+        >
+          Cerrar sesión
+        </button>
+      </div>
+
+      <div style={{ ...S.card, marginBottom: 18, order: 9 }}>
         <div style={{ fontSize: ".72em", letterSpacing: ".13em", color: "#475569", textTransform: "uppercase", marginBottom: 12 }}>Mis Pagos</div>
         {loadingAthletePayments ? (
           <div style={{ color: "#64748b", fontSize: ".84em" }}>Cargando pagos…</div>
@@ -5763,7 +5765,7 @@ function AthleteHome({ profile }) {
       )}
 
       {!athleteNotRegistered && (
-      <div style={{ ...S.card, marginTop: 20, order: 7 }}>
+      <div style={{ ...S.card, marginTop: 20, order: 8 }}>
         <div style={{ fontSize: ".65em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase", marginBottom: 10 }}>
           MI CONFIGURACIÓN
         </div>
