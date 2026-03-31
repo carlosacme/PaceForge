@@ -1,5 +1,5 @@
 export default async function handler(req, res) {
-  const CLIENT_ID = process.env.STRAVA_CLIENT_ID;
+  const CLIENT_ID = Number(process.env.STRAVA_CLIENT_ID);
   const CLIENT_SECRET = process.env.STRAVA_CLIENT_SECRET;
   const REDIRECT_URI = 'https://pace-forge-eta.vercel.app/api/strava/callback';
   
