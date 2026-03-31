@@ -5098,6 +5098,7 @@ function AthleteHome({ profile }) {
 
   return (
     <div style={S.page}>
+      {/* ORDEN: header, progreso, calendario, chat, logros, evaluacion, cerrar sesion */}
       {medalToast ? (
         <div
           className="raf-medal-toast"
@@ -5112,84 +5113,6 @@ function AthleteHome({ profile }) {
           <div style={{ color: "#b45309", fontWeight: 800, fontSize: "1.05em", letterSpacing: ".01em" }}>{medalToast}</div>
         </div>
       ) : null}
-      {showEvaluation && athleteInfo?.id && (
-        <div style={{ marginBottom: 18 }}>
-          <EvaluationView
-            athletes={[normalizeAthlete(athleteInfo)]}
-            currentUserId={profile?.user_id ?? null}
-            notify={(msg) => setMessage(msg)}
-            athleteOnlyId={athleteInfo.id}
-          />
-        </div>
-      )}
-      {typeof Notification !== "undefined" &&
-        Notification.permission !== "granted" &&
-        !pushInviteDismissed && (
-          <div
-            style={{
-              marginBottom: 16,
-              padding: "12px 16px",
-              borderRadius: 12,
-              background: "#fffbeb",
-              border: "1px solid #fde68a",
-              display: "flex",
-              flexWrap: "wrap",
-              alignItems: "center",
-              gap: 12,
-              boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
-            }}
-          >
-            <span style={{ flex: "1 1 200px", color: "#78350f", fontSize: ".88em", fontWeight: 600 }}>
-              Activa las notificaciones para recibir mensajes
-            </span>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <button
-                type="button"
-                onClick={async () => {
-                  if (typeof localStorage !== "undefined") localStorage.removeItem("raf_push_invite_dismissed");
-                  const { data: u } = await supabase.auth.getUser();
-                  const uid = u?.user?.id;
-                  if (!uid) return;
-                  const token = await requestNotificationPermission();
-                  if (token) await supabase.from("profiles").update({ fcm_token: token }).eq("user_id", uid);
-                }}
-                style={{
-                  padding: "8px 14px",
-                  borderRadius: 8,
-                  border: "none",
-                  background: "linear-gradient(135deg,#b45309,#f59e0b)",
-                  color: "#fff",
-                  fontWeight: 800,
-                  fontSize: ".8em",
-                  cursor: "pointer",
-                  fontFamily: "inherit",
-                }}
-              >
-                Activar
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (typeof localStorage !== "undefined") localStorage.setItem("raf_push_invite_dismissed", "1");
-                  setPushInviteDismissed(true);
-                }}
-                style={{
-                  padding: "8px 14px",
-                  borderRadius: 8,
-                  border: "1px solid #e2e8f0",
-                  background: "#fff",
-                  color: "#64748b",
-                  fontWeight: 700,
-                  fontSize: ".8em",
-                  cursor: "pointer",
-                  fontFamily: "inherit",
-                }}
-              >
-                Ahora no
-              </button>
-            </div>
-          </div>
-        )}
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: 18, order: 1 }}>
         <div>
           <h1 style={{ ...S.pageTitle, marginBottom: 6 }}>Hola, {athleteName}</h1>
@@ -5290,6 +5213,87 @@ function AthleteHome({ profile }) {
         })()}
       </div>
 
+      {showEvaluation && athleteInfo?.id && (
+        <div style={{ marginBottom: 18, order: 6 }}>
+          <EvaluationView
+            athletes={[normalizeAthlete(athleteInfo)]}
+            currentUserId={profile?.user_id ?? null}
+            notify={(msg) => setMessage(msg)}
+            athleteOnlyId={athleteInfo.id}
+          />
+        </div>
+      )}
+
+      {typeof Notification !== "undefined" &&
+        Notification.permission !== "granted" &&
+        !pushInviteDismissed && (
+          <div
+            style={{
+              marginBottom: 16,
+              padding: "12px 16px",
+              borderRadius: 12,
+              background: "#fffbeb",
+              border: "1px solid #fde68a",
+              display: "flex",
+              flexWrap: "wrap",
+              alignItems: "center",
+              gap: 12,
+              boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
+              order: 7,
+            }}
+          >
+            <span style={{ flex: "1 1 200px", color: "#78350f", fontSize: ".88em", fontWeight: 600 }}>
+              Activa las notificaciones para recibir mensajes
+            </span>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (typeof localStorage !== "undefined") localStorage.removeItem("raf_push_invite_dismissed");
+                  const { data: u } = await supabase.auth.getUser();
+                  const uid = u?.user?.id;
+                  if (!uid) return;
+                  const token = await requestNotificationPermission();
+                  if (token) await supabase.from("profiles").update({ fcm_token: token }).eq("user_id", uid);
+                }}
+                style={{
+                  padding: "8px 14px",
+                  borderRadius: 8,
+                  border: "none",
+                  background: "linear-gradient(135deg,#b45309,#f59e0b)",
+                  color: "#fff",
+                  fontWeight: 800,
+                  fontSize: ".8em",
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                }}
+              >
+                Activar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (typeof localStorage !== "undefined") localStorage.setItem("raf_push_invite_dismissed", "1");
+                  setPushInviteDismissed(true);
+                }}
+                style={{
+                  padding: "8px 14px",
+                  borderRadius: 8,
+                  border: "1px solid #e2e8f0",
+                  background: "#fff",
+                  color: "#64748b",
+                  fontWeight: 700,
+                  fontSize: ".8em",
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                }}
+              >
+                Ahora no
+              </button>
+            </div>
+          </div>
+        )}
+
       <div style={{ ...S.card, marginBottom: 18, order: 6 }}>
         <button
           type="button"
@@ -5308,34 +5312,6 @@ function AthleteHome({ profile }) {
           }}
         >
           {showEvaluation ? "Ocultar evaluación" : "Hacer mi evaluación"}
-        </button>
-      </div>
-
-      <div style={{ ...S.card, marginBottom: 18, order: 7 }}>
-        <button
-          type="button"
-          onClick={async () => {
-            const { error } = await supabase.auth.signOut();
-            if (error) {
-              console.error("Error al cerrar sesión:", error);
-              alert(`Error al cerrar sesión: ${error.message}`);
-            }
-          }}
-          style={{
-            width: "100%",
-            background: "rgba(239,68,68,.08)",
-            border: "1px solid rgba(239,68,68,.25)",
-            borderRadius: 8,
-            padding: "10px 14px",
-            color: "#ef4444",
-            cursor: "pointer",
-            fontFamily: "inherit",
-            fontSize: ".82em",
-            fontWeight: 700,
-            whiteSpace: "nowrap",
-          }}
-        >
-          Cerrar sesión
         </button>
       </div>
 
@@ -5856,6 +5832,34 @@ function AthleteHome({ profile }) {
         </div>
       </div>
       )}
+
+      <div style={{ ...S.card, marginBottom: 18, order: 10 }}>
+        <button
+          type="button"
+          onClick={async () => {
+            const { error } = await supabase.auth.signOut();
+            if (error) {
+              console.error("Error al cerrar sesión:", error);
+              alert(`Error al cerrar sesión: ${error.message}`);
+            }
+          }}
+          style={{
+            width: "100%",
+            background: "rgba(239,68,68,.08)",
+            border: "1px solid rgba(239,68,68,.25)",
+            borderRadius: 8,
+            padding: "10px 14px",
+            color: "#ef4444",
+            cursor: "pointer",
+            fontFamily: "inherit",
+            fontSize: ".82em",
+            fontWeight: 700,
+            whiteSpace: "nowrap",
+          }}
+        >
+          Cerrar sesión
+        </button>
+      </div>
     </div>
   );
 }
