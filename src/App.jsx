@@ -1808,15 +1808,8 @@ export default function App() {
                 <div style={{ display: "flex", gap: 12, marginTop: 18, flexWrap: "wrap" }}>
                   <button
                     type="button"
-                    onClick={() => { setAuthMode("register"); setAuthRole("coach"); setLandingAuthOpen(true); }}
-                    style={{ background: "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 10, padding: "12px 16px", color: "white", cursor: "pointer", fontFamily: "inherit", fontWeight: 900, fontSize: ".9em" }}
-                  >
-                    Empezar gratis
-                  </button>
-                  <button
-                    type="button"
                     onClick={() => { setAuthMode("register"); setAuthRole("athlete"); setLandingAuthOpen(true); }}
-                    style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 10, padding: "12px 16px", color: "#0f172a", cursor: "pointer", fontFamily: "inherit", fontWeight: 900, fontSize: ".9em" }}
+                    style={{ background: "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 10, padding: "12px 16px", color: "white", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: ".9em" }}
                   >
                     Regístrate aquí como atleta
                   </button>
