@@ -976,6 +976,7 @@ export default function App() {
   const [pushInviteDismissed, setPushInviteDismissed] = useState(() =>
     typeof localStorage !== "undefined" && localStorage.getItem("raf_push_invite_dismissed") === "1",
   );
+  const [stravaRefreshTick, setStravaRefreshTick] = useState(0);
 
   const notify = useCallback((msg) => {
     setNotification(msg);
@@ -1167,6 +1168,62 @@ export default function App() {
       setView("dashboard");
     }
   }, [view, session?.user?.email]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get("strava_code");
+    const athleteIdFromState = params.get("state");
+    if (!code) return;
+    const currentAthlete =
+      (athleteIdFromState
+        ? (athletes || []).find((a) => String(a.id) === String(athleteIdFromState))
+        : null) ||
+      (selectedAthlete && selectedAthlete.user_id ? selectedAthlete : null) ||
+      (athletes || []).find((a) => a?.user_id) ||
+      null;
+    if (!currentAthlete?.user_id) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch(`/api/strava?code=${encodeURIComponent(code)}`);
+        const data = await r.json();
+        if (!r.ok || !data?.access_token) {
+          notify("No se pudo conectar Strava.");
+          return;
+        }
+        const payload = {
+          user_id: currentAthlete.user_id,
+          athlete_id_strava: data.athlete?.id ?? null,
+          access_token: data.access_token ?? null,
+          refresh_token: data.refresh_token ?? null,
+          expires_at: data.expires_at ?? null,
+          strava_athlete_name: `${data.athlete?.firstname || ""} ${data.athlete?.lastname || ""}`.trim() || null,
+        };
+        const { error } = await supabase.from("strava_connections").upsert(payload, { onConflict: "user_id" });
+        if (error) {
+          console.error("Error guardando conexión Strava:", error);
+          notify(error.message || "No se pudo guardar la conexión Strava.");
+          return;
+        }
+        setStravaRefreshTick((n) => n + 1);
+        notify(`Strava conectado para ${currentAthlete.name || "atleta"}.`);
+      } catch (e) {
+        console.error("Error conectando Strava en App:", e);
+        notify("No se pudo completar la conexión de Strava.");
+      } finally {
+        if (!cancelled) {
+          const clean = new URL(window.location.href);
+          clean.searchParams.delete("strava_code");
+          clean.searchParams.delete("state");
+          window.history.replaceState({}, "", clean.toString());
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedAthlete?.id, selectedAthlete?.user_id, athletes, notify]);
 
   useEffect(() => {
     const loadAthletes = async () => {
@@ -1865,13 +1922,10 @@ export default function App() {
             selected={selectedAthlete}
             onSelect={setSelectedAthlete}
             workoutsRefresh={workoutsRefresh}
+            stravaRefreshTick={stravaRefreshTick}
             onAthleteWorkoutsDoneSync={(athleteId, workoutsDone) => {
               setAthletes(prev => prev.map(a => (String(a.id) === String(athleteId) ? { ...a, workouts_done: workoutsDone } : a)));
               setSelectedAthlete(prev => (prev && String(prev.id) === String(athleteId) ? { ...prev, workouts_done: workoutsDone } : prev));
-            }}
-            onAthleteDeviceSync={(athleteId, device) => {
-              setAthletes(prev => prev.map(a => (String(a.id) === String(athleteId) ? { ...a, device } : a)));
-              setSelectedAthlete(prev => (prev && String(prev.id) === String(athleteId) ? { ...prev, device } : prev));
             }}
             onAthleteFcSync={(athleteId, fc_max, fc_reposo) => {
               setAthletes((prev) =>
@@ -2394,14 +2448,12 @@ function Dashboard({
   );
 }
 
-function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWorkoutsDoneSync, onAthleteDeviceSync, onAthleteFcSync, coachDisplayName, onDeleteAthlete, notify }) {
+function Athletes({ athletes, selected, onSelect, workoutsRefresh, stravaRefreshTick, onAthleteWorkoutsDoneSync, onAthleteFcSync, coachDisplayName, onDeleteAthlete, notify }) {
   const S = styles;
   const athlete = (selected ? athletes.find(a => String(a.id) === String(selected.id)) : athletes[0]) || null;
   const [searchQuery, setSearchQuery] = useState("");
   const [workouts, setWorkouts] = useState([]);
   const [loadingWorkouts, setLoadingWorkouts] = useState(false);
-  const [deviceModal, setDeviceModal] = useState({ open: false, provider: null });
-  const [deviceMessage, setDeviceMessage] = useState("");
   const [fcMaxInput, setFcMaxInput] = useState("");
   const [fcReposoInput, setFcReposoInput] = useState("");
   const [fcSaving, setFcSaving] = useState(false);
@@ -2895,39 +2947,6 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
     notify?.("Workout eliminado");
   };
 
-  const isCorosConnected = athlete?.device === "coros";
-  const latestWorkout = workouts.length
-    ? [...workouts].sort((a, b) => {
-      if (a.scheduled_date === b.scheduled_date) return String(b.id).localeCompare(String(a.id));
-      return b.scheduled_date.localeCompare(a.scheduled_date);
-    })[0]
-    : null;
-
-  const openDeviceModal = (provider) => {
-    setDeviceMessage("");
-    setDeviceModal({ open: true, provider });
-  };
-
-  const confirmCorosConnect = async () => {
-    if (!athlete?.id) return;
-    const { error } = await supabase.from("athletes").update({ device: "coros" }).eq("id", athlete.id);
-    if (error) {
-      console.error("Error guardando device en athletes:", error);
-      alert(`Error al conectar COROS: ${error.message}`);
-      return;
-    }
-    onAthleteDeviceSync?.(athlete.id, "coros");
-    setDeviceMessage("COROS conectado correctamente.");
-    setDeviceModal({ open: false, provider: null });
-  };
-
-  const syncLatestWorkoutToCoros = () => {
-    if (!latestWorkout) {
-      setDeviceMessage("No hay workouts para sincronizar.");
-      return;
-    }
-    setDeviceMessage(`Workout "${latestWorkout.title}" sincronizado a COROS ✓`);
-  };
 
   const loadCoachChat = useCallback(async () => {
     if (!athlete?.id || !coachId) {
@@ -3125,7 +3144,7 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
     return () => {
       cancelled = true;
     };
-  }, [athlete?.id, athlete?.user_id]);
+  }, [athlete?.id, athlete?.user_id, stravaRefreshTick]);
 
   const saveAthleteFc = async () => {
     if (!athlete?.id) return;
@@ -3894,44 +3913,6 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
           )}
 
           <div style={{ marginTop: 22 }}>
-            <div style={{ fontSize: ".65em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase", marginBottom: 10 }}>
-              DISPOSITIVOS
-            </div>
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
-              <button
-                type="button"
-                onClick={() => openDeviceModal("coros")}
-                style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 12px", color: "#0f172a", cursor: "pointer", fontFamily: "inherit", fontSize: ".8em", fontWeight: 700 }}
-              >
-                Conectar COROS
-              </button>
-              <button
-                type="button"
-                onClick={() => openDeviceModal("garmin")}
-                style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 12px", color: "#0f172a", cursor: "pointer", fontFamily: "inherit", fontSize: ".8em", fontWeight: 700 }}
-              >
-                Conectar Garmin
-              </button>
-              <span style={{ background: "rgba(245,158,11,.15)", border: "1px solid rgba(245,158,11,.35)", borderRadius: 999, padding: "6px 10px", color: "#f59e0b", fontSize: ".75em", fontWeight: 700 }}>
-                Garmin · Próximamente
-              </span>
-              {isCorosConnected && (
-                <span style={{ background: "rgba(34,197,94,.14)", border: "1px solid rgba(34,197,94,.35)", borderRadius: 999, padding: "6px 10px", color: "#22c55e", fontSize: ".75em", fontWeight: 700 }}>
-                  COROS conectado ⌚
-                </span>
-              )}
-            </div>
-            {isCorosConnected && (
-              <button
-                type="button"
-                onClick={syncLatestWorkoutToCoros}
-                style={{ background: "rgba(59,130,246,.12)", border: "1px solid rgba(59,130,246,.35)", borderRadius: 8, padding: "8px 12px", color: "#3b82f6", cursor: "pointer", fontFamily: "inherit", fontSize: ".8em", fontWeight: 700 }}
-              >
-                Sync workout a COROS
-              </button>
-            )}
-            {!!deviceMessage && <div style={{ marginTop: 10, color: "#22c55e", fontSize: ".78em" }}>{deviceMessage}</div>}
-
             <div style={{ marginTop: 14 }}>
               <div style={{ fontSize: ".62em", letterSpacing: ".14em", color: "#475569", textTransform: "uppercase", marginBottom: 8 }}>
                 Strava
@@ -4670,36 +4651,6 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
         </div>
       )}
 
-      {deviceModal.open && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 16 }}>
-          <div style={{ ...S.card, width: "100%", maxWidth: 420, margin: 0 }}>
-            <div style={{ fontSize: ".95em", fontWeight: 700, color: "#0f172a", marginBottom: 8 }}>
-              Conectar {deviceModal.provider === "garmin" ? "Garmin" : "COROS"}
-            </div>
-            <div style={{ fontSize: ".8em", color: "#94a3b8", marginBottom: 14 }}>
-              {deviceModal.provider === "garmin"
-                ? "Garmin estará disponible próximamente. La conexión OAuth se habilitará en una próxima versión."
-                : "Serás redirigido a COROS para autorizar la conexión OAuth del atleta."}
-            </div>
-            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-              <button
-                type="button"
-                onClick={() => setDeviceModal({ open: false, provider: null })}
-                style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 14px", color: "#94a3b8", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: ".82em" }}
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={deviceModal.provider === "garmin" ? () => setDeviceModal({ open: false, provider: null }) : confirmCorosConnect}
-                style={{ background: "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 8, padding: "8px 14px", color: "white", cursor: "pointer", fontFamily: "inherit", fontWeight: 800, fontSize: ".82em" }}
-              >
-                {deviceModal.provider === "garmin" ? "Entendido" : "Autorizar"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -8812,6 +8763,35 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, notif
               <input type="checkbox" checked={form.notify_reminders} onChange={(e) => setForm((f) => ({ ...f, notify_reminders: e.target.checked }))} />
               Recordatorios por email
             </label>
+          </div>
+
+          <div style={{ ...S.card, marginBottom: 18 }}>
+            <div style={{ fontSize: ".72em", letterSpacing: ".12em", color: "#64748b", fontWeight: 700, marginBottom: 16 }}>
+              DISPOSITIVOS DE ATLETAS
+            </div>
+            {!athletes || athletes.length === 0 ? (
+              <div style={{ color: "#94a3b8", fontSize: ".86em" }}>Aún no tienes atletas registrados.</div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {athletes.map((a) => {
+                  const device = String(a?.device || "").trim();
+                  return (
+                    <div key={a.id} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: "10px 12px", background: "#f8fafc", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      <div style={{ color: "#0f172a", fontSize: ".84em", fontWeight: 700 }}>{a.name || "Atleta"}</div>
+                      {device ? (
+                        <span style={{ background: "rgba(34,197,94,.14)", border: "1px solid rgba(34,197,94,.35)", borderRadius: 999, padding: "4px 9px", color: "#15803d", fontSize: ".74em", fontWeight: 700 }}>
+                          {device.toUpperCase()} conectado
+                        </span>
+                      ) : (
+                        <span style={{ background: "#f1f5f9", border: "1px solid #e2e8f0", borderRadius: 999, padding: "4px 9px", color: "#64748b", fontSize: ".74em", fontWeight: 700 }}>
+                          Sin dispositivo conectado
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           <div style={{ ...S.card, marginBottom: 18 }}>
