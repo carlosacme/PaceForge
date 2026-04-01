@@ -323,6 +323,31 @@ const formatLocalYMD = (d) => {
   return `${y}-${m}-${day}`;
 };
 
+/** YYYY-MM-DD desde componentes locales (celdas del calendario); evita desfaces vs strings ISO del workout. */
+const calendarCellToIsoYmd = (d) => {
+  if (!(d instanceof Date) || Number.isNaN(d.getTime())) return "";
+  const y = d.getFullYear();
+  const mo = d.getMonth() + 1;
+  const day = d.getDate();
+  return `${y}-${String(mo).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+};
+
+/** Normaliza scheduled_date del workout a YYYY-MM-DD sin depender de Date cuando ya viene como fecha. */
+const normalizeScheduledDateYmd = (raw) => {
+  if (raw == null || raw === "") return "";
+  if (typeof raw === "string") {
+    const t = raw.trim();
+    if (/^\d{4}-\d{2}-\d{2}/.test(t)) return t.slice(0, 10);
+    const d = new Date(t);
+    if (!Number.isNaN(d.getTime())) return formatLocalYMD(d);
+    return "";
+  }
+  if (raw instanceof Date && !Number.isNaN(raw.getTime())) return formatLocalYMD(raw);
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return "";
+  return formatLocalYMD(d);
+};
+
 const startOfWeekMonday = (ref = new Date()) => {
   const d = new Date(ref.getFullYear(), ref.getMonth(), ref.getDate());
   const dow = d.getDay();
@@ -524,8 +549,7 @@ const normalizeWorkoutRow = (row) => {
   if (typeof structure === "string") {
     try { structure = JSON.parse(structure); } catch { structure = []; }
   }
-  const dateRaw = row.scheduled_date;
-  const scheduled = typeof dateRaw === "string" ? dateRaw.slice(0, 10) : formatLocalYMD(new Date(dateRaw));
+  const scheduled = normalizeScheduledDateYmd(row.scheduled_date);
   const type = row.type && WORKOUT_TYPES.some(t => t.id === row.type) ? row.type : "easy";
   return {
     id: row.id,
@@ -5200,7 +5224,6 @@ function AthleteHome({ profile }) {
   const [stravaConnection, setStravaConnection] = useState(null);
   const [stravaSyncingCode, setStravaSyncingCode] = useState(false);
   const [stravaActivities, setStravaActivities] = useState([]);
-  const [stravaActivitiesByDate, setStravaActivitiesByDate] = useState([]);
   const [stravaLoadingActivities, setStravaLoadingActivities] = useState(false);
   const [stravaDisconnecting, setStravaDisconnecting] = useState(false);
   const [findCoachCodeInput, setFindCoachCodeInput] = useState("");
@@ -5210,8 +5233,31 @@ function AthleteHome({ profile }) {
   const [selectCoachBusyId, setSelectCoachBusyId] = useState("");
   const [coachAssignSuccess, setCoachAssignSuccess] = useState("");
 
+  const profileUserId = profile?.user_id ?? null;
+
+  /** Último `profileUserId` para el que ya se completó la carga inicial (evita loop si `profile` del padre se recrea). */
+  const prevProfileUserIdRef = useRef(null);
+
   useEffect(() => {
+    if (profileUserId == null) {
+      prevProfileUserIdRef.current = null;
+      setAthleteInfo(null);
+      setWorkouts([]);
+      setLoading(false);
+      return;
+    }
+
+    if (prevProfileUserIdRef.current === profileUserId) {
+      return;
+    }
+
     let cancelled = false;
+    const markInitialLoadFinished = () => {
+      if (!cancelled) {
+        prevProfileUserIdRef.current = profileUserId;
+      }
+    };
+
     const load = async () => {
       setLoading(true);
       setMessage("");
@@ -5260,6 +5306,7 @@ function AthleteHome({ profile }) {
         setWorkouts([]);
         setAthleteNotRegistered(true);
         setLoading(false);
+        markInitialLoadFinished();
         return;
       }
 
@@ -5305,14 +5352,19 @@ function AthleteHome({ profile }) {
       }
 
       setLoading(false);
+      markInitialLoadFinished();
     };
 
     load();
-    return () => { cancelled = true; };
-  }, [profile?.user_id]);
+    return () => {
+      cancelled = true;
+    };
+  }, [profileUserId]);
+
+  const athleteCoachIdPrimitive = athleteInfo?.coach_id ?? null;
 
   useEffect(() => {
-    if (!athleteInfo?.id || athleteNotRegistered || athleteInfo.coach_id) {
+    if (!athleteInfo?.id || athleteNotRegistered || athleteCoachIdPrimitive) {
       setPublicCoachesAthlete([]);
       return;
     }
@@ -5342,12 +5394,13 @@ function AthleteHome({ profile }) {
     return () => {
       cancelled = true;
     };
-  }, [athleteInfo?.id, athleteInfo?.coach_id, athleteNotRegistered]);
+  }, [athleteInfo?.id, athleteNotRegistered, athleteCoachIdPrimitive]);
 
   const workoutsByDate = useMemo(() => {
     const m = {};
     for (const w of workouts) {
-      const k = w.scheduled_date;
+      const k = normalizeScheduledDateYmd(w.scheduled_date);
+      if (!k) continue;
       if (!m[k]) m[k] = [];
       m[k].push(w);
     }
@@ -5360,7 +5413,7 @@ function AthleteHome({ profile }) {
   });
   const calendarCells = useMemo(
     () => getMonthGrid(calendarViewMonth.y, calendarViewMonth.m),
-    [calendarViewMonth],
+    [calendarViewMonth.y, calendarViewMonth.m],
   );
   const calendarMonthLabel = useMemo(
     () =>
@@ -5368,7 +5421,7 @@ function AthleteHome({ profile }) {
         month: "long",
         year: "numeric",
       }),
-    [calendarViewMonth],
+    [calendarViewMonth.y, calendarViewMonth.m],
   );
 
   const [races, setRaces] = useState([]);
@@ -5409,29 +5462,31 @@ function AthleteHome({ profile }) {
     return m;
   }, [races]);
 
-  useEffect(() => {
+  const stravaActivitiesByDate = useMemo(() => {
     const grouped = {};
     for (const a of stravaActivities) {
       if (!a?.ymd) continue;
       if (!grouped[a.ymd]) grouped[a.ymd] = [];
       grouped[a.ymd].push(a);
     }
-    setStravaActivitiesByDate(grouped);
+    return grouped;
   }, [stravaActivities]);
 
+  const athleteTodayYmd = calendarCellToIsoYmd(new Date());
+
   const nextRaceCountdownAthlete = useMemo(
-    () => getNextRaceCountdown(races, formatLocalYMD(new Date())),
-    [races],
+    () => getNextRaceCountdown(races, athleteTodayYmd),
+    [races, athleteTodayYmd],
   );
 
   const closeAthleteCalendarCtxMenu = () => setAthleteCalendarCtxMenu(null);
 
+  const ctxMenuWorkoutId = athleteCalendarCtxMenu?.workoutId ?? null;
+
   const ctxMenuAthleteWorkout = useMemo(
     () =>
-      athleteCalendarCtxMenu
-        ? workouts.find((x) => String(x.id) === String(athleteCalendarCtxMenu.workoutId)) || null
-        : null,
-    [workouts, athleteCalendarCtxMenu],
+      ctxMenuWorkoutId ? workouts.find((x) => String(x.id) === String(ctxMenuWorkoutId)) || null : null,
+    [workouts, ctxMenuWorkoutId],
   );
 
   const openAthleteWorkoutMenu = (e, w) => {
@@ -5447,8 +5502,12 @@ function AthleteHome({ profile }) {
     setAthleteCalendarCtxMenu({ x, y, workoutId: w.id });
   };
 
+  const ctxMenuListenerKey = athleteCalendarCtxMenu
+    ? `${athleteCalendarCtxMenu.workoutId}:${athleteCalendarCtxMenu.x}:${athleteCalendarCtxMenu.y}`
+    : "";
+
   useEffect(() => {
-    if (!athleteCalendarCtxMenu) return;
+    if (!ctxMenuListenerKey) return;
     const onDown = (ev) => {
       if (athleteCalendarCtxMenuRef.current?.contains(ev.target)) return;
       closeAthleteCalendarCtxMenu();
@@ -5458,20 +5517,33 @@ function AthleteHome({ profile }) {
       clearTimeout(t);
       document.removeEventListener("mousedown", onDown);
     };
-  }, [athleteCalendarCtxMenu]);
+  }, [ctxMenuListenerKey]);
 
-  const thisWeekStart = useMemo(() => startOfWeekMonday(new Date()), []);
-  const thisWeekEnd = useMemo(() => addDays(thisWeekStart, 6), [thisWeekStart]);
-  const thisWeekStartYmd = useMemo(() => formatLocalYMD(thisWeekStart), [thisWeekStart]);
-  const thisWeekEndYmd = useMemo(() => formatLocalYMD(thisWeekEnd), [thisWeekEnd]);
+  const { thisWeekStartYmd, thisWeekEndYmd } = useMemo(() => {
+    const start = startOfWeekMonday(new Date());
+    const end = addDays(start, 6);
+    return {
+      thisWeekStartYmd: formatLocalYMD(start),
+      thisWeekEndYmd: formatLocalYMD(end),
+    };
+  }, [athleteTodayYmd]);
 
   const weeklyWorkouts = useMemo(
-    () => workouts.filter(w => w.scheduled_date >= thisWeekStartYmd && w.scheduled_date <= thisWeekEndYmd),
+    () =>
+      workouts.filter((w) => {
+        const ymd = normalizeScheduledDateYmd(w.scheduled_date);
+        return ymd && ymd >= thisWeekStartYmd && ymd <= thisWeekEndYmd;
+      }),
     [workouts, thisWeekStartYmd, thisWeekEndYmd],
   );
 
   const weeklyTotalKm = useMemo(() => weeklyWorkouts.reduce((s, w) => s + (Number(w.total_km) || 0), 0), [weeklyWorkouts]);
   const weeklyDoneKm = useMemo(() => weeklyWorkouts.filter(w => w.done).reduce((s, w) => s + (Number(w.total_km) || 0), 0), [weeklyWorkouts]);
+
+  const workoutsAchSyncKey = useMemo(
+    () => (workouts || []).map((w) => `${w.id}:${w.done ? 1 : 0}:${w.rpe ?? ""}`).join("|"),
+    [workouts],
+  );
 
   const toggleDone = async (w) => {
     const next = !w.done;
@@ -5659,7 +5731,7 @@ function AthleteHome({ profile }) {
     return () => {
       cancelled = true;
     };
-  }, [athleteInfo?.id, workouts]);
+  }, [athleteInfo?.id, workoutsAchSyncKey]);
 
   useEffect(() => {
     const t = setInterval(() => loadAthleteChat(), 10000);
@@ -5939,7 +6011,7 @@ function AthleteHome({ profile }) {
             <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 4 }}>
               {DAYS.map(d => <div key={d} style={{ fontSize: ".65em", textAlign: "center", color: "#334155", padding: "4px 0" }}>{d}</div>)}
               {calendarCells.map((cellDate, i) => {
-                const ymd = formatLocalYMD(cellDate);
+                const ymd = calendarCellToIsoYmd(cellDate);
                 const dayWorkouts = workoutsByDate[ymd] || [];
                 const dayRaces = racesByDate[ymd] || [];
                 const dayStrava = stravaActivitiesByDate[ymd] || [];
@@ -5947,8 +6019,7 @@ function AthleteHome({ profile }) {
                 const hasDoneWorkout = dayWorkouts.some(w => w.done);
                 const hasRace = dayRaces.length > 0;
                 const hasStrava = dayStrava.length > 0;
-                const todayYmd = formatLocalYMD(new Date());
-                const isRaceToday = hasRace && ymd === todayYmd;
+                const isRaceToday = hasRace && ymd === athleteTodayYmd;
                 const inViewMonth = cellIsInViewMonth(cellDate, calendarViewMonth.y, calendarViewMonth.m);
                 let borderColor = "#f1f5f9";
                 if (hasRace) borderColor = "rgba(245,158,11,.55)";
