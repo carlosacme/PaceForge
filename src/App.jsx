@@ -976,10 +976,11 @@ const coachTrialDaysRemainingFromStart = (prof) => {
 async function resolveCoachUserIdFromPublicCode(codeInput) {
   const codigoIngresado = String(codeInput || "").trim().toLowerCase();
   if (!codigoIngresado) return null;
+  const pattern = `${codigoIngresado.toLowerCase()}%`;
   const { data, error } = await supabase
     .from("profiles")
     .select("user_id")
-    .ilike("user_id", `${codigoIngresado}%`)
+    .ilike("user_id::text", pattern)
     .limit(1);
   if (error) {
     console.error("resolveCoachUserIdFromPublicCode:", error);
@@ -1122,10 +1123,11 @@ export default function App() {
   const resolveCoachIdByCode = useCallback(async (codeInput) => {
     const codigoIngresado = String(codeInput || "").trim().toLowerCase();
     if (!codigoIngresado) return null;
+    const pattern = `${codigoIngresado.toLowerCase()}%`;
     const { data, error } = await supabase
       .from("profiles")
       .select("*")
-      .ilike("user_id", `${codigoIngresado}%`);
+      .ilike("user_id::text", pattern);
     if (error) {
       console.error("Error resolviendo código de coach:", error);
       return null;
