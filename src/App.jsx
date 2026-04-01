@@ -979,7 +979,6 @@ async function resolveCoachUserIdFromPublicCode(codeInput) {
   const { data, error } = await supabase
     .from("profiles")
     .select("user_id")
-    .eq("role", "coach")
     .ilike("user_id", `${codigoIngresado}%`)
     .limit(1);
   if (error) {
@@ -1126,7 +1125,6 @@ export default function App() {
     const { data, error } = await supabase
       .from("profiles")
       .select("*")
-      .eq("role", "coach")
       .ilike("user_id", `${codigoIngresado}%`);
     if (error) {
       console.error("Error resolviendo código de coach:", error);
@@ -1559,15 +1557,22 @@ export default function App() {
         }
 
         const nowIso = new Date().toISOString();
-        const profilePayload = {
-          user_id: newUserId,
-          role: authRole,
-          coach_id: linkedCoachId,
-          name: authName.trim(),
-          ...(authRole === "coach"
-            ? { plan_status: "trial", trial_started_at: nowIso }
-            : {}),
-        };
+        const profilePayload =
+          authRole === "coach"
+            ? {
+                user_id: newUserId,
+                role: "coach",
+                coach_id: linkedCoachId,
+                name: authName.trim(),
+                plan_status: "trial",
+                trial_started_at: nowIso,
+              }
+            : {
+                user_id: newUserId,
+                role: authRole,
+                coach_id: linkedCoachId,
+                name: authName.trim(),
+              };
 
         const { error: profileError } = await supabase.from("profiles").insert(profilePayload);
         if (profileError) {
