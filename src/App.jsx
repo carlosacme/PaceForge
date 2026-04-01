@@ -1585,6 +1585,9 @@ export default function App() {
           console.log("Error insertando en profiles:", profileError, { profilePayload });
         } else {
           console.log("Perfil creado en profiles:", { user_id: newUserId, role: authRole });
+          if (authRole === "athlete") {
+            setProfile({ user_id: newUserId, role: "athlete", name: authName.trim() });
+          }
           await syncFcmTokenToProfile();
         }
 
