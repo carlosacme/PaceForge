@@ -929,6 +929,45 @@ const ProgressBar = ({ value, total, color = "#f59e0b" }) => (
 
 const ADMIN_EMAIL = "acostamerlano87@gmail.com";
 
+/** Días de trial restantes (null si no aplica). */
+const coachTrialDaysRemaining = (row) => {
+  if (!row?.trial_start || row.subscription_status !== "trial" || row.approved_by_admin) return null;
+  const start = new Date(row.trial_start);
+  if (Number.isNaN(start.getTime())) return null;
+  const days = Number(row.trial_days) || 10;
+  const endMs = start.getTime() + days * 86400000;
+  return Math.max(0, Math.ceil((endMs - Date.now()) / 86400000));
+};
+
+/** Coach que aparece primero en el directorio público del atleta (admin). */
+const ATHLETE_HOME_PRIORITY_COACH_USER_ID = "b5c9e44a-6695-4800-99bd-f19b05d2f66f";
+
+async function resolveCoachUserIdFromPublicCode(codeInput) {
+  const codigoIngresado = String(codeInput || "").trim().toLowerCase();
+  if (!codigoIngresado) return null;
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("user_id")
+    .eq("role", "coach")
+    .ilike("user_id", `${codigoIngresado}%`)
+    .limit(1);
+  if (error) {
+    console.error("resolveCoachUserIdFromPublicCode:", error);
+    return null;
+  }
+  return data?.[0]?.user_id ?? null;
+}
+
+function coachDirectorySpecialtyLabel(row) {
+  const city = (row?.city || "").trim();
+  const country = (row?.country || "").trim();
+  const loc = [city, country].filter(Boolean).join(" · ");
+  if (loc) return loc;
+  const plan = (row?.subscription_plan || "").trim();
+  if (plan) return plan;
+  return "Entrenador de running";
+}
+
 const COACH_NAV_BASE_ITEMS = [
   { id: "dashboard", icon: "▤", label: "Dashboard", shortLabel: "Inicio", color: "#f59e0b" },
   { id: "athletes", icon: "◉", label: "Atletas", shortLabel: "Atletas", color: "#3b82f6" },
@@ -977,6 +1016,9 @@ export default function App() {
   const [publicCoaches, setPublicCoaches] = useState([]);
   const [loadingPublicCoaches, setLoadingPublicCoaches] = useState(false);
   const [pendingCoachRequestId, setPendingCoachRequestId] = useState("");
+  const [coachAccessProfile, setCoachAccessProfile] = useState(null);
+  const [coachAccessResolved, setCoachAccessResolved] = useState(false);
+  const [unlockedExpiredPlanView, setUnlockedExpiredPlanView] = useState(false);
 
   const notify = useCallback((msg) => {
     setNotification(msg);
@@ -1204,6 +1246,90 @@ export default function App() {
 
     loadProfile();
   }, [session]);
+
+  useEffect(() => {
+    if (!session?.user?.id || profile?.role === "athlete") {
+      setCoachAccessProfile(null);
+      setCoachAccessResolved(true);
+      return;
+    }
+    if (profileLoading) return;
+
+    let cancelled = false;
+    setCoachAccessResolved(false);
+
+    (async () => {
+      const uid = session.user.id;
+      try {
+        let { data: cp, error } = await supabase.from("coach_profiles").select("*").eq("user_id", uid).maybeSingle();
+        if (cancelled) return;
+        if (error) {
+          console.error("coach_profiles acceso:", error);
+          setCoachAccessProfile(null);
+          setCoachAccessResolved(true);
+          return;
+        }
+        if (!cp) {
+          const insertPayload = {
+            user_id: uid,
+            full_name: (profile?.name || "").trim() || null,
+            email: session.user.email ? String(session.user.email).toLowerCase() : null,
+            trial_start: new Date().toISOString(),
+            trial_days: 10,
+            subscription_status: "trial",
+            approved_by_admin: false,
+            registered_at: new Date().toISOString(),
+          };
+          const ins = await supabase.from("coach_profiles").insert(insertPayload).select("*").maybeSingle();
+          if (ins.error) {
+            console.error("coach_profiles insert inicial:", ins.error);
+            const retry = await supabase.from("coach_profiles").select("*").eq("user_id", uid).maybeSingle();
+            cp = retry.data;
+          } else {
+            cp = ins.data;
+          }
+        }
+        if (cancelled) return;
+        if (cp && cp.subscription_status === "trial" && !cp.approved_by_admin) {
+          const start = cp.trial_start ? new Date(cp.trial_start) : null;
+          const days = Number(cp.trial_days) || 10;
+          if (start && !Number.isNaN(start.getTime()) && Date.now() > start.getTime() + days * 86400000) {
+            await supabase.from("coach_profiles").update({ subscription_status: "expired" }).eq("user_id", uid);
+            cp = { ...cp, subscription_status: "expired" };
+          }
+        }
+        if (!cancelled) {
+          setCoachAccessProfile(cp);
+          setCoachAccessResolved(true);
+        }
+      } catch (e) {
+        console.error("coach access sync", e);
+        if (!cancelled) {
+          setCoachAccessProfile(null);
+          setCoachAccessResolved(true);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.user?.id, session?.user?.email, profile?.role, profile?.name, profileLoading]);
+
+  useEffect(() => {
+    if (coachAccessProfile?.subscription_status !== "expired") setUnlockedExpiredPlanView(false);
+  }, [coachAccessProfile?.subscription_status]);
+
+  const coachSubscriptionExpired =
+    Boolean(profile && profile.role !== "athlete") &&
+    coachAccessProfile?.subscription_status === "expired" &&
+    session?.user?.email?.toLowerCase() !== ADMIN_EMAIL;
+
+  useEffect(() => {
+    if (coachSubscriptionExpired && unlockedExpiredPlanView && view !== "plans") {
+      setView("plans");
+    }
+  }, [coachSubscriptionExpired, unlockedExpiredPlanView, view]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1474,6 +1600,21 @@ export default function App() {
         } else {
           console.log("Perfil creado en profiles:", { user_id: newUserId, role: authRole });
           await syncFcmTokenToProfile();
+        }
+
+        if (authRole === "coach") {
+          const cpPayload = {
+            user_id: newUserId,
+            full_name: authName.trim(),
+            email: authEmail.trim().toLowerCase(),
+            trial_start: new Date().toISOString(),
+            trial_days: 10,
+            subscription_status: "trial",
+            approved_by_admin: false,
+            registered_at: new Date().toISOString(),
+          };
+          const { error: cpErr } = await supabase.from("coach_profiles").insert(cpPayload);
+          if (cpErr) console.error("Error creando coach_profiles en registro:", cpErr);
         }
 
         if (authRole === "athlete") {
@@ -2017,6 +2158,177 @@ export default function App() {
     return <AthleteHome profile={profile} />;
   }
 
+  const isCoachUi = Boolean(profile && profile.role !== "athlete");
+  const sessionEmailLower = session?.user?.email?.toLowerCase() ?? "";
+  if (isCoachUi && !coachAccessResolved) {
+    return (
+      <div style={S.root}>
+        <main style={{ ...S.page, display: "flex", alignItems: "center", justifyContent: "center", width: "100%", minHeight: "50vh" }}>
+          <h1 style={{ ...S.pageTitle, color: "#64748b" }}>Preparando tu acceso…</h1>
+        </main>
+      </div>
+    );
+  }
+  if (
+    isCoachUi &&
+    coachAccessProfile &&
+    sessionEmailLower !== ADMIN_EMAIL &&
+    coachAccessProfile.subscription_status === "blocked"
+  ) {
+    return (
+      <div style={S.root}>
+        <main
+          style={{
+            ...S.page,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            width: "100%",
+            minHeight: "70vh",
+            textAlign: "center",
+            padding: 24,
+            boxSizing: "border-box",
+          }}
+        >
+          <div
+            style={{
+              maxWidth: 420,
+              background: "#fff",
+              borderRadius: 16,
+              padding: "28px 24px",
+              border: "1px solid #e2e8f0",
+              boxShadow: "0 8px 30px rgba(15,23,42,.08)",
+            }}
+          >
+            <div style={{ fontSize: "2em", marginBottom: 12 }}>🚫</div>
+            <h1 style={{ ...S.pageTitle, fontSize: "1.25em", marginBottom: 12 }}>
+              Tu cuenta ha sido desactivada. Contacta al administrador si crees que es un error.
+            </h1>
+            <button
+              type="button"
+              onClick={handleSignOut}
+              style={{
+                marginTop: 20,
+                padding: "10px 16px",
+                borderRadius: 10,
+                border: "1px solid #e2e8f0",
+                background: "#f8fafc",
+                color: "#64748b",
+                fontWeight: 700,
+                cursor: "pointer",
+                fontFamily: "inherit",
+                fontSize: ".85em",
+              }}
+            >
+              Cerrar sesión
+            </button>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  if (
+    isCoachUi &&
+    coachAccessProfile &&
+    sessionEmailLower !== ADMIN_EMAIL &&
+    coachAccessProfile.subscription_status === "expired" &&
+    !unlockedExpiredPlanView
+  ) {
+    return (
+      <div style={S.root}>
+        <main
+          style={{
+            ...S.page,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            width: "100%",
+            minHeight: "70vh",
+            textAlign: "center",
+            padding: 24,
+            boxSizing: "border-box",
+          }}
+        >
+          <div
+            style={{
+              maxWidth: 420,
+              background: "#fff",
+              borderRadius: 16,
+              padding: "28px 24px",
+              border: "1px solid #e2e8f0",
+              boxShadow: "0 8px 30px rgba(15,23,42,.08)",
+            }}
+          >
+            <div style={{ fontSize: "2em", marginBottom: 12 }}>⏱</div>
+            <h1 style={{ ...S.pageTitle, fontSize: "1.25em", marginBottom: 12 }}>
+              Tu período de prueba ha terminado. Elige un plan para continuar.
+            </h1>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 20 }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setUnlockedExpiredPlanView(true);
+                  setView("plans");
+                }}
+                style={{
+                  padding: "12px 18px",
+                  borderRadius: 10,
+                  border: "none",
+                  background: "linear-gradient(135deg,#0d9488,#14b8a6)",
+                  color: "#fff",
+                  fontWeight: 800,
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                  fontSize: ".9em",
+                }}
+              >
+                Ir a Planes
+              </button>
+              <button
+                type="button"
+                onClick={handleSignOut}
+                style={{
+                  padding: "10px 16px",
+                  borderRadius: 10,
+                  border: "1px solid #e2e8f0",
+                  background: "#f8fafc",
+                  color: "#64748b",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                  fontSize: ".85em",
+                }}
+              >
+                Cerrar sesión
+              </button>
+            </div>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  const trialBannerDays = isCoachUi ? coachTrialDaysRemaining(coachAccessProfile) : null;
+  const showTrialBanner =
+    isCoachUi &&
+    coachAccessProfile?.subscription_status === "trial" &&
+    !coachAccessProfile?.approved_by_admin &&
+    trialBannerDays != null &&
+    trialBannerDays > 0;
+
+  const goCoachView = (id) => {
+    if (coachSubscriptionExpired && unlockedExpiredPlanView && id !== "plans") {
+      notify("Tu prueba expiró — solo puedes usar Planes hasta renovar.");
+      return;
+    }
+    setView(id);
+    setSelectedAthlete(null);
+    setShowAddAthleteForm(false);
+  };
+
   return (
     <div style={S.root}>
       {notification && <div style={S.notification}>✓ {notification}</div>}
@@ -2062,11 +2374,7 @@ export default function App() {
             <button
               key={item.id}
               type="button"
-              onClick={() => {
-                setView(item.id);
-                setSelectedAthlete(null);
-                setShowAddAthleteForm(false);
-              }}
+              onClick={() => goCoachView(item.id)}
               style={{ ...S.navBtn, ...(view === item.id ? S.navBtnActive : {}) }}
             >
               <span style={{ fontSize: "1.15em", color: item.color, width: 22, textAlign: "center" }}>{item.icon}</span>
@@ -2166,6 +2474,22 @@ export default function App() {
               </div>
             </div>
           )}
+        {showTrialBanner ? (
+          <div
+            style={{
+              margin: "10px 16px 0",
+              padding: "10px 14px",
+              borderRadius: 10,
+              background: "linear-gradient(90deg, rgba(245,158,11,.12), rgba(251,191,36,.08))",
+              border: "1px solid rgba(245,158,11,.35)",
+              color: "#92400e",
+              fontSize: ".8em",
+              fontWeight: 600,
+            }}
+          >
+            Período de prueba: {trialBannerDays} día{trialBannerDays === 1 ? "" : "s"} restante{trialBannerDays === 1 ? "" : "s"}
+          </div>
+        ) : null}
         {loadingAthletes ? (
           <div style={S.page}>
             <h1 style={S.pageTitle}>Cargando atletas...</h1>
@@ -2237,7 +2561,11 @@ export default function App() {
           />
         )}
         {view === "admin" && session?.user?.email?.toLowerCase() === ADMIN_EMAIL && (
-          <AdminPromoCodes notify={notify} />
+          <AdminPanel
+            notify={notify}
+            adminCoachUserId={session?.user?.id ?? null}
+            onCopiedWorkoutToLibrary={() => setLibraryRefresh((r) => r + 1)}
+          />
         )}
         {view === "plan12" && (
           <Plan2Weeks
@@ -2290,11 +2618,7 @@ export default function App() {
             <button
               key={`m-${item.id}`}
               type="button"
-              onClick={() => {
-                setView(item.id);
-                setSelectedAthlete(null);
-                setShowAddAthleteForm(false);
-              }}
+              onClick={() => goCoachView(item.id)}
               style={{
                 color: active ? "#c2410c" : "#64748b",
                 background: active ? "rgba(245, 158, 11, 0.14)" : "transparent",
@@ -4879,12 +5203,19 @@ function AthleteHome({ profile }) {
   const [stravaActivitiesByDate, setStravaActivitiesByDate] = useState([]);
   const [stravaLoadingActivities, setStravaLoadingActivities] = useState(false);
   const [stravaDisconnecting, setStravaDisconnecting] = useState(false);
+  const [findCoachCodeInput, setFindCoachCodeInput] = useState("");
+  const [findCoachCodeBusy, setFindCoachCodeBusy] = useState(false);
+  const [publicCoachesAthlete, setPublicCoachesAthlete] = useState([]);
+  const [loadingPublicCoachesAthlete, setLoadingPublicCoachesAthlete] = useState(false);
+  const [selectCoachBusyId, setSelectCoachBusyId] = useState("");
+  const [coachAssignSuccess, setCoachAssignSuccess] = useState("");
 
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
       setLoading(true);
       setMessage("");
+      setCoachAssignSuccess("");
       setAthleteNotRegistered(false);
 
       const { data: authData, error: authErr } = await supabase.auth.getUser();
@@ -4979,6 +5310,39 @@ function AthleteHome({ profile }) {
     load();
     return () => { cancelled = true; };
   }, [profile?.user_id]);
+
+  useEffect(() => {
+    if (!athleteInfo?.id || athleteNotRegistered || athleteInfo.coach_id) {
+      setPublicCoachesAthlete([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      setLoadingPublicCoachesAthlete(true);
+      const { data, error } = await supabase
+        .from("coach_profiles")
+        .select("user_id, full_name, avatar_url, city, country, subscription_plan")
+        .eq("is_public", true)
+        .order("updated_at", { ascending: false });
+      if (cancelled) return;
+      if (error) {
+        console.error("[AthleteHome] coaches públicos:", error);
+        setPublicCoachesAthlete([]);
+      } else {
+        const list = data || [];
+        const sorted = [...list].sort((a, b) => {
+          const ap = String(a.user_id) === ATHLETE_HOME_PRIORITY_COACH_USER_ID ? 0 : 1;
+          const bp = String(b.user_id) === ATHLETE_HOME_PRIORITY_COACH_USER_ID ? 0 : 1;
+          return ap - bp;
+        });
+        setPublicCoachesAthlete(sorted);
+      }
+      setLoadingPublicCoachesAthlete(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [athleteInfo?.id, athleteInfo?.coach_id, athleteNotRegistered]);
 
   const workoutsByDate = useMemo(() => {
     const m = {};
@@ -5384,6 +5748,68 @@ function AthleteHome({ profile }) {
     setAthleteInfo((prev) => (prev ? { ...prev, device: deviceValue } : prev));
   };
 
+  const athleteNeedsCoachLink =
+    Boolean(athleteInfo) &&
+    !athleteNotRegistered &&
+    (athleteInfo.coach_id == null || athleteInfo.coach_id === "");
+
+  const linkAthleteToCoach = async (coachUserId) => {
+    if (!athleteInfo?.id || !profile?.user_id || !coachUserId) return false;
+    setMessage("");
+    const { error: eAth } = await supabase.from("athletes").update({ coach_id: coachUserId }).eq("id", athleteInfo.id);
+    if (eAth) {
+      setMessage(eAth.message || "No se pudo vincular el coach.");
+      return false;
+    }
+    const { error: eProf } = await supabase.from("profiles").update({ coach_id: coachUserId }).eq("user_id", profile.user_id);
+    if (eProf) {
+      setMessage(eProf.message || "No se pudo actualizar tu perfil. Revisa permisos o contacta soporte.");
+      return false;
+    }
+    setAthleteInfo((prev) => (prev ? { ...prev, coach_id: coachUserId } : prev));
+    setCoachAssignSuccess("¡Coach asignado exitosamente! Ya puedes ver tus entrenamientos.");
+    setTimeout(() => setCoachAssignSuccess(""), 8000);
+    const { data: wRows, error: wErr } = await supabase
+      .from("workouts")
+      .select("*")
+      .eq("athlete_id", athleteInfo.id)
+      .order("scheduled_date", { ascending: true });
+    if (!wErr && wRows) {
+      setWorkouts((wRows || []).map(normalizeWorkoutRow));
+    }
+    return true;
+  };
+
+  const connectCoachByCode = async () => {
+    const code = findCoachCodeInput.trim();
+    if (!code) {
+      setMessage("Ingresa el código de tu coach.");
+      return;
+    }
+    setFindCoachCodeBusy(true);
+    setMessage("");
+    try {
+      const coachId = await resolveCoachUserIdFromPublicCode(code);
+      if (!coachId) {
+        setMessage("No encontramos un coach con ese código.");
+        return;
+      }
+      await linkAthleteToCoach(coachId);
+    } finally {
+      setFindCoachCodeBusy(false);
+    }
+  };
+
+  const selectPublicCoach = async (coachUserId) => {
+    setSelectCoachBusyId(String(coachUserId));
+    setMessage("");
+    try {
+      await linkAthleteToCoach(coachUserId);
+    } finally {
+      setSelectCoachBusyId("");
+    }
+  };
+
   return (
     <div style={S.page}>
       {/* ORDEN: header, progreso, calendario, chat, logros, evaluacion, cerrar sesion */}
@@ -5402,6 +5828,21 @@ function AthleteHome({ profile }) {
         </div>
       ) : null}
       {message && <div style={{ ...S.card, border: "1px solid rgba(239,68,68,.35)", background: "rgba(239,68,68,.08)", color: "#fecaca", marginBottom: 14 }}>{message}</div>}
+      {coachAssignSuccess ? (
+        <div
+          style={{
+            ...S.card,
+            border: "1px solid rgba(34,197,94,.45)",
+            background: "rgba(34,197,94,.1)",
+            color: "#166534",
+            marginBottom: 14,
+            fontWeight: 600,
+            fontSize: ".92em",
+          }}
+        >
+          {coachAssignSuccess}
+        </div>
+      ) : null}
 
       {athleteNotRegistered && !loading && (
         <div
@@ -5447,6 +5888,7 @@ function AthleteHome({ profile }) {
       </div>
 
       {!athleteNotRegistered && (
+      <>
       <div style={{ ...S.card, order: 3 }}>
         <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 10 }}>
           <div style={{ fontSize: ".65em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase" }}>
@@ -5692,6 +6134,144 @@ function AthleteHome({ profile }) {
           </>
         )}
       </div>
+
+      {athleteNeedsCoachLink ? (
+        <div style={{ ...S.card, order: 3, marginTop: 16 }}>
+          <div style={{ fontSize: ".68em", letterSpacing: ".14em", color: "#334155", textTransform: "uppercase", marginBottom: 14, fontWeight: 800 }}>
+            ENCUENTRA TU COACH
+          </div>
+
+          <div style={{ marginBottom: 20 }}>
+            <div style={{ fontSize: ".8em", color: "#64748b", marginBottom: 8, fontWeight: 600 }}>Ingresa el código de tu coach</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
+              <input
+                type="text"
+                value={findCoachCodeInput}
+                onChange={(e) => setFindCoachCodeInput(e.target.value)}
+                placeholder="Ej. primeros caracteres del ID del coach"
+                style={{
+                  flex: "1 1 200px",
+                  minWidth: 160,
+                  padding: "10px 12px",
+                  borderRadius: 10,
+                  border: "1px solid #e2e8f0",
+                  background: "#fff",
+                  color: "#0f172a",
+                  fontFamily: "inherit",
+                  fontSize: ".88em",
+                  boxSizing: "border-box",
+                }}
+              />
+              <button
+                type="button"
+                disabled={findCoachCodeBusy}
+                onClick={() => connectCoachByCode()}
+                style={{
+                  padding: "10px 18px",
+                  borderRadius: 10,
+                  border: "none",
+                  background: findCoachCodeBusy ? "#e2e8f0" : "linear-gradient(135deg,#0d9488,#14b8a6)",
+                  color: findCoachCodeBusy ? "#64748b" : "#fff",
+                  fontWeight: 800,
+                  cursor: findCoachCodeBusy ? "not-allowed" : "pointer",
+                  fontFamily: "inherit",
+                  fontSize: ".85em",
+                }}
+              >
+                {findCoachCodeBusy ? "…" : "Conectar"}
+              </button>
+            </div>
+          </div>
+
+          <div style={{ borderTop: "1px dashed #e2e8f0", paddingTop: 18 }}>
+            <div style={{ fontSize: ".78em", color: "#64748b", marginBottom: 12, fontWeight: 600 }}>Coaches públicos</div>
+            {loadingPublicCoachesAthlete ? (
+              <div style={{ color: "#94a3b8", fontSize: ".85em" }}>Cargando directorio…</div>
+            ) : publicCoachesAthlete.length === 0 ? (
+              <div style={{ color: "#94a3b8", fontSize: ".85em" }}>No hay coaches públicos por ahora.</div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                {publicCoachesAthlete.map((c) => {
+                  const name = (c.full_name && String(c.full_name).trim()) || "Coach";
+                  const spec = coachDirectorySpecialtyLabel(c);
+                  const busy = selectCoachBusyId === String(c.user_id);
+                  const initials = name
+                    .split(/\s+/)
+                    .filter(Boolean)
+                    .slice(0, 2)
+                    .map((p) => p[0])
+                    .join("")
+                    .toUpperCase() || "C";
+                  return (
+                    <div
+                      key={c.user_id}
+                      style={{
+                        display: "flex",
+                        flexWrap: "wrap",
+                        alignItems: "center",
+                        gap: 14,
+                        padding: "12px 14px",
+                        borderRadius: 12,
+                        border: "1px solid #e2e8f0",
+                        background: "#f8fafc",
+                      }}
+                    >
+                      {c.avatar_url ? (
+                        <img
+                          src={c.avatar_url}
+                          alt=""
+                          style={{ width: 52, height: 52, borderRadius: "50%", objectFit: "cover", flexShrink: 0, border: "1px solid #e2e8f0" }}
+                        />
+                      ) : (
+                        <div
+                          style={{
+                            width: 52,
+                            height: 52,
+                            borderRadius: "50%",
+                            background: "linear-gradient(135deg,#f59e0b,#ea580c)",
+                            color: "#fff",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            fontWeight: 900,
+                            fontSize: ".95em",
+                            flexShrink: 0,
+                          }}
+                        >
+                          {initials}
+                        </div>
+                      )}
+                      <div style={{ flex: "1 1 180px", minWidth: 0 }}>
+                        <div style={{ fontWeight: 800, color: "#0f172a", fontSize: ".95em" }}>{name}</div>
+                        <div style={{ fontSize: ".78em", color: "#64748b", marginTop: 4 }}>{spec}</div>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={busy || selectCoachBusyId !== ""}
+                        onClick={() => selectPublicCoach(c.user_id)}
+                        style={{
+                          padding: "9px 16px",
+                          borderRadius: 10,
+                          border: "none",
+                          background: busy || selectCoachBusyId !== "" ? "#e2e8f0" : "linear-gradient(135deg,#b45309,#f59e0b)",
+                          color: busy || selectCoachBusyId !== "" ? "#64748b" : "#fff",
+                          fontWeight: 800,
+                          fontSize: ".8em",
+                          cursor: busy || selectCoachBusyId !== "" ? "not-allowed" : "pointer",
+                          fontFamily: "inherit",
+                        }}
+                      >
+                        {busy ? "…" : "Seleccionar coach"}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      ) : null}
+      </>
       )}
 
       {!athleteNotRegistered && (
@@ -8435,6 +9015,409 @@ function EvaluationView({ athletes, currentUserId, notify, athleteOnlyId = null 
           ))
         )}
       </div>
+    </div>
+  );
+}
+
+function AdminCoachLibraryModal({ targetCoachId, coachLabel, adminCoachUserId, onClose, notify, onCopied }) {
+  const S = styles;
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [copyingId, setCopyingId] = useState(null);
+
+  const load = useCallback(async () => {
+    if (!targetCoachId) return;
+    setLoading(true);
+    const { data, error } = await supabase
+      .from("workout_library")
+      .select("*")
+      .eq("coach_id", targetCoachId)
+      .order("created_at", { ascending: false });
+    if (error) {
+      console.error(error);
+      notify("No se pudo cargar la biblioteca.");
+      setItems([]);
+    } else {
+      setItems((data || []).map(normalizeLibraryRow));
+    }
+    setLoading(false);
+  }, [targetCoachId, notify]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const copyToMyLibrary = async (row) => {
+    if (!adminCoachUserId) {
+      notify("Sin sesión de admin.");
+      return;
+    }
+    setCopyingId(row.id);
+    const structure = Array.isArray(row.structure) ? row.structure : [];
+    const ins = {
+      coach_id: adminCoachUserId,
+      title: (row.title && String(row.title).trim()) || "Workout",
+      type: WORKOUT_TYPES.some((t) => t.id === row.type) ? row.type : "easy",
+      total_km: Number.isFinite(Number(row.total_km)) ? Number(row.total_km) : 0,
+      duration_min: Number.isFinite(Number(row.duration_min)) ? Math.round(Number(row.duration_min)) : 0,
+      description: row.description != null ? String(row.description) : "",
+      structure,
+    };
+    const { error } = await supabase.from("workout_library").insert(ins);
+    setCopyingId(null);
+    if (error) {
+      console.error(error);
+      notify(error.message || "Error al copiar");
+      return;
+    }
+    notify("Copiado a tu biblioteca ✓");
+    onCopied?.();
+  };
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(15,23,42,.5)",
+        zIndex: 600,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 16,
+        boxSizing: "border-box",
+      }}
+    >
+      <div
+        style={{
+          background: "#fff",
+          borderRadius: 16,
+          maxWidth: 720,
+          width: "100%",
+          maxHeight: "90vh",
+          overflow: "hidden",
+          display: "flex",
+          flexDirection: "column",
+          border: "1px solid #e2e8f0",
+        }}
+      >
+        <div
+          style={{
+            padding: "16px 18px",
+            borderBottom: "1px solid #e2e8f0",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            flexWrap: "wrap",
+            gap: 10,
+          }}
+        >
+          <div>
+            <div style={{ fontSize: ".72em", fontWeight: 700, letterSpacing: ".1em", color: "#64748b" }}>BIBLIOTECA DEL COACH</div>
+            <div style={{ fontWeight: 800, color: "#0f172a" }}>{coachLabel || targetCoachId}</div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{
+              padding: "8px 14px",
+              borderRadius: 8,
+              border: "1px solid #e2e8f0",
+              background: "#f8fafc",
+              cursor: "pointer",
+              fontFamily: "inherit",
+              fontWeight: 700,
+              fontSize: ".8em",
+            }}
+          >
+            Cerrar
+          </button>
+        </div>
+        <div style={{ padding: 16, overflowY: "auto", flex: 1 }}>
+          {loading ? (
+            <div style={{ color: "#64748b" }}>Cargando…</div>
+          ) : items.length === 0 ? (
+            <div style={{ color: "#94a3b8" }}>Sin workouts en biblioteca.</div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {items.map((row) => {
+                const wt = WORKOUT_TYPES.find((t) => t.id === row.type) || WORKOUT_TYPES[0];
+                return (
+                  <div
+                    key={row.id}
+                    style={{
+                      ...S.card,
+                      margin: 0,
+                      padding: 14,
+                      display: "flex",
+                      flexWrap: "wrap",
+                      justifyContent: "space-between",
+                      gap: 12,
+                      alignItems: "center",
+                    }}
+                  >
+                    <div style={{ flex: "1 1 200px", minWidth: 0 }}>
+                      <div style={{ fontWeight: 700 }}>{row.title}</div>
+                      <div style={{ fontSize: ".75em", color: "#64748b" }}>
+                        {wt.label} · {row.total_km} km · {row.duration_min} min
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={copyingId === row.id}
+                      onClick={() => copyToMyLibrary(row)}
+                      style={{
+                        padding: "8px 12px",
+                        borderRadius: 8,
+                        border: "none",
+                        background: copyingId === row.id ? "#e2e8f0" : "linear-gradient(135deg,#6366f1,#818cf8)",
+                        color: copyingId === row.id ? "#64748b" : "#fff",
+                        fontWeight: 700,
+                        fontSize: ".78em",
+                        cursor: copyingId === row.id ? "not-allowed" : "pointer",
+                        fontFamily: "inherit",
+                      }}
+                    >
+                      {copyingId === row.id ? "Copiando…" : "Copiar a mi biblioteca"}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AdminCoachesPanel({ notify, adminCoachUserId, onCopiedWorkoutToLibrary }) {
+  const S = styles;
+  const [coaches, setCoaches] = useState([]);
+  const [statsByCoach, setStatsByCoach] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState("");
+  const [libraryFor, setLibraryFor] = useState(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const { data: rows, error } = await supabase.from("coach_profiles").select("*").order("registered_at", { ascending: false });
+    if (error) {
+      console.error(error);
+      notify("No se pudieron cargar los coaches.");
+      setCoaches([]);
+      setLoading(false);
+      return;
+    }
+    const list = rows || [];
+    setCoaches(list);
+
+    const { data: statRows, error: rpcErr } = await supabase.rpc("admin_coach_directory_stats");
+    if (rpcErr) {
+      console.warn("admin_coach_directory_stats", rpcErr);
+      setStatsByCoach({});
+    } else {
+      const sm = {};
+      for (const s of statRows || []) {
+        sm[s.coach_id] = { athlete_count: Number(s.athlete_count) || 0, total_km_done: Number(s.total_km_done) || 0 };
+      }
+      setStatsByCoach(sm);
+    }
+    setLoading(false);
+  }, [notify]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const approveCoach = async (uid) => {
+    setBusyId(`ap-${uid}`);
+    const { error } = await supabase
+      .from("coach_profiles")
+      .update({
+        subscription_status: "active",
+        approved_by_admin: true,
+        approved_at: new Date().toISOString(),
+      })
+      .eq("user_id", uid);
+    setBusyId("");
+    if (error) {
+      notify(error.message || "Error al aprobar");
+      return;
+    }
+    notify("Coach aprobado (activo indefinidamente) ✓");
+    load();
+  };
+
+  const blockCoach = async (uid) => {
+    if (typeof window !== "undefined" && !window.confirm("¿Bloquear acceso de este coach?")) return;
+    setBusyId(`bl-${uid}`);
+    const { error } = await supabase.from("coach_profiles").update({ subscription_status: "blocked" }).eq("user_id", uid);
+    setBusyId("");
+    if (error) {
+      notify(error.message || "Error al bloquear");
+      return;
+    }
+    notify("Coach bloqueado");
+    load();
+  };
+
+  const statusLabel = (st) => {
+    if (st === "trial") return "Prueba";
+    if (st === "active") return "Activo";
+    if (st === "expired") return "Expirado";
+    if (st === "blocked") return "Bloqueado";
+    return st || "—";
+  };
+
+  const trialRemainingDisplay = (row) => {
+    if (row.subscription_status !== "trial" || row.approved_by_admin) return "—";
+    const d = coachTrialDaysRemaining(row);
+    return d == null ? "—" : String(d);
+  };
+
+  const tabBtn = (active) => ({
+    padding: "10px 16px",
+    borderRadius: 10,
+    border: active ? "none" : "1px solid #e2e8f0",
+    background: active ? "linear-gradient(135deg,#7c3aed,#a78bfa)" : "#fff",
+    color: active ? "#fff" : "#475569",
+    fontWeight: 800,
+    fontSize: ".82em",
+    cursor: "pointer",
+    fontFamily: "inherit",
+  });
+
+  return (
+    <div style={S.page}>
+      <h1 style={S.pageTitle}>Admin · Coaches</h1>
+      <p style={{ color: "#475569", fontSize: ".85em", marginTop: 4, marginBottom: 18 }}>
+        Gestión de acceso, períodos de prueba y bibliotecas (solo lectura para el coach).
+      </p>
+
+      {libraryFor ? (
+        <AdminCoachLibraryModal
+          targetCoachId={libraryFor.user_id}
+          coachLabel={libraryFor.label}
+          adminCoachUserId={adminCoachUserId}
+          onClose={() => setLibraryFor(null)}
+          notify={notify}
+          onCopied={onCopiedWorkoutToLibrary}
+        />
+      ) : null}
+
+      {loading ? (
+        <div style={{ color: "#64748b" }}>Cargando coaches…</div>
+      ) : coaches.length === 0 ? (
+        <div style={{ color: "#94a3b8" }}>No hay filas en coach_profiles.</div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {coaches.map((c) => {
+            const st = statsByCoach[c.user_id] || { athlete_count: 0, total_km_done: 0 };
+            const displayName = (c.full_name && String(c.full_name).trim()) || "—";
+            const reg = c.registered_at ? new Date(c.registered_at).toLocaleDateString("es", { dateStyle: "medium" }) : "—";
+            const busy = busyId.startsWith("ap-") && busyId === `ap-${c.user_id}` ? "ap" : busyId.startsWith("bl-") && busyId === `bl-${c.user_id}` ? "bl" : "";
+            return (
+              <div
+                key={c.user_id}
+                style={{
+                  ...S.card,
+                  margin: 0,
+                  padding: "16px 18px",
+                  display: "grid",
+                  gap: 12,
+                  gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))",
+                  alignItems: "start",
+                }}
+              >
+                <div>
+                  <div style={{ fontWeight: 800, color: "#0f172a" }}>{displayName}</div>
+                  <div style={{ fontSize: ".8em", color: "#64748b", marginTop: 4 }}>{c.email || "—"}</div>
+                  <div style={{ fontSize: ".72em", color: "#94a3b8", marginTop: 6 }}>Registro: {reg}</div>
+                </div>
+                <div style={{ fontSize: ".8em", color: "#475569" }}>
+                  <div>
+                    <strong>Atletas:</strong> {st.athlete_count}
+                  </div>
+                  <div style={{ marginTop: 4 }}>
+                    <strong>Km totales (hechos):</strong> {Math.round(st.total_km_done * 10) / 10}
+                  </div>
+                  <div style={{ marginTop: 4 }}>
+                    <strong>Trial restante (días):</strong> {trialRemainingDisplay(c)}
+                  </div>
+                  <div style={{ marginTop: 4 }}>
+                    <strong>Estado:</strong> {statusLabel(c.subscription_status)}
+                  </div>
+                  <div style={{ marginTop: 4 }}>
+                    <strong>Plan:</strong> {c.subscription_plan || "—"}
+                  </div>
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+                  <button
+                    type="button"
+                    disabled={busyId !== ""}
+                    onClick={() => approveCoach(c.user_id)}
+                    style={{ ...tabBtn(false), background: busy === "ap" ? "#e2e8f0" : "#f0fdf4", border: "1px solid #bbf7d0", color: "#15803d" }}
+                  >
+                    {busy === "ap" ? "…" : "✅ Aprobar"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busyId !== ""}
+                    onClick={() => blockCoach(c.user_id)}
+                    style={{ ...tabBtn(false), background: busy === "bl" ? "#e2e8f0" : "#fef2f2", border: "1px solid #fecaca", color: "#b91c1c" }}
+                  >
+                    {busy === "bl" ? "…" : "🚫 Bloquear"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setLibraryFor({
+                        user_id: c.user_id,
+                        label: `${displayName} (${c.email || c.user_id})`,
+                      })
+                    }
+                    style={{ ...tabBtn(false), background: "#eff6ff", border: "1px solid #bfdbfe", color: "#1d4ed8" }}
+                  >
+                    👁 Ver biblioteca
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AdminPanel({ notify, adminCoachUserId, onCopiedWorkoutToLibrary }) {
+  const [tab, setTab] = useState("promos");
+  const tabBtn = (active) => ({
+    padding: "10px 16px",
+    borderRadius: 10,
+    border: active ? "none" : "1px solid #e2e8f0",
+    background: active ? "linear-gradient(135deg,#7c3aed,#a78bfa)" : "#fff",
+    color: active ? "#fff" : "#475569",
+    fontWeight: 800,
+    fontSize: ".82em",
+    cursor: "pointer",
+    fontFamily: "inherit",
+  });
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
+        <button type="button" style={tabBtn(tab === "promos")} onClick={() => setTab("promos")}>
+          Códigos promocionales
+        </button>
+        <button type="button" style={tabBtn(tab === "coaches")} onClick={() => setTab("coaches")}>
+          Coaches
+        </button>
+      </div>
+      {tab === "promos" ? <AdminPromoCodes notify={notify} /> : null}
+      {tab === "coaches" ? (
+        <AdminCoachesPanel notify={notify} adminCoachUserId={adminCoachUserId} onCopiedWorkoutToLibrary={onCopiedWorkoutToLibrary} />
+      ) : null}
     </div>
   );
 }
