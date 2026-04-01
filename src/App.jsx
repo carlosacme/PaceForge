@@ -1251,7 +1251,13 @@ export default function App() {
         return prof;
       };
 
-      const roleMissing = data == null || data.role == null || String(data.role).trim() === "";
+      if (data == null) {
+        setProfile(null);
+        setProfileLoading(false);
+        return;
+      }
+
+      const roleMissing = data.role == null || String(data.role).trim() === "";
       if (roleMissing) {
         const u = session.user;
         const displayName =
