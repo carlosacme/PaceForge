@@ -974,19 +974,18 @@ const coachTrialDaysRemainingFromStart = (prof) => {
 };
 
 async function resolveCoachUserIdFromPublicCode(codeInput) {
-  const codigoIngresado = String(codeInput || "").trim().toLowerCase();
+  const codigoIngresado = String(codeInput || "").trim();
   if (!codigoIngresado) return null;
-  const pattern = `${codigoIngresado.toLowerCase()}%`;
   const { data, error } = await supabase
     .from("profiles")
-    .select("user_id")
-    .ilike("user_id::text", pattern)
-    .limit(1);
+    .select("user_id, role, name")
+    .ilike("coach_id", codigoIngresado.trim())
+    .maybeSingle();
   if (error) {
     console.error("resolveCoachUserIdFromPublicCode:", error);
     return null;
   }
-  return data?.[0]?.user_id ?? null;
+  return data?.user_id ?? null;
 }
 
 function coachDirectorySpecialtyLabel(row) {
@@ -1121,19 +1120,18 @@ export default function App() {
   const coachCodeFromId = useCallback((userId) => String(userId || "").replace(/-/g, "").slice(0, 8).toUpperCase(), []);
 
   const resolveCoachIdByCode = useCallback(async (codeInput) => {
-    const codigoIngresado = String(codeInput || "").trim().toLowerCase();
+    const codigoIngresado = String(codeInput || "").trim();
     if (!codigoIngresado) return null;
-    const pattern = `${codigoIngresado.toLowerCase()}%`;
     const { data, error } = await supabase
       .from("profiles")
-      .select("*")
-      .ilike("user_id::text", pattern);
+      .select("user_id, role, name")
+      .ilike("coach_id", codigoIngresado.trim())
+      .maybeSingle();
     if (error) {
       console.error("Error resolviendo código de coach:", error);
       return null;
     }
-    const row = Array.isArray(data) && data.length > 0 ? data[0] : null;
-    return row?.user_id || null;
+    return data?.user_id || null;
   }, []);
 
   const sendAthleteInvitation = useCallback(async () => {
@@ -1271,7 +1269,7 @@ export default function App() {
         };
         const { data: saved, error: upErr } = await supabase
           .from("profiles")
-          .upsert(payload, { onConflict: "user_id" })
+          .insert(payload)
           .select()
           .single();
         if (upErr) {
