@@ -979,7 +979,7 @@ async function resolveCoachUserIdFromPublicCode(codeInput) {
   const { data, error } = await supabase
     .from("profiles")
     .select("user_id, role, name")
-    .ilike("coach_id", codigoIngresado.trim())
+    .eq("coach_id", codigoIngresado.trim().toUpperCase())
     .maybeSingle();
   if (error) {
     console.error("resolveCoachUserIdFromPublicCode:", error);
@@ -1125,7 +1125,7 @@ export default function App() {
     const { data, error } = await supabase
       .from("profiles")
       .select("user_id, role, name")
-      .ilike("coach_id", codigoIngresado.trim())
+      .eq("coach_id", codigoIngresado.trim().toUpperCase())
       .maybeSingle();
     if (error) {
       console.error("Error resolviendo código de coach:", error);
