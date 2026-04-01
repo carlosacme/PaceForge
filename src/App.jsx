@@ -1049,16 +1049,20 @@ export default function App() {
   const coachCodeFromId = useCallback((userId) => String(userId || "").replace(/-/g, "").slice(0, 8).toUpperCase(), []);
 
   const resolveCoachIdByCode = useCallback(async (codeInput) => {
-    const code = String(codeInput || "").trim().replace(/-/g, "").toUpperCase();
-    if (!code) return null;
-    const { data, error } = await supabase.from("coach_profiles").select("user_id");
+    const codigoIngresado = String(codeInput || "").trim().toLowerCase();
+    if (!codigoIngresado) return null;
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("role", "coach")
+      .ilike("user_id", `${codigoIngresado}%`);
     if (error) {
       console.error("Error resolviendo código de coach:", error);
       return null;
     }
-    const row = (data || []).find((r) => coachCodeFromId(r.user_id) === code);
+    const row = Array.isArray(data) && data.length > 0 ? data[0] : null;
     return row?.user_id || null;
-  }, [coachCodeFromId]);
+  }, []);
 
   const sendAthleteInvitation = useCallback(async () => {
     const email = inviteEmail.trim().toLowerCase();
