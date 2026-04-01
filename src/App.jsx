@@ -1054,8 +1054,7 @@ export default function App() {
 
   const syncFcmTokenToProfile = useCallback(async () => {
     try {
-      const { data: ures } = await supabase.auth.getUser();
-      const uid = ures?.user?.id;
+      const uid = session?.user?.id;
       if (!uid) {
         console.log("[FCM] syncFcmTokenToProfile: sin sesión (user_id)");
         return;
@@ -1070,6 +1069,7 @@ export default function App() {
         .from("profiles")
         .update({ fcm_token: token })
         .eq("user_id", uid)
+        .limit(1)
         .select("user_id, fcm_token")
         .maybeSingle();
       if (error) {
@@ -1090,7 +1090,7 @@ export default function App() {
     } catch (e) {
       console.warn("syncFcmTokenToProfile", e);
     }
-  }, []);
+  }, [session?.user?.id]);
 
   const dismissPushInvite = useCallback(() => {
     if (typeof localStorage !== "undefined") localStorage.setItem("raf_push_invite_dismissed", "1");
@@ -1326,7 +1326,7 @@ export default function App() {
     (async () => {
       const tok = await refreshFcmTokenIfGranted();
       if (cancelled || !tok) return;
-      await supabase.from("profiles").update({ fcm_token: tok }).eq("user_id", session.user.id);
+      await supabase.from("profiles").update({ fcm_token: tok }).eq("user_id", session.user.id).limit(1);
     })();
     return () => {
       cancelled = true;
@@ -1582,7 +1582,7 @@ export default function App() {
           await syncFcmTokenToProfile();
         }
 
-        if (authRole === "coach") {
+        if (authRole === "coach" || authRole === "admin") {
           const cpPayload = {
             user_id: newUserId,
             full_name: authName.trim(),
@@ -5186,7 +5186,7 @@ function AthleteHome({ profile }) {
         if (linkErr) console.warn("[AthleteHome] link user_id:", linkErr);
         const tok = await refreshFcmTokenIfGranted();
         if (tok) {
-          await supabase.from("profiles").update({ fcm_token: tok }).eq("user_id", authData.user.id);
+          await supabase.from("profiles").update({ fcm_token: tok }).eq("user_id", authData.user.id).limit(1);
         }
       }
 
@@ -6579,7 +6579,7 @@ function AthleteHome({ profile }) {
                   const uid = u?.user?.id;
                   if (!uid) return;
                   const token = await requestNotificationPermission();
-                  if (token) await supabase.from("profiles").update({ fcm_token: token }).eq("user_id", uid);
+                  if (token) await supabase.from("profiles").update({ fcm_token: token }).eq("user_id", uid).limit(1);
                 }}
                 style={{
                   padding: "8px 14px",
