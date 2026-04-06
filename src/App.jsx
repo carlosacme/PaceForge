@@ -1052,6 +1052,7 @@ export default function App() {
   const [publicCoaches, setPublicCoaches] = useState([]);
   const [loadingPublicCoaches, setLoadingPublicCoaches] = useState(false);
   const [pendingCoachRequestId, setPendingCoachRequestId] = useState("");
+  const lastViewRestoredRef = useRef(false);
 
   const notify = useCallback((msg) => {
     setNotification(msg);
@@ -1393,15 +1394,23 @@ export default function App() {
   }, [canRestoreViewForRole, profileLoading, profile, view]);
 
   useEffect(() => {
+    lastViewRestoredRef.current = false;
+  }, [session?.user?.id]);
+
+  useEffect(() => {
     if (typeof localStorage === "undefined") return;
     if (!profile || profile.role === "athlete") return;
+    if (!lastViewRestoredRef.current) return;
     if (!canRestoreViewForRole(view)) return;
     localStorage.setItem(LAST_VIEW_STORAGE_KEY, view);
   }, [view, profile, canRestoreViewForRole]);
 
   useEffect(() => {
-    restoreSavedView();
-  }, [restoreSavedView]);
+    if (!profileLoading && profile && profile.role !== "athlete") {
+      restoreSavedView();
+      lastViewRestoredRef.current = true;
+    }
+  }, [restoreSavedView, profileLoading, profile]);
 
   useEffect(() => {
     if (typeof document === "undefined") return;
