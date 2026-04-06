@@ -963,6 +963,58 @@ const ADMIN_EMAIL = "acostamerlano87@gmail.com";
 const PLATFORM_ADMIN_USER_ID = "b5c9e44a-6695-4800-99bd-f19b05d2f66f";
 const ADMIN_WHATSAPP_E164 = "573233675434";
 const COACH_PROFILE_TRIAL_DAYS = 7;
+const LAST_VIEW_STORAGE_KEY = "raf_lastView";
+const LAST_SUB_VIEW_STORAGE_KEY = "raf_lastSubView";
+const ATHLETE_MAIN_VIEW_ID = "athlete-home";
+const REGISTRATION_EMAIL_REGEX = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
+const REGISTRATION_BLOCKED_DOMAINS = ["test.com", "fake.com", "example.com", "correo.com", "mail.com"];
+
+const getCoachAllowedViewSet = ({ role, emailLower }) => {
+  const ids = COACH_NAV_BASE_ITEMS.map((item) => item.id);
+  ids.push("settings");
+  if (role === "admin") ids.push("admin-coaches");
+  if (role === "admin" || emailLower === ADMIN_EMAIL) ids.push("admin");
+  return new Set(ids);
+};
+
+const isValidMainViewForRole = ({ role, emailLower, viewId }) => {
+  if (!role || !viewId) return false;
+  if (role === "athlete") return viewId === ATHLETE_MAIN_VIEW_ID;
+  return getCoachAllowedViewSet({ role, emailLower }).has(viewId);
+};
+
+const readStoredMainViewForRole = ({ role, emailLower }) => {
+  if (typeof localStorage === "undefined") return "";
+  const stored = localStorage.getItem(LAST_VIEW_STORAGE_KEY) || "";
+  return isValidMainViewForRole({ role, emailLower, viewId: stored }) ? stored : "";
+};
+
+const subViewToEvaluationTab = (subViewRaw) => {
+  const subView = String(subViewRaw || "");
+  if (!subView.startsWith("evaluation:")) return "";
+  const tab = subView.split(":")[1] || "";
+  return ["race", "cooper", "threshold"].includes(tab) ? tab : "";
+};
+
+const subViewToLibraryTab = (subViewRaw) => {
+  const subView = String(subViewRaw || "");
+  if (!subView.startsWith("library:")) return "";
+  const tab = subView.split(":")[1] || "";
+  return ["mine", "global"].includes(tab) ? tab : "";
+};
+
+const getRegistrationEmailValidationError = (emailInput) => {
+  const email = String(emailInput || "").trim().toLowerCase();
+  if (!REGISTRATION_EMAIL_REGEX.test(email)) {
+    return "Por favor ingresa un correo electrónico válido";
+  }
+  const domain = email.includes("@") ? email.split("@").pop() : "";
+  const blocked = REGISTRATION_BLOCKED_DOMAINS.some((d) => domain === d || domain.endsWith(`.${d}`));
+  if (blocked) {
+    return "Por favor ingresa un correo electrónico válido";
+  }
+  return "";
+};
 
 /** Días restantes de trial: max(0, 7 − días transcurridos desde trial_started_at). */
 const coachTrialDaysRemainingFromStart = (prof) => {
@@ -1026,6 +1078,7 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(true);
   const [authMode, setAuthMode] = useState("login");
   const [authEmail, setAuthEmail] = useState("");
+  const [authEmailError, setAuthEmailError] = useState("");
   const [authPassword, setAuthPassword] = useState("");
   const [authSubmitting, setAuthSubmitting] = useState(false);
   const [landingAuthOpen, setLandingAuthOpen] = useState(false);
@@ -1051,6 +1104,20 @@ export default function App() {
     setNotification(msg);
     setTimeout(() => setNotification(null), 3000);
   }, []);
+
+  const restoreStoredNavigationView = useCallback(() => {
+    if (typeof localStorage === "undefined") return;
+    if (!session?.user?.id || !profile?.role) return;
+    const role = String(profile.role || "");
+    const emailLower = session?.user?.email?.toLowerCase() || "";
+    const storedView = readStoredMainViewForRole({ role, emailLower });
+    if (!storedView || role === "athlete") return;
+    if (storedView !== view) {
+      setView(storedView);
+      setSelectedAthlete(null);
+      setShowAddAthleteForm(false);
+    }
+  }, [profile?.role, session?.user?.id, session?.user?.email, view]);
 
   const syncFcmTokenToProfile = useCallback(async () => {
     try {
@@ -1215,6 +1282,10 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    setAuthEmailError("");
+  }, [authMode]);
+
+  useEffect(() => {
     const loadProfile = async () => {
       if (!session?.user) {
         setProfile(null);
@@ -1367,6 +1438,34 @@ export default function App() {
   }, [view, session?.user?.email, profile?.role]);
 
   useEffect(() => {
+    if (typeof localStorage === "undefined") return;
+    if (!session?.user?.id || !profile?.role) return;
+    const role = String(profile.role || "");
+    const emailLower = session?.user?.email?.toLowerCase() || "";
+    const nextView = role === "athlete" ? ATHLETE_MAIN_VIEW_ID : view;
+    if (!isValidMainViewForRole({ role, emailLower, viewId: nextView })) return;
+    localStorage.setItem(LAST_VIEW_STORAGE_KEY, nextView);
+  }, [view, profile?.role, session?.user?.id, session?.user?.email]);
+
+  useEffect(() => {
+    restoreStoredNavigationView();
+  }, [restoreStoredNavigationView]);
+
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== "visible") return;
+      if (!session?.user?.id) return;
+      restoreStoredNavigationView();
+      if (typeof localStorage !== "undefined" && typeof window !== "undefined") {
+        const savedSubView = localStorage.getItem(LAST_SUB_VIEW_STORAGE_KEY) || "";
+        window.dispatchEvent(new CustomEvent("raf:restore-subview", { detail: { subView: savedSubView } }));
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", onVisibilityChange);
+  }, [session?.user?.id, restoreStoredNavigationView]);
+
+  useEffect(() => {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
     const code = params.get("strava_code");
@@ -1493,8 +1592,14 @@ export default function App() {
         alert("Completa tu nombre.");
         return;
       }
+      const emailValidationError = getRegistrationEmailValidationError(authEmail);
+      if (emailValidationError) {
+        setAuthEmailError(emailValidationError);
+        return;
+      }
     }
 
+    setAuthEmailError("");
     setAuthSubmitting(true);
     try {
       if (authMode === "login") {
@@ -1843,10 +1948,18 @@ export default function App() {
                   <input
                     type="email"
                     value={authEmail}
-                    onChange={e => setAuthEmail(e.target.value)}
+                    onChange={e => {
+                      setAuthEmail(e.target.value);
+                      if (authEmailError) setAuthEmailError("");
+                    }}
                     placeholder="correo@ejemplo.com"
                     style={{ width: "100%", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", color: "#0f172a", fontFamily: "inherit", fontSize: ".85em", outline: "none", boxSizing: "border-box" }}
                   />
+                  {authMode === "register" && authEmailError ? (
+                    <div style={{ marginTop: 6, color: "#dc2626", fontSize: ".74em", fontWeight: 700 }}>
+                      {authEmailError}
+                    </div>
+                  ) : null}
                 </div>
                 <div style={{ marginBottom: 14 }}>
                   <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Contraseña</div>
@@ -5110,6 +5223,7 @@ function AthleteHome({ profile }) {
   const [loadingPublicCoachesAthlete, setLoadingPublicCoachesAthlete] = useState(false);
   const [selectCoachBusyId, setSelectCoachBusyId] = useState("");
   const [coachAssignSuccess, setCoachAssignSuccess] = useState("");
+  const persistedAthleteSubViewRef = useRef("");
 
   const profileUserId = profile?.user_id ?? null;
 
@@ -5273,6 +5387,34 @@ function AthleteHome({ profile }) {
       cancelled = true;
     };
   }, [athleteInfo?.id, athleteNotRegistered, athleteCoachIdPrimitive]);
+
+  useEffect(() => {
+    if (typeof localStorage === "undefined") return;
+    const savedSubView = localStorage.getItem(LAST_SUB_VIEW_STORAGE_KEY) || "";
+    persistedAthleteSubViewRef.current = savedSubView;
+    if (savedSubView === "athlete:evaluation") {
+      setShowEvaluation(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof localStorage === "undefined") return;
+    const subView = showEvaluation ? "athlete:evaluation" : "athlete:home";
+    localStorage.setItem(LAST_SUB_VIEW_STORAGE_KEY, subView);
+    persistedAthleteSubViewRef.current = subView;
+  }, [showEvaluation]);
+
+  useEffect(() => {
+    const restoreAthleteSubView = (event) => {
+      const detailSubView = String(event?.detail?.subView || "");
+      const fallbackSubView = persistedAthleteSubViewRef.current;
+      const targetSubView = detailSubView || fallbackSubView;
+      if (targetSubView === "athlete:evaluation") setShowEvaluation(true);
+      else if (targetSubView === "athlete:home") setShowEvaluation(false);
+    };
+    window.addEventListener("raf:restore-subview", restoreAthleteSubView);
+    return () => window.removeEventListener("raf:restore-subview", restoreAthleteSubView);
+  }, []);
 
   const workoutsByDate = useMemo(() => {
     const m = {};
@@ -7516,6 +7658,30 @@ function WorkoutLibrary({ coachUserId, libraryRefresh, onUseWorkout, athletes, n
   const [assignSaving, setAssignSaving] = useState(false);
   const [globalCopyingId, setGlobalCopyingId] = useState(null);
 
+  useEffect(() => {
+    if (typeof localStorage === "undefined") return;
+    localStorage.setItem(LAST_SUB_VIEW_STORAGE_KEY, `library:${libraryTab}`);
+  }, [libraryTab]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof localStorage === "undefined") return;
+    const applySavedLibraryTab = (subViewRaw) => {
+      const parsed = subViewToLibraryTab(subViewRaw);
+      if (!parsed) return;
+      if (parsed === "global" && profileRole !== "admin") return;
+      setLibraryTab(parsed);
+    };
+    applySavedLibraryTab(localStorage.getItem(LAST_SUB_VIEW_STORAGE_KEY));
+    const onRestoreSubView = (event) => {
+      const subView = event?.detail?.subView || localStorage.getItem(LAST_SUB_VIEW_STORAGE_KEY);
+      applySavedLibraryTab(subView);
+    };
+    window.addEventListener("raf:restore-subview", onRestoreSubView);
+    return () => {
+      window.removeEventListener("raf:restore-subview", onRestoreSubView);
+    };
+  }, [profileRole]);
+
   const load = useCallback(async () => {
     if (!coachUserId) {
       setItems([]);
@@ -8854,6 +9020,24 @@ function EvaluationView({ athletes, currentUserId, notify, athleteOnlyId = null 
   const [saving, setSaving] = useState(false);
   const [history, setHistory] = useState([]);
   const [openHistoryId, setOpenHistoryId] = useState(null);
+
+  useEffect(() => {
+    if (typeof localStorage === "undefined") return;
+    const savedSubView = localStorage.getItem(LAST_SUB_VIEW_STORAGE_KEY) || "";
+    const savedTab = subViewToEvaluationTab(savedSubView);
+    if (savedTab) setTab(savedTab);
+    const onRestore = (event) => {
+      const incoming = subViewToEvaluationTab(event?.detail?.subView);
+      if (incoming) setTab(incoming);
+    };
+    window.addEventListener("raf:restore-subview", onRestore);
+    return () => window.removeEventListener("raf:restore-subview", onRestore);
+  }, []);
+
+  useEffect(() => {
+    if (typeof localStorage === "undefined") return;
+    localStorage.setItem(LAST_SUB_VIEW_STORAGE_KEY, `evaluation:${tab}`);
+  }, [tab]);
 
   const methodDescription =
     tab === "race"
