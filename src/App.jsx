@@ -8942,6 +8942,7 @@ function EvaluationView({ athletes, currentUserId, notify, athleteOnlyId = null 
   const [saving, setSaving] = useState(false);
   const [history, setHistory] = useState([]);
   const [openHistoryId, setOpenHistoryId] = useState(null);
+  const athleteTabRestoredRef = useRef(false);
 
   const methodDescription =
     tab === "race"
@@ -8956,8 +8957,14 @@ function EvaluationView({ athletes, currentUserId, notify, athleteOnlyId = null 
   }, [athleteOptions, athleteId]);
 
   useEffect(() => {
+    athleteTabRestoredRef.current = false;
+  }, [athleteOnlyId]);
+
+  useEffect(() => {
     if (!athleteOnlyId || typeof localStorage === "undefined") return;
+    if (athleteTabRestoredRef.current) return;
     const savedAthleteTab = localStorage.getItem(ATHLETE_TAB_STORAGE_KEY);
+    athleteTabRestoredRef.current = true;
     if (!EVALUATION_TABS.includes(savedAthleteTab)) return;
     if (savedAthleteTab !== tab) setTab(savedAthleteTab);
   }, [athleteOnlyId, tab]);
