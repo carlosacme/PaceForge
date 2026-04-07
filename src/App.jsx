@@ -5084,6 +5084,8 @@ function AthleteHome({ profile }) {
   const [athleteChatMessages, setAthleteChatMessages] = useState([]);
   const [athleteChatDraft, setAthleteChatDraft] = useState("");
   const [athleteChatSending, setAthleteChatSending] = useState(false);
+  const [corosModalOpen, setCorosModalOpen] = useState(false);
+  const [garminModalOpen, setGarminModalOpen] = useState(false);
   const [athleteNotRegistered, setAthleteNotRegistered] = useState(false);
   const [showEvaluation, setShowEvaluation] = useState(false);
   const [achievementsCatalog, setAchievementsCatalog] = useState([]);
