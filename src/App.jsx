@@ -5104,6 +5104,7 @@ function AthleteHome({ profile }) {
   const [stravaActivities, setStravaActivities] = useState([]);
   const [stravaLoadingActivities, setStravaLoadingActivities] = useState(false);
   const [stravaDisconnecting, setStravaDisconnecting] = useState(false);
+  const [garminModalOpen, setGarminModalOpen] = useState(false);
   const [findCoachCodeInput, setFindCoachCodeInput] = useState("");
   const [findCoachCodeBusy, setFindCoachCodeBusy] = useState(false);
   const [publicCoachesAthlete, setPublicCoachesAthlete] = useState([]);
@@ -5685,6 +5686,11 @@ function AthleteHome({ profile }) {
     } finally {
       setStravaDisconnecting(false);
     }
+  };
+
+  const startAthleteStravaOAuth = () => {
+    const authUrl = `https://www.strava.com/oauth/authorize?client_id=218467&redirect_uri=${encodeURIComponent(STRAVA_CALLBACK_URL)}&response_type=code&scope=activity:read_all&state=${encodeURIComponent(String(athleteInfo?.id || ""))}`;
+    window.location.href = authUrl;
   };
 
   const setAthleteDeviceConnection = async (deviceValue) => {
@@ -6477,10 +6483,13 @@ function AthleteHome({ profile }) {
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
                   <div style={{ fontSize: ".74em", color: "#0f172a", fontWeight: 700 }}>Garmin</div>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <button type="button" style={{ background: "linear-gradient(135deg,#1d4ed8,#3b82f6)", border: "none", borderRadius: 8, padding: "6px 10px", color: "#fff", fontSize: ".72em", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Conectar Garmin</button>
-                    <span style={{ background: "rgba(245,158,11,.14)", border: "1px solid rgba(245,158,11,.35)", borderRadius: 999, padding: "4px 9px", color: "#b45309", fontSize: ".72em", fontWeight: 700 }}>
-                      Próximamente
-                    </span>
+                    {stravaConnection ? (
+                      <span style={{ background: "rgba(34,197,94,.14)", border: "1px solid rgba(34,197,94,.35)", borderRadius: 999, padding: "4px 9px", color: "#15803d", fontSize: ".72em", fontWeight: 700 }}>
+                        ✅ Garmin sincroniza vía Strava
+                      </span>
+                    ) : (
+                      <button type="button" onClick={() => setGarminModalOpen(true)} style={{ background: "linear-gradient(135deg,#1d4ed8,#3b82f6)", border: "none", borderRadius: 8, padding: "6px 10px", color: "#fff", fontSize: ".72em", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Conectar Garmin</button>
+                    )}
                   </div>
                 </div>
 
@@ -6503,10 +6512,7 @@ function AthleteHome({ profile }) {
                   ) : (
                     <button
                       type="button"
-                      onClick={() => {
-                        const authUrl = `https://www.strava.com/oauth/authorize?client_id=218467&redirect_uri=${encodeURIComponent(STRAVA_CALLBACK_URL)}&response_type=code&scope=activity:read_all&state=${encodeURIComponent(String(athleteInfo?.id || ""))}`;
-                        window.location.href = authUrl;
-                      }}
+                      onClick={startAthleteStravaOAuth}
                       disabled={stravaSyncingCode}
                       style={{ background: "linear-gradient(135deg,#ea580c,#f97316)", border: "none", borderRadius: 8, padding: "6px 10px", color: "#fff", fontWeight: 800, cursor: stravaSyncingCode ? "not-allowed" : "pointer", fontFamily: "inherit", fontSize: ".74em" }}
                     >
@@ -6655,6 +6661,35 @@ function AthleteHome({ profile }) {
           Cerrar sesión
         </button>
       </div>
+      {garminModalOpen ? (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 500, padding: 16 }}>
+          <div style={{ ...S.card, width: "100%", maxWidth: 520, margin: 0 }}>
+            <div style={{ fontSize: "1.02em", fontWeight: 900, marginBottom: 8, color: "#0f172a" }}>Conectar Garmin</div>
+            <div style={{ color: "#475569", fontSize: ".88em", lineHeight: 1.5, whiteSpace: "pre-line" }}>
+              {"Garmin requiere aprobación empresarial para API directa. Para sincronizar tus actividades automáticamente:\n\n1️⃣ En Garmin Connect ve a Configuración → Aplicaciones de terceros → Strava\n2️⃣ Activa la sincronización con Strava\n3️⃣ Vuelve aquí y conecta Strava abajo\n\nCada actividad que termines en tu Garmin llegará automáticamente a RunningApexFlow vía Strava."}
+            </div>
+            <div style={{ marginTop: 14, display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                onClick={() => setGarminModalOpen(false)}
+                style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 12px", color: "#475569", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: ".8em" }}
+              >
+                Entendido
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setGarminModalOpen(false);
+                  startAthleteStravaOAuth();
+                }}
+                style={{ background: "linear-gradient(135deg,#ea580c,#f97316)", border: "none", borderRadius: 8, padding: "8px 12px", color: "#fff", cursor: "pointer", fontFamily: "inherit", fontWeight: 800, fontSize: ".8em" }}
+              >
+                Conectar Strava ahora
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -9653,6 +9688,7 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
   const [loadingActivitiesByAthlete, setLoadingActivitiesByAthlete] = useState({});
   const [coachRequests, setCoachRequests] = useState([]);
   const [requestsBusyId, setRequestsBusyId] = useState("");
+  const [garminModalAthlete, setGarminModalAthlete] = useState(null);
 
   const loadProfile = useCallback(async () => {
     if (!coachUserId) {
@@ -9814,6 +9850,17 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
     } finally {
       setLoadingActivitiesByAthlete((prev) => ({ ...prev, [athleteId]: false }));
     }
+  };
+
+  const startCoachStravaOAuth = (athlete) => {
+    if (!athlete?.id) return;
+    console.log("[STRAVA CONNECT][Settings] opening authorize URL", {
+      athlete_id: athlete.id,
+      athlete_name: athlete.name,
+      callback_url: STRAVA_CALLBACK_URL,
+    });
+    const authUrl = `https://www.strava.com/oauth/authorize?client_id=218467&redirect_uri=${encodeURIComponent(STRAVA_CALLBACK_URL)}&response_type=code&scope=activity:read_all&state=${encodeURIComponent(String(athlete.id))}`;
+    window.location.href = authUrl;
   };
 
   useEffect(() => {
@@ -10125,7 +10172,6 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
                   const device = String(currentDeviceRaw).trim();
                   const stravaConn = a?.id ? stravaByUserId[a.id] : null;
                   const corosConnected = device.toLowerCase() === "coros";
-                  const garminConnected = device.toLowerCase() === "garmin";
                   return (
                     <div key={a.id} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: "10px 12px", background: "#f8fafc" }}>
                       <div style={{ color: "#0f172a", fontSize: ".84em", fontWeight: 700, marginBottom: 8 }}>{a.name || "Atleta"}</div>
@@ -10145,15 +10191,12 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
                         </div>
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
                           <div style={{ fontSize: ".74em", color: "#0f172a", fontWeight: 700 }}>Garmin</div>
-                          {garminConnected ? (
-                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                              <span style={{ background: "rgba(34,197,94,.14)", border: "1px solid rgba(34,197,94,.35)", borderRadius: 999, padding: "4px 9px", color: "#15803d", fontSize: ".72em", fontWeight: 700 }}>
-                                ✅ Conectado
-                              </span>
-                              <button type="button" onClick={() => setAthleteDeviceConnection(a.id, null)} style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "6px 9px", color: "#b91c1c", fontSize: ".72em", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Desconectar</button>
-                            </div>
+                          {stravaConn ? (
+                            <span style={{ background: "rgba(34,197,94,.14)", border: "1px solid rgba(34,197,94,.35)", borderRadius: 999, padding: "4px 9px", color: "#15803d", fontSize: ".72em", fontWeight: 700 }}>
+                              ✅ Garmin sincroniza vía Strava
+                            </span>
                           ) : (
-                            <button type="button" onClick={() => setAthleteDeviceConnection(a.id, "garmin")} style={{ background: "linear-gradient(135deg,#1d4ed8,#3b82f6)", border: "none", borderRadius: 8, padding: "6px 10px", color: "#fff", fontSize: ".72em", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Conectar Garmin</button>
+                            <button type="button" onClick={() => setGarminModalAthlete(a)} style={{ background: "linear-gradient(135deg,#1d4ed8,#3b82f6)", border: "none", borderRadius: 8, padding: "6px 10px", color: "#fff", fontSize: ".72em", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Conectar Garmin</button>
                           )}
                         </div>
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
@@ -10175,15 +10218,7 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
                           ) : (
                             <button
                               type="button"
-                              onClick={() => {
-                                console.log("[STRAVA CONNECT][Settings] opening authorize URL", {
-                                  athlete_id: a.id,
-                                  athlete_name: a.name,
-                                  callback_url: STRAVA_CALLBACK_URL,
-                                });
-                                const authUrl = `https://www.strava.com/oauth/authorize?client_id=218467&redirect_uri=${encodeURIComponent(STRAVA_CALLBACK_URL)}&response_type=code&scope=activity:read_all&state=${encodeURIComponent(String(a.id))}`;
-                                window.location.href = authUrl;
-                              }}
+                              onClick={() => startCoachStravaOAuth(a)}
                               style={{ background: "linear-gradient(135deg,#ea580c,#f97316)", border: "none", borderRadius: 8, padding: "6px 10px", color: "#fff", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".74em" }}
                             >
                               🟠 Conectar Strava
@@ -10283,6 +10318,36 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
           Cerrar sesión
         </button>
       </div>
+      {garminModalAthlete ? (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 500, padding: 16 }}>
+          <div style={{ ...S.card, width: "100%", maxWidth: 520, margin: 0 }}>
+            <div style={{ fontSize: "1.02em", fontWeight: 900, marginBottom: 8, color: "#0f172a" }}>Conectar Garmin</div>
+            <div style={{ color: "#475569", fontSize: ".88em", lineHeight: 1.5, whiteSpace: "pre-line" }}>
+              {"Garmin requiere aprobación empresarial para API directa. Para sincronizar tus actividades automáticamente:\n\n1️⃣ En Garmin Connect ve a Configuración → Aplicaciones de terceros → Strava\n2️⃣ Activa la sincronización con Strava\n3️⃣ Vuelve aquí y conecta Strava abajo\n\nCada actividad que termines en tu Garmin llegará automáticamente a RunningApexFlow vía Strava."}
+            </div>
+            <div style={{ marginTop: 14, display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                onClick={() => setGarminModalAthlete(null)}
+                style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 12px", color: "#475569", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: ".8em" }}
+              >
+                Entendido
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const athleteForOauth = garminModalAthlete;
+                  setGarminModalAthlete(null);
+                  startCoachStravaOAuth(athleteForOauth);
+                }}
+                style={{ background: "linear-gradient(135deg,#ea580c,#f97316)", border: "none", borderRadius: 8, padding: "8px 12px", color: "#fff", cursor: "pointer", fontFamily: "inherit", fontWeight: 800, fontSize: ".8em" }}
+              >
+                Conectar Strava ahora
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
