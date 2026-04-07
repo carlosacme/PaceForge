@@ -5104,6 +5104,8 @@ function AthleteHome({ profile }) {
   const [stravaActivities, setStravaActivities] = useState([]);
   const [stravaLoadingActivities, setStravaLoadingActivities] = useState(false);
   const [stravaDisconnecting, setStravaDisconnecting] = useState(false);
+  const [corosModalOpen, setCorosModalOpen] = useState(false);
+  const [garminModalOpen, setGarminModalOpen] = useState(false);
   const [findCoachCodeInput, setFindCoachCodeInput] = useState("");
   const [findCoachCodeBusy, setFindCoachCodeBusy] = useState(false);
   const [publicCoachesAthlete, setPublicCoachesAthlete] = useState([]);
@@ -5696,6 +5698,11 @@ function AthleteHome({ profile }) {
       return;
     }
     setAthleteInfo((prev) => (prev ? { ...prev, device: deviceValue } : prev));
+  };
+
+  const openAthleteStravaOAuth = () => {
+    const authUrl = `https://www.strava.com/oauth/authorize?client_id=218467&redirect_uri=${encodeURIComponent(STRAVA_CALLBACK_URL)}&response_type=code&scope=activity:read_all&state=${encodeURIComponent(String(athleteInfo?.id || ""))}`;
+    window.location.href = authUrl;
   };
 
   const athleteNeedsCoachLink =
@@ -6477,7 +6484,7 @@ function AthleteHome({ profile }) {
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
                   <div style={{ fontSize: ".74em", color: "#0f172a", fontWeight: 700 }}>Garmin</div>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <button type="button" style={{ background: "linear-gradient(135deg,#1d4ed8,#3b82f6)", border: "none", borderRadius: 8, padding: "6px 10px", color: "#fff", fontSize: ".72em", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Conectar Garmin</button>
+                    <button type="button" onClick={() => setGarminModalOpen(true)} style={{ background: "linear-gradient(135deg,#1d4ed8,#3b82f6)", border: "none", borderRadius: 8, padding: "6px 10px", color: "#fff", fontSize: ".72em", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Conectar Garmin</button>
                     <span style={{ background: "rgba(245,158,11,.14)", border: "1px solid rgba(245,158,11,.35)", borderRadius: 999, padding: "4px 9px", color: "#b45309", fontSize: ".72em", fontWeight: 700 }}>
                       Próximamente
                     </span>
@@ -6503,10 +6510,7 @@ function AthleteHome({ profile }) {
                   ) : (
                     <button
                       type="button"
-                      onClick={() => {
-                        const authUrl = `https://www.strava.com/oauth/authorize?client_id=218467&redirect_uri=${encodeURIComponent(STRAVA_CALLBACK_URL)}&response_type=code&scope=activity:read_all&state=${encodeURIComponent(String(athleteInfo?.id || ""))}`;
-                        window.location.href = authUrl;
-                      }}
+                      onClick={openAthleteStravaOAuth}
                       disabled={stravaSyncingCode}
                       style={{ background: "linear-gradient(135deg,#ea580c,#f97316)", border: "none", borderRadius: 8, padding: "6px 10px", color: "#fff", fontWeight: 800, cursor: stravaSyncingCode ? "not-allowed" : "pointer", fontFamily: "inherit", fontSize: ".74em" }}
                     >
@@ -6655,6 +6659,32 @@ function AthleteHome({ profile }) {
           Cerrar sesión
         </button>
       </div>
+
+      {corosModalOpen && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: "20px" }}>
+          <div style={{ background: "white", borderRadius: "16px", padding: "24px", maxWidth: "400px", width: "100%" }}>
+            <h3 style={{ marginBottom: "12px", fontSize: "18px", fontWeight: 700 }}>Sincronizar COROS</h3>
+            <p style={{ marginBottom: "16px", lineHeight: "1.6", color: "#444" }}>COROS no ofrece API pública. Para sincronizar tus actividades automáticamente:<br /><br />1️⃣ En tu app COROS ve a Perfil → Ajustes → Apps de terceros → Strava<br />2️⃣ Conecta tu cuenta Strava<br />3️⃣ Vuelve aquí y conecta Strava abajo<br /><br />Cada actividad que termines en tu COROS llegará automáticamente a RunningApexFlow vía Strava.</p>
+            <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end" }}>
+              <button type="button" onClick={() => setCorosModalOpen(false)} style={{ padding: "10px 20px", borderRadius: "8px", border: "1px solid #ddd", cursor: "pointer", fontFamily: "inherit" }}>Entendido</button>
+              <button type="button" onClick={() => { setCorosModalOpen(false); openAthleteStravaOAuth(); }} style={{ padding: "10px 20px", borderRadius: "8px", background: "#E8410A", color: "white", border: "none", cursor: "pointer", fontFamily: "inherit" }}>Conectar Strava ahora</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {garminModalOpen && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: "20px" }}>
+          <div style={{ background: "white", borderRadius: "16px", padding: "24px", maxWidth: "400px", width: "100%" }}>
+            <h3 style={{ marginBottom: "12px", fontSize: "18px", fontWeight: 700 }}>Conectar Garmin</h3>
+            <p style={{ marginBottom: "16px", lineHeight: "1.6", color: "#444" }}>Garmin no ofrece API pública directa para esta integración. Para sincronizar tus actividades automáticamente:<br /><br />1️⃣ En Garmin Connect ve a Configuración → Aplicaciones conectadas → Strava<br />2️⃣ Conecta tu cuenta Strava<br />3️⃣ Vuelve aquí y conecta Strava abajo<br /><br />Cada actividad que termines en tu Garmin llegará automáticamente a RunningApexFlow vía Strava.</p>
+            <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end" }}>
+              <button type="button" onClick={() => setGarminModalOpen(false)} style={{ padding: "10px 20px", borderRadius: "8px", border: "1px solid #ddd", cursor: "pointer", fontFamily: "inherit" }}>Entendido</button>
+              <button type="button" onClick={() => { setGarminModalOpen(false); openAthleteStravaOAuth(); }} style={{ padding: "10px 20px", borderRadius: "8px", background: "#E8410A", color: "white", border: "none", cursor: "pointer", fontFamily: "inherit" }}>Conectar Strava ahora</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
