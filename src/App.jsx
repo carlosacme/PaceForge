@@ -1579,11 +1579,14 @@ export default function App() {
 
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
-    if (!authEmail.trim() || !authPassword.trim()) {
-      alert("Completa email y contraseña.");
-      return;
-    }
+    const emailTrimmed = authEmail.trim();
+    const passwordTrimmed = authPassword.trim();
     if (authMode === "register") {
+      const emailValidationError = getRegistrationEmailValidationError(emailTrimmed);
+      if (emailValidationError) {
+        setAuthEmailError(emailValidationError);
+        return;
+      }
       if (!authRole) {
         alert("Selecciona si eres coach o atleta.");
         return;
@@ -1592,11 +1595,10 @@ export default function App() {
         alert("Completa tu nombre.");
         return;
       }
-      const emailValidationError = getRegistrationEmailValidationError(authEmail);
-      if (emailValidationError) {
-        setAuthEmailError(emailValidationError);
-        return;
-      }
+    }
+    if (!emailTrimmed || !passwordTrimmed) {
+      alert("Completa email y contraseña.");
+      return;
     }
 
     setAuthEmailError("");
@@ -1604,7 +1606,7 @@ export default function App() {
     try {
       if (authMode === "login") {
         const { error } = await supabase.auth.signInWithPassword({
-          email: authEmail.trim(),
+          email: emailTrimmed,
           password: authPassword,
         });
         if (error) {
@@ -1615,7 +1617,7 @@ export default function App() {
         await syncFcmTokenToProfile();
       } else {
         const { data, error } = await supabase.auth.signUp({
-          email: authEmail.trim(),
+          email: emailTrimmed,
           password: authPassword,
         });
         if (error) {
@@ -1647,7 +1649,7 @@ export default function App() {
             }
             if (inv) {
               const inviteEmail = String(inv.email || "").trim().toLowerCase();
-              const regEmail = authEmail.trim().toLowerCase();
+              const regEmail = emailTrimmed.toLowerCase();
               if (inviteEmail && inviteEmail !== regEmail) {
                 alert("Este link de invitación fue emitido para otro email.");
                 setAuthSubmitting(false);
@@ -1700,7 +1702,7 @@ export default function App() {
           const cpPayload = {
             user_id: newUserId,
             full_name: authName.trim(),
-            email: authEmail.trim().toLowerCase(),
+            email: emailTrimmed.toLowerCase(),
             trial_start: new Date().toISOString(),
             trial_days: 10,
             subscription_status: "trial",
@@ -1714,7 +1716,7 @@ export default function App() {
         if (authRole === "athlete") {
           const athletePayload = {
             name: authName.trim(),
-            email: authEmail.trim().toLowerCase(),
+            email: emailTrimmed.toLowerCase(),
             goal: "Objetivo pendiente",
             pace: "Pendiente",
             weekly_km: 0,
@@ -1870,7 +1872,7 @@ export default function App() {
               <h1 style={{ ...S.pageTitle, fontSize: "1.3em", marginBottom: 16 }}>
                 {authMode === "login" ? "Login" : "Registro"}
               </h1>
-              <form onSubmit={handleAuthSubmit}>
+              <form onSubmit={handleAuthSubmit} noValidate>
                 {authMode === "register" && (
                   <>
                     <div style={{ marginBottom: 10 }}>
@@ -1949,8 +1951,19 @@ export default function App() {
                     type="email"
                     value={authEmail}
                     onChange={e => {
-                      setAuthEmail(e.target.value);
-                      if (authEmailError) setAuthEmailError("");
+                      const nextEmail = e.target.value;
+                      setAuthEmail(nextEmail);
+                      if (authMode === "register") {
+                        const nextTrimmed = nextEmail.trim();
+                        setAuthEmailError(nextTrimmed ? getRegistrationEmailValidationError(nextEmail) : "");
+                      } else if (authEmailError) {
+                        setAuthEmailError("");
+                      }
+                    }}
+                    onBlur={() => {
+                      if (authMode !== "register") return;
+                      const trimmed = authEmail.trim();
+                      setAuthEmailError(trimmed ? getRegistrationEmailValidationError(authEmail) : "");
                     }}
                     placeholder="correo@ejemplo.com"
                     style={{ width: "100%", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", color: "#0f172a", fontFamily: "inherit", fontSize: ".85em", outline: "none", boxSizing: "border-box" }}
@@ -5392,7 +5405,7 @@ function AthleteHome({ profile }) {
     if (typeof localStorage === "undefined") return;
     const savedSubView = localStorage.getItem(LAST_SUB_VIEW_STORAGE_KEY) || "";
     persistedAthleteSubViewRef.current = savedSubView;
-    if (savedSubView === "athlete:evaluation") {
+    if (savedSubView === "athlete:evaluation" || subViewToEvaluationTab(savedSubView)) {
       setShowEvaluation(true);
     }
   }, []);
@@ -5409,8 +5422,11 @@ function AthleteHome({ profile }) {
       const detailSubView = String(event?.detail?.subView || "");
       const fallbackSubView = persistedAthleteSubViewRef.current;
       const targetSubView = detailSubView || fallbackSubView;
-      if (targetSubView === "athlete:evaluation") setShowEvaluation(true);
-      else if (targetSubView === "athlete:home") setShowEvaluation(false);
+      if (targetSubView === "athlete:evaluation" || subViewToEvaluationTab(targetSubView)) {
+        setShowEvaluation(true);
+      } else if (targetSubView === "athlete:home") {
+        setShowEvaluation(false);
+      }
     };
     window.addEventListener("raf:restore-subview", restoreAthleteSubView);
     return () => window.removeEventListener("raf:restore-subview", restoreAthleteSubView);
