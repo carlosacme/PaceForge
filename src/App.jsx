@@ -10,6 +10,13 @@ import {
 
 const BRAND_NAME = "RunningApexFlow";
 const STRAVA_CALLBACK_URL = "https://pace-forge-eta.vercel.app/api/strava/callback";
+const COROS_SYNC_MODAL_MESSAGE = `COROS no ofrece API pública. Para sincronizar tus actividades automáticamente sigue estos pasos:
+
+1️⃣ En tu app COROS ve a Perfil → Ajustes → Apps de terceros → Strava
+2️⃣ Conecta tu cuenta Strava
+3️⃣ Vuelve aquí y conecta Strava en la sección de abajo
+
+Cada actividad que termines en tu COROS llegará automáticamente a RunningApexFlow vía Strava.`;
 
 const WORKOUT_TYPES = [
   { id: "easy", label: "Rodaje Suave", color: "#22c55e" },
@@ -100,6 +107,64 @@ const pushBodySnippet = (text, max = 400) => {
   if (s.length <= max) return s;
   return `${s.slice(0, max - 1)}…`;
 };
+
+function CorosSyncModal({ open, onClose, onConnectStrava }) {
+  if (!open) return null;
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(15,23,42,.45)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 520,
+        padding: 16,
+      }}
+      onClick={onClose}
+    >
+      <div
+        style={{
+          width: "100%",
+          maxWidth: 580,
+          background: "#fff",
+          borderRadius: 12,
+          padding: 18,
+          boxShadow: "0 20px 60px rgba(2,6,23,.35)",
+          border: "1px solid #e2e8f0",
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div style={{ color: "#0f172a", fontWeight: 800, fontSize: "1em", marginBottom: 10 }}>
+          Sincronizar COROS
+        </div>
+        <div style={{ color: "#334155", fontSize: ".85em", lineHeight: 1.5, whiteSpace: "pre-line" }}>
+          {COROS_SYNC_MODAL_MESSAGE}
+        </div>
+        <div style={{ marginTop: 16, display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 12px", color: "#64748b", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: ".8em" }}
+          >
+            Entendido
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              onClose?.();
+              onConnectStrava?.();
+            }}
+            style={{ background: "linear-gradient(135deg,#ea580c,#f97316)", border: "none", borderRadius: 8, padding: "8px 12px", color: "#fff", cursor: "pointer", fontFamily: "inherit", fontWeight: 800, fontSize: ".8em" }}
+          >
+            Conectar Strava ahora
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 async function sendChatPushNotification({ token, title, body, logLabel = "chat push" }) {
   const tokenOk = token != null && String(token).trim() !== "";
@@ -5104,6 +5169,7 @@ function AthleteHome({ profile }) {
   const [stravaActivities, setStravaActivities] = useState([]);
   const [stravaLoadingActivities, setStravaLoadingActivities] = useState(false);
   const [stravaDisconnecting, setStravaDisconnecting] = useState(false);
+  const [corosSyncModalOpen, setCorosSyncModalOpen] = useState(false);
   const [findCoachCodeInput, setFindCoachCodeInput] = useState("");
   const [findCoachCodeBusy, setFindCoachCodeBusy] = useState(false);
   const [publicCoachesAthlete, setPublicCoachesAthlete] = useState([]);
@@ -5697,6 +5763,12 @@ function AthleteHome({ profile }) {
     }
     setAthleteInfo((prev) => (prev ? { ...prev, device: deviceValue } : prev));
   };
+
+  const openStravaConnectForAthlete = useCallback(() => {
+    if (!athleteInfo?.id) return;
+    const authUrl = `https://www.strava.com/oauth/authorize?client_id=218467&redirect_uri=${encodeURIComponent(STRAVA_CALLBACK_URL)}&response_type=code&scope=activity:read_all&state=${encodeURIComponent(String(athleteInfo.id))}`;
+    window.location.href = authUrl;
+  }, [athleteInfo?.id]);
 
   const athleteNeedsCoachLink =
     Boolean(athleteInfo) &&
@@ -6457,12 +6529,17 @@ function AthleteHome({ profile }) {
         {(() => {
           const currentDevice = String(athleteInfo?.device || "").trim().toLowerCase();
           const corosConnected = currentDevice === "coros";
+          const stravaConnected = Boolean(stravaConnection?.access_token);
           return (
             <div style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: "10px 12px", background: "#f8fafc" }}>
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
                   <div style={{ fontSize: ".74em", color: "#0f172a", fontWeight: 700 }}>COROS</div>
-                  {corosConnected ? (
+                  {stravaConnected ? (
+                    <span style={{ background: "rgba(34,197,94,.14)", border: "1px solid rgba(34,197,94,.35)", borderRadius: 999, padding: "4px 9px", color: "#15803d", fontSize: ".72em", fontWeight: 700 }}>
+                      ✅ COROS sincroniza vía Strava
+                    </span>
+                  ) : corosConnected ? (
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <span style={{ background: "rgba(34,197,94,.14)", border: "1px solid rgba(34,197,94,.35)", borderRadius: 999, padding: "4px 9px", color: "#15803d", fontSize: ".72em", fontWeight: 700 }}>
                         ✅ COROS conectado
@@ -6470,7 +6547,7 @@ function AthleteHome({ profile }) {
                       <button type="button" onClick={() => setAthleteDeviceConnection(null)} style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "6px 9px", color: "#b91c1c", fontSize: ".72em", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Desconectar</button>
                     </div>
                   ) : (
-                    <button type="button" onClick={() => setAthleteDeviceConnection("coros")} style={{ background: "linear-gradient(135deg,#2563eb,#3b82f6)", border: "none", borderRadius: 8, padding: "6px 10px", color: "#fff", fontSize: ".72em", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Conectar COROS</button>
+                    <button type="button" onClick={() => setCorosSyncModalOpen(true)} style={{ background: "linear-gradient(135deg,#2563eb,#3b82f6)", border: "none", borderRadius: 8, padding: "6px 10px", color: "#fff", fontSize: ".72em", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Conectar COROS</button>
                   )}
                 </div>
 
@@ -6503,10 +6580,7 @@ function AthleteHome({ profile }) {
                   ) : (
                     <button
                       type="button"
-                      onClick={() => {
-                        const authUrl = `https://www.strava.com/oauth/authorize?client_id=218467&redirect_uri=${encodeURIComponent(STRAVA_CALLBACK_URL)}&response_type=code&scope=activity:read_all&state=${encodeURIComponent(String(athleteInfo?.id || ""))}`;
-                        window.location.href = authUrl;
-                      }}
+                      onClick={openStravaConnectForAthlete}
                       disabled={stravaSyncingCode}
                       style={{ background: "linear-gradient(135deg,#ea580c,#f97316)", border: "none", borderRadius: 8, padding: "6px 10px", color: "#fff", fontWeight: 800, cursor: stravaSyncingCode ? "not-allowed" : "pointer", fontFamily: "inherit", fontSize: ".74em" }}
                     >
@@ -6655,6 +6729,11 @@ function AthleteHome({ profile }) {
           Cerrar sesión
         </button>
       </div>
+      <CorosSyncModal
+        open={corosSyncModalOpen}
+        onClose={() => setCorosSyncModalOpen(false)}
+        onConnectStrava={openStravaConnectForAthlete}
+      />
     </div>
   );
 }
@@ -9651,6 +9730,7 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
   const [deviceOverrides, setDeviceOverrides] = useState({});
   const [stravaActivitiesByAthlete, setStravaActivitiesByAthlete] = useState({});
   const [loadingActivitiesByAthlete, setLoadingActivitiesByAthlete] = useState({});
+  const [corosSyncModalAthleteId, setCorosSyncModalAthleteId] = useState("");
   const [coachRequests, setCoachRequests] = useState([]);
   const [requestsBusyId, setRequestsBusyId] = useState("");
 
@@ -9815,6 +9895,17 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
       setLoadingActivitiesByAthlete((prev) => ({ ...prev, [athleteId]: false }));
     }
   };
+
+  const openStravaConnectForAthlete = useCallback((athleteId, athleteName) => {
+    if (!athleteId) return;
+    console.log("[STRAVA CONNECT][Settings] opening authorize URL", {
+      athlete_id: athleteId,
+      athlete_name: athleteName,
+      callback_url: STRAVA_CALLBACK_URL,
+    });
+    const authUrl = `https://www.strava.com/oauth/authorize?client_id=218467&redirect_uri=${encodeURIComponent(STRAVA_CALLBACK_URL)}&response_type=code&scope=activity:read_all&state=${encodeURIComponent(String(athleteId))}`;
+    window.location.href = authUrl;
+  }, []);
 
   useEffect(() => {
     const athleteIds = (athletes || []).map((a) => a?.id).filter(Boolean);
@@ -10124,6 +10215,7 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
                   const currentDeviceRaw = deviceOverrides[a.id] ?? a?.device ?? "";
                   const device = String(currentDeviceRaw).trim();
                   const stravaConn = a?.id ? stravaByUserId[a.id] : null;
+                  const stravaConnected = Boolean(stravaConn?.access_token);
                   const corosConnected = device.toLowerCase() === "coros";
                   const garminConnected = device.toLowerCase() === "garmin";
                   return (
@@ -10132,7 +10224,11 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
                       <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 8 }}>
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
                           <div style={{ fontSize: ".74em", color: "#0f172a", fontWeight: 700 }}>COROS</div>
-                          {corosConnected ? (
+                          {stravaConnected ? (
+                            <span style={{ background: "rgba(34,197,94,.14)", border: "1px solid rgba(34,197,94,.35)", borderRadius: 999, padding: "4px 9px", color: "#15803d", fontSize: ".72em", fontWeight: 700 }}>
+                              ✅ COROS sincroniza vía Strava
+                            </span>
+                          ) : corosConnected ? (
                             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                               <span style={{ background: "rgba(34,197,94,.14)", border: "1px solid rgba(34,197,94,.35)", borderRadius: 999, padding: "4px 9px", color: "#15803d", fontSize: ".72em", fontWeight: 700 }}>
                                 ✅ Conectado
@@ -10140,7 +10236,7 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
                               <button type="button" onClick={() => setAthleteDeviceConnection(a.id, null)} style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "6px 9px", color: "#b91c1c", fontSize: ".72em", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Desconectar</button>
                             </div>
                           ) : (
-                            <button type="button" onClick={() => setAthleteDeviceConnection(a.id, "coros")} style={{ background: "linear-gradient(135deg,#2563eb,#3b82f6)", border: "none", borderRadius: 8, padding: "6px 10px", color: "#fff", fontSize: ".72em", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Conectar COROS</button>
+                            <button type="button" onClick={() => setCorosSyncModalAthleteId(String(a.id))} style={{ background: "linear-gradient(135deg,#2563eb,#3b82f6)", border: "none", borderRadius: 8, padding: "6px 10px", color: "#fff", fontSize: ".72em", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Conectar COROS</button>
                           )}
                         </div>
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
@@ -10175,15 +10271,7 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
                           ) : (
                             <button
                               type="button"
-                              onClick={() => {
-                                console.log("[STRAVA CONNECT][Settings] opening authorize URL", {
-                                  athlete_id: a.id,
-                                  athlete_name: a.name,
-                                  callback_url: STRAVA_CALLBACK_URL,
-                                });
-                                const authUrl = `https://www.strava.com/oauth/authorize?client_id=218467&redirect_uri=${encodeURIComponent(STRAVA_CALLBACK_URL)}&response_type=code&scope=activity:read_all&state=${encodeURIComponent(String(a.id))}`;
-                                window.location.href = authUrl;
-                              }}
+                              onClick={() => openStravaConnectForAthlete(a.id, a.name)}
                               style={{ background: "linear-gradient(135deg,#ea580c,#f97316)", border: "none", borderRadius: 8, padding: "6px 10px", color: "#fff", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".74em" }}
                             >
                               🟠 Conectar Strava
@@ -10283,6 +10371,11 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
           Cerrar sesión
         </button>
       </div>
+      <CorosSyncModal
+        open={Boolean(corosSyncModalAthleteId)}
+        onClose={() => setCorosSyncModalAthleteId("")}
+        onConnectStrava={() => openStravaConnectForAthlete(corosSyncModalAthleteId)}
+      />
     </div>
   );
 }
