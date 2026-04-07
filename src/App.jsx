@@ -1008,6 +1008,12 @@ const COACH_NAV_BASE_ITEMS = [
   { id: "library", icon: "◈", label: "Biblioteca", shortLabel: "Biblio", color: "#6366f1" },
 ];
 
+const LAST_VIEW_STORAGE_KEY = "lastView";
+const ATHLETE_SUBSECTION_STORAGE_KEY = "athleteSubSection";
+const ATHLETE_TAB_STORAGE_KEY = "athleteTab";
+const ATHLETE_EVALUATION_SUBSECTION = "evaluation";
+const EVALUATION_TABS = ["race", "cooper", "threshold"];
+
 export default function App() {
   const [view, setView] = useState("dashboard");
   const [selectedAthlete, setSelectedAthlete] = useState(null);
@@ -1046,6 +1052,7 @@ export default function App() {
   const [publicCoaches, setPublicCoaches] = useState([]);
   const [loadingPublicCoaches, setLoadingPublicCoaches] = useState(false);
   const [pendingCoachRequestId, setPendingCoachRequestId] = useState("");
+  const lastViewRestoredRef = useRef(false);
 
   const notify = useCallback((msg) => {
     setNotification(msg);
@@ -1365,6 +1372,57 @@ export default function App() {
       setView("dashboard");
     }
   }, [view, session?.user?.email, profile?.role]);
+
+  const canRestoreViewForRole = useCallback(
+    (candidateView) => {
+      const nextView = String(candidateView || "").trim();
+      if (!nextView || profile?.role === "athlete") return false;
+      return coachNavItems.some((item) => item.id === nextView);
+    },
+    [coachNavItems, profile?.role],
+  );
+
+  const restoreSavedView = useCallback(() => {
+    if (typeof localStorage === "undefined") return;
+    if (profileLoading || !profile || profile.role === "athlete") return;
+    const storedView = localStorage.getItem(LAST_VIEW_STORAGE_KEY);
+    if (!canRestoreViewForRole(storedView)) return;
+    if (storedView === view) return;
+    setView(storedView);
+    setSelectedAthlete(null);
+    setShowAddAthleteForm(false);
+  }, [canRestoreViewForRole, profileLoading, profile, view]);
+
+  useEffect(() => {
+    lastViewRestoredRef.current = false;
+  }, [session?.user?.id]);
+
+  useEffect(() => {
+    if (typeof localStorage === "undefined") return;
+    if (!profile || profile.role === "athlete") return;
+    if (!lastViewRestoredRef.current) return;
+    if (!canRestoreViewForRole(view)) return;
+    localStorage.setItem(LAST_VIEW_STORAGE_KEY, view);
+  }, [view, profile, canRestoreViewForRole]);
+
+  useEffect(() => {
+    if (!profileLoading && profile && profile.role !== "athlete") {
+      restoreSavedView();
+      lastViewRestoredRef.current = true;
+    }
+  }, [restoreSavedView, profileLoading, profile]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== "visible") return;
+      restoreSavedView();
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [restoreSavedView]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -5085,7 +5143,10 @@ function AthleteHome({ profile }) {
   const [athleteChatDraft, setAthleteChatDraft] = useState("");
   const [athleteChatSending, setAthleteChatSending] = useState(false);
   const [athleteNotRegistered, setAthleteNotRegistered] = useState(false);
-  const [showEvaluation, setShowEvaluation] = useState(false);
+  const [showEvaluation, setShowEvaluation] = useState(() => {
+    if (typeof localStorage === "undefined") return false;
+    return localStorage.getItem(ATHLETE_SUBSECTION_STORAGE_KEY) === ATHLETE_EVALUATION_SUBSECTION;
+  });
   const [achievementsCatalog, setAchievementsCatalog] = useState([]);
   const [earnedAchievements, setEarnedAchievements] = useState([]);
   const [achProgress, setAchProgress] = useState(null);
@@ -5620,6 +5681,29 @@ function AthleteHome({ profile }) {
     if (!athleteChatScrollRef.current) return;
     athleteChatScrollRef.current.scrollTop = athleteChatScrollRef.current.scrollHeight;
   }, [athleteChatMessages]);
+
+  useEffect(() => {
+    if (typeof localStorage === "undefined") return;
+    localStorage.setItem(
+      ATHLETE_SUBSECTION_STORAGE_KEY,
+      showEvaluation ? ATHLETE_EVALUATION_SUBSECTION : "home",
+    );
+  }, [showEvaluation]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== "visible") return;
+      if (typeof localStorage === "undefined") return;
+      const savedSubsection = localStorage.getItem(ATHLETE_SUBSECTION_STORAGE_KEY);
+      const shouldShowEvaluation = savedSubsection === ATHLETE_EVALUATION_SUBSECTION;
+      if (shouldShowEvaluation !== showEvaluation) setShowEvaluation(shouldShowEvaluation);
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [showEvaluation]);
 
   const sendAthleteChat = async () => {
     const body = athleteChatDraft.trim();
@@ -8842,7 +8926,11 @@ function EvaluationView({ athletes, currentUserId, notify, athleteOnlyId = null 
     [athletes, athleteOnlyId],
   );
   const [athleteId, setAthleteId] = useState(athleteOnlyId ? String(athleteOnlyId) : String(athleteOptions[0]?.id || ""));
-  const [tab, setTab] = useState("race");
+  const [tab, setTab] = useState(() => {
+    if (!athleteOnlyId || typeof localStorage === "undefined") return "race";
+    const savedAthleteTab = localStorage.getItem(ATHLETE_TAB_STORAGE_KEY);
+    return EVALUATION_TABS.includes(savedAthleteTab) ? savedAthleteTab : "race";
+  });
   const [raceDistance, setRaceDistance] = useState("10k");
   const [raceTime, setRaceTime] = useState("00:45:00");
   const [cooperDistance, setCooperDistance] = useState("2800");
@@ -8854,6 +8942,7 @@ function EvaluationView({ athletes, currentUserId, notify, athleteOnlyId = null 
   const [saving, setSaving] = useState(false);
   const [history, setHistory] = useState([]);
   const [openHistoryId, setOpenHistoryId] = useState(null);
+  const athleteTabRestoredRef = useRef(false);
 
   const methodDescription =
     tab === "race"
@@ -8866,6 +8955,40 @@ function EvaluationView({ athletes, currentUserId, notify, athleteOnlyId = null 
     if (!athleteOptions.length) return;
     if (!athleteId) setAthleteId(String(athleteOptions[0].id));
   }, [athleteOptions, athleteId]);
+
+  useEffect(() => {
+    athleteTabRestoredRef.current = false;
+  }, [athleteOnlyId]);
+
+  useEffect(() => {
+    if (!athleteOnlyId || typeof localStorage === "undefined") return;
+    if (athleteTabRestoredRef.current) return;
+    const savedAthleteTab = localStorage.getItem(ATHLETE_TAB_STORAGE_KEY);
+    athleteTabRestoredRef.current = true;
+    if (!EVALUATION_TABS.includes(savedAthleteTab)) return;
+    if (savedAthleteTab !== tab) setTab(savedAthleteTab);
+  }, [athleteOnlyId, tab]);
+
+  useEffect(() => {
+    if (!athleteOnlyId || typeof localStorage === "undefined") return;
+    if (!EVALUATION_TABS.includes(tab)) return;
+    localStorage.setItem(ATHLETE_TAB_STORAGE_KEY, tab);
+  }, [athleteOnlyId, tab]);
+
+  useEffect(() => {
+    if (!athleteOnlyId || typeof document === "undefined") return;
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== "visible") return;
+      if (typeof localStorage === "undefined") return;
+      const savedAthleteTab = localStorage.getItem(ATHLETE_TAB_STORAGE_KEY);
+      if (!EVALUATION_TABS.includes(savedAthleteTab)) return;
+      if (savedAthleteTab !== tab) setTab(savedAthleteTab);
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [athleteOnlyId, tab]);
 
   const selectedAthlete = useMemo(
     () => athleteOptions.find((a) => String(a.id) === String(athleteId)) || null,
