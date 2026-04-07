@@ -5104,6 +5104,8 @@ function AthleteHome({ profile }) {
   const [stravaActivities, setStravaActivities] = useState([]);
   const [stravaLoadingActivities, setStravaLoadingActivities] = useState(false);
   const [stravaDisconnecting, setStravaDisconnecting] = useState(false);
+  const [corosModalOpen, setCorosModalOpen] = useState(false);
+  const [garminModalOpen, setGarminModalOpen] = useState(false);
   const [findCoachCodeInput, setFindCoachCodeInput] = useState("");
   const [findCoachCodeBusy, setFindCoachCodeBusy] = useState(false);
   const [publicCoachesAthlete, setPublicCoachesAthlete] = useState([]);
@@ -6470,14 +6472,14 @@ function AthleteHome({ profile }) {
                       <button type="button" onClick={() => setAthleteDeviceConnection(null)} style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "6px 9px", color: "#b91c1c", fontSize: ".72em", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Desconectar</button>
                     </div>
                   ) : (
-                    <button type="button" onClick={() => setAthleteDeviceConnection("coros")} style={{ background: "linear-gradient(135deg,#2563eb,#3b82f6)", border: "none", borderRadius: 8, padding: "6px 10px", color: "#fff", fontSize: ".72em", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Conectar COROS</button>
+                    <button type="button" onClick={() => setCorosModalOpen(true)} style={{ background: "linear-gradient(135deg,#2563eb,#3b82f6)", border: "none", borderRadius: 8, padding: "6px 10px", color: "#fff", fontSize: ".72em", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Conectar COROS</button>
                   )}
                 </div>
 
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
                   <div style={{ fontSize: ".74em", color: "#0f172a", fontWeight: 700 }}>Garmin</div>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <button type="button" style={{ background: "linear-gradient(135deg,#1d4ed8,#3b82f6)", border: "none", borderRadius: 8, padding: "6px 10px", color: "#fff", fontSize: ".72em", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Conectar Garmin</button>
+                    <button type="button" onClick={() => setGarminModalOpen(true)} style={{ background: "linear-gradient(135deg,#1d4ed8,#3b82f6)", border: "none", borderRadius: 8, padding: "6px 10px", color: "#fff", fontSize: ".72em", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Conectar Garmin</button>
                     <span style={{ background: "rgba(245,158,11,.14)", border: "1px solid rgba(245,158,11,.35)", borderRadius: 999, padding: "4px 9px", color: "#b45309", fontSize: ".72em", fontWeight: 700 }}>
                       Próximamente
                     </span>
@@ -6655,6 +6657,46 @@ function AthleteHome({ profile }) {
           Cerrar sesión
         </button>
       </div>
+
+      {corosModalOpen && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", zIndex: 250, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ ...S.card, width: "100%", maxWidth: 520, margin: 0 }}>
+            <div style={{ fontSize: ".95em", fontWeight: 800, color: "#0f172a", marginBottom: 8 }}>Conectar COROS</div>
+            <div style={{ fontSize: ".84em", color: "#475569", lineHeight: 1.5 }}>
+              Para sincronizar actividades de COROS en PaceForge, conecta primero tu cuenta COROS con Strava y luego presiona <strong>Conectar Strava</strong> en esta misma sección.
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 14 }}>
+              <button
+                type="button"
+                onClick={() => setCorosModalOpen(false)}
+                style={{ background: "linear-gradient(135deg,#0d9488,#14b8a6)", border: "none", borderRadius: 8, padding: "8px 12px", color: "#fff", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: ".8em" }}
+              >
+                Entendido
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {garminModalOpen && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", zIndex: 250, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ ...S.card, width: "100%", maxWidth: 520, margin: 0 }}>
+            <div style={{ fontSize: ".95em", fontWeight: 800, color: "#0f172a", marginBottom: 8 }}>Conectar Garmin</div>
+            <div style={{ fontSize: ".84em", color: "#475569", lineHeight: 1.5 }}>
+              Para sincronizar actividades de Garmin en PaceForge, conecta primero tu cuenta Garmin con Strava y luego presiona <strong>Conectar Strava</strong> en esta misma sección.
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 14 }}>
+              <button
+                type="button"
+                onClick={() => setGarminModalOpen(false)}
+                style={{ background: "linear-gradient(135deg,#0d9488,#14b8a6)", border: "none", borderRadius: 8, padding: "8px 12px", color: "#fff", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: ".8em" }}
+              >
+                Entendido
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -9653,6 +9695,9 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
   const [loadingActivitiesByAthlete, setLoadingActivitiesByAthlete] = useState({});
   const [coachRequests, setCoachRequests] = useState([]);
   const [requestsBusyId, setRequestsBusyId] = useState("");
+  const [corosModalOpen, setCorosModalOpen] = useState(false);
+  const [garminModalOpen, setGarminModalOpen] = useState(false);
+  const [integrationModalAthlete, setIntegrationModalAthlete] = useState(null);
 
   const loadProfile = useCallback(async () => {
     if (!coachUserId) {
@@ -10140,7 +10185,7 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
                               <button type="button" onClick={() => setAthleteDeviceConnection(a.id, null)} style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "6px 9px", color: "#b91c1c", fontSize: ".72em", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Desconectar</button>
                             </div>
                           ) : (
-                            <button type="button" onClick={() => setAthleteDeviceConnection(a.id, "coros")} style={{ background: "linear-gradient(135deg,#2563eb,#3b82f6)", border: "none", borderRadius: 8, padding: "6px 10px", color: "#fff", fontSize: ".72em", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Conectar COROS</button>
+                            <button type="button" onClick={() => { setIntegrationModalAthlete(a); setCorosModalOpen(true); }} style={{ background: "linear-gradient(135deg,#2563eb,#3b82f6)", border: "none", borderRadius: 8, padding: "6px 10px", color: "#fff", fontSize: ".72em", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Conectar COROS</button>
                           )}
                         </div>
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
@@ -10153,7 +10198,7 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
                               <button type="button" onClick={() => setAthleteDeviceConnection(a.id, null)} style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "6px 9px", color: "#b91c1c", fontSize: ".72em", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Desconectar</button>
                             </div>
                           ) : (
-                            <button type="button" onClick={() => setAthleteDeviceConnection(a.id, "garmin")} style={{ background: "linear-gradient(135deg,#1d4ed8,#3b82f6)", border: "none", borderRadius: 8, padding: "6px 10px", color: "#fff", fontSize: ".72em", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Conectar Garmin</button>
+                            <button type="button" onClick={() => { setIntegrationModalAthlete(a); setGarminModalOpen(true); }} style={{ background: "linear-gradient(135deg,#1d4ed8,#3b82f6)", border: "none", borderRadius: 8, padding: "6px 10px", color: "#fff", fontSize: ".72em", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Conectar Garmin</button>
                           )}
                         </div>
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
@@ -10261,6 +10306,50 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
             {saving ? "Guardando…" : "Guardar cambios"}
           </button>
         </form>
+      )}
+
+      {corosModalOpen && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", zIndex: 250, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ ...S.card, width: "100%", maxWidth: 540, margin: 0 }}>
+            <div style={{ fontSize: ".95em", fontWeight: 800, color: "#0f172a", marginBottom: 8 }}>
+              Conectar COROS{integrationModalAthlete?.name ? ` · ${integrationModalAthlete.name}` : ""}
+            </div>
+            <div style={{ fontSize: ".84em", color: "#475569", lineHeight: 1.5 }}>
+              Para este atleta, conecta primero COROS con Strava y luego usa <strong>Conectar Strava</strong> en la misma tarjeta de integraciones.
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 14 }}>
+              <button
+                type="button"
+                onClick={() => { setCorosModalOpen(false); setIntegrationModalAthlete(null); }}
+                style={{ background: "linear-gradient(135deg,#0d9488,#14b8a6)", border: "none", borderRadius: 8, padding: "8px 12px", color: "#fff", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: ".8em" }}
+              >
+                Entendido
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {garminModalOpen && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", zIndex: 250, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ ...S.card, width: "100%", maxWidth: 540, margin: 0 }}>
+            <div style={{ fontSize: ".95em", fontWeight: 800, color: "#0f172a", marginBottom: 8 }}>
+              Conectar Garmin{integrationModalAthlete?.name ? ` · ${integrationModalAthlete.name}` : ""}
+            </div>
+            <div style={{ fontSize: ".84em", color: "#475569", lineHeight: 1.5 }}>
+              Para este atleta, conecta primero Garmin con Strava y luego usa <strong>Conectar Strava</strong> en la misma tarjeta de integraciones.
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 14 }}>
+              <button
+                type="button"
+                onClick={() => { setGarminModalOpen(false); setIntegrationModalAthlete(null); }}
+                style={{ background: "linear-gradient(135deg,#0d9488,#14b8a6)", border: "none", borderRadius: 8, padding: "8px 12px", color: "#fff", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: ".8em" }}
+              >
+                Entendido
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       <div style={{ ...S.card, marginTop: 8 }}>
