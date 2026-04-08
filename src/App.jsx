@@ -5140,6 +5140,7 @@ function AthleteHome({ profile }) {
   const [garminModalOpen, setGarminModalOpen] = useState(false);
   const [athleteNotRegistered, setAthleteNotRegistered] = useState(false);
   const [showEvaluation, setShowEvaluation] = useState(false);
+  const [athleteTabRestored, setAthleteTabRestored] = useState(false);
   const [achievementsCatalog, setAchievementsCatalog] = useState([]);
   const [earnedAchievements, setEarnedAchievements] = useState([]);
   const [achProgress, setAchProgress] = useState(null);
@@ -5172,13 +5173,15 @@ function AthleteHome({ profile }) {
     const savedSection = localStorage.getItem(ATHLETE_TAB_STORAGE_KEY);
     if (savedSection === "evaluation") setShowEvaluation(true);
     if (savedSection === "home") setShowEvaluation(false);
+    setAthleteTabRestored(true);
   }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    if (!athleteTabRestored) return;
     const currentSection = showEvaluation ? "evaluation" : "home";
     localStorage.setItem(ATHLETE_TAB_STORAGE_KEY, currentSection);
-  }, [showEvaluation]);
+  }, [showEvaluation, athleteTabRestored]);
 
   useEffect(() => {
     if (typeof document === "undefined") return undefined;
