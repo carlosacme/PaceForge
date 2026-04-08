@@ -5689,6 +5689,11 @@ function AthleteHome({ profile }) {
     }
   };
 
+  const openAthleteStravaOAuth = useCallback(() => {
+    const authUrl = `https://www.strava.com/oauth/authorize?client_id=218467&redirect_uri=${encodeURIComponent(STRAVA_CALLBACK_URL)}&response_type=code&scope=activity:read_all&state=${encodeURIComponent(String(athleteInfo?.id || ""))}`;
+    window.location.href = authUrl;
+  }, [athleteInfo?.id]);
+
   const setAthleteDeviceConnection = async (deviceValue) => {
     if (!athleteInfo?.id) return;
     const { error } = await supabase.from("athletes").update({ device: deviceValue }).eq("id", athleteInfo.id);
@@ -6505,10 +6510,7 @@ function AthleteHome({ profile }) {
                   ) : (
                     <button
                       type="button"
-                      onClick={() => {
-                        const authUrl = `https://www.strava.com/oauth/authorize?client_id=218467&redirect_uri=${encodeURIComponent(STRAVA_CALLBACK_URL)}&response_type=code&scope=activity:read_all&state=${encodeURIComponent(String(athleteInfo?.id || ""))}`;
-                        window.location.href = authUrl;
-                      }}
+                      onClick={openAthleteStravaOAuth}
                       disabled={stravaSyncingCode}
                       style={{ background: "linear-gradient(135deg,#ea580c,#f97316)", border: "none", borderRadius: 8, padding: "6px 10px", color: "#fff", fontWeight: 800, cursor: stravaSyncingCode ? "not-allowed" : "pointer", fontFamily: "inherit", fontSize: ".74em" }}
                     >
@@ -6657,6 +6659,30 @@ function AthleteHome({ profile }) {
           Cerrar sesión
         </button>
       </div>
+      {corosModalOpen && (
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center',padding:'20px'}}>
+          <div style={{background:'white',borderRadius:'16px',padding:'24px',maxWidth:'420px',width:'100%',boxShadow:'0 20px 60px rgba(0,0,0,0.3)'}}>
+            <h3 style={{marginBottom:'12px',fontSize:'18px',fontWeight:'700'}}>Sincronizar COROS</h3>
+            <p style={{marginBottom:'20px',lineHeight:'1.7',color:'#444',fontSize:'14px'}}>COROS no ofrece API pública. Para sincronizar tus actividades automáticamente:<br/><br/>1️⃣ En tu app COROS ve a Perfil → Ajustes → Apps de terceros → Strava<br/>2️⃣ Conecta tu cuenta Strava<br/>3️⃣ Vuelve aquí y conecta Strava abajo<br/><br/>Cada actividad que termines en tu COROS llegará automáticamente a RunningApexFlow vía Strava.</p>
+            <div style={{display:'flex',gap:'12px',justifyContent:'flex-end',flexWrap:'wrap'}}>
+              <button onClick={() => setCorosModalOpen(false)} style={{padding:'10px 20px',borderRadius:'8px',border:'1px solid #ddd',cursor:'pointer',fontFamily:'inherit'}}>Entendido</button>
+              <button onClick={() => { setCorosModalOpen(false); openAthleteStravaOAuth && openAthleteStravaOAuth(); }} style={{padding:'10px 20px',borderRadius:'8px',background:'#E8410A',color:'white',border:'none',cursor:'pointer',fontFamily:'inherit',fontWeight:'600'}}>Conectar Strava ahora</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {garminModalOpen && (
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center',padding:'20px'}}>
+          <div style={{background:'white',borderRadius:'16px',padding:'24px',maxWidth:'420px',width:'100%',boxShadow:'0 20px 60px rgba(0,0,0,0.3)'}}>
+            <h3 style={{marginBottom:'12px',fontSize:'18px',fontWeight:'700'}}>Conectar Garmin</h3>
+            <p style={{marginBottom:'20px',lineHeight:'1.7',color:'#444',fontSize:'14px'}}>Garmin requiere aprobación empresarial para API directa. Para sincronizar tus actividades automáticamente:<br/><br/>1️⃣ En Garmin Connect ve a Configuración → Aplicaciones de terceros → Strava<br/>2️⃣ Activa la sincronización con Strava<br/>3️⃣ Vuelve aquí y conecta Strava abajo<br/><br/>Cada actividad que termines en tu Garmin llegará automáticamente a RunningApexFlow vía Strava.</p>
+            <div style={{display:'flex',gap:'12px',justifyContent:'flex-end',flexWrap:'wrap'}}>
+              <button onClick={() => setGarminModalOpen(false)} style={{padding:'10px 20px',borderRadius:'8px',border:'1px solid #ddd',cursor:'pointer',fontFamily:'inherit'}}>Entendido</button>
+              <button onClick={() => { setGarminModalOpen(false); openAthleteStravaOAuth && openAthleteStravaOAuth(); }} style={{padding:'10px 20px',borderRadius:'8px',background:'#E8410A',color:'white',border:'none',cursor:'pointer',fontFamily:'inherit',fontWeight:'600'}}>Conectar Strava ahora</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
