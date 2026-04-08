@@ -5128,6 +5128,7 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
 
 function AthleteHome({ profile }) {
   const S = styles;
+  const ATHLETE_TAB_STORAGE_KEY = "raf_athlete_tab";
   const [athleteInfo, setAthleteInfo] = useState(null);
   const [workouts, setWorkouts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -5139,6 +5140,7 @@ function AthleteHome({ profile }) {
   const [garminModalOpen, setGarminModalOpen] = useState(false);
   const [athleteNotRegistered, setAthleteNotRegistered] = useState(false);
   const [showEvaluation, setShowEvaluation] = useState(false);
+  const [athleteTabRestored, setAthleteTabRestored] = useState(false);
   const [achievementsCatalog, setAchievementsCatalog] = useState([]);
   const [earnedAchievements, setEarnedAchievements] = useState([]);
   const [achProgress, setAchProgress] = useState(null);
@@ -5165,6 +5167,35 @@ function AthleteHome({ profile }) {
   const [coachAssignSuccess, setCoachAssignSuccess] = useState("");
 
   const profileUserId = profile?.user_id ?? null;
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const savedSection = localStorage.getItem(ATHLETE_TAB_STORAGE_KEY);
+    if (savedSection === "evaluation") setShowEvaluation(true);
+    if (savedSection === "home") setShowEvaluation(false);
+    setAthleteTabRestored(true);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!athleteTabRestored) return;
+    const currentSection = showEvaluation ? "evaluation" : "home";
+    localStorage.setItem(ATHLETE_TAB_STORAGE_KEY, currentSection);
+  }, [showEvaluation, athleteTabRestored]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return undefined;
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== "visible") return;
+      const savedSection = localStorage.getItem(ATHLETE_TAB_STORAGE_KEY);
+      if (savedSection === "evaluation") setShowEvaluation(true);
+      if (savedSection === "home") setShowEvaluation(false);
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, []);
 
   /** Último `profileUserId` para el que ya se completó la carga inicial (evita loop si `profile` del padre se recrea). */
   const prevProfileUserIdRef = useRef(null);
