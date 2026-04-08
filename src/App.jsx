@@ -1027,6 +1027,7 @@ export default function App() {
   const [authMode, setAuthMode] = useState("login");
   const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
+  const [authError, setAuthError] = useState("");
   const [authSubmitting, setAuthSubmitting] = useState(false);
   const [landingAuthOpen, setLandingAuthOpen] = useState(false);
   const [demoModalOpen, setDemoModalOpen] = useState(false);
@@ -1046,6 +1047,7 @@ export default function App() {
   const [publicCoaches, setPublicCoaches] = useState([]);
   const [loadingPublicCoaches, setLoadingPublicCoaches] = useState(false);
   const [pendingCoachRequestId, setPendingCoachRequestId] = useState("");
+  const [viewRestored, setViewRestored] = useState(false);
 
   const notify = useCallback((msg) => {
     setNotification(msg);
@@ -1110,6 +1112,7 @@ export default function App() {
     }
     return items;
   }, [profile?.role, session?.user?.email]);
+  const allowedCoachViews = useMemo(() => new Set(coachNavItems.map((item) => item.id)), [coachNavItems]);
 
   const S = styles;
 
@@ -1215,6 +1218,10 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    setViewRestored(false);
+  }, [session?.user?.id]);
+
+  useEffect(() => {
     const loadProfile = async () => {
       if (!session?.user) {
         setProfile(null);
@@ -1303,6 +1310,16 @@ export default function App() {
   }, [session]);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!session?.user?.id || !profile || profile.role === "athlete" || viewRestored) return;
+    const saved = localStorage.getItem("raf_lastView");
+    if (saved && allowedCoachViews.has(saved)) {
+      setView(saved);
+    }
+    setViewRestored(true);
+  }, [session?.user?.id, profile, viewRestored, allowedCoachViews]);
+
+  useEffect(() => {
     let cancelled = false;
     (async () => {
       setLoadingPublicCoaches(true);
@@ -1365,6 +1382,26 @@ export default function App() {
       setView("dashboard");
     }
   }, [view, session?.user?.email, profile?.role]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!session?.user?.id || !profile || profile.role === "athlete" || !viewRestored) return;
+    localStorage.setItem("raf_lastView", view);
+  }, [view, session?.user?.id, profile, viewRestored]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return undefined;
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible" && session?.user?.id && profile?.role !== "athlete") {
+        const saved = localStorage.getItem("raf_lastView");
+        if (saved && allowedCoachViews.has(saved)) setView(saved);
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [session?.user?.id, profile?.role, allowedCoachViews]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1480,6 +1517,7 @@ export default function App() {
 
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
+    setAuthError("");
     if (!authEmail.trim() || !authPassword.trim()) {
       alert("Completa email y contraseña.");
       return;
@@ -1491,6 +1529,13 @@ export default function App() {
       }
       if (!authName.trim()) {
         alert("Completa tu nombre.");
+        return;
+      }
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+      const blockedDomains = ["test.com", "fake.com", "example.com", "correo.com", "mail.com", "temp.com", "yopmail.com"];
+      const emailDomain = authEmail.trim().toLowerCase().split("@")[1];
+      if (!emailRegex.test(authEmail.trim()) || blockedDomains.includes(emailDomain)) {
+        setAuthError("Por favor ingresa un correo electrónico válido.");
         return;
       }
     }
@@ -1843,10 +1888,16 @@ export default function App() {
                   <input
                     type="email"
                     value={authEmail}
-                    onChange={e => setAuthEmail(e.target.value)}
+                    onChange={e => {
+                      setAuthEmail(e.target.value);
+                      if (authError) setAuthError("");
+                    }}
                     placeholder="correo@ejemplo.com"
                     style={{ width: "100%", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", color: "#0f172a", fontFamily: "inherit", fontSize: ".85em", outline: "none", boxSizing: "border-box" }}
                   />
+                  {authMode === "register" && authError ? (
+                    <div style={{ marginTop: 6, fontSize: ".74em", color: "#dc2626", fontWeight: 600 }}>{authError}</div>
+                  ) : null}
                 </div>
                 <div style={{ marginBottom: 14 }}>
                   <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Contraseña</div>
