@@ -5128,6 +5128,7 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
 
 function AthleteHome({ profile }) {
   const S = styles;
+  const ATHLETE_TAB_STORAGE_KEY = "raf_athlete_tab";
   const [athleteInfo, setAthleteInfo] = useState(null);
   const [workouts, setWorkouts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -5165,6 +5166,33 @@ function AthleteHome({ profile }) {
   const [coachAssignSuccess, setCoachAssignSuccess] = useState("");
 
   const profileUserId = profile?.user_id ?? null;
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const savedSection = localStorage.getItem(ATHLETE_TAB_STORAGE_KEY);
+    if (savedSection === "evaluation") setShowEvaluation(true);
+    if (savedSection === "home") setShowEvaluation(false);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const currentSection = showEvaluation ? "evaluation" : "home";
+    localStorage.setItem(ATHLETE_TAB_STORAGE_KEY, currentSection);
+  }, [showEvaluation]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return undefined;
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== "visible") return;
+      const savedSection = localStorage.getItem(ATHLETE_TAB_STORAGE_KEY);
+      if (savedSection === "evaluation") setShowEvaluation(true);
+      if (savedSection === "home") setShowEvaluation(false);
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, []);
 
   /** Último `profileUserId` para el que ya se completó la carga inicial (evita loop si `profile` del padre se recrea). */
   const prevProfileUserIdRef = useRef(null);
