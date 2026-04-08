@@ -452,6 +452,14 @@ const PLAN_12_LEVELS = [
   { id: "intermedio", label: "Intermedio" },
   { id: "avanzado", label: "Avanzado" },
 ];
+const PLAN2_NEXT_BLOCK_FOCUSES = ["Base", "Tempo", "Intervalos", "Pico", "Recuperación"];
+const PLAN2_TRAINING_DAY_OPTIONS = [
+  { weekday: 2, label: "Mar" },
+  { weekday: 3, label: "Mié" },
+  { weekday: 4, label: "Jue" },
+  { weekday: 6, label: "Sáb" },
+  { weekday: 7, label: "Dom" },
+];
 
 /** Plantilla fija plan 2 semanas: omitir domingo, luego jueves, luego miércoles si N<5 */
 const PLAN2_FIXED_SLOTS = [
@@ -6793,6 +6801,14 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, onGoToPlans, onP
   const [monthGenerations, setMonthGenerations] = useState(0);
   const [loadingGenerations, setLoadingGenerations] = useState(false);
   const [generationLimitMsg, setGenerationLimitMsg] = useState("");
+  const [draftLoading, setDraftLoading] = useState(false);
+  const [currentBlock, setCurrentBlock] = useState(1);
+  const [nextBlockParams, setNextBlockParams] = useState({
+    vdot: "",
+    trainingDays: [2, 3, 6],
+    focus: PLAN2_NEXT_BLOCK_FOCUSES[0],
+    notes: "",
+  });
   const monthKey = useMemo(() => getCurrentMonthKey(), []);
   const isBasicPlan = useMemo(() => {
     const p = String(coachPlan || "").toLowerCase();
@@ -6810,6 +6826,14 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, onGoToPlans, onP
     if (competition === "Trail Running") return "05:30:00";
     return "hh:mm:ss";
   }, [competition]);
+  const selectedAthlete = useMemo(
+    () => (athletes || []).find((a) => String(a.id) === String(athleteId)) || null,
+    [athletes, athleteId],
+  );
+  const selectedTrainingDaysText = useMemo(() => {
+    const selected = PLAN2_TRAINING_DAY_OPTIONS.filter((d) => nextBlockParams.trainingDays.includes(d.weekday));
+    return selected.map((d) => `${d.label}(${d.weekday})`).join(", ");
+  }, [nextBlockParams.trainingDays]);
 
   const loadGenerationCounter = useCallback(async () => {
     if (!coachUserId) {
@@ -6901,6 +6925,140 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, onGoToPlans, onP
     });
   };
 
+  const persistPlanDraft = useCallback(
+    async ({ status = "draft", planJson, raceDateValue, blockNumber } = {}) => {
+      if (!coachUserId || !athleteId) return;
+      const athleteNumericId = Number(athleteId);
+      if (!Number.isFinite(athleteNumericId)) return;
+      const payload = {
+        coach_id: coachUserId,
+        athlete_id: athleteNumericId,
+        plan_json: planJson || generatedPlan || { plan_title: "Plan 2 semanas", weeks: [] },
+        race_date: raceDateValue || raceDate || null,
+        block_number: Number.isFinite(Number(blockNumber)) ? Number(blockNumber) : Number(currentBlock) || 1,
+        status,
+        updated_at: new Date().toISOString(),
+      };
+      const { error } = await supabase.from("plan_drafts").upsert(payload, { onConflict: "coach_id,athlete_id" });
+      if (error) {
+        console.error("plan_drafts upsert:", error);
+      }
+    },
+    [coachUserId, athleteId, generatedPlan, raceDate, currentBlock],
+  );
+
+  const loadDraftForAthlete = useCallback(async () => {
+    if (!coachUserId || !athleteId) return;
+    const athleteNumericId = Number(athleteId);
+    if (!Number.isFinite(athleteNumericId)) return;
+    setDraftLoading(true);
+    const { data, error } = await supabase
+      .from("plan_drafts")
+      .select("*")
+      .eq("coach_id", coachUserId)
+      .eq("athlete_id", athleteNumericId)
+      .eq("status", "draft")
+      .maybeSingle();
+    setDraftLoading(false);
+    if (error) {
+      console.error("plan_drafts load:", error);
+      return;
+    }
+    if (data?.plan_json) {
+      setGeneratedPlan(data.plan_json);
+      const weeks = Array.isArray(data.plan_json?.weeks) ? data.plan_json.weeks : [];
+      const opened = new Set(weeks.map((w) => Number(w.week_number)).filter((n) => Number.isFinite(n) && n > 0));
+      setOpenWeeks(opened.size ? opened : new Set([1, 2]));
+      if (data.race_date) setRaceDate(String(data.race_date));
+      setCurrentBlock(Number(data.block_number) || 1);
+      const firstWeek = Array.isArray(data.plan_json?.weeks) ? data.plan_json.weeks.find((w) => Number(w.week_number) === 1) : null;
+      const inferredSessions = Math.min(5, Math.max(3, Array.isArray(firstWeek?.workouts) ? firstWeek.workouts.length : 3));
+      setDaysPerWeek(inferredSessions);
+      const inferredDays = Array.isArray(firstWeek?.workouts)
+        ? firstWeek.workouts
+            .map((wo) => Number(wo?.weekday))
+            .filter((n) => Number.isFinite(n) && n >= 1 && n <= 7)
+            .sort((a, b) => a - b)
+        : [];
+      if (inferredDays.length) {
+        setNextBlockParams((prev) => ({ ...prev, trainingDays: inferredDays }));
+      }
+    } else {
+      setGeneratedPlan(null);
+      setOpenWeeks(new Set());
+      setCurrentBlock(1);
+    }
+  }, [coachUserId, athleteId]);
+
+  useEffect(() => {
+    loadDraftForAthlete();
+  }, [loadDraftForAthlete]);
+
+  useEffect(() => {
+    if (!athleteId) return;
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from("athlete_evaluations")
+        .select("vdot")
+        .eq("athlete_id", athleteId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (cancelled || error) return;
+      const vdotVal = Number(data?.vdot);
+      if (!Number.isFinite(vdotVal) || vdotVal <= 0) return;
+      setNextBlockParams((prev) => {
+        if (prev.vdot && String(prev.vdot).trim() !== "") return prev;
+        return { ...prev, vdot: vdotVal.toFixed(2) };
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [athleteId]);
+
+  const handleToggleTrainingDay = (weekday) => {
+    setNextBlockParams((prev) => {
+      const exists = prev.trainingDays.includes(weekday);
+      if (exists && prev.trainingDays.length <= 3) {
+        notify("Debes mantener al menos 3 días de entrenamiento.");
+        return prev;
+      }
+      const nextDays = exists
+        ? prev.trainingDays.filter((d) => d !== weekday)
+        : [...prev.trainingDays, weekday].sort((a, b) => a - b);
+      const nextSessions = Math.min(5, Math.max(3, nextDays.length || 3));
+      setDaysPerWeek(nextSessions);
+      return { ...prev, trainingDays: nextDays };
+    });
+  };
+
+  const handleStartNextBlock = async () => {
+    const nextDate = formatLocalYMD(addDays(new Date(`${raceDate}T12:00:00`), 14));
+    const nextBlock = (Number(currentBlock) || 1) + 1;
+    const nextSessions = Math.min(5, Math.max(3, Number(nextBlockParams.trainingDays?.length) || 3));
+    setRaceDate(nextDate);
+    setCurrentBlock(nextBlock);
+    setDaysPerWeek(nextSessions);
+    setPlanAssignedSuccess(false);
+    await persistPlanDraft({
+      status: "draft",
+      planJson: generatedPlan,
+      raceDateValue: nextDate,
+      blockNumber: nextBlock,
+    });
+    notify("Siguiente bloque listo: fecha de carrera avanzada 2 semanas. Puedes ajustar parámetros y generar.");
+  };
+
+  const handleDaysPerWeekChange = (nextValue) => {
+    const requested = Number(nextValue);
+    if (!Number.isFinite(requested)) return;
+    const expected = getPlan2ExpectedSlots(requested).map((slot) => slot.weekday);
+    setDaysPerWeek(requested);
+    setNextBlockParams((prev) => ({ ...prev, trainingDays: expected }));
+  };
+
   const plan2SystemPrompt = `You are an elite running coach for ${BRAND_NAME}. Output ONLY compact valid JSON. No markdown, no code fences, no extra text.
 weekday: always 1=Monday .. 7=Sunday.
 
@@ -6936,11 +7094,19 @@ Rules:
 
   const plan2UserPrompt = useMemo(() => {
     const levelLabel = PLAN_12_LEVELS.find((l) => l.id === levelId)?.label || levelId;
+    const vdotLine = String(nextBlockParams.vdot || "").trim() || "N/A";
+    const notesLine = String(nextBlockParams.notes || "").trim() || "Sin notas adicionales";
+    const focusLine = String(nextBlockParams.focus || "").trim() || "Base";
     return `2-week running plan JSON only.
 
 Goal: ${competition} in ${targetTime}. Level: ${levelLabel}.
 Sessions per week (N): ${daysPerWeek} — same N in week 1 and week 2.
 Race date (week 2 contains this date): ${raceDate}
+Plan block number: ${currentBlock}
+Current athlete VDOT: ${vdotLine}
+Preferred training weekdays (1-7): ${selectedTrainingDaysText || "2,3,6"}
+Block focus: ${focusLine}
+Coach notes: ${notesLine}
 
 Follow the FIXED calendar exactly:
 - Martes weekday=2: rodaje largo → type "long"
@@ -6952,7 +7118,7 @@ Follow the FIXED calendar exactly:
 If N<5, drop sessions in order: first domingo (7), then jueves (4), then miércoles (3). N=4 → keep 2,3,4,6. N=3 → keep 2,3,6.
 
 Output 2 week objects with the correct ${daysPerWeek} workouts each; each workout: weekday, title, type, total_km, duration_min, short description.`;
-  }, [competition, targetTime, levelId, daysPerWeek, raceDate]);
+  }, [competition, targetTime, levelId, daysPerWeek, raceDate, currentBlock, selectedTrainingDaysText, nextBlockParams.vdot, nextBlockParams.focus, nextBlockParams.notes]);
 
   const generatePlan2 = async () => {
     const timeOk = /^\d{1,2}:\d{2}:\d{2}$/.test(String(targetTime || "").trim());
@@ -6972,7 +7138,6 @@ Output 2 week objects with the correct ${daysPerWeek} workouts each; each workou
     setPlanAssignedSuccess(false);
     setPlanEditModal(null);
     setPlanLoading(true);
-    setGeneratedPlan(null);
     try {
       const res = await fetch("/api/generate-workout", {
         method: "POST",
@@ -7009,8 +7174,15 @@ Output 2 week objects with the correct ${daysPerWeek} workouts each; each workou
         notify("El plan no respeta la distribución fija (martes largo, miércoles tempo, etc.). Reintenta la generación.");
         return;
       }
-      setGeneratedPlan({ ...parsed, weeks: orderedWeeks });
+      const normalizedPlan = { ...parsed, weeks: orderedWeeks };
+      setGeneratedPlan(normalizedPlan);
       setOpenWeeks(new Set([1, 2]));
+      await persistPlanDraft({
+        status: "draft",
+        planJson: normalizedPlan,
+        raceDateValue: raceDate,
+        blockNumber: currentBlock,
+      });
       await incrementGenerationCounter();
       notify("Plan de 2 semanas generado ✓");
     } catch (e) {
@@ -7034,7 +7206,6 @@ Output 2 week objects with the correct ${daysPerWeek} workouts each; each workou
       alert("Indica la fecha de la carrera.");
       return;
     }
-    const selectedAthlete = (athletes || []).find((a) => String(a.id) === String(athleteId));
     if (!selectedAthlete?.id) {
       alert("No se encontró el atleta.");
       return;
@@ -7097,6 +7268,18 @@ Output 2 week objects with the correct ${daysPerWeek} workouts each; each workou
         return;
       }
 
+      await persistPlanDraft({
+        status: "assigned",
+        planJson: generatedPlan,
+        raceDateValue: raceDate,
+        blockNumber: currentBlock,
+      });
+
+      const expectedDays = getPlan2ExpectedSlots(daysPerWeek).map((slot) => slot.weekday);
+      setNextBlockParams((prev) => ({
+        ...prev,
+        trainingDays: expectedDays.length ? expectedDays : prev.trainingDays,
+      }));
       setPlanAssignedSuccess(true);
       onPlanAssigned?.();
 
@@ -7140,44 +7323,42 @@ Output 2 week objects with the correct ${daysPerWeek} workouts each; each workou
 
   const deletePlanWorkout = (weekNumber, workoutIndex, e) => {
     e?.stopPropagation?.();
-    setGeneratedPlan((prev) => {
-      if (!prev?.weeks) return prev;
-      return {
-        ...prev,
-        weeks: prev.weeks.map((w) => {
-          if (Number(w.week_number) !== weekNumber) return w;
-          return { ...w, workouts: (w.workouts || []).filter((_, i) => i !== workoutIndex) };
-        }),
-      };
-    });
+    if (!generatedPlan?.weeks) return;
+    const updated = {
+      ...generatedPlan,
+      weeks: generatedPlan.weeks.map((w) => {
+        if (Number(w.week_number) !== weekNumber) return w;
+        return { ...w, workouts: (w.workouts || []).filter((_, i) => i !== workoutIndex) };
+      }),
+    };
+    setGeneratedPlan(updated);
+    persistPlanDraft({ status: "draft", planJson: updated, raceDateValue: raceDate, blockNumber: currentBlock });
   };
 
   const savePlanEditModal = () => {
     if (!planEditModal || !generatedPlan) return;
     const { weekNumber, workoutIdx } = planEditModal;
-    setGeneratedPlan((prev) => {
-      if (!prev?.weeks) return prev;
-      return {
-        ...prev,
-        weeks: prev.weeks.map((w) => {
-          if (Number(w.week_number) !== weekNumber) return w;
-          const list = [...(w.workouts || [])];
-          const prevWo = workoutIdx !== "new" ? { ...(list[workoutIdx] || {}) } : {};
-          const merged = {
-            ...prevWo,
-            title: editDraft.title.trim() || "Entrenamiento",
-            type: editDraft.type,
-            total_km: Number(editDraft.total_km) || 0,
-            duration_min: Number(editDraft.duration_min) || 0,
-            weekday: Math.min(7, Math.max(1, Number(editDraft.weekday) || 1)),
-            description: typeof prevWo.description === "string" ? prevWo.description : "",
-          };
-          if (workoutIdx === "new") list.push(merged);
-          else list[workoutIdx] = merged;
-          return { ...w, workouts: list };
-        }),
-      };
-    });
+    const updated = {
+      ...generatedPlan,
+      weeks: generatedPlan.weeks.map((w) => {
+        if (Number(w.week_number) !== weekNumber) return w;
+        const list = [...(w.workouts || [])];
+        const prevWo = workoutIdx !== "new" ? { ...(list[workoutIdx] || {}) } : {};
+        const merged = {
+          ...prevWo,
+          title: editDraft.title.trim() || "Entrenamiento",
+          type: editDraft.type,
+          total_km: Number(editDraft.total_km) || 0,
+          duration_min: Number(editDraft.duration_min) || 0,
+          weekday: Math.min(7, Math.max(1, Number(editDraft.weekday) || 1)),
+          description: typeof prevWo.description === "string" ? prevWo.description : "",
+        };
+        if (workoutIdx === "new") list.push(merged);
+        else list[workoutIdx] = merged;
+        return { ...w, workouts: list };
+      }),
+    };
+    persistPlanDraft({ status: "draft", planJson: updated, raceDateValue: raceDate, blockNumber: currentBlock });
     setPlanEditModal(null);
   };
 
@@ -7205,6 +7386,10 @@ Output 2 week objects with the correct ${daysPerWeek} workouts each; each workou
         <div style={{ marginTop: 8, color: "#64748b", fontSize: ".8em", fontWeight: 600 }}>
           {isBasicPlan ? `${loadingGenerations ? "…" : monthGenerations} / 100 generaciones usadas este mes` : "Ilimitado"}
         </div>
+        <div style={{ marginTop: 4, color: "#64748b", fontSize: ".78em", fontWeight: 600 }}>
+          Bloque actual: {currentBlock}
+        </div>
+        {draftLoading ? <div style={{ marginTop: 4, color: "#94a3b8", fontSize: ".76em" }}>Cargando draft guardado…</div> : null}
       </div>
       {generationLimitMsg ? (
         <div style={{ ...S.card, marginBottom: 14, border: "1px solid rgba(245,158,11,.4)", background: "#fffbeb" }}>
@@ -7262,7 +7447,7 @@ Output 2 week objects with the correct ${daysPerWeek} workouts each; each workou
             </div>
             <div>
               <div style={labelStyle}>Sesiones por semana (3, 4 o 5)</div>
-              <select value={String(daysPerWeek)} onChange={(e) => setDaysPerWeek(Number(e.target.value))} style={inputStyle}>
+              <select value={String(daysPerWeek)} onChange={(e) => handleDaysPerWeekChange(e.target.value)} style={inputStyle}>
                 {[3, 4, 5].map((d) => (
                   <option key={d} value={String(d)}>{d} sesiones</option>
                 ))}
@@ -7313,35 +7498,95 @@ Output 2 week objects with the correct ${daysPerWeek} workouts each; each workou
                 {assignLoading ? "Guardando…" : "Asignar Plan al Atleta"}
               </button>
             )}
-            {planAssignedSuccess && (
-              <button
-                type="button"
-                onClick={() => {
-                  setPlanAssignedSuccess(false);
-                  setPlanEditModal(null);
-                  setGeneratedPlan(null);
-                  setOpenWeeks(new Set());
-                  const next = addDays(new Date(`${raceDate}T12:00:00`), 14);
-                  setRaceDate(formatLocalYMD(next));
-                  notify("Siguiente bloque: fecha de carrera avanzada 2 semanas. Genera el plan con IA cuando quieras.");
-                }}
-                style={{
-                  width: "100%",
-                  marginTop: 4,
-                  background: "rgba(34,197,94,.12)",
-                  border: "1px solid rgba(34,197,94,.4)",
-                  borderRadius: 8,
-                  padding: "12px 16px",
-                  color: "#4ade80",
-                  fontWeight: 800,
-                  cursor: "pointer",
-                  fontSize: ".85em",
-                  fontFamily: "inherit",
-                }}
-              >
-                ⚡ Generar Siguiente Bloque
-              </button>
-            )}
+            {planAssignedSuccess ? (
+              <div style={{ marginTop: 4, padding: 12, borderRadius: 10, border: "1px solid rgba(14,116,144,.35)", background: "rgba(14,116,144,.08)" }}>
+                <div style={{ color: "#0f172a", fontSize: ".78em", fontWeight: 800, marginBottom: 10 }}>Parámetros del siguiente bloque</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  <div>
+                    <div style={labelStyle}>VDOT actual del atleta</div>
+                    <input
+                      type="number"
+                      min={0}
+                      step={0.1}
+                      value={nextBlockParams.vdot}
+                      onChange={(e) => setNextBlockParams((prev) => ({ ...prev, vdot: e.target.value }))}
+                      placeholder="Ej: 48.2"
+                      style={inputStyle}
+                    />
+                  </div>
+                  <div>
+                    <div style={labelStyle}>Días de entrenamiento</div>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      {PLAN2_TRAINING_DAY_OPTIONS.map((day) => {
+                        const active = nextBlockParams.trainingDays.includes(day.weekday);
+                        return (
+                          <button
+                            key={day.weekday}
+                            type="button"
+                            onClick={() => handleToggleTrainingDay(day.weekday)}
+                            style={{
+                              borderRadius: 999,
+                              border: active ? "1px solid rgba(14,116,144,.45)" : "1px solid #cbd5e1",
+                              background: active ? "rgba(14,116,144,.2)" : "#fff",
+                              color: active ? "#0e7490" : "#475569",
+                              padding: "6px 10px",
+                              fontWeight: 700,
+                              fontSize: ".75em",
+                              cursor: "pointer",
+                              fontFamily: "inherit",
+                            }}
+                          >
+                            {day.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={labelStyle}>Enfoque del bloque</div>
+                    <select
+                      value={nextBlockParams.focus}
+                      onChange={(e) => setNextBlockParams((prev) => ({ ...prev, focus: e.target.value }))}
+                      style={inputStyle}
+                    >
+                      {PLAN2_NEXT_BLOCK_FOCUSES.map((focus) => (
+                        <option key={focus} value={focus}>
+                          {focus}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <div style={labelStyle}>Notas adicionales para el coach</div>
+                    <textarea
+                      value={nextBlockParams.notes}
+                      onChange={(e) => setNextBlockParams((prev) => ({ ...prev, notes: e.target.value }))}
+                      rows={3}
+                      placeholder="Contexto extra para el siguiente bloque"
+                      style={{ ...inputStyle, resize: "vertical", minHeight: 88 }}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleStartNextBlock}
+                    style={{
+                      width: "100%",
+                      background: "rgba(34,197,94,.12)",
+                      border: "1px solid rgba(34,197,94,.4)",
+                      borderRadius: 8,
+                      padding: "12px 16px",
+                      color: "#15803d",
+                      fontWeight: 800,
+                      cursor: "pointer",
+                      fontSize: ".85em",
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    ⚡ Generar Siguiente Bloque
+                  </button>
+                </div>
+              </div>
+            ) : null}
           </div>
         </div>
 
