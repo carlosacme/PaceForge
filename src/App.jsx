@@ -7036,17 +7036,16 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, onGoToPlans, onP
     if (data?.level) setLevelId(String(data.level));
     if (data?.plan_json) {
       setGeneratedPlan(data.plan_json);
+      setTimeout(() => setOpenWeeks(new Set([1, 2])), 100);
       setDraftStatus(String(data.status || ""));
       const weeks = Array.isArray(data.plan_json?.weeks) ? data.plan_json.weeks : [];
-      const opened = new Set([1, 2, ...weeks.map((w) => Number(w.week_number)).filter((n) => Number.isFinite(n) && n > 0)]);
-      setOpenWeeks(opened);
       if (data.race_date) {
         const loadedRaceDate = String(data.race_date);
         raceDateRef.current = loadedRaceDate;
         setRaceDate(loadedRaceDate);
       }
       setCurrentBlock(Number(data.block_number) || 1);
-      const firstWeek = Array.isArray(data.plan_json?.weeks) ? data.plan_json.weeks.find((w) => Number(w.week_number) === 1) : null;
+      const firstWeek = weeks.find((w) => Number(w.week_number) === 1);
       const inferredSessions = Math.min(5, Math.max(3, Array.isArray(firstWeek?.workouts) ? firstWeek.workouts.length : 3));
       setDaysPerWeek(inferredSessions);
       const inferredDays = Array.isArray(firstWeek?.workouts)
@@ -7118,8 +7117,27 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, onGoToPlans, onP
   };
 
   const handleStartNextBlock = async () => {
-    const nextDate = formatLocalYMD(addDays(new Date(`${raceDate}T12:00:00`), 14));
-    const nextBlock = (Number(currentBlock) || 1) + 1;
+    const athleteNumericId = Number(athleteId);
+    if (!Number.isFinite(athleteNumericId) || athleteNumericId <= 0) {
+      notify("Selecciona un atleta válido para avanzar de bloque.");
+      return;
+    }
+    const { data: lastAssigned, error: lastAssignedError } = await supabase
+      .from("plan_drafts")
+      .select("block_number")
+      .eq("athlete_id", athleteNumericId)
+      .eq("status", "assigned")
+      .order("block_number", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (lastAssignedError) {
+      console.error("plan_drafts assigned block load:", lastAssignedError);
+      notify("No se pudo obtener el último bloque asignado.");
+      return;
+    }
+    const assignedBlock = Number(lastAssigned?.block_number);
+    const nextBlock = Number.isFinite(assignedBlock) && assignedBlock > 0 ? assignedBlock + 1 : 1;
+    const nextDate = formatLocalYMD(addDays(new Date(`${raceDateRef.current || raceDate}T12:00:00`), 14));
     const nextSessions = Math.min(5, Math.max(3, Number(nextBlockParams.trainingDays?.length) || 3));
     raceDateRef.current = nextDate;
     setRaceDate(nextDate);
@@ -7281,7 +7299,7 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
       }
       const normalizedPlan = { ...parsed, weeks: orderedWeeks };
       setGeneratedPlan(normalizedPlan);
-      setOpenWeeks(new Set([1, 2]));
+      setTimeout(() => setOpenWeeks(new Set([1, 2])), 100);
       await persistPlanDraft({
         status: "draft",
         planJson: normalizedPlan,
@@ -7919,9 +7937,87 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
                             {isOpen ? (
                               <tr>
                                 <td colSpan={7} style={{ padding: "8px 6px 10px", borderBottom: "1px solid rgba(148,163,184,.2)" }}>
-                                  <pre style={{ margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-word", color: "#cbd5e1", background: "rgba(15,23,42,.45)", borderRadius: 8, padding: 10 }}>
-                                    {JSON.stringify(row.plan_json || {}, null, 2)}
-                                  </pre>
+                                  <div style={{ border: "1px solid #334155", borderRadius: 10, overflow: "hidden" }}>
+                                    <div style={{ padding: "10px 12px", background: "#f8fafc", color: "#0f172a", fontWeight: 700, fontSize: ".9em" }}>
+                                      {row.plan_json?.plan_title || "Plan 2 semanas"}
+                                    </div>
+                                    <div style={{ padding: "10px 12px", background: "rgba(0,0,0,.12)", display: "flex", flexDirection: "column", gap: 8 }}>
+                                      {weeks.length === 0 ? (
+                                        <div style={{ color: "#64748b", fontSize: ".82em" }}>Sin semanas registradas en este bloque.</div>
+                                      ) : (
+                                        [...weeks]
+                                          .sort((a, b) => (Number(a?.week_number) || 0) - (Number(b?.week_number) || 0))
+                                          .map((week, weekIdx) => {
+                                            const wn = Number(week?.week_number) || weekIdx + 1;
+                                            const workouts = Array.isArray(week?.workouts) ? week.workouts : [];
+                                            return (
+                                              <div key={`${rowKey}-${wn}`} style={{ border: "1px solid #e2e8f0", borderRadius: 10, overflow: "hidden" }}>
+                                                <div style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", background: "rgba(245,158,11,.1)", border: "none", color: "#0f172a", fontFamily: "inherit", fontWeight: 700, fontSize: ".88em", textAlign: "left" }}>
+                                                  <span>
+                                                    Semana {wn}
+                                                    {week?.focus ? <span style={{ color: "#64748b", fontWeight: 500 }}> · {week.focus}</span> : null}
+                                                  </span>
+                                                </div>
+                                                <div style={{ padding: "10px 14px 14px", background: "rgba(0,0,0,.12)" }}>
+                                                  {workouts.length === 0 ? (
+                                                    <div style={{ color: "#64748b", fontSize: ".82em" }}>Sin sesiones en esta semana.</div>
+                                                  ) : (
+                                                    workouts.map((wo, woIdx) => {
+                                                      const wd = Number(wo?.weekday) || 1;
+                                                      const dayName = DAYS[wd - 1] || `Día ${wd}`;
+                                                      const wt = WORKOUT_TYPES.find((t) => t.id === wo?.type) || WORKOUT_TYPES[0];
+                                                      return (
+                                                        <div
+                                                          key={`${rowKey}-${wn}-${woIdx}`}
+                                                          style={{
+                                                            marginBottom: woIdx === workouts.length - 1 ? 0 : 10,
+                                                            padding: 10,
+                                                            borderRadius: 8,
+                                                            background: "#f8fafc",
+                                                            borderLeft: `3px solid ${wt.color}`,
+                                                            display: "flex",
+                                                            gap: 10,
+                                                            alignItems: "flex-start",
+                                                          }}
+                                                        >
+                                                          <div style={{ flex: 1, minWidth: 0 }}>
+                                                            <div style={{ fontSize: ".78em", color: "#64748b", marginBottom: 4 }}>{dayName}</div>
+                                                            <div style={{ fontWeight: 700, color: "#0f172a", fontSize: ".88em" }}>{wo?.title || "Sin título"}</div>
+                                                            <div style={{ fontSize: ".76em", color: "#94a3b8", marginTop: 4 }}>
+                                                              {Number(wo?.total_km ?? wo?.km) || 0} km · {Number(wo?.duration_min) || 0} min · <span style={{ color: wt.color }}>{wt.label}</span>
+                                                            </div>
+                                                            {wo?.description ? <div style={{ fontSize: ".78em", color: "#cbd5e1", marginTop: 8, lineHeight: 1.45 }}>{wo.description}</div> : null}
+                                                          </div>
+                                                        </div>
+                                                      );
+                                                    })
+                                                  )}
+                                                </div>
+                                              </div>
+                                            );
+                                          })
+                                      )}
+                                    </div>
+                                    <div style={{ display: "flex", justifyContent: "flex-end", padding: "10px 12px", background: "rgba(15,23,42,.35)" }}>
+                                      <button
+                                        type="button"
+                                        onClick={() => toggleHistoryRow(rowKey)}
+                                        style={{
+                                          border: "1px solid #64748b",
+                                          background: "rgba(148,163,184,.18)",
+                                          color: "#e2e8f0",
+                                          borderRadius: 6,
+                                          padding: "6px 10px",
+                                          fontWeight: 700,
+                                          cursor: "pointer",
+                                          fontFamily: "inherit",
+                                          fontSize: ".82em",
+                                        }}
+                                      >
+                                        Cerrar
+                                      </button>
+                                    </div>
+                                  </div>
                                 </td>
                               </tr>
                             ) : null}
