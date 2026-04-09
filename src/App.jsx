@@ -460,6 +460,7 @@ const PLAN2_TRAINING_DAY_OPTIONS = [
   { weekday: 6, label: "Sáb" },
   { weekday: 7, label: "Dom" },
 ];
+const PLAN2_ATHLETE_STORAGE_KEY = "raf_plan2_athlete";
 
 /** Plantilla fija plan 2 semanas: omitir domingo, luego jueves, luego miércoles si N<5 */
 const PLAN2_FIXED_SLOTS = [
@@ -6885,10 +6886,22 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, onGoToPlans, onP
   }, [loadGenerationCounter]);
 
   useEffect(() => {
-    if (athletes?.length && !athleteId) {
-      setAthleteId(String(athletes[0].id));
+    if (!athletes?.length || athleteId) return;
+    let saved = "";
+    if (typeof window !== "undefined") {
+      saved = String(localStorage.getItem(PLAN2_ATHLETE_STORAGE_KEY) || "").trim();
     }
+    if (saved && athletes.some((a) => String(a.id) === saved)) {
+      setAthleteId(saved);
+      return;
+    }
+    setAthleteId(String(athletes[0].id));
   }, [athletes, athleteId]);
+
+  useEffect(() => {
+    if (!athleteId || typeof window === "undefined") return;
+    localStorage.setItem(PLAN2_ATHLETE_STORAGE_KEY, String(athleteId));
+  }, [athleteId]);
 
   useEffect(() => {
     setPlanAssignedSuccess(false);
@@ -6994,8 +7007,9 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, onGoToPlans, onP
   }, [coachUserId, athleteId]);
 
   useEffect(() => {
+    if (!coachUserId || !athleteId) return;
     loadDraftForAthlete();
-  }, [loadDraftForAthlete]);
+  }, [coachUserId, athleteId, loadDraftForAthlete]);
 
   useEffect(() => {
     if (!athleteId) return;
@@ -7415,7 +7429,17 @@ Output 2 week objects with the correct ${daysPerWeek} workouts each; each workou
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             <div>
               <div style={labelStyle}>Atleta</div>
-              <select value={athleteId} onChange={(e) => setAthleteId(e.target.value)} style={inputStyle}>
+              <select
+                value={athleteId}
+                onChange={(e) => {
+                  const nextAthleteId = e.target.value;
+                  setAthleteId(nextAthleteId);
+                  if (typeof window !== "undefined" && nextAthleteId) {
+                    localStorage.setItem(PLAN2_ATHLETE_STORAGE_KEY, String(nextAthleteId));
+                  }
+                }}
+                style={inputStyle}
+              >
                 <option value="" disabled>{athletes?.length ? "Selecciona…" : "Sin atletas"}</option>
                 {(athletes || []).map((a) => (
                   <option key={a.id} value={String(a.id)}>{a.name}</option>
