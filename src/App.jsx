@@ -6788,8 +6788,8 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, onGoToPlans, onP
   const [targetTime, setTargetTime] = useState("");
   const [levelId, setLevelId] = useState("intermedio");
   const [daysPerWeek, setDaysPerWeek] = useState(3);
-  const [raceDate, setRaceDate] = useState(() => formatLocalYMD(addDays(new Date(), 14)));
-  const raceDateRef = useRef(raceDate);
+  const [startDate, setStartDate] = useState(() => formatLocalYMD(addDays(new Date(), 14)));
+  const startDateRef = useRef(startDate);
   const [generatedPlan, setGeneratedPlan] = useState(null);
   const [planLoading, setPlanLoading] = useState(false);
   const [assignLoading, setAssignLoading] = useState(false);
@@ -6850,8 +6850,8 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, onGoToPlans, onP
   );
 
   useEffect(() => {
-    raceDateRef.current = raceDate;
-  }, [raceDate]);
+    startDateRef.current = startDate;
+  }, [startDate]);
 
   const loadGenerationCounter = useCallback(async () => {
     if (!coachUserId) {
@@ -6902,13 +6902,29 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, onGoToPlans, onP
 
   const incrementGenerationCounter = useCallback(async () => {
     if (!coachUserId) return;
-    const nextCount = (Number(monthGenerations) || 0) + 1;
-    const { error: updErr } = await supabase
+    const { data: existing, error: selErr } = await supabase
       .from("ai_generations")
-      .update({ count: nextCount, updated_at: new Date().toISOString() })
+      .select("count")
       .eq("coach_id", coachUserId)
-      .eq("month", monthKey);
-    if (updErr) {
+      .eq("month", monthKey)
+      .maybeSingle();
+    if (selErr) {
+      console.error("ai_generations increment load (plan2):", selErr);
+      return;
+    }
+    const current = Number(existing?.count) || 0;
+    const nextCount = current + 1;
+    if (existing) {
+      const { error: updErr } = await supabase
+        .from("ai_generations")
+        .update({ count: nextCount, updated_at: new Date().toISOString() })
+        .eq("coach_id", coachUserId)
+        .eq("month", monthKey);
+      if (updErr) {
+        console.error("ai_generations increment update (plan2):", updErr);
+        return;
+      }
+    } else {
       const { error: insErr } = await supabase.from("ai_generations").insert({
         coach_id: coachUserId,
         month: monthKey,
@@ -6916,14 +6932,13 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, onGoToPlans, onP
         updated_at: new Date().toISOString(),
       });
       if (insErr) {
-        console.error("ai_generations increment (plan2):", insErr);
+        console.error("ai_generations increment insert (plan2):", insErr);
         return;
       }
-      setMonthGenerations(1);
-      return;
     }
     setMonthGenerations(nextCount);
-  }, [coachUserId, monthGenerations, monthKey]);
+    await loadGenerationCounter();
+  }, [coachUserId, monthKey, loadGenerationCounter]);
 
   useEffect(() => {
     loadGenerationCounter();
@@ -6984,7 +6999,7 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, onGoToPlans, onP
   };
 
   const persistPlanDraft = useCallback(
-    async ({ status = "draft", planJson, raceDateValue, blockNumber } = {}) => {
+    async ({ status = "draft", planJson, startDateValue, blockNumber } = {}) => {
       if (!coachUserId || !athleteId) return;
       const athleteNumericId = Number(athleteId);
       if (!Number.isFinite(athleteNumericId)) return;
@@ -6993,7 +7008,7 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, onGoToPlans, onP
         coach_id: coachUserId,
         athlete_id: athleteNumericId,
         plan_json: planJson || generatedPlan || { plan_title: "Plan 2 semanas", weeks: [] },
-        race_date: raceDateValue || raceDateRef.current || null,
+        race_date: startDateValue || startDateRef.current || null,
         block_number: Number.isFinite(Number(blockNumber)) ? Number(blockNumber) : Number(currentBlock) || 1,
         competition: competition || null,
         target_time: targetTime || null,
@@ -7042,9 +7057,9 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, onGoToPlans, onP
       setDraftStatus(String(data.status || ""));
       const weeks = Array.isArray(data.plan_json?.weeks) ? data.plan_json.weeks : [];
       if (data.race_date) {
-        const loadedRaceDate = String(data.race_date);
-        raceDateRef.current = loadedRaceDate;
-        setRaceDate(loadedRaceDate);
+        const loadedStartDate = String(data.race_date);
+        startDateRef.current = loadedStartDate;
+        setStartDate(loadedStartDate);
       }
       setCurrentBlock(Number(data.block_number) || 1);
       const firstWeek = weeks.find((w) => Number(w.week_number) === 1);
@@ -7139,10 +7154,10 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, onGoToPlans, onP
     }
     const assignedBlock = Number(lastAssigned?.block_number);
     const nextBlock = Number.isFinite(assignedBlock) && assignedBlock > 0 ? assignedBlock + 1 : 1;
-    const nextDate = formatLocalYMD(addDays(new Date(`${raceDateRef.current || raceDate}T12:00:00`), 14));
+    const nextDate = formatLocalYMD(addDays(new Date(`${startDateRef.current || startDate}T12:00:00`), 14));
     const nextSessions = Math.min(5, Math.max(3, Number(nextBlockParams.trainingDays?.length) || 3));
-    raceDateRef.current = nextDate;
-    setRaceDate(nextDate);
+    startDateRef.current = nextDate;
+    setStartDate(nextDate);
     setCurrentBlock(nextBlock);
     setDaysPerWeek(nextSessions);
     setPlanAssignedSuccess(false);
@@ -7154,10 +7169,10 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, onGoToPlans, onP
     await persistPlanDraft({
       status: "draft",
       planJson: blankPlan,
-      raceDateValue: nextDate,
+      startDateValue: nextDate,
       blockNumber: nextBlock,
     });
-    notify(`Bloque ${nextBlock} listo: fecha de carrera avanzada 2 semanas. Ajusta parámetros y genera con IA.`);
+    notify(`Bloque ${nextBlock} listo: fecha de inicio avanzada 2 semanas. Ajusta parámetros y genera con IA.`);
   };
 
   const handleDaysPerWeekChange = (nextValue) => {
@@ -7172,6 +7187,8 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, onGoToPlans, onP
 
   const plan2UserPrompt = useMemo(() => {
     const vdot = Number(nextBlockParams.vdot) || 40;
+    const blockNumber = Number(currentBlock) || 1;
+    const blockStartDate = startDate;
 
     // Calcular ritmos Jack Daniels según VDOT
     const paces = {
@@ -7189,31 +7206,39 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, onGoToPlans, onP
       : competitionText.includes("5") ? 18 : 25;
 
     // Fase del plan según número de bloque
-    const phase = currentBlock <= 2 ? "BASE (aerobic foundation, easy runs dominate, build volume gradually)"
-      : currentBlock <= 4 ? "BUILDING (introduce tempo runs, increase volume 10% from previous block)"
-      : currentBlock <= 6 ? "DEVELOPMENT (threshold work, interval sessions, peak volume)"
-      : currentBlock <= 8 ? "PEAK (race-specific workouts, highest intensity, maintain volume)"
+    const phase = blockNumber <= 2 ? "BASE (aerobic foundation, easy runs dominate, build volume gradually)"
+      : blockNumber <= 4 ? "BUILDING (introduce tempo runs, increase volume 10% from previous block)"
+      : blockNumber <= 6 ? "DEVELOPMENT (threshold work, interval sessions, peak volume)"
+      : blockNumber <= 8 ? "PEAK (race-specific workouts, highest intensity, maintain volume)"
       : "TAPER (reduce volume 20-30%, maintain intensity, prepare for race)";
 
     // Semana 2 es race week solo en el último bloque
-    const week2Type = currentBlock >= 8 ? "RACE WEEK: reduce volume 40%, only easy runs + strides, race on race date"
+    const week2Type = blockNumber >= 8 ? "RACE WEEK: reduce volume 40%, only easy runs + strides, race on race date"
       : "CONSOLIDATION WEEK: same focus as week 1 but slightly higher volume (+10%) or higher quality";
-
-    const raceDateMs = raceDate ? new Date(raceDate).getTime() : Number.NaN;
-    const weeksToRace = Number.isFinite(raceDateMs)
-      ? Math.round((raceDateMs - Date.now()) / (7 * 24 * 60 * 60 * 1000))
-      : "unknown";
 
     return `Generate a 2-week running training block as JSON only.
 IMPORTANT: Respond entirely in Spanish. All fields including plan_title, focus, title, and description MUST be in Spanish. Do not use English in any field.
 
 ATHLETE PROFILE:
-- Goal race: ${competition} on ${raceDate} (${weeksToRace} weeks away)
+- Goal race: ${competition}
 - Target time: ${targetTime}
 - Current VDOT: ${vdot}
 - Level: ${levelLabel}
 - Training days per week: ${daysPerWeek}
+- Block start date: ${blockStartDate}. Week 1 starts on this date, week 2 starts 7 days later.
 - Preferred weekdays (1=Mon..7=Sun): ${selectedTrainingDaysText || "2,3,4,6,7"}
+
+CRITICAL: This is block number ${blockNumber}. Each block MUST be progressively harder than the previous one:
+- Block 1-2: Base phase, easy runs dominate (70% easy, 30% quality), low volume
+- Block 3-4: Building phase, introduce tempo (60% easy, 40% quality), +10% volume
+- Block 5-6: Development phase, threshold + intervals (50% easy, 50% quality), +20% volume
+- Block 7-8: Peak phase, race-specific work (40% easy, 60% quality), +25% volume
+- Block 9+: Taper phase, reduce volume 30%, maintain intensity
+For a ${levelLabel} athlete targeting ${competition} in ${targetTime}:
+- Beginner: start week 1 at 60% of race distance total, increase 10% per block
+- Intermediate: start at 80% of race distance total, increase 8% per block
+- Advanced: start at 100% of race distance total, increase 5% per block
+Block ${blockNumber} volume target per session: adjust ALL km values according to block progression above.
 
 TRAINING PACES (use these EXACTLY in descriptions):
 - Easy/Recovery pace: ${paces.easy}
@@ -7222,7 +7247,7 @@ TRAINING PACES (use these EXACTLY in descriptions):
 - Recovery run pace: ${paces.recovery}
 
 PERIODIZATION:
-- Block number: ${currentBlock} of ~10 total blocks
+- Block number: ${blockNumber} of ~10 total blocks
 - Current phase: ${phase}
 - Weekly volume target: ~${baseKmWeekly} km (adjust ±15% based on phase)
 - Week 1: ${nextBlockParams.focus || phase}
@@ -7248,7 +7273,7 @@ OUTPUT JSON SCHEMA:
 {"plan_title":"string","weeks":[{"week_number":1,"focus":"string","workouts":[{"weekday":2,"title":"string","type":"long|tempo|recovery|interval","total_km":0,"duration_min":0,"description":"Include specific pace, sets/reps for intervals, warmup/cooldown"}]}]}
 
 Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays both weeks, all numeric fields must be numbers, description must include specific paces from above.`;
-  }, [competition, targetTime, levelLabel, daysPerWeek, raceDate, currentBlock, nextBlockParams, selectedTrainingDaysText]);
+  }, [competition, targetTime, levelLabel, daysPerWeek, startDate, currentBlock, nextBlockParams, selectedTrainingDaysText]);
 
   const generatePlan2 = async () => {
     const timeOk = /^\d{1,2}:\d{2}:\d{2}$/.test(String(targetTime || "").trim());
@@ -7311,10 +7336,11 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
       await persistPlanDraft({
         status: "draft",
         planJson: normalizedPlan,
-        raceDateValue: raceDate,
+        startDateValue: startDate,
         blockNumber: currentBlock,
       });
       await incrementGenerationCounter();
+      await loadGenerationCounter();
       notify("Plan de 2 semanas generado ✓");
     } catch (e) {
       console.error(e);
@@ -7333,8 +7359,8 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
       alert("Selecciona un atleta.");
       return;
     }
-    if (!raceDate) {
-      alert("Indica la fecha de la carrera.");
+    if (!startDate) {
+      alert("Indica la fecha de inicio del bloque.");
       return;
     }
     if (!selectedAthlete?.id) {
@@ -7342,9 +7368,7 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
       return;
     }
 
-    const race = new Date(`${raceDate}T12:00:00`);
-    const raceMonday = startOfWeekMonday(race);
-    const planStartMonday = addDays(raceMonday, -1 * 7);
+    const blockStart = new Date(`${startDate}T12:00:00`);
 
     const rows = [];
     for (const week of generatedPlan.weeks) {
@@ -7356,7 +7380,7 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
         if (!Number.isFinite(wd) || wd < 1) wd = 1;
         if (wd > 7) wd = 7;
         const offsetDays = (wn - 1) * 7 + (wd - 1);
-        const sessionDate = addDays(planStartMonday, offsetDays);
+        const sessionDate = addDays(blockStart, offsetDays);
         const scheduled_date = formatLocalYMD(sessionDate);
         const typeRaw = wo.type || "easy";
         const type = WORKOUT_TYPES.some((t) => t.id === typeRaw) ? typeRaw : "easy";
@@ -7402,7 +7426,7 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
       await persistPlanDraft({
         status: "assigned",
         planJson: generatedPlan,
-        raceDateValue: raceDate,
+        startDateValue: startDate,
         blockNumber: currentBlock,
       });
 
@@ -7434,7 +7458,7 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
                 <h2>Hola ${selectedAthlete.name} 👋</h2>
                 <p>Tu coach te ha asignado un <strong>plan de 2 semanas</strong> en ${BRAND_NAME}.</p>
                 <p><strong>Objetivo:</strong> ${competition} en ${targetTime}<br/>
-                <strong>Carrera:</strong> ${raceDate}</p>
+                <strong>Inicio de bloque:</strong> ${startDate}</p>
                 <p><strong>${generatedPlan.plan_title || "Plan personalizado"}</strong></p>
                 <ul>${weekSummary}</ul>
                 <p>Total: <strong>${rows.length}</strong> entrenamientos cargados en tu calendario.</p>
@@ -7464,7 +7488,7 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
       }),
     };
     setGeneratedPlan(updated);
-    persistPlanDraft({ status: "draft", planJson: updated, raceDateValue: raceDate, blockNumber: currentBlock });
+    persistPlanDraft({ status: "draft", planJson: updated, startDateValue: startDate, blockNumber: currentBlock });
   };
 
   const savePlanEditModal = () => {
@@ -7490,7 +7514,7 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
         return { ...w, workouts: list };
       }),
     };
-    persistPlanDraft({ status: "draft", planJson: updated, raceDateValue: raceDate, blockNumber: currentBlock });
+    persistPlanDraft({ status: "draft", planJson: updated, startDateValue: startDate, blockNumber: currentBlock });
     setPlanEditModal(null);
   };
 
@@ -7514,6 +7538,30 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
       else next.add(rowKey);
       return next;
     });
+  };
+
+  const clearBlockHistory = async () => {
+    if (!athleteId) return;
+    const athleteNumericId = Number(athleteId);
+    if (!Number.isFinite(athleteNumericId) || athleteNumericId <= 0) return;
+    const { error } = await supabase
+      .from("plan_drafts")
+      .delete()
+      .eq("athlete_id", athleteNumericId);
+    if (error) {
+      console.error("plan_drafts clear history:", error);
+      notify("No se pudo limpiar el historial.");
+      return;
+    }
+    setCurrentBlock(1);
+    setGeneratedPlan(null);
+    setDraftStatus("");
+    setPlanAssignedSuccess(false);
+    setShowNextBlockPanel(false);
+    setOpenWeeks(new Set());
+    setOpenHistoryRows(new Set());
+    await loadBlockHistory();
+    notify("Historial de bloques limpiado.");
   };
 
   return (
@@ -7604,8 +7652,8 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
               </select>
             </div>
             <div>
-              <div style={labelStyle}>Fecha de la carrera objetivo</div>
-              <input type="date" value={raceDate} onChange={(e) => setRaceDate(e.target.value)} style={inputStyle} />
+              <div style={labelStyle}>Fecha de inicio del bloque</div>
+              <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} style={inputStyle} />
             </div>
             <button
               type="button"
@@ -7916,7 +7964,26 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
           )}
           {athleteId ? (
             <div style={{ marginTop: 18, borderTop: "1px solid #e2e8f0", paddingTop: 14 }}>
-              <div style={{ fontSize: ".9em", fontWeight: 800, color: "#0f172a", marginBottom: 10 }}>📋 Historial de bloques</div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                <div style={{ fontSize: ".9em", fontWeight: 800, color: "#0f172a" }}>📋 Historial de bloques</div>
+                <button
+                  type="button"
+                  onClick={clearBlockHistory}
+                  style={{
+                    border: "1px solid rgba(239,68,68,.45)",
+                    background: "rgba(239,68,68,.12)",
+                    color: "#f87171",
+                    borderRadius: 6,
+                    padding: "5px 9px",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    fontSize: ".75em",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  🗑 Limpiar historial
+                </button>
+              </div>
               {historyLoading ? (
                 <div style={{ color: "#94a3b8", fontSize: ".8em" }}>Cargando historial…</div>
               ) : !blockHistory.length ? (
