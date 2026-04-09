@@ -6957,7 +6957,7 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, onGoToPlans, onP
       .select("*")
       .eq("coach_id", coachUserId)
       .eq("athlete_id", athleteNumericId)
-      .eq("status", "draft")
+      .in("status", ["draft", "assigned"])
       .maybeSingle();
     setDraftLoading(false);
     if (error) {
