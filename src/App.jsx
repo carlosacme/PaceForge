@@ -6953,9 +6953,13 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, onGoToPlans, onP
         status,
         updated_at: new Date().toISOString(),
       };
-      const { error } = await supabase.from("plan_drafts").upsert(payload, { onConflict: "coach_id,athlete_id" });
-      if (error) {
-        console.error("plan_drafts upsert:", error);
+      const { data: upsertData, error: upsertError } = await supabase
+        .from("plan_drafts")
+        .upsert(payload, { onConflict: "coach_id,athlete_id" })
+        .select("*");
+      console.log("[persistPlanDraft] resultado upsert:", { data: upsertData, error: upsertError });
+      if (upsertError) {
+        console.error("plan_drafts upsert:", upsertError);
       }
     },
     [coachUserId, athleteId, generatedPlan, raceDate, currentBlock],
@@ -6972,7 +6976,8 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, onGoToPlans, onP
       .select("*")
       .eq("coach_id", coachUserId)
       .eq("athlete_id", athleteNumericId)
-      .in("status", ["draft", "assigned"])
+      .order("updated_at", { ascending: false })
+      .limit(1)
       .maybeSingle();
     console.log("[plan_drafts] resultado:", { data, error });
     setDraftLoading(false);
