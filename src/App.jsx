@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { Fragment, useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { jsPDF } from "jspdf";
 import { supabase } from "./lib/supabase";
 import {
@@ -6808,6 +6808,9 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, onGoToPlans, onP
   const [generationLimitMsg, setGenerationLimitMsg] = useState("");
   const [draftLoading, setDraftLoading] = useState(false);
   const [draftStatus, setDraftStatus] = useState("");
+  const [blockHistory, setBlockHistory] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [openHistoryRows, setOpenHistoryRows] = useState(() => new Set());
   const [currentBlock, setCurrentBlock] = useState(1);
   const [nextBlockParams, setNextBlockParams] = useState({
     vdot: "",
@@ -6868,6 +6871,33 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, onGoToPlans, onP
     }
     setMonthGenerations(Number(data?.count) || 0);
   }, [coachUserId, monthKey]);
+
+  const loadBlockHistory = useCallback(async () => {
+    if (!athleteId) {
+      setBlockHistory([]);
+      setOpenHistoryRows(new Set());
+      return;
+    }
+    const athleteNumericId = Number(athleteId);
+    if (!Number.isFinite(athleteNumericId)) {
+      setBlockHistory([]);
+      setOpenHistoryRows(new Set());
+      return;
+    }
+    setHistoryLoading(true);
+    const { data, error } = await supabase
+      .from("plan_drafts")
+      .select("*")
+      .eq("athlete_id", athleteNumericId)
+      .order("created_at", { ascending: true });
+    setHistoryLoading(false);
+    if (error) {
+      console.error("plan_drafts history:", error);
+      return;
+    }
+    setBlockHistory(Array.isArray(data) ? data : []);
+    setOpenHistoryRows(new Set());
+  }, [athleteId]);
 
   const incrementGenerationCounter = useCallback(async () => {
     if (!coachUserId) return;
@@ -7008,8 +7038,8 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, onGoToPlans, onP
       setGeneratedPlan(data.plan_json);
       setDraftStatus(String(data.status || ""));
       const weeks = Array.isArray(data.plan_json?.weeks) ? data.plan_json.weeks : [];
-      const opened = new Set(weeks.map((w) => Number(w.week_number)).filter((n) => Number.isFinite(n) && n > 0));
-      setOpenWeeks(opened.size ? opened : new Set([1, 2]));
+      const opened = new Set([1, 2, ...weeks.map((w) => Number(w.week_number)).filter((n) => Number.isFinite(n) && n > 0)]);
+      setOpenWeeks(opened);
       if (data.race_date) {
         const loadedRaceDate = String(data.race_date);
         raceDateRef.current = loadedRaceDate;
@@ -7042,6 +7072,10 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, onGoToPlans, onP
     if (!Number.isFinite(numId) || numId <= 0) return;
     loadDraftForAthlete();
   }, [coachUserId, athleteId, loadDraftForAthlete]);
+
+  useEffect(() => {
+    loadBlockHistory();
+  }, [loadBlockHistory]);
 
   useEffect(() => {
     if (!athleteId) return;
@@ -7146,7 +7180,7 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, onGoToPlans, onP
       : "unknown";
 
     return `Generate a 2-week running training block as JSON only.
-Output plan_title, focus fields and all descriptions in Spanish only.
+IMPORTANT: Respond entirely in Spanish. All fields including plan_title, focus, title, and description MUST be in Spanish. Do not use English in any field.
 
 ATHLETE PROFILE:
 - Goal race: ${competition} on ${raceDate} (${weeksToRace} weeks away)
@@ -7353,6 +7387,7 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
       }));
       setPlanAssignedSuccess(true);
       onPlanAssigned?.();
+      await loadBlockHistory();
 
       if (selectedAthlete.email) {
         try {
@@ -7446,6 +7481,14 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
     boxSizing: "border-box",
   };
   const labelStyle = { fontSize: ".72em", color: "#64748b", marginBottom: 6 };
+  const toggleHistoryRow = (rowKey) => {
+    setOpenHistoryRows((prev) => {
+      const next = new Set(prev);
+      if (next.has(rowKey)) next.delete(rowKey);
+      else next.add(rowKey);
+      return next;
+    });
+  };
 
   return (
     <div style={S.page}>
@@ -7816,6 +7859,81 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
               </div>
             </>
           )}
+          {athleteId ? (
+            <div style={{ marginTop: 18, borderTop: "1px solid #e2e8f0", paddingTop: 14 }}>
+              <div style={{ fontSize: ".9em", fontWeight: 800, color: "#0f172a", marginBottom: 10 }}>📋 Historial de bloques</div>
+              {historyLoading ? (
+                <div style={{ color: "#94a3b8", fontSize: ".8em" }}>Cargando historial…</div>
+              ) : !blockHistory.length ? (
+                <div style={{ color: "#64748b", fontSize: ".8em" }}>Sin bloques guardados para este atleta.</div>
+              ) : (
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: ".76em", color: "#e2e8f0" }}>
+                    <thead>
+                      <tr style={{ background: "rgba(148,163,184,.12)" }}>
+                        <th style={{ textAlign: "left", padding: "8px 6px", borderBottom: "1px solid #334155" }}>Bloque #</th>
+                        <th style={{ textAlign: "left", padding: "8px 6px", borderBottom: "1px solid #334155" }}>Competencia</th>
+                        <th style={{ textAlign: "left", padding: "8px 6px", borderBottom: "1px solid #334155" }}>Fase/Focus</th>
+                        <th style={{ textAlign: "left", padding: "8px 6px", borderBottom: "1px solid #334155" }}>Semanas</th>
+                        <th style={{ textAlign: "left", padding: "8px 6px", borderBottom: "1px solid #334155" }}>Fecha asignado</th>
+                        <th style={{ textAlign: "left", padding: "8px 6px", borderBottom: "1px solid #334155" }}>Estado</th>
+                        <th style={{ textAlign: "left", padding: "8px 6px", borderBottom: "1px solid #334155" }}>Ver</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {blockHistory.map((row, idx) => {
+                        const rowKey = row.id || `hist-${idx}`;
+                        const isOpen = openHistoryRows.has(rowKey);
+                        const weeks = Array.isArray(row.plan_json?.weeks) ? row.plan_json.weeks : [];
+                        const focusText = weeks.find((w) => String(w?.focus || "").trim())?.focus || "—";
+                        const assignedDate = row.created_at ? new Date(row.created_at).toLocaleDateString("es-ES") : "—";
+                        return (
+                          <Fragment key={rowKey}>
+                            <tr>
+                              <td style={{ padding: "8px 6px", borderBottom: "1px solid rgba(148,163,184,.2)" }}>{Number(row.block_number) || idx + 1}</td>
+                              <td style={{ padding: "8px 6px", borderBottom: "1px solid rgba(148,163,184,.2)" }}>{row.competition || "—"}</td>
+                              <td style={{ padding: "8px 6px", borderBottom: "1px solid rgba(148,163,184,.2)" }}>{focusText}</td>
+                              <td style={{ padding: "8px 6px", borderBottom: "1px solid rgba(148,163,184,.2)" }}>{weeks.length || 0}</td>
+                              <td style={{ padding: "8px 6px", borderBottom: "1px solid rgba(148,163,184,.2)" }}>{assignedDate}</td>
+                              <td style={{ padding: "8px 6px", borderBottom: "1px solid rgba(148,163,184,.2)" }}>{row.status || "draft"}</td>
+                              <td style={{ padding: "8px 6px", borderBottom: "1px solid rgba(148,163,184,.2)" }}>
+                                <button
+                                  type="button"
+                                  onClick={() => toggleHistoryRow(rowKey)}
+                                  style={{
+                                    border: "1px solid rgba(245,158,11,.45)",
+                                    background: "rgba(245,158,11,.12)",
+                                    color: "#fbbf24",
+                                    borderRadius: 6,
+                                    padding: "4px 8px",
+                                    fontWeight: 700,
+                                    cursor: "pointer",
+                                    fontSize: ".95em",
+                                    fontFamily: "inherit",
+                                  }}
+                                >
+                                  👁 Ver
+                                </button>
+                              </td>
+                            </tr>
+                            {isOpen ? (
+                              <tr>
+                                <td colSpan={7} style={{ padding: "8px 6px 10px", borderBottom: "1px solid rgba(148,163,184,.2)" }}>
+                                  <pre style={{ margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-word", color: "#cbd5e1", background: "rgba(15,23,42,.45)", borderRadius: 8, padding: 10 }}>
+                                    {JSON.stringify(row.plan_json || {}, null, 2)}
+                                  </pre>
+                                </td>
+                              </tr>
+                            ) : null}
+                          </Fragment>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          ) : null}
         </div>
       </div>
 
