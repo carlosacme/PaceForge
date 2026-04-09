@@ -2541,6 +2541,7 @@ export default function App() {
             notify={notify}
             coachUserId={session?.user?.id ?? null}
             coachPlan={String(profile?.subscription_plan || athletes?.find((a) => a.plan)?.plan || "Basico")}
+            profileRole={profile?.role ?? ""}
             onGoToPlans={() => setView("plans")}
             onPlanAssigned={() => setWorkoutsRefresh((r) => r + 1)}
           />
@@ -2557,6 +2558,7 @@ export default function App() {
             notify={notify}
             coachUserId={session?.user?.id ?? null}
             coachPlan={String(profile?.subscription_plan || athletes?.find((a) => a.plan)?.plan || "Basico")}
+            profileRole={profile?.role ?? ""}
             onGoToPlans={() => setView("plans")}
             onWorkoutAssigned={() => setWorkoutsRefresh(r => r + 1)}
             onSavedToLibrary={() => setLibraryRefresh((r) => r + 1)}
@@ -6787,7 +6789,7 @@ function AthleteHome({ profile }) {
   );
 }
 
-function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, onGoToPlans, onPlanAssigned }) {
+function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, profileRole, onGoToPlans, onPlanAssigned }) {
   const S = styles;
   const [athleteId, setAthleteId] = useState(() => {
     if (typeof window === "undefined") return "";
@@ -6833,6 +6835,7 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, onGoToPlans, onP
     const p = String(coachPlan || "").toLowerCase();
     return p === "basico" || p === "básico" || p === "starter" || p === "";
   }, [coachPlan]);
+  const isAdminRole = profileRole === "admin";
   const competitionOptions = useMemo(
     () => ["Maratón", "Media Maratón", "10K", "5K", "Trail Running", "Otro"],
     [],
@@ -7314,9 +7317,14 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
       notify("El tiempo objetivo debe tener formato hh:mm:ss.");
       return;
     }
-    if (isBasicPlan && monthGenerations >= 100) {
-      setGenerationLimitMsg("Has alcanzado el límite de 100 generaciones del plan Básico. Actualiza al plan Pro para generaciones ilimitadas.");
-      return;
+    if (profileRole === "admin") {
+      // admin no tiene límite, saltar verificación
+    } else {
+      // verificar límite normal según plan
+      if (isBasicPlan && monthGenerations >= 100) {
+        setGenerationLimitMsg("Has alcanzado el límite de 100 generaciones del plan Básico. Actualiza al plan Pro para generaciones ilimitadas.");
+        return;
+      }
     }
     setGenerationLimitMsg("");
     setPlanAssignedSuccess(false);
@@ -7593,8 +7601,8 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
         <p style={{ color: "#475569", fontSize: ".82em", marginTop: 4 }}>
           Distribución fija: mar largo · mié tempo · jue recuperación · sáb intervalos · dom largo. Con menos de 5 sesiones se quitan primero domingo, luego jueves y miércoles. Semana 2 = semana de carrera.
         </p>
-        <div style={{ marginTop: 8, color: "#64748b", fontSize: ".8em", fontWeight: 600 }}>
-          {isBasicPlan ? `${loadingGenerations ? "…" : monthGenerations} / 100 generaciones usadas este mes` : "Ilimitado"}
+        <div style={{ marginTop: 8, color: isAdminRole ? "#16a34a" : "#64748b", fontSize: ".8em", fontWeight: 600 }}>
+          {isAdminRole ? "Generaciones ilimitadas ∞" : isBasicPlan ? `${loadingGenerations ? "…" : monthGenerations} / 100 generaciones usadas este mes` : "Ilimitado"}
         </div>
         <div style={{ marginTop: 4, color: "#64748b", fontSize: ".78em", fontWeight: 600 }}>
           Bloque actual: {currentBlock}
@@ -8667,7 +8675,7 @@ function WorkoutLibrary({ coachUserId, libraryRefresh, onUseWorkout, athletes, n
   );
 }
 
-function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiLoading, setAiLoading, notify, coachUserId, coachPlan, onGoToPlans, onWorkoutAssigned, onSavedToLibrary }) {
+function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiLoading, setAiLoading, notify, coachUserId, coachPlan, profileRole, onGoToPlans, onWorkoutAssigned, onSavedToLibrary }) {
   const S = styles;
   const [builderTab, setBuilderTab] = useState("ai");
   const [manualForm, setManualForm] = useState({
@@ -8692,6 +8700,7 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
     const p = String(coachPlan || "").toLowerCase();
     return p === "basico" || p === "básico" || p === "starter" || p === "";
   }, [coachPlan]);
+  const isAdminRole = profileRole === "admin";
 
   const loadGenerationCounter = useCallback(async () => {
     if (!coachUserId) {
@@ -8844,9 +8853,14 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
 
   const generateWorkout = async () => {
     if (!aiPrompt.trim()) return;
-    if (isBasicPlan && monthGenerations >= 100) {
-      setGenerationLimitMsg("Has alcanzado el límite de 100 generaciones del plan Básico. Actualiza al plan Pro para generaciones ilimitadas.");
-      return;
+    if (profileRole === "admin") {
+      // admin no tiene límite, saltar verificación
+    } else {
+      // verificar límite normal según plan
+      if (isBasicPlan && monthGenerations >= 100) {
+        setGenerationLimitMsg("Has alcanzado el límite de 100 generaciones del plan Básico. Actualiza al plan Pro para generaciones ilimitadas.");
+        return;
+      }
     }
     setGenerationLimitMsg("");
     setAiLoading(true);
@@ -8985,8 +8999,8 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
           </button>
         </div>
         {builderTab === "ai" ? (
-          <div style={{ marginTop: 10, color: "#64748b", fontSize: ".8em", fontWeight: 600 }}>
-            {isBasicPlan ? `${loadingGenerations ? "…" : monthGenerations} / 100 generaciones usadas este mes` : "Ilimitado"}
+          <div style={{ marginTop: 10, color: isAdminRole ? "#16a34a" : "#64748b", fontSize: ".8em", fontWeight: 600 }}>
+            {isAdminRole ? "Generaciones ilimitadas ∞" : isBasicPlan ? `${loadingGenerations ? "…" : monthGenerations} / 100 generaciones usadas este mes` : "Ilimitado"}
           </div>
         ) : null}
       </div>
@@ -9858,8 +9872,11 @@ function EvaluationView({ athletes, currentUserId, notify, athleteOnlyId = null 
 
 function AdminCoachesProfilesPanel({ notify, adminUserId }) {
   const S = styles;
+  const monthKey = useMemo(() => getCurrentMonthKey(), []);
   const [rows, setRows] = useState([]);
   const [emailByUserId, setEmailByUserId] = useState({});
+  const [generationsByCoachId, setGenerationsByCoachId] = useState({});
+  const [loadingGenerations, setLoadingGenerations] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busyKey, setBusyKey] = useState("");
 
@@ -9882,6 +9899,7 @@ function AdminCoachesProfilesPanel({ notify, adminUserId }) {
     const uids = list.map((r) => r.user_id).filter(Boolean);
     if (uids.length === 0) {
       setEmailByUserId({});
+      setGenerationsByCoachId({});
       setLoading(false);
       return;
     }
@@ -9897,9 +9915,22 @@ function AdminCoachesProfilesPanel({ notify, adminUserId }) {
         if (r.email) em[r.user_id] = String(r.email).toLowerCase();
       }
     }
+    setLoadingGenerations(true);
+    const { data: generationRows, error: generationsErr } = await supabase
+      .from("ai_generations")
+      .select("coach_id,count")
+      .eq("month", monthKey)
+      .in("coach_id", uids);
+    if (generationsErr) console.error("ai_generations admin list:", generationsErr);
+    const generationMap = {};
+    for (const row of generationRows || []) {
+      generationMap[row.coach_id] = Number(row.count) || 0;
+    }
+    setGenerationsByCoachId(generationMap);
+    setLoadingGenerations(false);
     setEmailByUserId(em);
     setLoading(false);
-  }, [notify]);
+  }, [notify, monthKey]);
 
   useEffect(() => {
     load();
@@ -9968,6 +9999,24 @@ function AdminCoachesProfilesPanel({ notify, adminUserId }) {
   const resetTrial = (uid) =>
     runAction("rst", uid, { plan_status: "trial", trial_started_at: new Date().toISOString() });
 
+  const resetCoachGenerations = async (uid, coachName) => {
+    const displayName = (coachName && String(coachName).trim()) || "coach";
+    if (typeof window !== "undefined" && !window.confirm(`¿Resetear generaciones de ${displayName}?`)) return;
+    setBusyKey(`gen-${uid}`);
+    const { error } = await supabase
+      .from("ai_generations")
+      .delete()
+      .eq("coach_id", uid)
+      .eq("month", monthKey);
+    setBusyKey("");
+    if (error) {
+      notify(error.message || "Error al resetear generaciones");
+      return;
+    }
+    setGenerationsByCoachId((prev) => ({ ...prev, [uid]: 0 }));
+    notify("Generaciones reseteadas ✓");
+  };
+
   const cell = { padding: "10px 12px", fontSize: ".78em", color: "#334155", borderBottom: "1px solid #e2e8f0" };
   const th = { ...cell, fontWeight: 800, color: "#64748b", background: "#f8fafc" };
 
@@ -9983,7 +10032,7 @@ function AdminCoachesProfilesPanel({ notify, adminUserId }) {
         <div style={{ color: "#94a3b8" }}>No hay coaches.</div>
       ) : (
         <div style={{ overflowX: "auto", border: "1px solid #e2e8f0", borderRadius: 12, background: "#fff" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 720 }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 860 }}>
             <thead>
               <tr>
                 <th style={th}>Nombre</th>
@@ -9991,13 +10040,15 @@ function AdminCoachesProfilesPanel({ notify, adminUserId }) {
                 <th style={th}>Estado</th>
                 <th style={th}>Días restantes trial</th>
                 <th style={th}>Fecha validación</th>
+                <th style={th}>Generaciones</th>
                 <th style={th}>Acciones</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((p) => {
                 const uid = p.user_id;
-                const busy = busyKey === `act-${uid}` || busyKey === `blk-${uid}` || busyKey === `rst-${uid}`;
+                const busy = busyKey === `act-${uid}` || busyKey === `blk-${uid}` || busyKey === `rst-${uid}` || busyKey === `gen-${uid}`;
+                const generationsThisMonth = Number(generationsByCoachId[uid]) || 0;
                 return (
                   <tr key={uid}>
                     <td style={cell}>{(p.name && String(p.name).trim()) || "—"}</td>
@@ -10005,6 +10056,29 @@ function AdminCoachesProfilesPanel({ notify, adminUserId }) {
                     <td style={cell}>{planBadge(p.plan_status || "—")}</td>
                     <td style={cell}>{trialCol(p)}</td>
                     <td style={cell}>{validatedCol(p)}</td>
+                    <td style={cell}>
+                      <div style={{ fontWeight: 700, color: "#0f172a", marginBottom: 8 }}>
+                        {loadingGenerations ? "…" : `${generationsThisMonth} este mes`}
+                      </div>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => resetCoachGenerations(uid, p.name)}
+                        style={{
+                          padding: "6px 10px",
+                          borderRadius: 8,
+                          border: "1px solid #bfdbfe",
+                          background: busy ? "#e2e8f0" : "#eff6ff",
+                          color: "#1d4ed8",
+                          fontWeight: 700,
+                          fontSize: ".72em",
+                          cursor: busy ? "not-allowed" : "pointer",
+                          fontFamily: "inherit",
+                        }}
+                      >
+                        🔄 Resetear
+                      </button>
+                    </td>
                     <td style={{ ...cell, whiteSpace: "nowrap" }}>
                       <button
                         type="button"
