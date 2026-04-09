@@ -6930,6 +6930,7 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, onGoToPlans, onP
       if (!coachUserId || !athleteId) return;
       const athleteNumericId = Number(athleteId);
       if (!Number.isFinite(athleteNumericId)) return;
+      console.log("[plan_drafts] guardando draft:", { status, athleteId, coachUserId });
       const payload = {
         coach_id: coachUserId,
         athlete_id: athleteNumericId,
@@ -6951,6 +6952,7 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, onGoToPlans, onP
     if (!coachUserId || !athleteId) return;
     const athleteNumericId = Number(athleteId);
     if (!Number.isFinite(athleteNumericId)) return;
+    console.log("[plan_drafts] cargando draft para:", { coachUserId, athleteId, athleteNumericId });
     setDraftLoading(true);
     const { data, error } = await supabase
       .from("plan_drafts")
@@ -6959,6 +6961,7 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, onGoToPlans, onP
       .eq("athlete_id", athleteNumericId)
       .in("status", ["draft", "assigned"])
       .maybeSingle();
+    console.log("[plan_drafts] resultado:", { data, error });
     setDraftLoading(false);
     if (error) {
       console.error("plan_drafts load:", error);
