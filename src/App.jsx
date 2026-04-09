@@ -6969,12 +6969,12 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, onGoToPlans, onP
     if (!coachUserId || !athleteId) return;
     const athleteNumericId = Number(athleteId);
     if (!Number.isFinite(athleteNumericId)) return;
+    console.log("[loadDraft DEBUG]", { coachUserId, athleteId, athleteNumericId });
     console.log("[plan_drafts] cargando draft para:", { coachUserId, athleteId, athleteNumericId });
     setDraftLoading(true);
     const { data, error } = await supabase
       .from("plan_drafts")
       .select("*")
-      .eq("coach_id", coachUserId)
       .eq("athlete_id", athleteNumericId)
       .order("updated_at", { ascending: false })
       .limit(1)
