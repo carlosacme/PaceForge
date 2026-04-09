@@ -7294,6 +7294,8 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
     setPlanEditModal(null);
     setPlanLoading(true);
     try {
+      console.log("[PROMPT DEBUG] currentBlock:", currentBlock, "levelLabel:", levelLabel, "blockNumber en prompt:", Number(currentBlock) || 1);
+      console.log("[PROMPT DEBUG] userPrompt primeros 500 chars:", plan2UserPrompt.substring(0, 500));
       const res = await fetch("/api/generate-workout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
