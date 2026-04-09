@@ -6789,6 +6789,7 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, onGoToPlans, onP
   const [levelId, setLevelId] = useState("intermedio");
   const [daysPerWeek, setDaysPerWeek] = useState(3);
   const [raceDate, setRaceDate] = useState(() => formatLocalYMD(addDays(new Date(), 14)));
+  const raceDateRef = useRef(raceDate);
   const [generatedPlan, setGeneratedPlan] = useState(null);
   const [planLoading, setPlanLoading] = useState(false);
   const [assignLoading, setAssignLoading] = useState(false);
@@ -6843,6 +6844,10 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, onGoToPlans, onP
     () => PLAN_12_LEVELS.find((l) => l.id === levelId)?.label || levelId,
     [levelId],
   );
+
+  useEffect(() => {
+    raceDateRef.current = raceDate;
+  }, [raceDate]);
 
   const loadGenerationCounter = useCallback(async () => {
     if (!coachUserId) {
@@ -6956,8 +6961,11 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, onGoToPlans, onP
         coach_id: coachUserId,
         athlete_id: athleteNumericId,
         plan_json: planJson || generatedPlan || { plan_title: "Plan 2 semanas", weeks: [] },
-        race_date: raceDateValue || raceDate || null,
+        race_date: raceDateValue || raceDateRef.current || null,
         block_number: Number.isFinite(Number(blockNumber)) ? Number(blockNumber) : Number(currentBlock) || 1,
+        competition: competition || null,
+        target_time: targetTime || null,
+        level: levelId || null,
         status,
         updated_at: new Date().toISOString(),
       };
@@ -6970,7 +6978,7 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, onGoToPlans, onP
         console.error("plan_drafts upsert:", upsertError);
       }
     },
-    [coachUserId, athleteId, generatedPlan, raceDate, currentBlock],
+    [coachUserId, athleteId, generatedPlan, currentBlock, competition, targetTime, levelId],
   );
 
   const loadDraftForAthlete = useCallback(async () => {
@@ -6993,13 +7001,20 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, onGoToPlans, onP
       console.error("plan_drafts load:", error);
       return;
     }
+    if (data?.competition) setCompetition(String(data.competition));
+    if (data?.target_time) setTargetTime(String(data.target_time));
+    if (data?.level) setLevelId(String(data.level));
     if (data?.plan_json) {
       setGeneratedPlan(data.plan_json);
       setDraftStatus(String(data.status || ""));
       const weeks = Array.isArray(data.plan_json?.weeks) ? data.plan_json.weeks : [];
       const opened = new Set(weeks.map((w) => Number(w.week_number)).filter((n) => Number.isFinite(n) && n > 0));
       setOpenWeeks(opened.size ? opened : new Set([1, 2]));
-      if (data.race_date) setRaceDate(String(data.race_date));
+      if (data.race_date) {
+        const loadedRaceDate = String(data.race_date);
+        raceDateRef.current = loadedRaceDate;
+        setRaceDate(loadedRaceDate);
+      }
       setCurrentBlock(Number(data.block_number) || 1);
       const firstWeek = Array.isArray(data.plan_json?.weeks) ? data.plan_json.weeks.find((w) => Number(w.week_number) === 1) : null;
       const inferredSessions = Math.min(5, Math.max(3, Array.isArray(firstWeek?.workouts) ? firstWeek.workouts.length : 3));
@@ -7072,6 +7087,7 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, onGoToPlans, onP
     const nextDate = formatLocalYMD(addDays(new Date(`${raceDate}T12:00:00`), 14));
     const nextBlock = (Number(currentBlock) || 1) + 1;
     const nextSessions = Math.min(5, Math.max(3, Number(nextBlockParams.trainingDays?.length) || 3));
+    raceDateRef.current = nextDate;
     setRaceDate(nextDate);
     setCurrentBlock(nextBlock);
     setDaysPerWeek(nextSessions);
@@ -7130,6 +7146,7 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, onGoToPlans, onP
       : "unknown";
 
     return `Generate a 2-week running training block as JSON only.
+Output plan_title, focus fields and all descriptions in Spanish only.
 
 ATHLETE PROFILE:
 - Goal race: ${competition} on ${raceDate} (${weeksToRace} weeks away)
