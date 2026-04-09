@@ -452,7 +452,7 @@ const PLAN_12_LEVELS = [
   { id: "intermedio", label: "Intermedio" },
   { id: "avanzado", label: "Avanzado" },
 ];
-const PLAN2_NEXT_BLOCK_FOCUSES = ["Base", "Tempo", "Intervalos", "Pico", "Recuperación"];
+const PLAN2_NEXT_BLOCK_FOCUSES = ["Base", "Construcción", "Desarrollo", "Pico", "Descarga"];
 const PLAN2_TRAINING_DAY_OPTIONS = [
   { weekday: 2, label: "Mar" },
   { weekday: 3, label: "Mié" },
@@ -6811,6 +6811,7 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, onGoToPlans, onP
   const [blockHistory, setBlockHistory] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [openHistoryRows, setOpenHistoryRows] = useState(() => new Set());
+  const [showNextBlockPanel, setShowNextBlockPanel] = useState(false);
   const [currentBlock, setCurrentBlock] = useState(1);
   const [nextBlockParams, setNextBlockParams] = useState({
     vdot: "",
@@ -6948,6 +6949,7 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, onGoToPlans, onP
 
   useEffect(() => {
     setPlanAssignedSuccess(false);
+    setShowNextBlockPanel(false);
   }, [athleteId]);
 
   useEffect(() => {
@@ -7144,13 +7146,18 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, onGoToPlans, onP
     setCurrentBlock(nextBlock);
     setDaysPerWeek(nextSessions);
     setPlanAssignedSuccess(false);
+    setDraftStatus("draft");
+    setShowNextBlockPanel(true);
+    setGeneratedPlan(null);
+    setOpenWeeks(new Set());
+    const blankPlan = { plan_title: `Bloque ${nextBlock}`, weeks: [] };
     await persistPlanDraft({
       status: "draft",
-      planJson: generatedPlan,
+      planJson: blankPlan,
       raceDateValue: nextDate,
       blockNumber: nextBlock,
     });
-    notify("Siguiente bloque listo: fecha de carrera avanzada 2 semanas. Puedes ajustar parámetros y generar.");
+    notify(`Bloque ${nextBlock} listo: fecha de carrera avanzada 2 semanas. Ajusta parámetros y genera con IA.`);
   };
 
   const handleDaysPerWeekChange = (nextValue) => {
@@ -7299,6 +7306,7 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
       }
       const normalizedPlan = { ...parsed, weeks: orderedWeeks };
       setGeneratedPlan(normalizedPlan);
+      setShowNextBlockPanel(false);
       setTimeout(() => setOpenWeeks(new Set([1, 2])), 100);
       await persistPlanDraft({
         status: "draft",
@@ -7641,98 +7649,127 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
               </button>
             )}
             {(planAssignedSuccess || draftStatus === "assigned") ? (
-              <div style={{ marginTop: 4, padding: 12, borderRadius: 10, border: "1px solid rgba(14,116,144,.35)", background: "rgba(14,116,144,.08)" }}>
-                <div style={{ color: "#0f172a", fontSize: ".78em", fontWeight: 800, marginBottom: 10 }}>Parámetros del siguiente bloque</div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  <div>
-                    <div style={labelStyle}>VDOT actual del atleta</div>
-                    <input
-                      type="number"
-                      min={0}
-                      step={0.1}
-                      value={nextBlockParams.vdot}
-                      onChange={(e) => setNextBlockParams((prev) => ({ ...prev, vdot: e.target.value }))}
-                      placeholder="Ej: 48.2"
-                      style={inputStyle}
-                    />
-                  </div>
-                  <div>
-                    <div style={labelStyle}>Días de entrenamiento</div>
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                      {PLAN2_TRAINING_DAY_OPTIONS.map((day) => {
-                        const active = nextBlockParams.trainingDays.includes(day.weekday);
-                        return (
-                          <button
-                            key={day.weekday}
-                            type="button"
-                            onClick={() => handleToggleTrainingDay(day.weekday)}
-                            style={{
-                              borderRadius: 999,
-                              border: active ? "1px solid rgba(14,116,144,.45)" : "1px solid #cbd5e1",
-                              background: active ? "rgba(14,116,144,.2)" : "#fff",
-                              color: active ? "#0e7490" : "#475569",
-                              padding: "6px 10px",
-                              fontWeight: 700,
-                              fontSize: ".75em",
-                              cursor: "pointer",
-                              fontFamily: "inherit",
-                            }}
-                          >
-                            {day.label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                  <div>
-                    <div style={labelStyle}>Enfoque del bloque</div>
-                    <select
-                      value={nextBlockParams.focus}
-                      onChange={(e) => setNextBlockParams((prev) => ({ ...prev, focus: e.target.value }))}
-                      style={inputStyle}
-                    >
-                      {PLAN2_NEXT_BLOCK_FOCUSES.map((focus) => (
-                        <option key={focus} value={focus}>
-                          {focus}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <div style={labelStyle}>Notas adicionales para el coach</div>
-                    <textarea
-                      value={nextBlockParams.notes}
-                      onChange={(e) => setNextBlockParams((prev) => ({ ...prev, notes: e.target.value }))}
-                      rows={3}
-                      placeholder="Contexto extra para el siguiente bloque"
-                      style={{ ...inputStyle, resize: "vertical", minHeight: 88 }}
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleStartNextBlock}
-                    style={{
-                      width: "100%",
-                      background: "rgba(34,197,94,.12)",
-                      border: "1px solid rgba(34,197,94,.4)",
-                      borderRadius: 8,
-                      padding: "12px 16px",
-                      color: "#15803d",
-                      fontWeight: 800,
-                      cursor: "pointer",
-                      fontSize: ".85em",
-                      fontFamily: "inherit",
-                    }}
-                  >
-                    ⚡ Generar Siguiente Bloque
-                  </button>
-                </div>
-              </div>
+              <button
+                type="button"
+                onClick={handleStartNextBlock}
+                style={{
+                  width: "100%",
+                  marginTop: 4,
+                  background: "rgba(34,197,94,.12)",
+                  border: "1px solid rgba(34,197,94,.4)",
+                  borderRadius: 8,
+                  padding: "12px 16px",
+                  color: "#15803d",
+                  fontWeight: 800,
+                  cursor: "pointer",
+                  fontSize: ".85em",
+                  fontFamily: "inherit",
+                }}
+              >
+                ⚡ Generar Siguiente Bloque
+              </button>
             ) : null}
           </div>
         </div>
 
         <div style={S.card}>
+          {showNextBlockPanel ? (
+            <div style={{ marginBottom: 16, padding: 12, borderRadius: 10, border: "1px solid rgba(14,116,144,.35)", background: "rgba(14,116,144,.08)" }}>
+              <div style={{ color: "#0f172a", fontSize: ".86em", fontWeight: 800, marginBottom: 10 }}>
+                ⚙️ Parámetros del Bloque {currentBlock}
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                <div>
+                  <div style={labelStyle}>VDOT actual</div>
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.1}
+                    value={nextBlockParams.vdot}
+                    onChange={(e) => setNextBlockParams((prev) => ({ ...prev, vdot: e.target.value }))}
+                    placeholder="Ej: 48.2"
+                    style={inputStyle}
+                  />
+                </div>
+                <div>
+                  <div style={labelStyle}>Días de entrenamiento</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 8 }}>
+                    {PLAN2_TRAINING_DAY_OPTIONS.map((day) => {
+                      const checked = nextBlockParams.trainingDays.includes(day.weekday);
+                      return (
+                        <label
+                          key={day.weekday}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 6,
+                            padding: "8px 10px",
+                            borderRadius: 8,
+                            border: "1px solid #cbd5e1",
+                            background: checked ? "rgba(14,116,144,.12)" : "#fff",
+                            color: checked ? "#0e7490" : "#475569",
+                            fontSize: ".78em",
+                            fontWeight: 700,
+                            cursor: "pointer",
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => handleToggleTrainingDay(day.weekday)}
+                          />
+                          {day.label}
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div>
+                  <div style={labelStyle}>Enfoque del bloque</div>
+                  <select
+                    value={nextBlockParams.focus}
+                    onChange={(e) => setNextBlockParams((prev) => ({ ...prev, focus: e.target.value }))}
+                    style={inputStyle}
+                  >
+                    {PLAN2_NEXT_BLOCK_FOCUSES.map((focus) => (
+                      <option key={focus} value={focus}>
+                        {focus}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <div style={labelStyle}>Notas del coach</div>
+                  <textarea
+                    value={nextBlockParams.notes}
+                    onChange={(e) => setNextBlockParams((prev) => ({ ...prev, notes: e.target.value }))}
+                    rows={3}
+                    placeholder="Contexto extra para el siguiente bloque"
+                    style={{ ...inputStyle, resize: "vertical", minHeight: 88 }}
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={generatePlan2}
+                  disabled={planLoading || !athletes?.length}
+                  style={{
+                    width: "100%",
+                    background: planLoading || !athletes?.length ? "#e2e8f0" : "linear-gradient(135deg,#0d9488,#14b8a6)",
+                    border: "none",
+                    borderRadius: 8,
+                    padding: "12px 16px",
+                    color: planLoading || !athletes?.length ? "#334155" : "white",
+                    fontWeight: 800,
+                    cursor: planLoading || !athletes?.length ? "not-allowed" : "pointer",
+                    fontSize: ".88em",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  {planLoading ? "⏳ Generando bloque…" : "🤖 Generar Bloque con IA"}
+                </button>
+              </div>
+            </div>
+          ) : null}
           <div style={{ fontSize: ".65em", letterSpacing: ".13em", color: "#475569", textTransform: "uppercase", marginBottom: 14 }}>Vista previa</div>
           {generatedPlan && (
             <p style={{ fontSize: ".78em", color: "#64748b", marginBottom: 12, marginTop: -6 }}>
