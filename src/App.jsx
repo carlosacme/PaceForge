@@ -7028,7 +7028,7 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, onGoToPlans, onP
       };
       const { data: upsertData, error: upsertError } = await supabase
         .from("plan_drafts")
-        .upsert(payload, { onConflict: "coach_id,athlete_id" })
+        .upsert(payload, { onConflict: "coach_id,athlete_id,block_number" })
         .select("*");
       console.log("[persistPlanDraft] resultado upsert:", { data: upsertData, error: upsertError });
       if (upsertError) {
