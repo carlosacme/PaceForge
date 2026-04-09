@@ -6780,7 +6780,10 @@ function AthleteHome({ profile }) {
 
 function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, onGoToPlans, onPlanAssigned }) {
   const S = styles;
-  const [athleteId, setAthleteId] = useState("");
+  const [athleteId, setAthleteId] = useState(() => {
+    if (typeof window === "undefined") return "";
+    return localStorage.getItem("raf_plan2_athlete") || "";
+  });
   const [competition, setCompetition] = useState("Maratón");
   const [targetTime, setTargetTime] = useState("");
   const [levelId, setLevelId] = useState("intermedio");
@@ -7012,7 +7015,9 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, onGoToPlans, onP
   }, [coachUserId, athleteId]);
 
   useEffect(() => {
-    if (!coachUserId || !athleteId) return;
+    if (!coachUserId || !athleteId || athleteId === "") return;
+    const numId = Number(athleteId);
+    if (!Number.isFinite(numId) || numId <= 0) return;
     loadDraftForAthlete();
   }, [coachUserId, athleteId, loadDraftForAthlete]);
 
