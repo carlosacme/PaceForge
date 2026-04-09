@@ -7189,6 +7189,16 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, onGoToPlans, onP
     const vdot = Number(nextBlockParams.vdot) || 40;
     const blockNumber = Number(currentBlock) || 1;
     const blockStartDate = startDate;
+    // Obtener resumen del bloque anterior del historial
+    const prevBlockSummary = blockHistory?.length > 0
+      ? (() => {
+          const prev = blockHistory[blockHistory.length - 1];
+          const weeks = prev?.plan_json?.weeks || [];
+          const totalKm = weeks.flatMap((w) => w.workouts || []).reduce((sum, wo) => sum + (Number(wo.total_km) || 0), 0);
+          const avgKm = weeks.length ? (totalKm / weeks.length).toFixed(1) : 0;
+          return `Previous block ${prev.block_number}: ${prev.plan_json?.plan_title || "N/A"}, avg ${avgKm}km/week, focus: ${weeks[0]?.focus || "N/A"}`;
+        })()
+      : "This is the first block - start conservative";
 
     // Calcular ritmos Jack Daniels según VDOT
     const paces = {
@@ -7226,6 +7236,8 @@ ATHLETE PROFILE:
 - Level: ${levelLabel}
 - Training days per week: ${daysPerWeek}
 - Block start date: ${blockStartDate}. Week 1 starts on this date, week 2 starts 7 days later.
+- Previous block summary: ${prevBlockSummary}
+- PROGRESSION REQUIREMENT: Week 1 volume MUST be ${blockNumber <= 2 ? "25-35" : blockNumber <= 4 ? "35-45" : blockNumber <= 6 ? "45-55" : "55-65"}km total. Each session km MUST be higher than previous block by 10-15%.
 - Preferred weekdays (1=Mon..7=Sun): ${selectedTrainingDaysText || "2,3,4,6,7"}
 
 CRITICAL: This is block number ${blockNumber}. Each block MUST be progressively harder than the previous one:
@@ -7239,6 +7251,13 @@ For a ${levelLabel} athlete targeting ${competition} in ${targetTime}:
 - Intermediate: start at 80% of race distance total, increase 8% per block
 - Advanced: start at 100% of race distance total, increase 5% per block
 Block ${blockNumber} volume target per session: adjust ALL km values according to block progression above.
+VOLUME CAP by level and distance:
+- Beginner 5K: max 15km/week block 1, +2km per block
+- Beginner 10K: max 20km/week block 1, +3km per block
+- Beginner Half: max 25km/week block 1, +4km per block
+- Beginner Marathon: max 30km/week block 1, +5km per block
+- Intermediate 10K: max 30km/week block 1, +3km per block
+- Advanced 10K: max 40km/week block 1, +3km per block
 
 TRAINING PACES (use these EXACTLY in descriptions):
 - Easy/Recovery pace: ${paces.easy}
@@ -7273,7 +7292,7 @@ OUTPUT JSON SCHEMA:
 {"plan_title":"string","weeks":[{"week_number":1,"focus":"string","workouts":[{"weekday":2,"title":"string","type":"long|tempo|recovery|interval","total_km":0,"duration_min":0,"description":"Include specific pace, sets/reps for intervals, warmup/cooldown"}]}]}
 
 Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays both weeks, all numeric fields must be numbers, description must include specific paces from above.`;
-  }, [competition, targetTime, levelLabel, daysPerWeek, startDate, currentBlock, nextBlockParams, selectedTrainingDaysText]);
+  }, [competition, targetTime, levelLabel, daysPerWeek, startDate, currentBlock, nextBlockParams, selectedTrainingDaysText, blockHistory]);
 
   const generatePlan2 = async () => {
     const timeOk = /^\d{1,2}:\d{2}:\d{2}$/.test(String(targetTime || "").trim());
