@@ -687,6 +687,15 @@ const computeFormaFatigaWeeklyPoints = (workouts) => {
   return points;
 };
 
+const getNextMonday = (dateStr) => {
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return formatLocalYMD(addDays(new Date(), 1));
+  const day = d.getDay(); // 0=domingo, 1=lunes...
+  const diff = day === 1 ? 0 : day === 0 ? 1 : 8 - day;
+  d.setDate(d.getDate() + diff);
+  return formatLocalYMD(d);
+};
+
 const formaFatigaStatusFromPoint = (p) => {
   if (!p || (p.acute == null && p.chronic == null)) {
     return { label: "Sin datos suficientes", kind: "none" };
@@ -6890,7 +6899,8 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, onGoToPlans, onP
       .from("plan_drafts")
       .select("*")
       .eq("athlete_id", athleteNumericId)
-      .order("created_at", { ascending: true });
+      .eq("status", "assigned")
+      .order("block_number", { ascending: true });
     setHistoryLoading(false);
     if (error) {
       console.error("plan_drafts history:", error);
@@ -7154,7 +7164,7 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, onGoToPlans, onP
     }
     const assignedBlock = Number(lastAssigned?.block_number);
     const nextBlock = Number.isFinite(assignedBlock) && assignedBlock > 0 ? assignedBlock + 1 : 1;
-    const nextDate = formatLocalYMD(addDays(new Date(`${startDateRef.current || startDate}T12:00:00`), 14));
+    const nextDate = getNextMonday(formatLocalYMD(addDays(new Date(`${startDateRef.current || startDate}T12:00:00`), 14)));
     const nextSessions = Math.min(5, Math.max(3, Number(nextBlockParams.trainingDays?.length) || 3));
     startDateRef.current = nextDate;
     setStartDate(nextDate);
@@ -7552,15 +7562,6 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
     boxSizing: "border-box",
   };
   const labelStyle = { fontSize: ".72em", color: "#64748b", marginBottom: 6 };
-  const toggleHistoryRow = (rowKey) => {
-    setOpenHistoryRows((prev) => {
-      const next = new Set(prev);
-      if (next.has(rowKey)) next.delete(rowKey);
-      else next.add(rowKey);
-      return next;
-    });
-  };
-
   const clearBlockHistory = async () => {
     if (!athleteId) return;
     const athleteNumericId = Number(athleteId);
@@ -7674,7 +7675,13 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
             </div>
             <div>
               <div style={labelStyle}>Fecha de inicio del bloque</div>
-              <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} style={inputStyle} />
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(getNextMonday(e.target.value))}
+                style={inputStyle}
+              />
+              <div style={{ marginTop: 6, color: "#64748b", fontSize: ".72em" }}>Los bloques inician siempre el lunes.</div>
             </div>
             <button
               type="button"
@@ -8016,137 +8023,32 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
                       <tr style={{ background: "rgba(148,163,184,.12)" }}>
                         <th style={{ textAlign: "left", padding: "8px 6px", borderBottom: "1px solid #334155" }}>Bloque #</th>
                         <th style={{ textAlign: "left", padding: "8px 6px", borderBottom: "1px solid #334155" }}>Competencia</th>
-                        <th style={{ textAlign: "left", padding: "8px 6px", borderBottom: "1px solid #334155" }}>Fase/Focus</th>
+                        <th style={{ textAlign: "left", padding: "8px 6px", borderBottom: "1px solid #334155" }}>Fase</th>
                         <th style={{ textAlign: "left", padding: "8px 6px", borderBottom: "1px solid #334155" }}>Semanas</th>
-                        <th style={{ textAlign: "left", padding: "8px 6px", borderBottom: "1px solid #334155" }}>Fecha asignado</th>
+                        <th style={{ textAlign: "left", padding: "8px 6px", borderBottom: "1px solid #334155" }}>Fecha inicio</th>
+                        <th style={{ textAlign: "left", padding: "8px 6px", borderBottom: "1px solid #334155" }}>Km/semana</th>
                         <th style={{ textAlign: "left", padding: "8px 6px", borderBottom: "1px solid #334155" }}>Estado</th>
-                        <th style={{ textAlign: "left", padding: "8px 6px", borderBottom: "1px solid #334155" }}>Ver</th>
                       </tr>
                     </thead>
                     <tbody>
                       {blockHistory.map((row, idx) => {
-                        const rowKey = row.id || `hist-${idx}`;
-                        const isOpen = openHistoryRows.has(rowKey);
                         const weeks = Array.isArray(row.plan_json?.weeks) ? row.plan_json.weeks : [];
-                        const focusText = weeks.find((w) => String(w?.focus || "").trim())?.focus || "—";
-                        const assignedDate = row.created_at ? new Date(row.created_at).toLocaleDateString("es-ES") : "—";
+                        const focusText = String(weeks?.[0]?.focus || "—");
+                        const totalKm = weeks
+                          .flatMap((w) => (Array.isArray(w?.workouts) ? w.workouts : []))
+                          .reduce((sum, wo) => sum + (Number(wo?.total_km) || 0), 0);
+                        const weeklyKm = (totalKm / 2).toFixed(1);
+                        const startDateText = row.race_date ? String(row.race_date) : "—";
                         return (
-                          <Fragment key={rowKey}>
-                            <tr>
-                              <td style={{ padding: "8px 6px", borderBottom: "1px solid rgba(148,163,184,.2)" }}>{Number(row.block_number) || idx + 1}</td>
-                              <td style={{ padding: "8px 6px", borderBottom: "1px solid rgba(148,163,184,.2)" }}>{row.competition || "—"}</td>
-                              <td style={{ padding: "8px 6px", borderBottom: "1px solid rgba(148,163,184,.2)" }}>{focusText}</td>
-                              <td style={{ padding: "8px 6px", borderBottom: "1px solid rgba(148,163,184,.2)" }}>{weeks.length || 0}</td>
-                              <td style={{ padding: "8px 6px", borderBottom: "1px solid rgba(148,163,184,.2)" }}>{assignedDate}</td>
-                              <td style={{ padding: "8px 6px", borderBottom: "1px solid rgba(148,163,184,.2)" }}>{row.status || "draft"}</td>
-                              <td style={{ padding: "8px 6px", borderBottom: "1px solid rgba(148,163,184,.2)" }}>
-                                <button
-                                  type="button"
-                                  onClick={() => toggleHistoryRow(rowKey)}
-                                  style={{
-                                    border: "1px solid rgba(245,158,11,.45)",
-                                    background: "rgba(245,158,11,.12)",
-                                    color: "#fbbf24",
-                                    borderRadius: 6,
-                                    padding: "4px 8px",
-                                    fontWeight: 700,
-                                    cursor: "pointer",
-                                    fontSize: ".95em",
-                                    fontFamily: "inherit",
-                                  }}
-                                >
-                                  👁 Ver
-                                </button>
-                              </td>
-                            </tr>
-                            {isOpen ? (
-                              <tr>
-                                <td colSpan={7} style={{ padding: "8px 6px 10px", borderBottom: "1px solid rgba(148,163,184,.2)" }}>
-                                  <div style={{ border: "1px solid #334155", borderRadius: 10, overflow: "hidden" }}>
-                                    <div style={{ padding: "10px 12px", background: "#f8fafc", color: "#0f172a", fontWeight: 700, fontSize: ".9em" }}>
-                                      {row.plan_json?.plan_title || "Plan 2 semanas"}
-                                    </div>
-                                    <div style={{ padding: "10px 12px", background: "rgba(0,0,0,.12)", display: "flex", flexDirection: "column", gap: 8 }}>
-                                      {weeks.length === 0 ? (
-                                        <div style={{ color: "#64748b", fontSize: ".82em" }}>Sin semanas registradas en este bloque.</div>
-                                      ) : (
-                                        [...weeks]
-                                          .sort((a, b) => (Number(a?.week_number) || 0) - (Number(b?.week_number) || 0))
-                                          .map((week, weekIdx) => {
-                                            const wn = Number(week?.week_number) || weekIdx + 1;
-                                            const workouts = Array.isArray(week?.workouts) ? week.workouts : [];
-                                            return (
-                                              <div key={`${rowKey}-${wn}`} style={{ border: "1px solid #e2e8f0", borderRadius: 10, overflow: "hidden" }}>
-                                                <div style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", background: "rgba(245,158,11,.1)", border: "none", color: "#0f172a", fontFamily: "inherit", fontWeight: 700, fontSize: ".88em", textAlign: "left" }}>
-                                                  <span>
-                                                    Semana {wn}
-                                                    {week?.focus ? <span style={{ color: "#64748b", fontWeight: 500 }}> · {week.focus}</span> : null}
-                                                  </span>
-                                                </div>
-                                                <div style={{ padding: "10px 14px 14px", background: "rgba(0,0,0,.12)" }}>
-                                                  {workouts.length === 0 ? (
-                                                    <div style={{ color: "#64748b", fontSize: ".82em" }}>Sin sesiones en esta semana.</div>
-                                                  ) : (
-                                                    workouts.map((wo, woIdx) => {
-                                                      const wd = Number(wo?.weekday) || 1;
-                                                      const dayName = DAYS[wd - 1] || `Día ${wd}`;
-                                                      const wt = WORKOUT_TYPES.find((t) => t.id === wo?.type) || WORKOUT_TYPES[0];
-                                                      return (
-                                                        <div
-                                                          key={`${rowKey}-${wn}-${woIdx}`}
-                                                          style={{
-                                                            marginBottom: woIdx === workouts.length - 1 ? 0 : 10,
-                                                            padding: 10,
-                                                            borderRadius: 8,
-                                                            background: "#f8fafc",
-                                                            borderLeft: `3px solid ${wt.color}`,
-                                                            display: "flex",
-                                                            gap: 10,
-                                                            alignItems: "flex-start",
-                                                          }}
-                                                        >
-                                                          <div style={{ flex: 1, minWidth: 0 }}>
-                                                            <div style={{ fontSize: ".78em", color: "#64748b", marginBottom: 4 }}>{dayName}</div>
-                                                            <div style={{ fontWeight: 700, color: "#0f172a", fontSize: ".88em" }}>{wo?.title || "Sin título"}</div>
-                                                            <div style={{ fontSize: ".76em", color: "#94a3b8", marginTop: 4 }}>
-                                                              {Number(wo?.total_km ?? wo?.km) || 0} km · {Number(wo?.duration_min) || 0} min · <span style={{ color: wt.color }}>{wt.label}</span>
-                                                            </div>
-                                                            {wo?.description ? <div style={{ fontSize: ".78em", color: "#cbd5e1", marginTop: 8, lineHeight: 1.45 }}>{wo.description}</div> : null}
-                                                          </div>
-                                                        </div>
-                                                      );
-                                                    })
-                                                  )}
-                                                </div>
-                                              </div>
-                                            );
-                                          })
-                                      )}
-                                    </div>
-                                    <div style={{ display: "flex", justifyContent: "flex-end", padding: "10px 12px", background: "rgba(15,23,42,.35)" }}>
-                                      <button
-                                        type="button"
-                                        onClick={() => toggleHistoryRow(rowKey)}
-                                        style={{
-                                          border: "1px solid #64748b",
-                                          background: "rgba(148,163,184,.18)",
-                                          color: "#e2e8f0",
-                                          borderRadius: 6,
-                                          padding: "6px 10px",
-                                          fontWeight: 700,
-                                          cursor: "pointer",
-                                          fontFamily: "inherit",
-                                          fontSize: ".82em",
-                                        }}
-                                      >
-                                        Cerrar
-                                      </button>
-                                    </div>
-                                  </div>
-                                </td>
-                              </tr>
-                            ) : null}
-                          </Fragment>
+                          <tr key={row.id || `hist-${idx}`}>
+                            <td style={{ padding: "8px 6px", borderBottom: "1px solid rgba(148,163,184,.2)" }}>{Number(row.block_number) || idx + 1}</td>
+                            <td style={{ padding: "8px 6px", borderBottom: "1px solid rgba(148,163,184,.2)" }}>{row.competition || "—"}</td>
+                            <td style={{ padding: "8px 6px", borderBottom: "1px solid rgba(148,163,184,.2)" }}>{focusText}</td>
+                            <td style={{ padding: "8px 6px", borderBottom: "1px solid rgba(148,163,184,.2)" }}>{weeks.length || 0}</td>
+                            <td style={{ padding: "8px 6px", borderBottom: "1px solid rgba(148,163,184,.2)" }}>{startDateText}</td>
+                            <td style={{ padding: "8px 6px", borderBottom: "1px solid rgba(148,163,184,.2)" }}>{weeklyKm}</td>
+                            <td style={{ padding: "8px 6px", borderBottom: "1px solid rgba(148,163,184,.2)" }}>{row.status || "assigned"}</td>
+                          </tr>
                         );
                       })}
                     </tbody>
