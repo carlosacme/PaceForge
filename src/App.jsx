@@ -6839,6 +6839,10 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, onGoToPlans, onP
     const selected = PLAN2_TRAINING_DAY_OPTIONS.filter((d) => nextBlockParams.trainingDays.includes(d.weekday));
     return selected.map((d) => `${d.label}(${d.weekday})`).join(", ");
   }, [nextBlockParams.trainingDays]);
+  const levelLabel = useMemo(
+    () => PLAN_12_LEVELS.find((l) => l.id === levelId)?.label || levelId,
+    [levelId],
+  );
 
   const loadGenerationCounter = useCallback(async () => {
     if (!coachUserId) {
@@ -7089,66 +7093,86 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, onGoToPlans, onP
     setNextBlockParams((prev) => ({ ...prev, trainingDays: expected }));
   };
 
-  const plan2SystemPrompt = `You are an elite running coach for ${BRAND_NAME}. Output ONLY compact valid JSON. No markdown, no code fences, no extra text.
-weekday: always 1=Monday .. 7=Sunday.
-
-Fixed weekly template (same both weeks). Session types MUST match exactly:
-- weekday 2 (Tuesday): type "long" — Rodaje largo
-- weekday 3 (Wednesday): type "tempo" — Tempo
-- weekday 4 (Thursday): type "recovery" — Recuperación
-- weekday 6 (Saturday): type "interval" — Intervalos
-- weekday 7 (Sunday): type "long" — Largo
-
-If the user requests fewer than 5 sessions per week, OMIT sessions in this strict order until the count matches: (1) omit Sunday (weekday 7), (2) then omit Thursday (weekday 4), (3) then omit Wednesday (weekday 3). The remaining sessions keep the same weekdays and types as above.
-Examples: N=5 → weekdays 2,3,4,6,7; N=4 → 2,3,4,6; N=3 → 2,3,6.
-
-Schema (description ≤120 chars):
-{
-  "plan_title": "short string",
-  "weeks": [
-    {
-      "week_number": 1,
-      "focus": "optional ≤4 words",
-      "workouts": [
-        { "weekday": 2, "title": "string", "type": "long|tempo|recovery|interval", "total_km": 0, "duration_min": 0, "description": "string" }
-      ]
-    }
-  ]
-}
-Rules:
-- Exactly 2 weeks (week_number 1 then 2). Each week: EXACTLY N workouts (N is 3, 4, or 5 from user). Same N and same weekday/type pattern both weeks.
-- Every workout must use one of the allowed weekday+type pairs from the template after applying the omission rule for that N.
-- Titles should reflect the session (e.g. rodaje largo, tempo, recuperación, intervalos, largo) in the plan language but types must be exact enum values.
-- Week 2 is race week: adjust volume/quality vs week 1 but never change weekdays or session types for that N.
-- No extra JSON keys. All numeric fields must be numbers.`;
+  const plan2SystemPrompt = `You are an elite running coach for ${BRAND_NAME} specializing in periodized training plans based on Jack Daniels VDOT methodology. Output ONLY compact valid JSON. No markdown, no code fences, no extra text. weekday: always 1=Monday .. 7=Sunday.`;
 
   const plan2UserPrompt = useMemo(() => {
-    const levelLabel = PLAN_12_LEVELS.find((l) => l.id === levelId)?.label || levelId;
-    const vdotLine = String(nextBlockParams.vdot || "").trim() || "N/A";
-    const notesLine = String(nextBlockParams.notes || "").trim() || "Sin notas adicionales";
-    const focusLine = String(nextBlockParams.focus || "").trim() || "Base";
-    return `2-week running plan JSON only.
+    const vdot = Number(nextBlockParams.vdot) || 40;
 
-Goal: ${competition} in ${targetTime}. Level: ${levelLabel}.
-Sessions per week (N): ${daysPerWeek} — same N in week 1 and week 2.
-Race date (week 2 contains this date): ${raceDate}
-Plan block number: ${currentBlock}
-Current athlete VDOT: ${vdotLine}
-Preferred training weekdays (1-7): ${selectedTrainingDaysText || "2,3,6"}
-Block focus: ${focusLine}
-Coach notes: ${notesLine}
+    // Calcular ritmos Jack Daniels según VDOT
+    const paces = {
+      easy: vdot < 35 ? "7:30-8:00 min/km" : vdot < 40 ? "6:45-7:15 min/km" : vdot < 45 ? "6:10-6:40 min/km" : vdot < 50 ? "5:45-6:10 min/km" : vdot < 55 ? "5:20-5:45 min/km" : "5:00-5:20 min/km",
+      tempo: vdot < 35 ? "6:30 min/km" : vdot < 40 ? "5:55 min/km" : vdot < 45 ? "5:20 min/km" : vdot < 50 ? "4:55 min/km" : vdot < 55 ? "4:35 min/km" : "4:15 min/km",
+      interval: vdot < 35 ? "6:00 min/km" : vdot < 40 ? "5:25 min/km" : vdot < 45 ? "4:55 min/km" : vdot < 50 ? "4:30 min/km" : vdot < 55 ? "4:10 min/km" : "3:50 min/km",
+      recovery: vdot < 35 ? "8:30 min/km" : vdot < 40 ? "7:45 min/km" : vdot < 45 ? "7:00 min/km" : vdot < 50 ? "6:30 min/km" : vdot < 55 ? "6:00 min/km" : "5:40 min/km",
+    };
 
-Follow the FIXED calendar exactly:
-- Martes weekday=2: rodaje largo → type "long"
-- Miércoles weekday=3: tempo → type "tempo"
-- Jueves weekday=4: recuperación → type "recovery"
-- Sábado weekday=6: intervalos → type "interval"
-- Domingo weekday=7: largo → type "long"
+    // Volumen base según distancia objetivo
+    const competitionText = String(competition || "").toLowerCase();
+    const baseKmWeekly = competitionText.includes("maratón") || competitionText.includes("maraton") ? 50
+      : competitionText.includes("media") ? 35
+      : competitionText.includes("10") ? 25
+      : competitionText.includes("5") ? 18 : 25;
 
-If N<5, drop sessions in order: first domingo (7), then jueves (4), then miércoles (3). N=4 → keep 2,3,4,6. N=3 → keep 2,3,6.
+    // Fase del plan según número de bloque
+    const phase = currentBlock <= 2 ? "BASE (aerobic foundation, easy runs dominate, build volume gradually)"
+      : currentBlock <= 4 ? "BUILDING (introduce tempo runs, increase volume 10% from previous block)"
+      : currentBlock <= 6 ? "DEVELOPMENT (threshold work, interval sessions, peak volume)"
+      : currentBlock <= 8 ? "PEAK (race-specific workouts, highest intensity, maintain volume)"
+      : "TAPER (reduce volume 20-30%, maintain intensity, prepare for race)";
 
-Output 2 week objects with the correct ${daysPerWeek} workouts each; each workout: weekday, title, type, total_km, duration_min, short description.`;
-  }, [competition, targetTime, levelId, daysPerWeek, raceDate, currentBlock, selectedTrainingDaysText, nextBlockParams.vdot, nextBlockParams.focus, nextBlockParams.notes]);
+    // Semana 2 es race week solo en el último bloque
+    const week2Type = currentBlock >= 8 ? "RACE WEEK: reduce volume 40%, only easy runs + strides, race on race date"
+      : "CONSOLIDATION WEEK: same focus as week 1 but slightly higher volume (+10%) or higher quality";
+
+    const raceDateMs = raceDate ? new Date(raceDate).getTime() : Number.NaN;
+    const weeksToRace = Number.isFinite(raceDateMs)
+      ? Math.round((raceDateMs - Date.now()) / (7 * 24 * 60 * 60 * 1000))
+      : "unknown";
+
+    return `Generate a 2-week running training block as JSON only.
+
+ATHLETE PROFILE:
+- Goal race: ${competition} on ${raceDate} (${weeksToRace} weeks away)
+- Target time: ${targetTime}
+- Current VDOT: ${vdot}
+- Level: ${levelLabel}
+- Training days per week: ${daysPerWeek}
+- Preferred weekdays (1=Mon..7=Sun): ${selectedTrainingDaysText || "2,3,4,6,7"}
+
+TRAINING PACES (use these EXACTLY in descriptions):
+- Easy/Recovery pace: ${paces.easy}
+- Tempo/Threshold pace: ${paces.tempo}
+- Interval pace: ${paces.interval}
+- Recovery run pace: ${paces.recovery}
+
+PERIODIZATION:
+- Block number: ${currentBlock} of ~10 total blocks
+- Current phase: ${phase}
+- Weekly volume target: ~${baseKmWeekly} km (adjust ±15% based on phase)
+- Week 1: ${nextBlockParams.focus || phase}
+- Week 2: ${week2Type}
+- Coach notes: ${nextBlockParams.notes || "none"}
+
+VOLUME RULES:
+- Easy/Long runs: 30-40% of weekly km, pace ${paces.easy}
+- Tempo runs: 20-25% of weekly km at ${paces.tempo}
+- Intervals: 15-20% of weekly km at ${paces.interval} (e.g. 6x800m, 5x1000m)
+- Recovery runs: remaining km at ${paces.recovery}
+- NEVER assign 10km to a beginner first session. Start conservative.
+
+SESSION STRUCTURE (fixed weekdays):
+weekday 2 (Tuesday): type "long" — Rodaje largo at easy pace
+weekday 3 (Wednesday): type "tempo" — Tempo run
+weekday 4 (Thursday): type "recovery" — Recuperación suave
+weekday 6 (Saturday): type "interval" — Intervalos
+weekday 7 (Sunday): type "long" — Largo suave
+If N<5 sessions, drop in order: Sunday(7), Thursday(4), Wednesday(3).
+
+OUTPUT JSON SCHEMA:
+{"plan_title":"string","weeks":[{"week_number":1,"focus":"string","workouts":[{"weekday":2,"title":"string","type":"long|tempo|recovery|interval","total_km":0,"duration_min":0,"description":"Include specific pace, sets/reps for intervals, warmup/cooldown"}]}]}
+
+Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays both weeks, all numeric fields must be numbers, description must include specific paces from above.`;
+  }, [competition, targetTime, levelLabel, daysPerWeek, raceDate, currentBlock, nextBlockParams, selectedTrainingDaysText]);
 
   const generatePlan2 = async () => {
     const timeOk = /^\d{1,2}:\d{2}:\d{2}$/.test(String(targetTime || "").trim());
