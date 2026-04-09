@@ -6806,6 +6806,7 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, onGoToPlans, onP
   const [loadingGenerations, setLoadingGenerations] = useState(false);
   const [generationLimitMsg, setGenerationLimitMsg] = useState("");
   const [draftLoading, setDraftLoading] = useState(false);
+  const [draftStatus, setDraftStatus] = useState("");
   const [currentBlock, setCurrentBlock] = useState(1);
   const [nextBlockParams, setNextBlockParams] = useState({
     vdot: "",
@@ -6990,6 +6991,7 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, onGoToPlans, onP
     }
     if (data?.plan_json) {
       setGeneratedPlan(data.plan_json);
+      setDraftStatus(String(data.status || ""));
       const weeks = Array.isArray(data.plan_json?.weeks) ? data.plan_json.weeks : [];
       const opened = new Set(weeks.map((w) => Number(w.week_number)).filter((n) => Number.isFinite(n) && n > 0));
       setOpenWeeks(opened.size ? opened : new Set([1, 2]));
@@ -7009,6 +7011,7 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, onGoToPlans, onP
       }
     } else {
       setGeneratedPlan(null);
+      setDraftStatus("");
       setOpenWeeks(new Set());
       setCurrentBlock(1);
     }
@@ -7535,7 +7538,7 @@ Output 2 week objects with the correct ${daysPerWeek} workouts each; each workou
                 {assignLoading ? "Guardando…" : "Asignar Plan al Atleta"}
               </button>
             )}
-            {planAssignedSuccess ? (
+            {(planAssignedSuccess || draftStatus === "assigned") ? (
               <div style={{ marginTop: 4, padding: 12, borderRadius: 10, border: "1px solid rgba(14,116,144,.35)", background: "rgba(14,116,144,.08)" }}>
                 <div style={{ color: "#0f172a", fontSize: ".78em", fontWeight: 800, marginBottom: 10 }}>Parámetros del siguiente bloque</div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
