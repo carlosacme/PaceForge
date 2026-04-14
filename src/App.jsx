@@ -9526,6 +9526,7 @@ const computeHrZones = (fcMax, fcRest) => {
 
 function EvaluationView({ athletes, currentUserId, notify, athleteOnlyId = null }) {
   const S = styles;
+  const EVAL_FORM_STORAGE_KEY = "raf_eval_form";
   const canSelect = !athleteOnlyId;
   const athleteOptions = useMemo(
     () => (athleteOnlyId ? (athletes || []).filter((a) => String(a.id) === String(athleteOnlyId)) : athletes || []),
@@ -9567,6 +9568,43 @@ function EvaluationView({ athletes, currentUserId, notify, athleteOnlyId = null 
     setFcMax(selectedAthlete.fc_max ? String(selectedAthlete.fc_max) : "");
     setFcRest(selectedAthlete.fc_reposo ? String(selectedAthlete.fc_reposo) : "");
   }, [selectedAthlete?.id]);
+
+  useEffect(() => {
+    if (typeof localStorage === "undefined") return;
+    try {
+      const raw = localStorage.getItem(EVAL_FORM_STORAGE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object") return;
+      if (typeof parsed.athleteId === "string" && parsed.athleteId) setAthleteId(parsed.athleteId);
+      if (typeof parsed.tab === "string") setTab(parsed.tab);
+      if (typeof parsed.raceDistance === "string") setRaceDistance(parsed.raceDistance);
+      if (typeof parsed.raceTime === "string") setRaceTime(parsed.raceTime);
+      if (typeof parsed.cooperDistance === "string") setCooperDistance(parsed.cooperDistance);
+      if (typeof parsed.thresholdTime === "string") setThresholdTime(parsed.thresholdTime);
+      if (typeof parsed.thresholdDistance === "string") setThresholdDistance(parsed.thresholdDistance);
+      if (typeof parsed.fcMax === "string") setFcMax(parsed.fcMax);
+      if (typeof parsed.fcRest === "string") setFcRest(parsed.fcRest);
+    } catch (err) {
+      console.warn("No se pudo restaurar raf_eval_form", err);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof localStorage === "undefined") return;
+    const payload = {
+      athleteId,
+      tab,
+      raceDistance,
+      raceTime,
+      cooperDistance,
+      thresholdTime,
+      thresholdDistance,
+      fcMax,
+      fcRest,
+    };
+    localStorage.setItem(EVAL_FORM_STORAGE_KEY, JSON.stringify(payload));
+  }, [athleteId, tab, raceDistance, raceTime, cooperDistance, thresholdTime, thresholdDistance, fcMax, fcRest]);
 
   const loadHistory = useCallback(async () => {
     if (!athleteId) {
@@ -9640,6 +9678,9 @@ function EvaluationView({ athletes, currentUserId, notify, athleteOnlyId = null 
       fc_reposo: Number(fcRest) || null,
       method: tab,
     });
+    if (typeof localStorage !== "undefined") {
+      localStorage.removeItem(EVAL_FORM_STORAGE_KEY);
+    }
   };
 
   const saveAndApply = async () => {
