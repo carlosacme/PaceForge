@@ -1094,8 +1094,6 @@ export default function App() {
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteSending, setInviteSending] = useState(false);
-  const [publicCoaches, setPublicCoaches] = useState([]);
-  const [loadingPublicCoaches, setLoadingPublicCoaches] = useState(false);
   const [pendingCoachRequestId, setPendingCoachRequestId] = useState("");
   const [viewRestored, setViewRestored] = useState(false);
   const [coachPlanPickerVoluntary, setCoachPlanPickerVoluntary] = useState(false);
@@ -1426,30 +1424,6 @@ export default function App() {
     }
     setViewRestored(true);
   }, [session?.user?.id, profile, viewRestored, allowedCoachViews]);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setLoadingPublicCoaches(true);
-      const { data, error } = await supabase
-        .from("coach_profiles")
-        .select("user_id, full_name, city, country, avatar_url, is_public")
-        .eq("is_public", true)
-        .order("updated_at", { ascending: false })
-        .limit(12);
-      if (cancelled) return;
-      if (error) {
-        console.error("Error cargando coaches públicos:", error);
-        setPublicCoaches([]);
-      } else {
-        setPublicCoaches(data || []);
-      }
-      setLoadingPublicCoaches(false);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   useEffect(() => {
     if (!session?.user?.id) return;
@@ -1979,10 +1953,13 @@ export default function App() {
                 <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                   <button
                     type="button"
-                    onClick={() => {
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
                       setAuthError("");
                       setAuthMode("login");
                       setAuthLandingStep("login");
+                      setLandingAuthOpen(true);
                     }}
                     style={{
                       ...bigBtn,
@@ -1995,10 +1972,13 @@ export default function App() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => {
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
                       setAuthError("");
                       setAuthMode("register");
                       setAuthLandingStep("register");
+                      setLandingAuthOpen(true);
                     }}
                     style={{
                       ...bigBtn,
@@ -2222,50 +2202,30 @@ export default function App() {
       );
     }
 
-    const PLAN_CATALOG = [
-      {
-        plan: "Basico",
-        label: "Básico",
-        priceCop: 100000,
-        priceUsd: 24,
-        maxAthletes: 15,
-        description: "Para coaches independientes que quieren profesionalizar su trabajo.",
-        benefits: [
-          "✓ Hasta 15 atletas",
-          "Generador de workouts con IA",
-          "Plan 2 semanas renovable",
-          "Biblioteca personal de entrenamientos",
-          "Chat con atletas",
-          "Evaluación VDOT y zonas FC",
-          "Exportar PDF",
-          "App móvil",
-        ],
-      },
-      {
-        plan: "Pro",
-        label: "Pro",
-        priceCop: 160000,
-        priceUsd: 39,
-        maxAthletes: null,
-        description: "Para coaches y academias que quieren escalar sin límites.",
-        benefits: [
-          "✓ Atletas ilimitados",
-          "Todo lo del Básico",
-          "Integración Garmin y COROS",
-          "Notificaciones push",
-          "Sistema de logros y medallas",
-          "Códigos promocionales",
-          "Validación de pagos",
-          "Soporte prioritario",
-          "Panel de administración",
-        ],
-      },
-    ];
-
     return (
       <div style={S.root}>
-        <main style={{ ...S.page, width: "100%" }}>
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
+        <main style={{ ...S.page, width: "100%", display: "flex", flexDirection: "column", minHeight: "100vh" }}>
+          <header
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 16,
+              flexWrap: "wrap",
+              marginBottom: 8,
+              paddingBottom: 16,
+              borderBottom: "1px solid #e2e8f0",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: "2em", color: "#f59e0b", lineHeight: 1 }} aria-hidden>
+                ▲
+              </span>
+              <div style={{ fontSize: "1.2em", fontWeight: 900, letterSpacing: ".04em", color: "#0f172a" }}>
+                RUNNING<span style={{ color: "#f59e0b" }}>APEX</span>FLOW
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             <button
               type="button"
               onClick={() => {
@@ -2292,7 +2252,8 @@ export default function App() {
               type="button"
               onClick={() => {
                 setAuthError("");
-                setAuthLandingStep("choice");
+                setAuthMode("register");
+                setAuthLandingStep("register");
                 setLandingAuthOpen(true);
               }}
               style={{
@@ -2309,196 +2270,55 @@ export default function App() {
             >
               Registrarse
             </button>
-          </div>
-          <div style={{ marginTop: 10, marginBottom: 28 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 18 }}>
-              <span style={{ fontSize: "2.1em", color: "#f59e0b", lineHeight: 1 }} aria-hidden>▲</span>
-              <div style={{ fontSize: "1.35em", fontWeight: 800, letterSpacing: ".05em", color: "#0f172a" }}>
-                RUNNING<span style={{ color: "#f59e0b" }}>APEX</span>FLOW
-              </div>
             </div>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
-              <div style={{ maxWidth: 720 }}>
-                <div style={{ fontSize: "0.9em", color: "#f59e0b", letterSpacing: ".14em", textTransform: "uppercase", fontWeight: 800, marginBottom: 8 }}>
-                  {BRAND_NAME} · Coach Platform
-                </div>
-                <h1 style={{ fontSize: "2.2em", fontWeight: 900, color: "#0f172a", margin: "0 0 8px" }}>
-                  La plataforma de coaching para todo tipo de runners
-                </h1>
-                <p style={{ color: "#94a3b8", fontSize: ".95em", marginTop: 0 }}>
-                  Crea, asigna y sincroniza entrenamientos con IA. Conecta con Garmin y COROS. Lleva a tus atletas al siguiente nivel.
-                </p>
-                <div style={{ display: "flex", gap: 12, marginTop: 18, flexWrap: "wrap" }}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setAuthMode("register");
-                      setAuthRole("athlete");
-                      setAuthLandingStep("register");
-                      setLandingAuthOpen(true);
-                    }}
-                    style={{ background: "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 10, padding: "12px 16px", color: "white", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: ".9em" }}
-                  >
-                    Regístrate aquí como atleta
-                  </button>
-                </div>
-              </div>
-              <div style={{ minWidth: 320, flex: 1, background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 14, padding: 16 }}>
-                <div style={{ fontSize: ".75em", color: "#94a3b8", letterSpacing: ".12em", textTransform: "uppercase", fontWeight: 800, marginBottom: 10 }}>
-                  Vista previa
-                </div>
-                <div style={{ fontSize: "1.2em", fontWeight: 800, color: "#f59e0b", marginBottom: 8 }}>
-                  Dashboard + Planes + IA
-                </div>
-                <div style={{ color: "#64748b", fontSize: ".9em" }}>
-                  Asignación de workouts con IA, calendario y sincronización con dispositivos.
-                </div>
-                <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10 }}>
-                  {[
-                    { t: "IA", c: "#f59e0b", s: "Workouts inteligentes" },
-                    { t: "Garmin", c: "#3b82f6", s: "Sync & seguimiento" },
-                    { t: "COROS", c: "#22c55e", s: "Conexión flexible" },
-                    { t: "Strava", c: "#f97316", s: "Sincroniza tus actividades de Apple Watch, Garmin y más dispositivos automáticamente" },
-                  ].map((x) => (
-                    <div key={x.t} style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 12, padding: 12 }}>
-                      <div style={{ fontSize: "1.2em", fontWeight: 900, color: x.c, fontFamily: "monospace" }}>{x.t}</div>
-                      <div style={{ color: "#94a3b8", fontSize: ".8em", marginTop: 6 }}>{x.s}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
+          </header>
+
+          <div
+            style={{
+              marginTop: 8,
+              marginBottom: 40,
+              padding: "32px 0 24px",
+              textAlign: "center",
+              maxWidth: 640,
+              marginLeft: "auto",
+              marginRight: "auto",
+            }}
+          >
+            <div style={{ fontSize: "0.9em", color: "#f59e0b", letterSpacing: ".14em", textTransform: "uppercase", fontWeight: 800, marginBottom: 10 }}>
+              {BRAND_NAME}
             </div>
+            <h1 style={{ fontSize: "clamp(1.75rem, 4vw, 2.35rem)", fontWeight: 900, color: "#0f172a", margin: "0 0 12px", lineHeight: 1.2 }}>
+              La plataforma de coaching para todo tipo de runners
+            </h1>
+            <p style={{ color: "#64748b", fontSize: "1.05em", margin: "0 0 28px", lineHeight: 1.55 }}>
+              Crea, asigna y sincroniza entrenamientos con IA. Lleva a tus atletas al siguiente nivel.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setAuthMode("register");
+                setAuthRole("athlete");
+                setAuthLandingStep("register");
+                setLandingAuthOpen(true);
+              }}
+              style={{
+                background: "linear-gradient(135deg,#b45309,#f59e0b)",
+                border: "none",
+                borderRadius: 12,
+                padding: "14px 28px",
+                color: "white",
+                cursor: "pointer",
+                fontFamily: "inherit",
+                fontWeight: 800,
+                fontSize: "1em",
+                boxShadow: "0 8px 24px rgba(245,158,11,.3)",
+              }}
+            >
+              Crear cuenta gratis
+            </button>
           </div>
 
-          <div style={{ marginBottom: 24 }}>
-            <div style={{ fontSize: ".85em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase", fontWeight: 900, marginBottom: 12 }}>
-              Encuentra tu coach
-            </div>
-            {loadingPublicCoaches ? (
-              <div style={{ ...S.card, color: "#64748b", fontSize: ".88em" }}>Cargando coaches públicos…</div>
-            ) : publicCoaches.length === 0 ? (
-              <div style={{ ...S.card, color: "#64748b", fontSize: ".88em" }}>Aún no hay coaches públicos disponibles.</div>
-            ) : (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 18 }}>
-                {publicCoaches.map((c) => (
-                  <div key={c.user_id} style={{ ...S.card, padding: 16 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-                      <div style={{ width: 42, height: 42, borderRadius: "50%", overflow: "hidden", background: "#f1f5f9", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                        {c.avatar_url ? <img src={c.avatar_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : "👤"}
-                      </div>
-                      <div>
-                        <div style={{ color: "#0f172a", fontWeight: 800, fontSize: ".9em" }}>{c.full_name || "Coach"}</div>
-                        <div style={{ color: "#64748b", fontSize: ".75em" }}>{[c.city, c.country].filter(Boolean).join(", ") || "Ubicación no especificada"}</div>
-                      </div>
-                    </div>
-                    <div style={{ color: "#64748b", fontSize: ".78em", marginBottom: 12 }}>
-                      Código: <strong>{coachCodeFromId(c.user_id)}</strong>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setPendingCoachRequestId(c.user_id);
-                        setAuthCoachCode(coachCodeFromId(c.user_id));
-                        setAuthMode("register");
-                        setAuthRole("athlete");
-                        setAuthLandingStep("register");
-                        setLandingAuthOpen(true);
-                      }}
-                      style={{ width: "100%", background: "linear-gradient(135deg,#0d9488,#14b8a6)", border: "none", borderRadius: 8, padding: "9px 12px", color: "#fff", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".8em" }}
-                    >
-                      Solicitar unirme
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div style={{ marginBottom: 24 }}>
-            <div style={{ fontSize: ".85em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase", fontWeight: 900, marginBottom: 12 }}>
-              Features
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 18 }}>
-              {[
-                { title: "Generador IA", body: "Crea entrenamientos en segundos y ajusta estructura, ritmos y fases." },
-                { title: "Sync con relojes", body: "Exporta y sincroniza para que tu atleta entrene con precisión." },
-                { title: "Seguimiento real", body: "Marca “done”, mide progreso y mantén el control del plan." },
-              ].map((f) => (
-                <div key={f.title} style={{ ...S.card, padding: 18 }}>
-                  <div style={{ fontSize: "1.1em", fontWeight: 900, color: "#0f172a", marginBottom: 8 }}>{f.title}</div>
-                  <div style={{ color: "#94a3b8", fontSize: ".9em", lineHeight: 1.35 }}>{f.body}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div style={{ marginBottom: 26 }}>
-            <div style={{ fontSize: ".85em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase", fontWeight: 900, marginBottom: 12 }}>
-              Precios
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 18 }}>
-              {PLAN_CATALOG.map((p) => (
-                <div key={p.plan} style={{ ...S.card, padding: 18 }}>
-                  <div style={{ fontSize: "1.25em", fontWeight: 900, color: "#f59e0b" }}>
-                    {p.label} (${p.priceUsd} USD)
-                  </div>
-                  <div style={{ fontSize: "2em", fontWeight: 900, color: "#f59e0b", fontFamily: "monospace", marginTop: 6 }}>
-                    {`$${Number(p.priceCop).toLocaleString("es-CO")}`}
-                    <span style={{ fontSize: ".55em", color: "#64748b", fontFamily: "inherit", marginLeft: 6 }}>COP</span>
-                  </div>
-                  <div style={{ color: "#64748b", fontSize: ".88em", marginTop: 8, lineHeight: 1.45 }}>{p.description}</div>
-                  <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 6 }}>
-                    {(p.benefits || []).map((benefit) => (
-                      <div key={benefit} style={{ color: "#334155", fontSize: ".82em", display: "flex", alignItems: "flex-start", gap: 6, lineHeight: 1.35 }}>
-                        <span style={{ color: "#22c55e", fontWeight: 900 }}>✓</span>
-                        <span>{benefit}</span>
-                      </div>
-                    ))}
-                  </div>
-                  <div style={{ marginTop: 14 }}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setAuthMode("register");
-                        setAuthRole("coach");
-                        setAuthLandingStep("register");
-                        setLandingAuthOpen(true);
-                      }}
-                      style={{ width: "100%", background: "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 10, padding: "10px 14px", color: "white", cursor: "pointer", fontFamily: "inherit", fontWeight: 900, fontSize: ".85em" }}
-                    >
-                      Regístrate aquí como coach
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div style={{ marginBottom: 26 }}>
-            <div style={{ fontSize: ".85em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase", fontWeight: 900, marginBottom: 12 }}>
-              Testimonios
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 18 }}>
-              {[
-                { name: "Sofía Ríos", role: "Coach en Colombia", body: `Con ${BRAND_NAME}, la IA me ayuda a construir semanas completas. Ver el estado “done” en el calendario hace que mis atletas sigan el plan con claridad.` },
-                { name: "Luis Martínez", role: "Coach en México", body: "Ahora asigno workouts en minutos y sincronizo con relojes. La vista semanal hace que todo sea más transparente." },
-                { name: "María Torres", role: "Coach en España", body: "El seguimiento real y la exportación a dispositivos me permiten ajustar ritmos con confianza. Se nota el progreso semana a semana." },
-              ].map((t) => (
-                <div key={t.name} style={{ ...S.card, padding: 18 }}>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-                    <div>
-                      <div style={{ fontSize: "1.05em", fontWeight: 900, color: "#0f172a" }}>{t.name}</div>
-                      <div style={{ color: "#64748b", fontSize: ".85em" }}>{t.role}</div>
-                    </div>
-                    <div style={{ color: "#f59e0b", fontWeight: 900, fontFamily: "monospace" }}>★★★★★</div>
-                  </div>
-                  <div style={{ color: "#94a3b8", fontSize: ".92em", marginTop: 12, lineHeight: 1.35 }}>{t.body}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <footer style={{ marginTop: 20, paddingTop: 18, borderTop: "1px solid #e2e8f0", color: "#64748b", fontSize: ".85em" }}>
+          <footer style={{ marginTop: "auto", paddingTop: 22, borderTop: "1px solid #e2e8f0", color: "#64748b", fontSize: ".85em" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#0f172a", fontWeight: 900 }}>
                 <span style={{ color: "#f59e0b" }} aria-hidden>▲</span>
