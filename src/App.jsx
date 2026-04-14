@@ -1078,6 +1078,8 @@ export default function App() {
   const [authError, setAuthError] = useState("");
   const [authSubmitting, setAuthSubmitting] = useState(false);
   const [landingAuthOpen, setLandingAuthOpen] = useState(false);
+  /** Pantalla dentro del flujo de auth: elección inicial, login o registro. */
+  const [authLandingStep, setAuthLandingStep] = useState("choice");
   const [demoModalOpen, setDemoModalOpen] = useState(false);
   const [authRole, setAuthRole] = useState("");
   const [authName, setAuthName] = useState("");
@@ -1319,6 +1321,7 @@ export default function App() {
     setInviteCodeFromUrl(invite);
     setAuthMode("register");
     setAuthRole("athlete");
+    setAuthLandingStep("register");
     setLandingAuthOpen(true);
   }, []);
 
@@ -1674,6 +1677,7 @@ export default function App() {
           console.log("signUp completado pero no devolvió user. data:", data);
           alert("Registro exitoso. Revisa tu correo si la verificación está habilitada.");
           setAuthMode("login");
+          setAuthLandingStep("login");
           return;
         }
 
@@ -1795,6 +1799,7 @@ export default function App() {
 
         alert("Registro exitoso. Revisa tu correo si la verificación está habilitada.");
         setAuthMode("login");
+        setAuthLandingStep("login");
         setAuthRole("");
         setAuthName("");
         setAuthCoachCode("");
@@ -1813,6 +1818,27 @@ export default function App() {
     setLandingAuthOpen(false);
     setDemoModalOpen(false);
     setAuthMode("login");
+    setAuthLandingStep("choice");
+  };
+
+  const handleForgotPasswordClick = async () => {
+    let email = authEmail.trim();
+    if (!email && typeof window !== "undefined") {
+      email = (window.prompt("Ingresa el correo de tu cuenta:") || "").trim();
+    }
+    if (!email) {
+      alert("Indica un correo válido.");
+      return;
+    }
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: origin ? `${origin}/` : undefined,
+    });
+    if (error) {
+      alert(error.message || "No se pudo enviar el correo de recuperación.");
+      return;
+    }
+    alert("Si el correo existe en el sistema, recibirás un enlace para restablecer tu contraseña.");
   };
 
   const saveNewAthlete = async () => {
@@ -1908,127 +1934,289 @@ export default function App() {
 
   if (!session) {
     if (landingAuthOpen) {
+      const inputBase = {
+        width: "100%",
+        background: "#ffffff",
+        border: "1px solid #e2e8f0",
+        borderRadius: 8,
+        padding: "10px 12px",
+        color: "#0f172a",
+        fontFamily: "inherit",
+        fontSize: ".85em",
+        outline: "none",
+        boxSizing: "border-box",
+      };
+      const bigBtn = {
+        width: "100%",
+        padding: "14px 18px",
+        borderRadius: 12,
+        border: "none",
+        fontFamily: "inherit",
+        fontWeight: 800,
+        fontSize: ".95em",
+        cursor: "pointer",
+      };
+
       return (
         <div style={S.root}>
-          <main style={{ ...S.page, display: "flex", alignItems: "center", justifyContent: "center", width: "100%" }}>
-            <div style={{ ...S.card, width: 360 }}>
-              <h1 style={{ ...S.pageTitle, fontSize: "1.3em", marginBottom: 16 }}>
-                {authMode === "login" ? "Login" : "Registro"}
-              </h1>
-              <form onSubmit={handleAuthSubmit}>
-                {authMode === "register" && (
-                  <>
-                    <div style={{ marginBottom: 10 }}>
-                      <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>¿Qué eres?</div>
-                      <div style={{ display: "flex", gap: 8 }}>
-                        <button
-                          type="button"
-                          onClick={() => setAuthRole("coach")}
-                          style={{
-                            flex: 1,
-                            padding: "10px 12px",
-                            borderRadius: 10,
-                            border: authRole === "coach" ? "2px solid #f59e0b" : "1px solid rgba(148,163,184,.4)",
-                            background: authRole === "coach" ? "rgba(245,158,11,.15)" : "#f1f5f9",
-                            color: "#0f172a",
-                            cursor: "pointer",
-                            fontFamily: "inherit",
-                            fontWeight: 800,
-                            fontSize: ".8em",
-                          }}
-                        >
-                          Soy coach
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setAuthRole("athlete")}
-                          style={{
-                            flex: 1,
-                            padding: "10px 12px",
-                            borderRadius: 10,
-                            border: authRole === "athlete" ? "2px solid #3b82f6" : "1px solid rgba(148,163,184,.4)",
-                            background: authRole === "athlete" ? "rgba(59,130,246,.15)" : "#f1f5f9",
-                            color: "#0f172a",
-                            cursor: "pointer",
-                            fontFamily: "inherit",
-                            fontWeight: 800,
-                            fontSize: ".8em",
-                          }}
-                        >
-                          Soy atleta
-                        </button>
-                      </div>
+          <main style={{ ...S.page, display: "flex", alignItems: "center", justifyContent: "center", width: "100%", minHeight: "70vh", padding: "20px 16px" }}>
+            {authLandingStep === "choice" ? (
+              <div style={{ ...S.card, width: "100%", maxWidth: 440, padding: "32px 28px 36px" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 12, marginBottom: 22 }}>
+                  <span style={{ fontSize: "2.4em", color: "#f59e0b", lineHeight: 1 }} aria-hidden>
+                    ▲
+                  </span>
+                  <div style={{ fontSize: "1.35em", fontWeight: 900, letterSpacing: ".04em", color: "#0f172a" }}>
+                    RUNNING<span style={{ color: "#f59e0b" }}>APEX</span>FLOW
+                  </div>
+                </div>
+                <h1 style={{ ...S.pageTitle, fontSize: "1.45em", textAlign: "center", marginBottom: 10, lineHeight: 1.25 }}>
+                  Bienvenido a {BRAND_NAME}
+                </h1>
+                <p style={{ textAlign: "center", color: "#64748b", fontSize: ".9em", lineHeight: 1.5, marginBottom: 28 }}>
+                  Entrena con datos, IA y seguimiento real. Elige cómo quieres continuar.
+                </p>
+                <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthError("");
+                      setAuthMode("login");
+                      setAuthLandingStep("login");
+                    }}
+                    style={{
+                      ...bigBtn,
+                      background: "linear-gradient(135deg,#0f172a,#334155)",
+                      color: "#fff",
+                      boxShadow: "0 8px 24px rgba(15,23,42,.2)",
+                    }}
+                  >
+                    Iniciar sesión
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthError("");
+                      setAuthMode("register");
+                      setAuthLandingStep("register");
+                    }}
+                    style={{
+                      ...bigBtn,
+                      background: "linear-gradient(135deg,#b45309,#f59e0b)",
+                      color: "#fff",
+                      boxShadow: "0 8px 24px rgba(245,158,11,.25)",
+                    }}
+                  >
+                    Registrarse
+                  </button>
+                </div>
+              </div>
+            ) : authLandingStep === "login" ? (
+              <div style={{ ...S.card, width: "100%", maxWidth: 400, padding: "28px 24px 32px" }}>
+                <h1 style={{ ...S.pageTitle, fontSize: "1.25em", marginBottom: 18 }}>Iniciar sesión</h1>
+                <form onSubmit={handleAuthSubmit}>
+                  <div style={{ marginBottom: 12 }}>
+                    <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6, fontWeight: 600 }}>Email</div>
+                    <input
+                      type="email"
+                      value={authEmail}
+                      onChange={(e) => {
+                        setAuthEmail(e.target.value);
+                        if (authError) setAuthError("");
+                      }}
+                      placeholder="correo@ejemplo.com"
+                      autoComplete="email"
+                      style={inputBase}
+                    />
+                  </div>
+                  <div style={{ marginBottom: 14 }}>
+                    <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6, fontWeight: 600 }}>Contraseña</div>
+                    <input
+                      type="password"
+                      value={authPassword}
+                      onChange={(e) => setAuthPassword(e.target.value)}
+                      placeholder="••••••••"
+                      autoComplete="current-password"
+                      style={inputBase}
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={authSubmitting}
+                    style={{
+                      width: "100%",
+                      ...bigBtn,
+                      marginBottom: 12,
+                      background: authSubmitting ? "#e2e8f0" : "linear-gradient(135deg,#b45309,#f59e0b)",
+                      color: authSubmitting ? "#334155" : "white",
+                      cursor: authSubmitting ? "not-allowed" : "pointer",
+                    }}
+                  >
+                    {authSubmitting ? "Procesando…" : "Iniciar sesión"}
+                  </button>
+                </form>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10, alignItems: "center" }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthError("");
+                      setAuthMode("register");
+                      setAuthLandingStep("register");
+                    }}
+                    style={{ background: "none", border: "none", color: "#3b82f6", cursor: "pointer", fontFamily: "inherit", fontSize: ".82em", fontWeight: 600, textDecoration: "underline" }}
+                  >
+                    ¿No tienes cuenta? Regístrate
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleForgotPasswordClick}
+                    style={{ background: "none", border: "none", color: "#64748b", cursor: "pointer", fontFamily: "inherit", fontSize: ".8em", fontWeight: 600, textDecoration: "underline" }}
+                  >
+                    ¿Olvidaste tu contraseña?
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAuthLandingStep("choice")}
+                    style={{ background: "none", border: "none", color: "#94a3b8", cursor: "pointer", fontFamily: "inherit", fontSize: ".78em", marginTop: 4 }}
+                  >
+                    ← Volver
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div style={{ ...S.card, width: "100%", maxWidth: 420, padding: "28px 24px 32px" }}>
+                <h1 style={{ ...S.pageTitle, fontSize: "1.25em", marginBottom: 18 }}>Crear cuenta</h1>
+                <form onSubmit={handleAuthSubmit}>
+                  <div style={{ marginBottom: 12 }}>
+                    <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6, fontWeight: 600 }}>Nombre completo</div>
+                    <input
+                      type="text"
+                      value={authName}
+                      onChange={(e) => setAuthName(e.target.value)}
+                      placeholder="Tu nombre completo"
+                      style={inputBase}
+                    />
+                  </div>
+                  <div style={{ marginBottom: 12 }}>
+                    <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6, fontWeight: 600 }}>Rol</div>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button
+                        type="button"
+                        onClick={() => setAuthRole("coach")}
+                        style={{
+                          flex: 1,
+                          padding: "10px 12px",
+                          borderRadius: 10,
+                          border: authRole === "coach" ? "2px solid #f59e0b" : "1px solid rgba(148,163,184,.4)",
+                          background: authRole === "coach" ? "rgba(245,158,11,.15)" : "#f1f5f9",
+                          color: "#0f172a",
+                          cursor: "pointer",
+                          fontFamily: "inherit",
+                          fontWeight: 800,
+                          fontSize: ".8em",
+                        }}
+                      >
+                        Coach
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAuthRole("athlete")}
+                        style={{
+                          flex: 1,
+                          padding: "10px 12px",
+                          borderRadius: 10,
+                          border: authRole === "athlete" ? "2px solid #3b82f6" : "1px solid rgba(148,163,184,.4)",
+                          background: authRole === "athlete" ? "rgba(59,130,246,.15)" : "#f1f5f9",
+                          color: "#0f172a",
+                          cursor: "pointer",
+                          fontFamily: "inherit",
+                          fontWeight: 800,
+                          fontSize: ".8em",
+                        }}
+                      >
+                        Atleta
+                      </button>
                     </div>
-                    <div style={{ marginBottom: 10 }}>
-                      <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Nombre</div>
+                  </div>
+                  {authRole === "athlete" && (
+                    <div style={{ marginBottom: 12 }}>
+                      <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6, fontWeight: 600 }}>Código de coach</div>
                       <input
                         type="text"
-                        value={authName}
-                        onChange={e => setAuthName(e.target.value)}
-                        placeholder="Tu nombre completo"
-                        style={{ width: "100%", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", color: "#0f172a", fontFamily: "inherit", fontSize: ".85em", outline: "none", boxSizing: "border-box" }}
+                        value={authCoachCode}
+                        onChange={(e) => setAuthCoachCode(e.target.value.toUpperCase())}
+                        placeholder="Ej: A1B2C3D4 (opcional si vienes por invitación)"
+                        style={inputBase}
                       />
+                      {inviteCodeFromUrl ? (
+                        <div style={{ marginTop: 6, fontSize: ".7em", color: "#b45309", fontWeight: 700 }}>
+                          Invitación detectada por link: se priorizará esa vinculación.
+                        </div>
+                      ) : null}
                     </div>
-                    {authRole === "athlete" && (
-                      <div style={{ marginBottom: 10 }}>
-                        <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Código de tu coach (opcional)</div>
-                        <input
-                          type="text"
-                          value={authCoachCode}
-                          onChange={e => setAuthCoachCode(e.target.value.toUpperCase())}
-                          placeholder="Ej: A1B2C3D4"
-                          style={{ width: "100%", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", color: "#0f172a", fontFamily: "inherit", fontSize: ".85em", outline: "none", boxSizing: "border-box" }}
-                        />
-                        {inviteCodeFromUrl ? (
-                          <div style={{ marginTop: 6, fontSize: ".7em", color: "#b45309", fontWeight: 700 }}>
-                            Invitación detectada por link: se priorizará esa vinculación.
-                          </div>
-                        ) : null}
-                      </div>
-                    )}
-                  </>
-                )}
-                <div style={{ marginBottom: 10 }}>
-                  <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Email</div>
-                  <input
-                    type="email"
-                    value={authEmail}
-                    onChange={e => {
-                      setAuthEmail(e.target.value);
-                      if (authError) setAuthError("");
+                  )}
+                  <div style={{ marginBottom: 12 }}>
+                    <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6, fontWeight: 600 }}>Email</div>
+                    <input
+                      type="email"
+                      value={authEmail}
+                      onChange={(e) => {
+                        setAuthEmail(e.target.value);
+                        if (authError) setAuthError("");
+                      }}
+                      placeholder="correo@ejemplo.com"
+                      autoComplete="email"
+                      style={inputBase}
+                    />
+                    {authError ? <div style={{ marginTop: 6, fontSize: ".74em", color: "#dc2626", fontWeight: 600 }}>{authError}</div> : null}
+                  </div>
+                  <div style={{ marginBottom: 16 }}>
+                    <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6, fontWeight: 600 }}>Contraseña</div>
+                    <input
+                      type="password"
+                      value={authPassword}
+                      onChange={(e) => setAuthPassword(e.target.value)}
+                      placeholder="••••••••"
+                      autoComplete="new-password"
+                      style={inputBase}
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={authSubmitting}
+                    style={{
+                      width: "100%",
+                      ...bigBtn,
+                      background: authSubmitting ? "#e2e8f0" : "linear-gradient(135deg,#b45309,#f59e0b)",
+                      color: authSubmitting ? "#334155" : "white",
+                      cursor: authSubmitting ? "not-allowed" : "pointer",
                     }}
-                    placeholder="correo@ejemplo.com"
-                    style={{ width: "100%", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", color: "#0f172a", fontFamily: "inherit", fontSize: ".85em", outline: "none", boxSizing: "border-box" }}
-                  />
-                  {authMode === "register" && authError ? (
-                    <div style={{ marginTop: 6, fontSize: ".74em", color: "#dc2626", fontWeight: 600 }}>{authError}</div>
-                  ) : null}
+                  >
+                    {authSubmitting ? "Procesando…" : "Crear cuenta"}
+                  </button>
+                </form>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10, alignItems: "center", marginTop: 14 }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthError("");
+                      setAuthMode("login");
+                      setAuthLandingStep("login");
+                    }}
+                    style={{ background: "none", border: "none", color: "#3b82f6", cursor: "pointer", fontFamily: "inherit", fontSize: ".82em", fontWeight: 600, textDecoration: "underline" }}
+                  >
+                    ¿Ya tienes cuenta? Inicia sesión
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAuthLandingStep("choice")}
+                    style={{ background: "none", border: "none", color: "#94a3b8", cursor: "pointer", fontFamily: "inherit", fontSize: ".78em" }}
+                  >
+                    ← Volver
+                  </button>
                 </div>
-                <div style={{ marginBottom: 14 }}>
-                  <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Contraseña</div>
-                  <input
-                    type="password"
-                    value={authPassword}
-                    onChange={e => setAuthPassword(e.target.value)}
-                    placeholder="********"
-                    style={{ width: "100%", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", color: "#0f172a", fontFamily: "inherit", fontSize: ".85em", outline: "none", boxSizing: "border-box" }}
-                  />
-                </div>
-                <button
-                  type="submit"
-                  disabled={authSubmitting}
-                  style={{ width: "100%", background: authSubmitting ? "#e2e8f0" : "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 8, padding: "10px 14px", color: authSubmitting ? "#334155" : "white", cursor: authSubmitting ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 800, fontSize: ".85em", marginBottom: 10 }}
-                >
-                  {authSubmitting ? "Procesando..." : (authMode === "login" ? "Iniciar sesión" : "Crear cuenta")}
-                </button>
-              </form>
-              <button
-                onClick={() => setAuthMode(authMode === "login" ? "register" : "login")}
-                style={{ background: "transparent", border: "none", color: "#94a3b8", cursor: "pointer", fontFamily: "inherit", fontSize: ".8em", padding: 0 }}
-              >
-                {authMode === "login" ? "¿No tienes cuenta? Ir a Registro" : "¿Ya tienes cuenta? Ir a Login"}
-              </button>
-            </div>
+              </div>
+            )}
           </main>
         </div>
       );
@@ -2077,6 +2265,51 @@ export default function App() {
     return (
       <div style={S.root}>
         <main style={{ ...S.page, width: "100%" }}>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
+            <button
+              type="button"
+              onClick={() => {
+                setAuthError("");
+                setAuthMode("login");
+                setAuthLandingStep("login");
+                setLandingAuthOpen(true);
+              }}
+              style={{
+                padding: "10px 18px",
+                borderRadius: 10,
+                border: "1px solid #e2e8f0",
+                background: "#fff",
+                color: "#0f172a",
+                fontWeight: 800,
+                fontSize: ".85em",
+                cursor: "pointer",
+                fontFamily: "inherit",
+              }}
+            >
+              Iniciar sesión
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setAuthError("");
+                setAuthLandingStep("choice");
+                setLandingAuthOpen(true);
+              }}
+              style={{
+                padding: "10px 18px",
+                borderRadius: 10,
+                border: "none",
+                background: "linear-gradient(135deg,#b45309,#f59e0b)",
+                color: "#fff",
+                fontWeight: 800,
+                fontSize: ".85em",
+                cursor: "pointer",
+                fontFamily: "inherit",
+              }}
+            >
+              Registrarse
+            </button>
+          </div>
           <div style={{ marginTop: 10, marginBottom: 28 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 18 }}>
               <span style={{ fontSize: "2.1em", color: "#f59e0b", lineHeight: 1 }} aria-hidden>▲</span>
@@ -2098,7 +2331,12 @@ export default function App() {
                 <div style={{ display: "flex", gap: 12, marginTop: 18, flexWrap: "wrap" }}>
                   <button
                     type="button"
-                    onClick={() => { setAuthMode("register"); setAuthRole("athlete"); setLandingAuthOpen(true); }}
+                    onClick={() => {
+                      setAuthMode("register");
+                      setAuthRole("athlete");
+                      setAuthLandingStep("register");
+                      setLandingAuthOpen(true);
+                    }}
                     style={{ background: "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 10, padding: "12px 16px", color: "white", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: ".9em" }}
                   >
                     Regístrate aquí como atleta
@@ -2163,6 +2401,7 @@ export default function App() {
                         setAuthCoachCode(coachCodeFromId(c.user_id));
                         setAuthMode("register");
                         setAuthRole("athlete");
+                        setAuthLandingStep("register");
                         setLandingAuthOpen(true);
                       }}
                       style={{ width: "100%", background: "linear-gradient(135deg,#0d9488,#14b8a6)", border: "none", borderRadius: 8, padding: "9px 12px", color: "#fff", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".8em" }}
@@ -2219,7 +2458,12 @@ export default function App() {
                   <div style={{ marginTop: 14 }}>
                     <button
                       type="button"
-                      onClick={() => { setAuthMode("register"); setAuthRole("coach"); setLandingAuthOpen(true); }}
+                      onClick={() => {
+                        setAuthMode("register");
+                        setAuthRole("coach");
+                        setAuthLandingStep("register");
+                        setLandingAuthOpen(true);
+                      }}
                       style={{ width: "100%", background: "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 10, padding: "10px 14px", color: "white", cursor: "pointer", fontFamily: "inherit", fontWeight: 900, fontSize: ".85em" }}
                     >
                       Regístrate aquí como coach
