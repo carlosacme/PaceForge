@@ -1154,7 +1154,7 @@ export default function App() {
 
   const coachNavItems = useMemo(() => {
     const role = profile?.role;
-    const items = [...COACH_NAV_BASE_ITEMS];
+    const items = [...COACH_NAV_BASE_ITEMS].filter((item) => item.id !== "plans" || role === "coach");
     if (role === "admin") {
       items.push({ id: "admin-coaches", icon: "👥", label: "Coaches", shortLabel: "Coaches", color: "#6366f1" });
     }
