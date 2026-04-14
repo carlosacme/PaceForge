@@ -1025,7 +1025,6 @@ const COACH_NAV_BASE_ITEMS = [
   { id: "builder", icon: "◎", label: "Crear Workout", shortLabel: "IA", color: "#ea580c" },
   { id: "library", icon: "◈", label: "Biblioteca", shortLabel: "Biblio", color: "#6366f1" },
 ];
-
 export default function App() {
   const [view, setView] = useState("dashboard");
   const [selectedAthlete, setSelectedAthlete] = useState(null);
@@ -5189,33 +5188,33 @@ function AthleteHome({ profile }) {
   const profileUserId = profile?.user_id ?? null;
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const savedSection = localStorage.getItem(ATHLETE_TAB_STORAGE_KEY);
-    if (savedSection === "evaluation") setShowEvaluation(true);
-    if (savedSection === "home") setShowEvaluation(false);
+    if (typeof localStorage === "undefined") {
+      setAthleteTabRestored(true);
+      return;
+    }
+    const savedTab = localStorage.getItem(ATHLETE_TAB_STORAGE_KEY);
+    if (savedTab === "evaluation") setShowEvaluation(true);
+    if (savedTab === "home") setShowEvaluation(false);
     setAthleteTabRestored(true);
   }, []);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (!athleteTabRestored) return;
-    const currentSection = showEvaluation ? "evaluation" : "home";
-    localStorage.setItem(ATHLETE_TAB_STORAGE_KEY, currentSection);
+    if (!athleteTabRestored || typeof localStorage === "undefined") return;
+    localStorage.setItem(ATHLETE_TAB_STORAGE_KEY, showEvaluation ? "evaluation" : "home");
   }, [showEvaluation, athleteTabRestored]);
 
   useEffect(() => {
-    if (typeof document === "undefined") return undefined;
+    if (!athleteTabRestored) return undefined;
+    if (typeof document === "undefined" || typeof localStorage === "undefined") return undefined;
     const onVisibilityChange = () => {
-      if (document.visibilityState !== "visible") return;
-      const savedSection = localStorage.getItem(ATHLETE_TAB_STORAGE_KEY);
-      if (savedSection === "evaluation") setShowEvaluation(true);
-      if (savedSection === "home") setShowEvaluation(false);
+      if (document.visibilityState !== "hidden") return;
+      localStorage.setItem(ATHLETE_TAB_STORAGE_KEY, showEvaluation ? "evaluation" : "home");
     };
     document.addEventListener("visibilitychange", onVisibilityChange);
     return () => {
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, []);
+  }, [showEvaluation, athleteTabRestored]);
 
   /** Último `profileUserId` para el que ya se completó la carga inicial (evita loop si `profile` del padre se recrea). */
   const prevProfileUserIdRef = useRef(null);
