@@ -10240,12 +10240,15 @@ function AdminCoachesProfilesPanel({ notify, adminUserId }) {
   const [loadingGenerations, setLoadingGenerations] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busyKey, setBusyKey] = useState("");
+  const [activateMonthsChoice, setActivateMonthsChoice] = useState({});
 
   const load = useCallback(async () => {
     setLoading(true);
     const { data: profs, error } = await supabase
       .from("profiles")
-      .select("user_id,name,email,plan_status,trial_started_at,plan_validated_at,plan_validated_by,role")
+      .select(
+        "user_id,name,email,plan_status,trial_started_at,plan_validated_at,plan_validated_by,role,subscription_plan,subscription_period,subscription_amount,subscription_expires_at",
+      )
       .eq("role", "coach")
       .order("name", { ascending: true });
     if (error) {
@@ -10333,6 +10336,53 @@ function AdminCoachesProfilesPanel({ notify, adminUserId }) {
   const validatedCol = (p) =>
     p.plan_validated_at ? new Date(p.plan_validated_at).toLocaleString("es", { dateStyle: "short", timeStyle: "short" }) : "—";
 
+  const chosenPlanBadge = (planRaw) => {
+    const p = String(planRaw || "").trim();
+    if (!p) return <span style={{ color: "#94a3b8" }}>—</span>;
+    const low = p.toLowerCase();
+    const isPro = low === "pro";
+    const label = low === "basico" || low === "básico" ? "Básico" : isPro ? "Pro" : p;
+    const colors = isPro
+      ? { bg: "#fffbeb", fg: "#b45309", bd: "#fcd34d" }
+      : { bg: "#eff6ff", fg: "#1d4ed8", bd: "#93c5fd" };
+    return (
+      <span
+        style={{
+          fontSize: ".72em",
+          fontWeight: 800,
+          padding: "3px 8px",
+          borderRadius: 6,
+          background: colors.bg,
+          color: colors.fg,
+          border: `1px solid ${colors.bd}`,
+        }}
+      >
+        {label}
+      </span>
+    );
+  };
+
+  const subscriptionPeriodLabel = (per) => {
+    const k = String(per || "").trim().toLowerCase();
+    const map = { mensual: "Mensual", monthly: "Mensual", semestral: "Semestral", anual: "Anual", yearly: "Anual" };
+    return map[k] || (per ? String(per) : "—");
+  };
+
+  const formatSubscriptionAmountCop = (amt) => {
+    if (amt == null || amt === "") return "—";
+    const n = Number(amt);
+    if (!Number.isFinite(n)) return "—";
+    return `$${n.toLocaleString("es-CO", { maximumFractionDigits: 0 })} COP`;
+  };
+
+  const addCalendarMonths = (fromDate, months) => {
+    const d = new Date(fromDate.getTime());
+    const day = d.getDate();
+    d.setMonth(d.getMonth() + months);
+    if (d.getDate() < day) d.setDate(0);
+    return d;
+  };
+
   const runAction = async (key, uid, payload) => {
     setBusyKey(`${key}-${uid}`);
     const { error } = await supabase.from("profiles").update(payload).eq("user_id", uid);
@@ -10345,12 +10395,17 @@ function AdminCoachesProfilesPanel({ notify, adminUserId }) {
     load();
   };
 
-  const activateCoach = (uid) =>
+  const activateCoachWithMonths = (uid, months) => {
+    const m = Number(months);
+    if (![1, 6, 12].includes(m)) return;
+    const expires = addCalendarMonths(new Date(), m);
     runAction("act", uid, {
       plan_status: "active",
       plan_validated_at: new Date().toISOString(),
       plan_validated_by: adminUserId,
+      subscription_expires_at: expires.toISOString(),
     });
+  };
 
   const blockCoachProf = (uid) => {
     if (typeof window !== "undefined" && !window.confirm("¿Bloquear este coach?")) return;
@@ -10393,12 +10448,15 @@ function AdminCoachesProfilesPanel({ notify, adminUserId }) {
         <div style={{ color: "#94a3b8" }}>No hay coaches.</div>
       ) : (
         <div style={{ overflowX: "auto", border: "1px solid #e2e8f0", borderRadius: 12, background: "#fff" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 860 }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1180 }}>
             <thead>
               <tr>
                 <th style={th}>Nombre</th>
                 <th style={th}>Email</th>
                 <th style={th}>Estado</th>
+                <th style={th}>Plan elegido</th>
+                <th style={th}>Período</th>
+                <th style={th}>Monto</th>
                 <th style={th}>Días restantes trial</th>
                 <th style={th}>Fecha validación</th>
                 <th style={th}>Generaciones</th>
@@ -10415,6 +10473,9 @@ function AdminCoachesProfilesPanel({ notify, adminUserId }) {
                     <td style={cell}>{(p.name && String(p.name).trim()) || "—"}</td>
                     <td style={cell}>{emailByUserId[uid] || "—"}</td>
                     <td style={cell}>{planBadge(p.plan_status || "—")}</td>
+                    <td style={cell}>{chosenPlanBadge(p.subscription_plan)}</td>
+                    <td style={cell}>{subscriptionPeriodLabel(p.subscription_period)}</td>
+                    <td style={cell}>{formatSubscriptionAmountCop(p.subscription_amount)}</td>
                     <td style={cell}>{trialCol(p)}</td>
                     <td style={cell}>{validatedCol(p)}</td>
                     <td style={cell}>
@@ -10440,26 +10501,64 @@ function AdminCoachesProfilesPanel({ notify, adminUserId }) {
                         🔄 Resetear
                       </button>
                     </td>
-                    <td style={{ ...cell, whiteSpace: "nowrap" }}>
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => activateCoach(uid)}
+                    <td style={{ ...cell, verticalAlign: "top" }}>
+                      <div
                         style={{
-                          marginRight: 6,
-                          padding: "6px 10px",
-                          borderRadius: 8,
-                          border: "1px solid #bbf7d0",
-                          background: busy ? "#e2e8f0" : "#f0fdf4",
-                          color: "#15803d",
-                          fontWeight: 700,
-                          fontSize: ".72em",
-                          cursor: busy ? "not-allowed" : "pointer",
-                          fontFamily: "inherit",
+                          display: "flex",
+                          flexDirection: "column",
+                          alignItems: "flex-start",
+                          gap: 6,
+                          marginBottom: 8,
+                          padding: "8px 0",
+                          borderBottom: "1px dashed #e2e8f0",
                         }}
                       >
-                        ✅ Activar
-                      </button>
+                        <span style={{ fontSize: ".68em", fontWeight: 800, color: "#64748b" }}>Activar por:</span>
+                        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6 }}>
+                          <select
+                            value={activateMonthsChoice[uid] ?? "1"}
+                            onChange={(e) =>
+                              setActivateMonthsChoice((prev) => ({ ...prev, [uid]: e.target.value }))
+                            }
+                            disabled={busy}
+                            style={{
+                              padding: "6px 8px",
+                              borderRadius: 8,
+                              border: "1px solid #e2e8f0",
+                              fontSize: ".72em",
+                              fontFamily: "inherit",
+                              color: "#0f172a",
+                              background: "#fff",
+                              minWidth: 110,
+                            }}
+                          >
+                            <option value="1">1 mes</option>
+                            <option value="6">6 meses</option>
+                            <option value="12">1 año</option>
+                          </select>
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => {
+                              const months = Number(activateMonthsChoice[uid] ?? "1") || 1;
+                              activateCoachWithMonths(uid, months);
+                            }}
+                            style={{
+                              padding: "6px 10px",
+                              borderRadius: 8,
+                              border: "1px solid #bbf7d0",
+                              background: busy ? "#e2e8f0" : "#f0fdf4",
+                              color: "#15803d",
+                              fontWeight: 700,
+                              fontSize: ".72em",
+                              cursor: busy ? "not-allowed" : "pointer",
+                              fontFamily: "inherit",
+                            }}
+                          >
+                            Activar
+                          </button>
+                        </div>
+                      </div>
                       <button
                         type="button"
                         disabled={busy}
