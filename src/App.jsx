@@ -1025,6 +1025,37 @@ const COACH_NAV_BASE_ITEMS = [
   { id: "builder", icon: "◎", label: "Crear Workout", shortLabel: "IA", color: "#ea580c" },
   { id: "library", icon: "◈", label: "Biblioteca", shortLabel: "Biblio", color: "#6366f1" },
 ];
+
+const COACH_SUBSCRIPTION_NEQUI = "3233675434";
+const COACH_SUBSCRIPTION_WA_E164 = "573233675434";
+
+const formatCopInt = (n) =>
+  Number.isFinite(Number(n)) ? Number(n).toLocaleString("es-CO", { maximumFractionDigits: 0 }) : "—";
+
+/** Precios COP según tablas del producto (mensual base; semestral −12%; anual −20%). */
+const COACH_PLAN_PICKER_DEFS = {
+  basico: {
+    key: "basico",
+    dbPlan: "Basico",
+    title: "Básico",
+    bullets: ["Hasta 15 atletas", "100 generaciones IA/mes"],
+    prices: { monthly: 100000, semestral: 528000, anual: 960000 },
+  },
+  pro: {
+    key: "pro",
+    dbPlan: "Pro",
+    title: "Pro",
+    bullets: ["Atletas ilimitados", "Generaciones IA ilimitadas", "Acceso prioritario"],
+    prices: { monthly: 160000, semestral: 844800, anual: 1536000 },
+  },
+};
+
+const COACH_PLAN_PICKER_PERIODS = [
+  { id: "monthly", label: "Mensual", discountPct: 0, badge: null },
+  { id: "semestral", label: "Semestral", discountPct: 12, badge: "Ahorra 12%" },
+  { id: "anual", label: "Anual", discountPct: 20, badge: "Ahorra 20%" },
+];
+
 export default function App() {
   const [view, setView] = useState("dashboard");
   const [selectedAthlete, setSelectedAthlete] = useState(null);
@@ -1065,6 +1096,11 @@ export default function App() {
   const [loadingPublicCoaches, setLoadingPublicCoaches] = useState(false);
   const [pendingCoachRequestId, setPendingCoachRequestId] = useState("");
   const [viewRestored, setViewRestored] = useState(false);
+  const [coachPlanPickerVoluntary, setCoachPlanPickerVoluntary] = useState(false);
+  const [coachPickerPlan, setCoachPickerPlan] = useState(null);
+  const [coachPickerPeriod, setCoachPickerPeriod] = useState(null);
+  const [coachPaymentModalOpen, setCoachPaymentModalOpen] = useState(false);
+  const [coachSubscriptionSaving, setCoachSubscriptionSaving] = useState(false);
 
   const notify = useCallback((msg) => {
     setNotification(msg);
@@ -1130,6 +1166,58 @@ export default function App() {
     return items;
   }, [profile?.role, session?.user?.email]);
   const allowedCoachViews = useMemo(() => new Set(coachNavItems.map((item) => item.id)), [coachNavItems]);
+
+  const persistCoachSubscriptionSelection = useCallback(
+    async (planKey, periodId) => {
+      const def = COACH_PLAN_PICKER_DEFS[planKey];
+      const amount = def?.prices?.[periodId];
+      const uid = session?.user?.id;
+      if (!def || amount == null || !uid) return false;
+      setCoachSubscriptionSaving(true);
+      const periodDb = periodId === "monthly" ? "mensual" : periodId;
+      const { error } = await supabase
+        .from("profiles")
+        .update({
+          subscription_plan: def.dbPlan,
+          subscription_period: periodDb,
+          subscription_amount: amount,
+        })
+        .eq("user_id", uid);
+      setCoachSubscriptionSaving(false);
+      if (error) {
+        console.error("persistCoachSubscriptionSelection", error);
+        notify(error.message || "No se pudo guardar tu selección de plan.");
+        return false;
+      }
+      setProfile((p) =>
+        p && String(p.user_id) === String(uid)
+          ? { ...p, subscription_plan: def.dbPlan, subscription_period: periodDb, subscription_amount: amount }
+          : p,
+      );
+      return true;
+    },
+    [session?.user?.id, notify],
+  );
+
+  const handleCoachPlanPagarAhora = useCallback(async () => {
+    if (!coachPickerPlan || !coachPickerPeriod) {
+      notify("Elige un plan y un período de pago.");
+      return;
+    }
+    const ok = await persistCoachSubscriptionSelection(coachPickerPlan, coachPickerPeriod);
+    if (ok) setCoachPaymentModalOpen(true);
+  }, [coachPickerPlan, coachPickerPeriod, persistCoachSubscriptionSelection, notify]);
+
+  const coachPlanPickerWhatsAppHref = useMemo(() => {
+    if (!coachPickerPlan || !coachPickerPeriod) return `https://wa.me/${COACH_SUBSCRIPTION_WA_E164}`;
+    const def = COACH_PLAN_PICKER_DEFS[coachPickerPlan];
+    const amount = def?.prices?.[coachPickerPeriod];
+    const periodLabel = COACH_PLAN_PICKER_PERIODS.find((p) => p.id === coachPickerPeriod)?.label || coachPickerPeriod;
+    const planTitle = def?.title || coachPickerPlan;
+    const amountStr = formatCopInt(amount);
+    const text = `Hola, realicé el pago del plan ${planTitle} ${periodLabel} por $${amountStr} COP de RunningApexFlow`;
+    return `https://wa.me/${COACH_SUBSCRIPTION_WA_E164}?text=${encodeURIComponent(text)}`;
+  }, [coachPickerPlan, coachPickerPeriod]);
 
   const S = styles;
 
@@ -2221,6 +2309,8 @@ export default function App() {
   const isProfilesAdmin = profile?.role === "admin";
   const coachPlanBlockedUi =
     profile?.role === "coach" && profile?.plan_status === "blocked" && !isProfilesAdmin;
+  const showCoachPlanPickerScreen =
+    profile?.role === "coach" && !isProfilesAdmin && (coachPlanBlockedUi || coachPlanPickerVoluntary);
 
   const trialBannerDays =
     profile?.role === "coach" ? coachTrialDaysRemainingFromStart(profile) : null;
@@ -2323,60 +2413,6 @@ export default function App() {
         className="pf-main-mobile-pad"
         style={{ flex: 1, overflowY: "auto", background: "#f8fafc", position: "relative" }}
       >
-        {coachPlanBlockedUi ? (
-          <div
-            style={{
-              position: "absolute",
-              inset: 0,
-              zIndex: 40,
-              background: "rgba(15, 23, 42, 0.78)",
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              justifyContent: "center",
-              padding: 24,
-              textAlign: "center",
-              boxSizing: "border-box",
-            }}
-          >
-            <div
-              style={{
-                maxWidth: 440,
-                background: "#fff",
-                borderRadius: 16,
-                padding: "28px 24px",
-                border: "1px solid #e2e8f0",
-                boxShadow: "0 8px 30px rgba(15,23,42,.08)",
-              }}
-            >
-              <div style={{ fontSize: "2em", marginBottom: 12 }}>⏱</div>
-              <h1 style={{ ...S.pageTitle, fontSize: "1.2em", marginBottom: 14, lineHeight: 1.35 }}>
-                Tu período de prueba ha vencido. Contacta al administrador para activar tu cuenta.
-              </h1>
-              <a
-                href={`https://wa.me/${ADMIN_WHATSAPP_E164}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{
-                  display: "inline-block",
-                  marginTop: 8,
-                  padding: "12px 20px",
-                  borderRadius: 10,
-                  border: "none",
-                  background: "linear-gradient(135deg,#22c55e,#16a34a)",
-                  color: "#fff",
-                  fontWeight: 800,
-                  cursor: "pointer",
-                  fontFamily: "inherit",
-                  fontSize: ".9em",
-                  textDecoration: "none",
-                }}
-              >
-                📲 Contactar admin
-              </a>
-            </div>
-          </div>
-        ) : null}
         {typeof Notification !== "undefined" &&
           session &&
           Notification.permission !== "granted" &&
@@ -2453,9 +2489,37 @@ export default function App() {
               fontSize: ".82em",
               fontWeight: 700,
               boxShadow: "0 2px 8px rgba(15,23,42,.06)",
+              display: "flex",
+              flexWrap: "wrap",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 12,
             }}
           >
-            ⏳ Período de prueba: {trialBannerDays} día{trialBannerDays === 1 ? "" : "s"} restantes
+            <span>
+              ⏳ Período de prueba: {trialBannerDays} día{trialBannerDays === 1 ? "" : "s"} restantes
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                setCoachPlanPickerVoluntary(true);
+                setCoachPaymentModalOpen(false);
+              }}
+              style={{
+                padding: "8px 14px",
+                borderRadius: 8,
+                border: "1px solid rgba(180,83,9,.45)",
+                background: "#fff",
+                color: "#b45309",
+                fontWeight: 800,
+                fontSize: ".78em",
+                cursor: "pointer",
+                fontFamily: "inherit",
+                whiteSpace: "nowrap",
+              }}
+            >
+              Ver planes
+            </button>
           </div>
         ) : null}
         {loadingAthletes ? (
@@ -2605,6 +2669,263 @@ export default function App() {
           );
         })}
       </nav>
+
+      {showCoachPlanPickerScreen ? (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 4000,
+            background: "linear-gradient(165deg, #f8fafc 0%, #e2e8f0 45%, #f1f5f9 100%)",
+            overflowY: "auto",
+            WebkitOverflowScrolling: "touch",
+            boxSizing: "border-box",
+          }}
+        >
+          <div style={{ maxWidth: 1040, margin: "0 auto", padding: "28px 18px 48px", position: "relative" }}>
+            {!coachPlanBlockedUi ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setCoachPlanPickerVoluntary(false);
+                  setCoachPaymentModalOpen(false);
+                }}
+                style={{
+                  position: "absolute",
+                  top: 18,
+                  right: 12,
+                  padding: "8px 12px",
+                  borderRadius: 8,
+                  border: "1px solid #e2e8f0",
+                  background: "#fff",
+                  color: "#64748b",
+                  fontWeight: 700,
+                  fontSize: ".78em",
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                }}
+              >
+                Cerrar
+              </button>
+            ) : null}
+            <h1
+              style={{
+                fontSize: "clamp(1.35rem, 3.5vw, 1.85rem)",
+                fontWeight: 900,
+                color: "#0f172a",
+                textAlign: "center",
+                margin: "8px 0 10px",
+                lineHeight: 1.2,
+              }}
+            >
+              Elige tu plan RunningApexFlow
+            </h1>
+            <p style={{ textAlign: "center", color: "#64748b", fontSize: ".95em", maxWidth: 560, margin: "0 auto 28px", lineHeight: 1.45 }}>
+              Comienza a transformar el rendimiento de tus atletas
+            </p>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+                gap: 20,
+                alignItems: "stretch",
+              }}
+            >
+              {["basico", "pro"].map((planKey) => {
+                const def = COACH_PLAN_PICKER_DEFS[planKey];
+                const selectedPlan = coachPickerPlan === planKey;
+                return (
+                  <div
+                    key={planKey}
+                    style={{
+                      background: "#fff",
+                      borderRadius: 16,
+                      padding: "22px 18px 20px",
+                      border: selectedPlan ? "2px solid #f59e0b" : "1px solid #e2e8f0",
+                      boxShadow: selectedPlan ? "0 12px 40px rgba(245,158,11,.12)" : "0 4px 20px rgba(15,23,42,.06)",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 14,
+                    }}
+                  >
+                    <div style={{ fontSize: "1.25em", fontWeight: 900, color: "#0f172a" }}>{def.title}</div>
+                    <ul style={{ margin: 0, paddingLeft: 18, color: "#475569", fontSize: ".86em", lineHeight: 1.55 }}>
+                      {def.bullets.map((b) => (
+                        <li key={b}>{b}</li>
+                      ))}
+                    </ul>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 4 }}>
+                      {COACH_PLAN_PICKER_PERIODS.map((per) => {
+                        const amount = def.prices[per.id];
+                        const selected = selectedPlan && coachPickerPeriod === per.id;
+                        const priceLine =
+                          per.id === "monthly"
+                            ? `$${formatCopInt(amount)} COP/mes`
+                            : `$${formatCopInt(amount)} COP`;
+                        return (
+                          <button
+                            key={per.id}
+                            type="button"
+                            onClick={() => {
+                              setCoachPickerPlan(planKey);
+                              setCoachPickerPeriod(per.id);
+                            }}
+                            style={{
+                              textAlign: "left",
+                              padding: "12px 14px",
+                              borderRadius: 12,
+                              border: selected ? "2px solid #ea580c" : "1px solid #e2e8f0",
+                              background: selected ? "rgba(251,146,60,.08)" : "#f8fafc",
+                              cursor: "pointer",
+                              fontFamily: "inherit",
+                              display: "flex",
+                              flexWrap: "wrap",
+                              alignItems: "center",
+                              justifyContent: "space-between",
+                              gap: 8,
+                            }}
+                          >
+                            <div>
+                              <div style={{ fontWeight: 800, color: "#0f172a", fontSize: ".88em" }}>{per.label}</div>
+                              <div style={{ fontSize: ".82em", color: "#64748b", marginTop: 4 }}>{priceLine}</div>
+                            </div>
+                            {per.badge ? (
+                              <span
+                                style={{
+                                  fontSize: ".68em",
+                                  fontWeight: 800,
+                                  color: "#15803d",
+                                  background: "rgba(34,197,94,.14)",
+                                  border: "1px solid rgba(34,197,94,.35)",
+                                  borderRadius: 999,
+                                  padding: "4px 10px",
+                                  whiteSpace: "nowrap",
+                                }}
+                              >
+                                {per.badge}
+                              </span>
+                            ) : null}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div style={{ marginTop: 28, display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
+              <button
+                type="button"
+                disabled={!coachPickerPlan || !coachPickerPeriod || coachSubscriptionSaving}
+                onClick={handleCoachPlanPagarAhora}
+                style={{
+                  padding: "14px 28px",
+                  borderRadius: 12,
+                  border: "none",
+                  background:
+                    !coachPickerPlan || !coachPickerPeriod || coachSubscriptionSaving ? "#e2e8f0" : "linear-gradient(135deg,#b45309,#f59e0b)",
+                  color: !coachPickerPlan || !coachPickerPeriod || coachSubscriptionSaving ? "#94a3b8" : "#fff",
+                  fontWeight: 900,
+                  fontSize: ".95em",
+                  cursor: !coachPickerPlan || !coachPickerPeriod || coachSubscriptionSaving ? "not-allowed" : "pointer",
+                  fontFamily: "inherit",
+                  boxShadow: "0 6px 20px rgba(245,158,11,.25)",
+                }}
+              >
+                {coachSubscriptionSaving ? "Guardando…" : "Pagar ahora"}
+              </button>
+              {coachPlanBlockedUi ? (
+                <p style={{ fontSize: ".78em", color: "#64748b", textAlign: "center", maxWidth: 420 }}>
+                  Tu cuenta está bloqueada hasta que se verifique el pago. Si necesitas ayuda, contacta al administrador.
+                </p>
+              ) : null}
+            </div>
+          </div>
+
+          {coachPaymentModalOpen ? (
+            <div
+              style={{
+                position: "fixed",
+                inset: 0,
+                zIndex: 4100,
+                background: "rgba(15,23,42,.55)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: 16,
+                boxSizing: "border-box",
+              }}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="coach-pay-modal-title"
+            >
+              <div
+                style={{
+                  width: "100%",
+                  maxWidth: 460,
+                  background: "#fff",
+                  borderRadius: 16,
+                  padding: "24px 22px",
+                  border: "1px solid #e2e8f0",
+                  boxShadow: "0 20px 50px rgba(15,23,42,.2)",
+                }}
+              >
+                <h2 id="coach-pay-modal-title" style={{ margin: "0 0 14px", fontSize: "1.1em", fontWeight: 900, color: "#0f172a" }}>
+                  Instrucciones de pago
+                </h2>
+                <div style={{ color: "#334155", fontSize: ".88em", lineHeight: 1.65, marginBottom: 18 }}>
+                  <div>Realiza tu pago a:</div>
+                  <div style={{ marginTop: 10 }}>
+                    📱 Nequi: <strong>{COACH_SUBSCRIPTION_NEQUI}</strong>
+                  </div>
+                  <div style={{ marginTop: 10 }}>📸 Envía el comprobante por WhatsApp al mismo número</div>
+                  <div style={{ marginTop: 10 }}>✅ Tu cuenta será activada en menos de 24 horas</div>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  <a
+                    href={coachPlanPickerWhatsAppHref}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      display: "block",
+                      textAlign: "center",
+                      padding: "12px 16px",
+                      borderRadius: 10,
+                      background: "linear-gradient(135deg,#22c55e,#16a34a)",
+                      color: "#fff",
+                      fontWeight: 800,
+                      fontSize: ".88em",
+                      textDecoration: "none",
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    Enviar comprobante por WhatsApp
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => setCoachPaymentModalOpen(false)}
+                    style={{
+                      padding: "10px 14px",
+                      borderRadius: 10,
+                      border: "1px solid #e2e8f0",
+                      background: "#f8fafc",
+                      color: "#64748b",
+                      fontWeight: 700,
+                      fontSize: ".82em",
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    Cerrar
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }
