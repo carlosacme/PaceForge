@@ -93,6 +93,7 @@ const normalizeAthlete = (athlete) => ({
   user_id: athlete?.user_id ?? null,
   fc_max: Number.isFinite(Number(athlete?.fc_max)) && Number(athlete.fc_max) > 0 ? Math.round(Number(athlete.fc_max)) : null,
   fc_reposo: Number.isFinite(Number(athlete?.fc_reposo)) && Number(athlete.fc_reposo) > 0 ? Math.round(Number(athlete.fc_reposo)) : null,
+  athlete_plan: typeof athlete?.athlete_plan === "string" ? athlete.athlete_plan : "",
 });
 
 const pushBodySnippet = (text, max = 400) => {
@@ -2253,6 +2254,7 @@ export default function App() {
               onClick={() => {
                 setAuthError("");
                 setAuthMode("register");
+                setAuthRole("athlete");
                 setAuthLandingStep("register");
                 setLandingAuthOpen(true);
               }}
@@ -2268,7 +2270,7 @@ export default function App() {
                 fontFamily: "inherit",
               }}
             >
-              Registrarse
+              Crear cuenta gratis
             </button>
             </div>
           </header>
@@ -2276,47 +2278,167 @@ export default function App() {
           <div
             style={{
               marginTop: 8,
-              marginBottom: 40,
-              padding: "32px 0 24px",
+              marginBottom: 32,
+              padding: "32px 0 8px",
               textAlign: "center",
-              maxWidth: 640,
+              maxWidth: 720,
               marginLeft: "auto",
               marginRight: "auto",
             }}
           >
-            <div style={{ fontSize: "0.9em", color: "#f59e0b", letterSpacing: ".14em", textTransform: "uppercase", fontWeight: 800, marginBottom: 10 }}>
-              {BRAND_NAME}
+            <div style={{ fontSize: "0.78em", color: "#f59e0b", letterSpacing: ".12em", textTransform: "uppercase", fontWeight: 800, marginBottom: 10 }}>
+              Plataforma de coaching para runners
             </div>
-            <h1 style={{ fontSize: "clamp(1.75rem, 4vw, 2.35rem)", fontWeight: 900, color: "#0f172a", margin: "0 0 12px", lineHeight: 1.2 }}>
-              La plataforma de coaching para todo tipo de runners
+            <h1 style={{ fontSize: "clamp(1.75rem, 4vw, 2.45rem)", fontWeight: 900, color: "#0f172a", margin: "0 0 14px", lineHeight: 1.15 }}>
+              Entrena con datos. Mejora con inteligencia.
             </h1>
-            <p style={{ color: "#64748b", fontSize: "1.05em", margin: "0 0 28px", lineHeight: 1.55 }}>
-              Crea, asigna y sincroniza entrenamientos con IA. Lleva a tus atletas al siguiente nivel.
+            <p style={{ color: "#64748b", fontSize: "1.05em", margin: "0 0 26px", lineHeight: 1.6 }}>
+              {BRAND_NAME} conecta coaches y atletas con IA, evaluaciones VDOT, zonas de FC y sincronización con Strava para llevar el rendimiento al siguiente nivel.
             </p>
-            <button
-              type="button"
-              onClick={() => {
-                setAuthMode("register");
-                setAuthRole("athlete");
-                setAuthLandingStep("register");
-                setLandingAuthOpen(true);
-              }}
-              style={{
-                background: "linear-gradient(135deg,#b45309,#f59e0b)",
-                border: "none",
-                borderRadius: 12,
-                padding: "14px 28px",
-                color: "white",
-                cursor: "pointer",
-                fontFamily: "inherit",
-                fontWeight: 800,
-                fontSize: "1em",
-                boxShadow: "0 8px 24px rgba(245,158,11,.3)",
-              }}
-            >
-              Crear cuenta gratis
-            </button>
+            <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthError("");
+                  setAuthMode("register");
+                  setAuthRole("athlete");
+                  setAuthLandingStep("register");
+                  setLandingAuthOpen(true);
+                }}
+                style={{
+                  background: "linear-gradient(135deg,#b45309,#f59e0b)",
+                  border: "none",
+                  borderRadius: 12,
+                  padding: "14px 28px",
+                  color: "white",
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                  fontWeight: 800,
+                  fontSize: "1em",
+                  boxShadow: "0 8px 24px rgba(245,158,11,.3)",
+                }}
+              >
+                Crear cuenta gratis
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthError("");
+                  setAuthMode("login");
+                  setAuthLandingStep("login");
+                  setLandingAuthOpen(true);
+                }}
+                style={{
+                  background: "#fff",
+                  border: "1px solid #e2e8f0",
+                  borderRadius: 12,
+                  padding: "14px 28px",
+                  color: "#0f172a",
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                  fontWeight: 800,
+                  fontSize: "1em",
+                }}
+              >
+                Iniciar sesión
+              </button>
+            </div>
           </div>
+
+          <section style={{ marginBottom: 44, maxWidth: 1100, marginLeft: "auto", marginRight: "auto", width: "100%", padding: "0 4px" }}>
+            <div style={{ fontSize: ".72em", letterSpacing: ".14em", color: "#475569", textTransform: "uppercase", marginBottom: 16, fontWeight: 800 }}>
+              Características
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 16 }}>
+              {[
+                {
+                  title: "Evaluación VDOT",
+                  body: "Calcula VDOT, ritmos y zonas FC con 3 métodos: carrera reciente, test Cooper o umbral.",
+                },
+                {
+                  title: "Workouts con IA",
+                  body: "Genera sesiones personalizadas en segundos basadas en el VDOT y objetivos del atleta.",
+                },
+                {
+                  title: "Plan flexible",
+                  body: "Planes de 2 semanas renovables con 3, 4 o 5 sesiones semanales según la disponibilidad del atleta.",
+                },
+                {
+                  title: "Análisis IA",
+                  body: "Seguimiento inteligente del rendimiento con ajuste automático de entrenamientos para mejores resultados.",
+                },
+                {
+                  title: "Sincronización",
+                  body: "Conecta Strava para sincronizar actividades de Garmin, COROS y Apple Watch automáticamente.",
+                },
+                {
+                  title: "Chat en tiempo real",
+                  body: "Comunicación directa coach-atleta con notificaciones push dentro de la plataforma.",
+                },
+              ].map((f) => (
+                <div
+                  key={f.title}
+                  style={{
+                    border: "1px solid #e2e8f0",
+                    borderRadius: 14,
+                    padding: "18px 16px",
+                    background: "#fff",
+                    boxShadow: "0 1px 3px rgba(15,23,42,.06)",
+                    textAlign: "left",
+                  }}
+                >
+                  <div style={{ fontWeight: 800, color: "#0f172a", fontSize: ".98em", marginBottom: 8 }}>{f.title}</div>
+                  <div style={{ color: "#64748b", fontSize: ".88em", lineHeight: 1.5 }}>{f.body}</div>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section style={{ marginBottom: 48, maxWidth: 1100, marginLeft: "auto", marginRight: "auto", width: "100%", padding: "0 4px" }}>
+            <div style={{ fontSize: ".72em", letterSpacing: ".14em", color: "#475569", textTransform: "uppercase", marginBottom: 16, fontWeight: 800 }}>
+              Coaches y atletas
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16 }}>
+              <div
+                style={{
+                  border: "1px solid #e2e8f0",
+                  borderRadius: 14,
+                  padding: "20px 18px",
+                  background: "linear-gradient(145deg,#fffbeb,#fff7ed)",
+                  textAlign: "left",
+                }}
+              >
+                <div style={{ fontWeight: 900, color: "#b45309", fontSize: "1.1em", marginBottom: 8 }}>Coach</div>
+                <div style={{ fontSize: ".82em", fontWeight: 700, color: "#0f172a", marginBottom: 12 }}>7 días de prueba gratis</div>
+                <ul style={{ margin: 0, paddingLeft: 18, color: "#475569", fontSize: ".88em", lineHeight: 1.55 }}>
+                  <li>Dashboard en vivo</li>
+                  <li>Biblioteca de workouts</li>
+                  <li>Evaluación VDOT</li>
+                  <li>Generación IA</li>
+                  <li>Chat con atletas</li>
+                </ul>
+              </div>
+              <div
+                style={{
+                  border: "1px solid #e2e8f0",
+                  borderRadius: 14,
+                  padding: "20px 18px",
+                  background: "#f8fafc",
+                  textAlign: "left",
+                }}
+              >
+                <div style={{ fontWeight: 900, color: "#0ea5e9", fontSize: "1.1em", marginBottom: 8 }}>Atleta</div>
+                <div style={{ fontSize: ".82em", fontWeight: 700, color: "#0f172a", marginBottom: 12 }}>Plan Premium disponible</div>
+                <ul style={{ margin: 0, paddingLeft: 18, color: "#475569", fontSize: ".88em", lineHeight: 1.55 }}>
+                  <li>Calendario personalizado</li>
+                  <li>Evaluación VDOT propia</li>
+                  <li>Análisis IA de rendimiento</li>
+                  <li>Historial de evaluaciones</li>
+                  <li>Logros avanzados</li>
+                </ul>
+              </div>
+            </div>
+          </section>
 
           <footer style={{ marginTop: "auto", paddingTop: 22, borderTop: "1px solid #e2e8f0", color: "#64748b", fontSize: ".85em" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
@@ -5542,6 +5664,7 @@ function AthleteHome({ profile }) {
   const [athleteChatSending, setAthleteChatSending] = useState(false);
   const [corosModalOpen, setCorosModalOpen] = useState(false);
   const [garminModalOpen, setGarminModalOpen] = useState(false);
+  const [athletePremiumModalOpen, setAthletePremiumModalOpen] = useState(false);
   const [athleteNotRegistered, setAthleteNotRegistered] = useState(false);
   const [showEvaluation, setShowEvaluation] = useState(false);
   const [athleteTabRestored, setAthleteTabRestored] = useState(false);
@@ -5971,6 +6094,26 @@ function AthleteHome({ profile }) {
         setTimeout(() => setMedalToast(""), 4200);
       }
     }
+  };
+
+  const isAthletePremium = useMemo(
+    () => String(athleteInfo?.athlete_plan || "").trim().toLowerCase() === "premium",
+    [athleteInfo?.athlete_plan],
+  );
+
+  useEffect(() => {
+    if (!athleteTabRestored || !athleteInfo?.id) return;
+    if (!isAthletePremium) setShowEvaluation(false);
+  }, [athleteInfo?.id, athleteInfo?.athlete_plan, athleteTabRestored, isAthletePremium]);
+
+  const athleteFormaFatigaPoints = useMemo(() => computeFormaFatigaWeeklyPoints(workouts), [workouts]);
+  const athleteFormaFatigaChronological = useMemo(() => [...athleteFormaFatigaPoints].reverse(), [athleteFormaFatigaPoints]);
+  const athleteFormaFatigaStatus = useMemo(() => formaFatigaStatusFromPoint(athleteFormaFatigaPoints[0]), [athleteFormaFatigaPoints]);
+  const athleteFormaFatigaTableRows = useMemo(() => athleteFormaFatigaPoints.slice(0, 4), [athleteFormaFatigaPoints]);
+
+  const openAthletePremiumWa = (periodLabel, amountCopText) => {
+    const text = `Hola, quiero activar el plan Premium Atleta ${periodLabel} por ${amountCopText} COP`;
+    window.open(`https://wa.me/573233675434?text=${encodeURIComponent(text)}`, "_blank", "noopener,noreferrer");
   };
 
   const athleteName = profile?.name || athleteInfo?.name || "Atleta";
@@ -6911,39 +7054,244 @@ function AthleteHome({ profile }) {
       </div>
 
       <div style={{ ...S.card, marginBottom: 18, order: 6 }}>
-        <button
-          type="button"
-          onClick={() => setShowEvaluation((v) => !v)}
-          style={{
-            width: "100%",
-            background: showEvaluation ? "rgba(14,165,233,.12)" : "#f8fafc",
-            border: showEvaluation ? "1px solid rgba(14,165,233,.45)" : "1px solid #e2e8f0",
-            borderRadius: 8,
-            padding: "10px 14px",
-            color: showEvaluation ? "#0369a1" : "#0f172a",
-            cursor: "pointer",
-            fontFamily: "inherit",
-            fontSize: ".82em",
-            fontWeight: 700,
-          }}
-        >
-          {showEvaluation ? "Ocultar evaluación" : "Hacer mi evaluación"}
-        </button>
+        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
+          <div style={{ fontSize: ".65em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase" }}>
+            FORMA Y FATIGA · EXPORTAR PDF
+          </div>
+          {!isAthletePremium ? (
+            <span
+              style={{
+                fontSize: ".68em",
+                fontWeight: 800,
+                letterSpacing: ".06em",
+                textTransform: "uppercase",
+                padding: "4px 10px",
+                borderRadius: 999,
+                background: "linear-gradient(135deg,#f59e0b,#ea580c)",
+                color: "#fff",
+              }}
+            >
+              Premium
+            </span>
+          ) : null}
+        </div>
+        {isAthletePremium ? (
+          <>
+            <div style={{ fontSize: ".78em", color: "#64748b", marginBottom: 12, lineHeight: 1.45 }}>
+              Basado en sesiones completadas con RPE: carga aguda = promedio (RPE × km) últimos 7 días; carga crónica = promedio (RPE × km) últimos 28 días; forma = crónica − aguda.
+            </div>
+            {loading ? (
+              <div style={{ color: "#64748b", fontSize: ".85em", padding: "12px 0" }}>Cargando datos…</div>
+            ) : (
+              <>
+                <div
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 10,
+                    marginBottom: 14,
+                    padding: "10px 14px",
+                    borderRadius: 10,
+                    border: "1px solid #e2e8f0",
+                    background: "#f8fafc",
+                    fontSize: ".88em",
+                    fontWeight: 700,
+                    color:
+                      athleteFormaFatigaStatus.kind === "forma"
+                        ? "#22c55e"
+                        : athleteFormaFatigaStatus.kind === "fatiga"
+                          ? "#f87171"
+                          : athleteFormaFatigaStatus.kind === "fresco"
+                            ? "#facc15"
+                            : "#94a3b8",
+                  }}
+                >
+                  Estado actual: {athleteFormaFatigaStatus.label}
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 14, marginBottom: 14, fontSize: ".72em", color: "#94a3b8" }}>
+                  <span>
+                    <span style={{ color: "#ef4444", fontWeight: 700 }}>—</span> Carga aguda (7 d)
+                  </span>
+                  <span>
+                    <span style={{ color: "#3b82f6", fontWeight: 700 }}>—</span> Carga crónica (28 d)
+                  </span>
+                  <span>
+                    <span style={{ color: "#22c55e", fontWeight: 700 }}>—</span> Forma (crónica − aguda)
+                  </span>
+                </div>
+                <FormaFatigaLineChart chronological={athleteFormaFatigaChronological} />
+                <div style={{ fontSize: ".72em", letterSpacing: ".12em", color: "#475569", textTransform: "uppercase", marginTop: 18, marginBottom: 8 }}>
+                  Resumen últimas 4 semanas
+                </div>
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: ".8em" }}>
+                    <thead>
+                      <tr style={{ textAlign: "left", color: "#94a3b8", borderBottom: "1px solid #e2e8f0" }}>
+                        <th style={{ padding: "8px 10px", fontWeight: 700 }}>Semana (corte)</th>
+                        <th style={{ padding: "8px 10px", fontWeight: 700, color: "#ef4444" }}>Aguda</th>
+                        <th style={{ padding: "8px 10px", fontWeight: 700, color: "#3b82f6" }}>Crónica</th>
+                        <th style={{ padding: "8px 10px", fontWeight: 700, color: "#22c55e" }}>Forma</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {athleteFormaFatigaTableRows.map((row) => (
+                        <tr key={row.i} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                          <td style={{ padding: "8px 10px", color: "#0f172a" }}>
+                            {row.label} <span style={{ color: "#64748b", fontSize: ".85em" }}>({row.endYmd})</span>
+                          </td>
+                          <td style={{ padding: "8px 10px", color: "#fecaca", fontFamily: "monospace" }}>
+                            {row.acute != null ? row.acute.toFixed(1) : "—"}
+                          </td>
+                          <td style={{ padding: "8px 10px", color: "#bfdbfe", fontFamily: "monospace" }}>
+                            {row.chronic != null ? row.chronic.toFixed(1) : "—"}
+                          </td>
+                          <td style={{ padding: "8px 10px", color: "#bbf7d0", fontFamily: "monospace" }}>
+                            {row.forma != null ? row.forma.toFixed(1) : "—"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div style={{ marginTop: 16, display: "flex", justifyContent: "flex-end" }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      try {
+                        exportAthletePlanToPdf({
+                          athlete: normalizeAthlete(athleteInfo),
+                          workouts,
+                          coachDisplayName: profile?.name || "Coach",
+                        });
+                      } catch (e) {
+                        console.error(e);
+                        alert(`No se pudo generar el PDF: ${e?.message || e}`);
+                      }
+                    }}
+                    style={{
+                      background: "#f1f5f9",
+                      border: "1px solid #cbd5e1",
+                      borderRadius: 8,
+                      padding: "8px 14px",
+                      color: "#0f172a",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                      fontSize: ".8em",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    📄 Exportar PDF
+                  </button>
+                </div>
+              </>
+            )}
+          </>
+        ) : (
+          <div style={{ textAlign: "center", padding: "8px 0 4px" }}>
+            <p style={{ color: "#64748b", fontSize: ".88em", marginBottom: 14, lineHeight: 1.5 }}>
+              Estadísticas de forma y fatiga y exportación del plan en PDF están incluidas en el Plan Premium Atleta.
+            </p>
+            <button
+              type="button"
+              onClick={() => setAthletePremiumModalOpen(true)}
+              style={{
+                background: "linear-gradient(135deg,#b45309,#f59e0b)",
+                border: "none",
+                borderRadius: 10,
+                padding: "10px 20px",
+                color: "#fff",
+                fontWeight: 800,
+                cursor: "pointer",
+                fontFamily: "inherit",
+                fontSize: ".85em",
+              }}
+            >
+              Actualizar plan
+            </button>
+          </div>
+        )}
       </div>
 
-      {showEvaluation && athleteInfo?.id && (
-        <div style={{ marginBottom: 18, order: 7 }}>
-          <EvaluationView
-            athletes={[normalizeAthlete(athleteInfo)]}
-            currentUserId={profile?.user_id ?? null}
-            notify={(msg) => setMessage(msg)}
-            athleteOnlyId={athleteInfo.id}
-          />
+      {isAthletePremium ? (
+        <>
+          <div style={{ ...S.card, marginBottom: 18, order: 7 }}>
+            <button
+              type="button"
+              onClick={() => setShowEvaluation((v) => !v)}
+              style={{
+                width: "100%",
+                background: showEvaluation ? "rgba(14,165,233,.12)" : "#f8fafc",
+                border: showEvaluation ? "1px solid rgba(14,165,233,.45)" : "1px solid #e2e8f0",
+                borderRadius: 8,
+                padding: "10px 14px",
+                color: showEvaluation ? "#0369a1" : "#0f172a",
+                cursor: "pointer",
+                fontFamily: "inherit",
+                fontSize: ".82em",
+                fontWeight: 700,
+              }}
+            >
+              {showEvaluation ? "Ocultar evaluación" : "Hacer mi evaluación"}
+            </button>
+          </div>
+
+          {showEvaluation && athleteInfo?.id && (
+            <div style={{ marginBottom: 18, order: 8 }}>
+              <EvaluationView
+                athletes={[normalizeAthlete(athleteInfo)]}
+                currentUserId={profile?.user_id ?? null}
+                notify={(msg) => setMessage(msg)}
+                athleteOnlyId={athleteInfo.id}
+              />
+            </div>
+          )}
+        </>
+      ) : (
+        <div style={{ ...S.card, marginBottom: 18, order: 7 }}>
+          <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
+            <div style={{ fontSize: ".65em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase" }}>EVALUACIÓN</div>
+            <span
+              style={{
+                fontSize: ".68em",
+                fontWeight: 800,
+                letterSpacing: ".06em",
+                textTransform: "uppercase",
+                padding: "4px 10px",
+                borderRadius: 999,
+                background: "linear-gradient(135deg,#f59e0b,#ea580c)",
+                color: "#fff",
+              }}
+            >
+              Premium
+            </span>
+          </div>
+          <p style={{ color: "#64748b", fontSize: ".88em", lineHeight: 1.5, margin: "0 0 14px" }}>
+            La evaluación VDOT, el historial de evaluaciones y el seguimiento avanzado requieren Plan Premium Atleta.
+          </p>
+          <button
+            type="button"
+            onClick={() => setAthletePremiumModalOpen(true)}
+            style={{
+              width: "100%",
+              background: "linear-gradient(135deg,#b45309,#f59e0b)",
+              border: "none",
+              borderRadius: 10,
+              padding: "10px 14px",
+              color: "#fff",
+              fontWeight: 800,
+              cursor: "pointer",
+              fontFamily: "inherit",
+              fontSize: ".85em",
+            }}
+          >
+            Actualizar plan
+          </button>
         </div>
       )}
 
       {!athleteNotRegistered && (
-      <div style={{ ...S.card, marginTop: 20, order: 8 }}>
+      <div style={{ ...S.card, marginTop: 20, order: 9 }}>
         <div style={{ fontSize: ".65em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase", marginBottom: 10 }}>
           MI CONFIGURACIÓN
         </div>
@@ -7011,7 +7359,7 @@ function AthleteHome({ profile }) {
       </div>
       )}
 
-      <div style={{ ...S.card, marginBottom: 18, order: 9 }}>
+      <div style={{ ...S.card, marginBottom: 18, order: 10 }}>
         <div style={{ fontSize: ".72em", letterSpacing: ".13em", color: "#475569", textTransform: "uppercase", marginBottom: 12 }}>Mis Pagos</div>
         {loadingAthletePayments ? (
           <div style={{ color: "#64748b", fontSize: ".84em" }}>Cargando pagos…</div>
@@ -7063,7 +7411,7 @@ function AthleteHome({ profile }) {
               alignItems: "center",
               gap: 12,
               boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
-              order: 10,
+              order: 11,
             }}
           >
             <span style={{ flex: "1 1 200px", color: "#78350f", fontSize: ".88em", fontWeight: 600 }}>
@@ -7118,7 +7466,7 @@ function AthleteHome({ profile }) {
           </div>
         )}
 
-      <div style={{ ...S.card, marginBottom: 18, order: 11 }}>
+      <div style={{ ...S.card, marginBottom: 18, order: 12 }}>
         <button
           type="button"
           onClick={async () => {
@@ -7145,6 +7493,108 @@ function AthleteHome({ profile }) {
           Cerrar sesión
         </button>
       </div>
+      {athletePremiumModalOpen && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(15,23,42,0.55)",
+            zIndex: 10000,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 20,
+          }}
+          onClick={() => setAthletePremiumModalOpen(false)}
+          onKeyDown={(e) => e.key === "Escape" && setAthletePremiumModalOpen(false)}
+          role="presentation"
+        >
+          <div
+            style={{
+              background: "#fff",
+              borderRadius: 16,
+              padding: 24,
+              maxWidth: 440,
+              width: "100%",
+              boxShadow: "0 20px 60px rgba(15,23,42,.25)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="athlete-premium-modal-title"
+          >
+            <h3 id="athlete-premium-modal-title" style={{ margin: "0 0 16px", fontSize: "1.25em", fontWeight: 800, color: "#0f172a" }}>
+              Plan Premium Atleta
+            </h3>
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              {[
+                { period: "Mensual", amount: "$50.000", note: null },
+                { period: "Semestral", amount: "$264.000", note: "Ahorra 12%" },
+                { period: "Anual", amount: "$480.000", note: "Ahorra 20%" },
+              ].map((row) => (
+                <div
+                  key={row.period}
+                  style={{
+                    border: "1px solid #e2e8f0",
+                    borderRadius: 12,
+                    padding: "12px 14px",
+                    display: "flex",
+                    flexWrap: "wrap",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 10,
+                  }}
+                >
+                  <div>
+                    <div style={{ fontWeight: 800, color: "#0f172a" }}>{row.period}</div>
+                    <div style={{ fontSize: ".95em", color: "#334155", marginTop: 4 }}>
+                      {row.amount} COP
+                      {row.note ? <span style={{ color: "#15803d", fontSize: ".82em", marginLeft: 8 }}>{row.note}</span> : null}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => openAthletePremiumWa(row.period, row.amount)}
+                    style={{
+                      padding: "8px 14px",
+                      borderRadius: 8,
+                      border: "none",
+                      background: "linear-gradient(135deg,#0d9488,#14b8a6)",
+                      color: "#fff",
+                      fontWeight: 800,
+                      fontSize: ".8em",
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    Suscribirme
+                  </button>
+                </div>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => setAthletePremiumModalOpen(false)}
+              style={{
+                marginTop: 18,
+                width: "100%",
+                padding: "10px 14px",
+                borderRadius: 8,
+                border: "1px solid #e2e8f0",
+                background: "#f8fafc",
+                color: "#64748b",
+                fontWeight: 700,
+                cursor: "pointer",
+                fontFamily: "inherit",
+                fontSize: ".85em",
+              }}
+            >
+              Cerrar
+            </button>
+          </div>
+        </div>
+      )}
       {corosModalOpen && (
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center',padding:'20px'}}>
           <div style={{background:'white',borderRadius:'16px',padding:'24px',maxWidth:'420px',width:'100%',boxShadow:'0 20px 60px rgba(0,0,0,0.3)'}}>
