@@ -9652,11 +9652,11 @@ function EvaluationView({ athletes, currentUserId, notify, athleteOnlyId = null 
     }
 
     const paceFractions = [
-      { key: "Easy", frac: 0.74, color: "#22c55e" },
-      { key: "Maratón", frac: 0.83, color: "#3b82f6" },
-      { key: "Umbral", frac: 0.88, color: "#f59e0b" },
-      { key: "Intervalos", frac: 0.98, color: "#ef4444" },
-      { key: "Repeticiones", frac: 1.05, color: "#8b5cf6" },
+      { key: "Easy", frac: 0.65, color: "#22c55e" },
+      { key: "Maratón", frac: 0.76, color: "#3b82f6" },
+      { key: "Umbral", frac: 0.84, color: "#f59e0b" },
+      { key: "Intervalos", frac: 0.95, color: "#ef4444" },
+      { key: "Repeticiones", frac: 1.0, color: "#8b5cf6" },
     ];
     const paces = paceFractions.map((p) => {
       const v = velocityFromVo2(vdot * p.frac);
