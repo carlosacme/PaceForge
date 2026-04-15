@@ -6703,6 +6703,7 @@ function AthleteHome({ profile }) {
   );
 
   const openAthleteWorkoutMenu = (e, w) => {
+    console.log("[DEBUG] openAthleteWorkoutMenu llamado", w?.id, e?.clientX, e?.clientY);
     e.preventDefault();
     e.stopPropagation();
     const pad = 8;
@@ -7296,7 +7297,7 @@ function AthleteHome({ profile }) {
                 <div key={i} style={{ minHeight: 68, border: "1px solid #e2e8f0", borderRadius: 6, padding: "4px 3px", opacity: inViewMonth ? 1 : 0.42, background: hasDoneWorkout ? "rgba(34,197,94,.08)" : "#fff" }}>
                   <div style={{ fontSize: ".58em", color: inViewMonth ? "#475569" : "#94a3b8", textAlign: "center", fontWeight: 600 }}>{cellDate.getDate()}</div>
                   {dayWorkouts.slice(0, 2).map((w) => (
-                    <button key={w.id} type="button" onClick={(e) => openAthleteWorkoutMenu(e, w)} style={{ width: "100%", border: "1px solid #e2e8f0", borderRadius: 4, padding: "2px 3px", marginTop: 3, background: w.done ? "rgba(34,197,94,.15)" : "#f8fafc", fontSize: ".5em", color: "#334155", cursor: "pointer", fontFamily: "inherit", textAlign: "center", position: "relative", zIndex: 10001 }}>
+                    <button key={w.id} type="button" onClick={(e) => { console.log("[DEBUG] click en workout", w?.id, w?.title); openAthleteWorkoutMenu(e, w); }} style={{ width: "100%", border: "1px solid #e2e8f0", borderRadius: 4, padding: "2px 3px", marginTop: 3, background: w.done ? "rgba(34,197,94,.15)" : "#f8fafc", fontSize: ".5em", color: "#334155", cursor: "pointer", fontFamily: "inherit", textAlign: "center", position: "relative", zIndex: 10001 }}>
                       {w.title}
                     </button>
                   ))}
@@ -7306,6 +7307,53 @@ function AthleteHome({ profile }) {
           </div>
         )}
       </div>
+      {athleteCalendarCtxMenu && ctxMenuAthleteWorkout ? (
+        <>
+          {console.log("[DEBUG] render menu contextual", ctxMenuAthleteWorkout?.id, athleteCalendarCtxMenu)}
+          <div
+            ref={athleteCalendarCtxMenuRef}
+            style={{
+              position: "fixed",
+              left: athleteCalendarCtxMenu.x,
+              top: athleteCalendarCtxMenu.y,
+              zIndex: 10002,
+              minWidth: 240,
+              maxWidth: "min(92vw, 300px)",
+              background: "#ffffff",
+              borderRadius: 10,
+              boxShadow: "0 10px 40px rgba(15,23,42,.2)",
+              border: "1px solid #e2e8f0",
+              padding: 6,
+            }}
+          >
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={async (e) => {
+                e.stopPropagation();
+                await toggleDone(ctxMenuAthleteWorkout);
+                closeAthleteCalendarCtxMenu();
+              }}
+              style={{
+                display: "block",
+                width: "100%",
+                textAlign: "left",
+                background: "transparent",
+                border: "none",
+                borderRadius: 8,
+                padding: "10px 12px",
+                color: "#0f172a",
+                fontWeight: 600,
+                cursor: "pointer",
+                fontFamily: "inherit",
+                fontSize: ".82em",
+              }}
+            >
+              {ctxMenuAthleteWorkout.done ? "✓ Marcar pendiente" : "✓ Marcar hecho"}
+            </button>
+          </div>
+        </>
+      ) : null}
 
       <div style={{ ...S.card, marginBottom: 18 }}>
         <div style={{ fontSize: ".72em", letterSpacing: ".13em", color: "#475569", textTransform: "uppercase", marginBottom: 10 }}>Resumen últimas 4 semanas</div>
