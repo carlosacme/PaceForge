@@ -12856,6 +12856,22 @@ function AdminMarketplacePanel({ notify }) {
   const [plans, setPlans] = useState([]);
   const [purchases, setPurchases] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [creatingPlan, setCreatingPlan] = useState(false);
+  const [createForm, setCreateForm] = useState({
+    title: "",
+    description: "",
+    level: "intermedio",
+    duration_weeks: "12",
+    sessions_per_week: "4",
+    price_cop: "120000",
+    preview_workouts_text: "",
+  });
+  const [aiModalOpen, setAiModalOpen] = useState(false);
+  const [aiGenerating, setAiGenerating] = useState(false);
+  const [aiContext, setAiContext] = useState("");
+  const [aiLevel, setAiLevel] = useState("principiante");
+  const [aiGoal, setAiGoal] = useState("42K");
+  const [aiDurationWeeks, setAiDurationWeeks] = useState("16");
 
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -12929,9 +12945,140 @@ function AdminMarketplacePanel({ notify }) {
 
   const pendingPurchases = (purchases || []).filter((p) => String(p.payment_status || "").toLowerCase() !== "confirmed");
 
+  const parsePreviewWorkoutsText = (txt) => {
+    const raw = String(txt || "").trim();
+    if (!raw) return [];
+    const parsed = extractJsonFromAnthropicText(raw);
+    if (Array.isArray(parsed)) return parsed;
+    return [];
+  };
+
+  const createAdminPlan = async () => {
+    const title = String(createForm.title || "").trim();
+    if (!title) {
+      notify?.("Indica un título para el plan");
+      return;
+    }
+    const payload = {
+      coach_user_id: PLATFORM_ADMIN_USER_ID,
+      coach_name: "Admin",
+      title,
+      description: String(createForm.description || "").trim(),
+      level: String(createForm.level || "intermedio"),
+      duration_weeks: Math.max(1, Math.round(Number(createForm.duration_weeks) || 0)),
+      sessions_per_week: Math.max(1, Math.round(Number(createForm.sessions_per_week) || 0)),
+      price_cop: Math.max(50000, Math.min(300000, Math.round(Number(String(createForm.price_cop || "0").replace(/[^\d]/g, "")) || 0))),
+      preview_workouts: parsePreviewWorkoutsText(createForm.preview_workouts_text),
+      is_active: true,
+      is_approved: true,
+    };
+    setCreatingPlan(true);
+    const { error } = await supabase.from("plan_marketplace").insert(payload);
+    setCreatingPlan(false);
+    if (error) {
+      notify?.(error.message || "No se pudo crear el plan");
+      return;
+    }
+    notify?.("Plan creado y aprobado automáticamente.");
+    setCreateForm({
+      title: "",
+      description: "",
+      level: "intermedio",
+      duration_weeks: "12",
+      sessions_per_week: "4",
+      price_cop: "120000",
+      preview_workouts_text: "",
+    });
+    loadAll();
+  };
+
+  const generatePlanWithAi = async () => {
+    const systemPrompt =
+      'Eres un experto en coaching de running. Genera un plan de entrenamiento completo para vender en un marketplace. Responde SOLO con JSON sin texto adicional:\n{\n  "title": "título comercial atractivo",\n  "description": "descripción de venta de 2-3 oraciones que convenza al atleta",\n  "level": "principiante|intermedio|avanzado",\n  "duration_weeks": número,\n  "sessions_per_week": número,\n  "price_cop": precio sugerido entre 50000 y 300000,\n  "preview_workouts": [\n    {"week": 1, "day": "Martes", "title": "título sesión", "description": "descripción", "duration_min": número, "distance_km": número},\n    {"week": 1, "day": "Jueves", "title": "título sesión", "description": "descripción", "duration_min": número, "distance_km": número},\n    {"week": 1, "day": "Sábado", "title": "título sesión", "description": "descripción", "duration_min": número, "distance_km": número}\n  ]\n}';
+    const userPrompt = [
+      `Describe el plan: ${aiContext || "Plan de running para marketplace"}`,
+      `Nivel: ${aiLevel}`,
+      `Objetivo: ${aiGoal}`,
+      `Duración: ${aiDurationWeeks} semanas`,
+    ].join("\n");
+    setAiGenerating(true);
+    try {
+      const res = await fetch("/api/generate-workout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 2200,
+          system: systemPrompt,
+          messages: [{ role: "user", content: userPrompt }],
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        notify?.("Error al generar plan con IA");
+        return;
+      }
+      const text = data.content?.find((b) => b.type === "text")?.text || "";
+      const parsed = extractJsonFromAnthropicText(text);
+      if (!parsed || typeof parsed !== "object") {
+        notify?.("La IA no devolvió un JSON válido.");
+        return;
+      }
+      setCreateForm((prev) => ({
+        ...prev,
+        title: String(parsed.title || prev.title || ""),
+        description: String(parsed.description || prev.description || ""),
+        level: String(parsed.level || aiLevel || "intermedio"),
+        duration_weeks: String(parsed.duration_weeks || aiDurationWeeks || "12"),
+        sessions_per_week: String(parsed.sessions_per_week || prev.sessions_per_week || "4"),
+        price_cop: String(parsed.price_cop || prev.price_cop || "120000"),
+        preview_workouts_text: JSON.stringify(Array.isArray(parsed.preview_workouts) ? parsed.preview_workouts : [], null, 2),
+      }));
+      notify?.("Plan generado con IA y formulario prellenado.");
+      setAiModalOpen(false);
+    } catch (e) {
+      console.error("generatePlanWithAi:", e);
+      notify?.("No se pudo generar con IA");
+    } finally {
+      setAiGenerating(false);
+    }
+  };
+
   return (
     <div style={S.page}>
       <h1 style={S.pageTitle}>🛒 Admin · Marketplace</h1>
+      <div style={{ ...S.card, marginBottom: 12 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}>
+          <div style={{ fontSize: ".78em", letterSpacing: ".1em", textTransform: "uppercase", color: "#64748b", fontWeight: 800 }}>
+            Crear plan (admin)
+          </div>
+          <button
+            type="button"
+            onClick={() => setAiModalOpen(true)}
+            style={{ border: "none", borderRadius: 8, padding: "8px 12px", background: "linear-gradient(135deg,#8b5cf6,#6366f1)", color: "#fff", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".78em" }}
+          >
+            ✨ Generar plan con IA
+          </button>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 10 }}>
+          <input value={createForm.title} onChange={(e) => setCreateForm((f) => ({ ...f, title: e.target.value }))} placeholder="Título" style={{ gridColumn: "1 / -1", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit" }} />
+          <textarea value={createForm.description} onChange={(e) => setCreateForm((f) => ({ ...f, description: e.target.value }))} rows={3} placeholder="Descripción comercial" style={{ gridColumn: "1 / -1", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit", boxSizing: "border-box" }} />
+          <select value={createForm.level} onChange={(e) => setCreateForm((f) => ({ ...f, level: e.target.value }))} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit" }}>
+            <option value="principiante">Principiante</option>
+            <option value="intermedio">Intermedio</option>
+            <option value="avanzado">Avanzado</option>
+          </select>
+          <input type="number" value={createForm.duration_weeks} onChange={(e) => setCreateForm((f) => ({ ...f, duration_weeks: e.target.value }))} placeholder="Duración (semanas)" style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit" }} />
+          <input type="number" value={createForm.sessions_per_week} onChange={(e) => setCreateForm((f) => ({ ...f, sessions_per_week: e.target.value }))} placeholder="Sesiones/semana" style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit" }} />
+          <input type="number" value={createForm.price_cop} onChange={(e) => setCreateForm((f) => ({ ...f, price_cop: e.target.value }))} placeholder="Precio COP" style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit" }} />
+          <textarea value={createForm.preview_workouts_text} onChange={(e) => setCreateForm((f) => ({ ...f, preview_workouts_text: e.target.value }))} rows={8} placeholder='preview_workouts JSON' style={{ gridColumn: "1 / -1", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "monospace", fontSize: ".78em", boxSizing: "border-box" }} />
+          <div style={{ gridColumn: "1 / -1", display: "flex", justifyContent: "flex-end" }}>
+            <button type="button" onClick={createAdminPlan} disabled={creatingPlan} style={{ border: "none", borderRadius: 8, padding: "9px 14px", background: creatingPlan ? "#cbd5e1" : "linear-gradient(135deg,#0ea5e9,#0284c7)", color: "#fff", fontWeight: 800, cursor: creatingPlan ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+              {creatingPlan ? "Guardando…" : "Guardar plan (auto-aprobado)"}
+            </button>
+          </div>
+        </div>
+      </div>
       {loading ? (
         <div style={{ color: "#64748b" }}>Cargando marketplace…</div>
       ) : (
@@ -13002,6 +13149,39 @@ function AdminMarketplacePanel({ notify }) {
           </div>
         </>
       )}
+      {aiModalOpen ? (
+        <div style={{ position: "fixed", inset: 0, zIndex: 10040, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ ...S.card, width: "100%", maxWidth: 620, margin: 0 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+              <div style={{ fontSize: "1em", fontWeight: 900 }}>✨ Generar plan con IA</div>
+              <button type="button" onClick={() => setAiModalOpen(false)} style={{ border: "1px solid #e2e8f0", background: "#fff", borderRadius: 8, padding: "6px 10px", cursor: "pointer", fontFamily: "inherit" }}>✕</button>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 10 }}>
+              <textarea value={aiContext} onChange={(e) => setAiContext(e.target.value)} rows={3} placeholder='Describe el plan (ej: "Plan maratón 16 semanas para principiante con 4 sesiones semanales")' style={{ gridColumn: "1 / -1", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit", boxSizing: "border-box" }} />
+              <select value={aiLevel} onChange={(e) => setAiLevel(e.target.value)} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit" }}>
+                <option value="principiante">Principiante</option>
+                <option value="intermedio">Intermedio</option>
+                <option value="avanzado">Avanzado</option>
+              </select>
+              <select value={aiGoal} onChange={(e) => setAiGoal(e.target.value)} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit" }}>
+                <option value="5K">5K</option>
+                <option value="10K">10K</option>
+                <option value="21K">21K</option>
+                <option value="42K">42K</option>
+                <option value="Trail">Trail</option>
+              </select>
+              <select value={aiDurationWeeks} onChange={(e) => setAiDurationWeeks(e.target.value)} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit" }}>
+                {["8", "12", "16", "20", "24"].map((w) => <option key={w} value={w}>{w} semanas</option>)}
+              </select>
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
+              <button type="button" onClick={generatePlanWithAi} disabled={aiGenerating} style={{ border: "none", borderRadius: 8, padding: "9px 14px", background: aiGenerating ? "#cbd5e1" : "linear-gradient(135deg,#8b5cf6,#6366f1)", color: "#fff", fontWeight: 800, cursor: aiGenerating ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+                {aiGenerating ? "Generando…" : "Generar con IA"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
