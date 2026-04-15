@@ -10489,8 +10489,8 @@ function WorkoutLibrary({ coachUserId, libraryRefresh, onUseWorkout, athletes, n
   const [globalLoading, setGlobalLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [deletingId, setDeletingId] = useState(null);
-  const [assigningId, setAssigningId] = useState(null);
-  const [assignAthleteId, setAssignAthleteId] = useState("");
+  const [assigningWorkoutRow, setAssigningWorkoutRow] = useState(null);
+  const [assignSelectedAthleteIds, setAssignSelectedAthleteIds] = useState([]);
   const [assignDate, setAssignDate] = useState(() => formatLocalYMD(new Date()));
   const [assignSaving, setAssignSaving] = useState(false);
   const [globalCopyingId, setGlobalCopyingId] = useState(null);
@@ -10590,17 +10590,22 @@ function WorkoutLibrary({ coachUserId, libraryRefresh, onUseWorkout, athletes, n
 
   const assignDirectly = async (row) => {
     if (!coachUserId) return;
-    if (!assignAthleteId) {
-      notify("Selecciona un atleta");
+    if (!Array.isArray(assignSelectedAthleteIds) || assignSelectedAthleteIds.length === 0) {
+      notify("Selecciona al menos un atleta");
       return;
     }
     if (!assignDate) {
       notify("Selecciona la fecha");
       return;
     }
+    const athleteRows = (athletes || []).filter((a) => assignSelectedAthleteIds.includes(String(a.id)));
+    if (athleteRows.length === 0) {
+      notify("No se encontraron atletas seleccionados.");
+      return;
+    }
     setAssignSaving(true);
-    const payload = {
-      athlete_id: assignAthleteId,
+    const payload = athleteRows.map((a) => ({
+      athlete_id: a.id,
       coach_id: coachUserId,
       title: row.title,
       type: row.type,
@@ -10611,7 +10616,7 @@ function WorkoutLibrary({ coachUserId, libraryRefresh, onUseWorkout, athletes, n
       workout_structure: Array.isArray(row.structure) ? row.structure : [],
       done: false,
       scheduled_date: assignDate,
-    };
+    }));
     const { error } = await supabase.from("workouts").insert(payload);
     setAssignSaving(false);
     if (error) {
@@ -10619,14 +10624,18 @@ function WorkoutLibrary({ coachUserId, libraryRefresh, onUseWorkout, athletes, n
       notify(`Error al asignar: ${error.message}`);
       return;
     }
-    notify("Workout asignado directamente al atleta ✓");
-    const athleteRow = (athletes || []).find((a) => String(a.id) === String(assignAthleteId));
-    await sendWorkoutAssignmentPushToAthlete({
-      athleteUserId: athleteRow?.user_id,
-      workoutTitle: row.title,
-      scheduledDate: assignDate,
-    });
-    setAssigningId(null);
+    await Promise.all(
+      athleteRows.map((a) =>
+        sendWorkoutAssignmentPushToAthlete({
+          athleteUserId: a?.user_id,
+          workoutTitle: row.title,
+          scheduledDate: assignDate,
+        }),
+      ),
+    );
+    notify(`Workout asignado a ${athleteRows.length} atletas`);
+    setAssigningWorkoutRow(null);
+    setAssignSelectedAthleteIds([]);
   };
 
   const globalGrouped = useMemo(() => {
@@ -10901,9 +10910,9 @@ function WorkoutLibrary({ coachUserId, libraryRefresh, onUseWorkout, athletes, n
                   <button
                     type="button"
                     onClick={() => {
-                      setAssigningId((prev) => (prev === row.id ? null : row.id));
-                      if ((athletes || []).length) setAssignAthleteId(String(athletes[0].id));
+                      setAssigningWorkoutRow(row);
                       setAssignDate(formatLocalYMD(new Date()));
+                      setAssignSelectedAthleteIds([]);
                     }}
                     style={{
                       background: "rgba(59,130,246,.12)",
@@ -10917,7 +10926,7 @@ function WorkoutLibrary({ coachUserId, libraryRefresh, onUseWorkout, athletes, n
                       fontSize: ".78em",
                     }}
                   >
-                    Asignar directamente
+                    📋 Asignar
                   </button>
                   <button
                     type="button"
@@ -10938,42 +10947,63 @@ function WorkoutLibrary({ coachUserId, libraryRefresh, onUseWorkout, athletes, n
                     {deletingId === row.id ? "…" : "Eliminar"}
                   </button>
                 </div>
-                {assigningId === row.id ? (
-                  <div style={{ width: "100%", borderTop: "1px dashed #cbd5e1", paddingTop: 10, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "end" }}>
-                    <div style={{ minWidth: 180, flex: "1 1 180px" }}>
-                      <div style={{ fontSize: ".7em", color: "#64748b", marginBottom: 4 }}>Atleta</div>
-                      <select
-                        value={assignAthleteId}
-                        onChange={(e) => setAssignAthleteId(e.target.value)}
-                        style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", color: "#0f172a", fontFamily: "inherit", fontSize: ".8em" }}
-                      >
-                        {(athletes || []).map((a) => <option key={a.id} value={String(a.id)}>{a.name}</option>)}
-                      </select>
-                    </div>
-                    <div>
-                      <div style={{ fontSize: ".7em", color: "#64748b", marginBottom: 4 }}>Fecha</div>
-                      <input
-                        type="date"
-                        value={assignDate}
-                        onChange={(e) => setAssignDate(e.target.value)}
-                        style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", color: "#0f172a", fontFamily: "inherit", fontSize: ".8em" }}
-                      />
-                    </div>
-                    <button
-                      type="button"
-                      disabled={assignSaving}
-                      onClick={() => assignDirectly(row)}
-                      style={{ background: assignSaving ? "#e2e8f0" : "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 8, padding: "8px 12px", color: assignSaving ? "#64748b" : "#fff", fontWeight: 800, cursor: assignSaving ? "not-allowed" : "pointer", fontFamily: "inherit", fontSize: ".78em" }}
-                    >
-                      {assignSaving ? "Asignando…" : "Asignar ahora"}
-                    </button>
-                  </div>
-                ) : null}
               </div>
             );
           })}
         </div>
       )}
+      {assigningWorkoutRow ? (
+        <div style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ ...S.card, width: "100%", maxWidth: 540, margin: 0 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <div style={{ fontSize: ".95em", fontWeight: 900, color: "#0f172a" }}>📋 Asignar workout</div>
+              <button type="button" onClick={() => setAssigningWorkoutRow(null)} disabled={assignSaving} style={{ border: "1px solid #e2e8f0", background: "#fff", borderRadius: 8, padding: "6px 10px", cursor: assignSaving ? "not-allowed" : "pointer", fontFamily: "inherit" }}>✕</button>
+            </div>
+            <div style={{ fontSize: ".78em", color: "#64748b", marginBottom: 10 }}>
+              {assigningWorkoutRow.title}
+            </div>
+            <div style={{ marginBottom: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button type="button" onClick={() => setAssignSelectedAthleteIds((athletes || []).map((a) => String(a.id)))} style={{ border: "1px solid #bfdbfe", background: "#eff6ff", color: "#1d4ed8", borderRadius: 8, padding: "6px 10px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".76em" }}>
+                Seleccionar todos
+              </button>
+              <button type="button" onClick={() => setAssignSelectedAthleteIds([])} style={{ border: "1px solid #e2e8f0", background: "#fff", color: "#475569", borderRadius: 8, padding: "6px 10px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".76em" }}>
+                Deseleccionar todos
+              </button>
+            </div>
+            <div style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: 10, maxHeight: 220, overflowY: "auto", marginBottom: 12 }}>
+              {(athletes || []).map((a) => {
+                const checked = assignSelectedAthleteIds.includes(String(a.id));
+                return (
+                  <label key={a.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 2px", cursor: "pointer", fontSize: ".82em", color: "#0f172a" }}>
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() =>
+                        setAssignSelectedAthleteIds((prev) =>
+                          prev.includes(String(a.id)) ? prev.filter((x) => x !== String(a.id)) : [...prev, String(a.id)],
+                        )
+                      }
+                    />
+                    <span>{a.name}</span>
+                  </label>
+                );
+              })}
+            </div>
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Fecha del workout</div>
+              <input type="date" value={assignDate} onChange={(e) => setAssignDate(e.target.value)} style={{ width: "100%", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit", boxSizing: "border-box" }} />
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <button type="button" onClick={() => setAssigningWorkoutRow(null)} disabled={assignSaving} style={{ border: "1px solid #e2e8f0", background: "#fff", borderRadius: 8, padding: "8px 12px", color: "#475569", cursor: assignSaving ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 700 }}>
+                Cancelar
+              </button>
+              <button type="button" onClick={() => assignDirectly(assigningWorkoutRow)} disabled={assignSaving} style={{ border: "none", background: assignSaving ? "#cbd5e1" : "linear-gradient(135deg,#b45309,#f59e0b)", borderRadius: 8, padding: "8px 12px", color: "#fff", cursor: assignSaving ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 800 }}>
+                {assignSaving ? "Asignando…" : "Asignar a seleccionados"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -10991,7 +11021,8 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
   });
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [savingLibrary, setSavingLibrary] = useState(false);
-  const [assignAthleteId, setAssignAthleteId] = useState("");
+  const [assignEnabledOnSave, setAssignEnabledOnSave] = useState(true);
+  const [assignAthleteIds, setAssignAthleteIds] = useState([]);
   const [assignDate, setAssignDate] = useState(() => formatLocalYMD(new Date()));
   const [assignSaving, setAssignSaving] = useState(false);
   const [builderHrAthleteId, setBuilderHrAthleteId] = useState("");
@@ -11073,21 +11104,21 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
   const openAssignModal = () => {
     if (!previewWorkout) return;
     setAssignDate(formatLocalYMD(new Date()));
-    if (athletes?.length) setAssignAthleteId(String(athletes[0].id));
-    else setAssignAthleteId("");
+    setAssignEnabledOnSave(true);
+    setAssignAthleteIds((athletes || []).map((a) => String(a.id)));
     setShowAssignModal(true);
   };
 
   const saveAssignedWorkout = async () => {
     const w = previewWorkout;
     if (!w) return;
-    if (!assignAthleteId) {
-      alert("Selecciona un atleta.");
+    if (!assignEnabledOnSave) {
+      alert("Activa la opción de asignación para guardar este workout.");
       return;
     }
-    const selectedAthlete = (athletes || []).find(a => String(a.id) === String(assignAthleteId));
-    if (!selectedAthlete?.id) {
-      alert("No se encontró el atleta seleccionado.");
+    const selectedAthletes = (athletes || []).filter((a) => assignAthleteIds.includes(String(a.id)));
+    if (selectedAthletes.length === 0) {
+      alert("Selecciona al menos un atleta.");
       return;
     }
     if (!assignDate) {
@@ -11101,33 +11132,35 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
     }
     setAssignSaving(true);
     try {
-      const payload = {
+      const payload = selectedAthletes.map((selectedAthlete) => ({
         ...w,
         workout_structure: Array.isArray(w.structure) ? w.structure : [],
         athlete_id: selectedAthlete.id,
         coach_id: userData.user.id,
         scheduled_date: assignDate,
         done: false,
-      };
-      const { error } = await supabase.from("workouts").insert(payload).select().single();
+      }));
+      const { error } = await supabase.from("workouts").insert(payload);
       if (error) {
         console.error("Error guardando workout asignado:", error);
         alert(`Error: ${error.message}\n${error.details || ""}\n${error.hint || ""}`);
         return;
       }
 
-      if (selectedAthlete.email) {
-        try {
-          const structureRows = Array.isArray(w?.structure)
-            ? w.structure.map((s) => `<p>• <strong>${s.phase || ""}</strong>: ${s.duration || ""} · ${s.pace || ""}</p>`).join("")
-            : "";
-          await fetch("/api/send-email", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              to: selectedAthlete.email,
-              subject: `Nuevo entrenamiento: ${w.title}`,
-              html: `
+      await Promise.all(
+        selectedAthletes.map(async (selectedAthlete) => {
+          if (selectedAthlete.email) {
+            try {
+              const structureRows = Array.isArray(w?.structure)
+                ? w.structure.map((s) => `<p>• <strong>${s.phase || ""}</strong>: ${s.duration || ""} · ${s.pace || ""}</p>`).join("")
+                : "";
+              await fetch("/api/send-email", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  to: selectedAthlete.email,
+                  subject: `Nuevo entrenamiento: ${w.title}`,
+                  html: `
       <h2>Hola ${selectedAthlete.name} 👋</h2>
       <p>Tu coach te ha asignado un nuevo entrenamiento:</p>
       <h3>${w.title}</h3>
@@ -11140,21 +11173,23 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
       <br/><p>¡Mucho éxito! 💪</p>
       <p>— Tu coach en ${BRAND_NAME}</p>
     `,
-            }),
+                }),
+              });
+            } catch (e) {
+              console.error("Error llamando /api/send-email:", e);
+            }
+          }
+          await sendWorkoutAssignmentPushToAthlete({
+            athleteUserId: selectedAthlete?.user_id,
+            workoutTitle: w.title,
+            scheduledDate: assignDate,
           });
-        } catch (e) {
-          console.error("Error llamando /api/send-email:", e);
-        }
-      }
-      await sendWorkoutAssignmentPushToAthlete({
-        athleteUserId: selectedAthlete?.user_id,
-        workoutTitle: w.title,
-        scheduledDate: assignDate,
-      });
+        }),
+      );
 
       setShowAssignModal(false);
       onWorkoutAssigned?.();
-      notify("Entrenamiento guardado correctamente en Supabase.");
+      notify(`Workout asignado a ${selectedAthletes.length} atletas`);
     } finally {
       setAssignSaving(false);
     }
@@ -11677,33 +11712,53 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
                     fontWeight: 600,
                   }}
                 >
-                  📤 Asignar a Atleta
+                  📤 Guardar y asignar
                 </button>
               </div>
               {showAssignModal && (
                 <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 16 }}>
-                  <div style={{ ...S.card, width: "100%", maxWidth: 400, margin: 0 }}>
-                    <div style={{ fontSize: ".85em", fontWeight: 700, color: "#0f172a", marginBottom: 8 }}>Asignar workout a un atleta</div>
+                  <div style={{ ...S.card, width: "100%", maxWidth: 520, margin: 0 }}>
+                    <div style={{ fontSize: ".85em", fontWeight: 700, color: "#0f172a", marginBottom: 8 }}>📋 Asignar a atletas</div>
                     <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 14 }}>
-                      Se guardará en Supabase con los datos del workout (IA o manual), más atleta, coach y fecha.
+                      Se guardará en Supabase con los datos del workout y se creará un registro por cada atleta seleccionado.
                     </div>
                     <div style={{ marginBottom: 12 }}>
-                      <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Atleta del coach</div>
-                      <select
-                        value={assignAthleteId}
-                        onChange={(e) => setAssignAthleteId(e.target.value)}
-                        style={{ width: "100%", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", color: "#0f172a", fontFamily: "inherit", fontSize: ".85em", outline: "none", boxSizing: "border-box" }}
-                      >
-                        <option value="" disabled>
-                          Selecciona un atleta
-                        </option>
-                        {(athletes || []).map((a) => (
-                          <option key={a.id} value={String(a.id)}>
-                            {a.name}
-                          </option>
-                        ))}
-                      </select>
+                      <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: ".82em", color: "#0f172a", fontWeight: 700, cursor: "pointer" }}>
+                        <input type="checkbox" checked={assignEnabledOnSave} onChange={(e) => setAssignEnabledOnSave(e.target.checked)} />
+                        Asignar a atletas al guardar
+                      </label>
                     </div>
+                    {assignEnabledOnSave ? (
+                      <>
+                        <div style={{ marginBottom: 8, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                          <button type="button" onClick={() => setAssignAthleteIds((athletes || []).map((a) => String(a.id)))} style={{ border: "1px solid #bfdbfe", background: "#eff6ff", color: "#1d4ed8", borderRadius: 8, padding: "6px 10px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".76em" }}>
+                            Seleccionar todos
+                          </button>
+                          <button type="button" onClick={() => setAssignAthleteIds([])} style={{ border: "1px solid #e2e8f0", background: "#fff", color: "#475569", borderRadius: 8, padding: "6px 10px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".76em" }}>
+                            Deseleccionar todos
+                          </button>
+                        </div>
+                        <div style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: 10, maxHeight: 190, overflowY: "auto", marginBottom: 14 }}>
+                          {(athletes || []).map((a) => {
+                            const checked = assignAthleteIds.includes(String(a.id));
+                            return (
+                              <label key={a.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 2px", cursor: "pointer", fontSize: ".82em", color: "#0f172a" }}>
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={() =>
+                                    setAssignAthleteIds((prev) =>
+                                      prev.includes(String(a.id)) ? prev.filter((x) => x !== String(a.id)) : [...prev, String(a.id)],
+                                    )
+                                  }
+                                />
+                                <span>{a.name}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </>
+                    ) : null}
                     <div style={{ marginBottom: 16 }}>
                       <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Fecha del workout</div>
                       <input
@@ -11728,7 +11783,7 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
                         disabled={assignSaving}
                         style={{ background: assignSaving ? "#e2e8f0" : "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 8, padding: "8px 14px", color: assignSaving ? "#334155" : "white", cursor: assignSaving ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 800, fontSize: ".82em" }}
                       >
-                        {assignSaving ? "Guardando..." : "Confirmar"}
+                        {assignSaving ? "Guardando..." : "Asignar a seleccionados"}
                       </button>
                     </div>
                   </div>
