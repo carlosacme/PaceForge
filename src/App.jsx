@@ -1027,6 +1027,7 @@ const COACH_NAV_BASE_ITEMS = [
   { id: "plans", icon: "◆", label: "Planes", shortLabel: "Planes", color: "#0d9488" },
   { id: "builder", icon: "◎", label: "Crear Workout", shortLabel: "IA", color: "#ea580c" },
   { id: "library", icon: "◈", label: "Biblioteca", shortLabel: "Biblio", color: "#6366f1" },
+  { id: "challenges", icon: "🏆", label: "Retos", shortLabel: "Retos", color: "#a855f7" },
 ];
 
 const COACH_SUBSCRIPTION_NEQUI = "3233675434";
@@ -1058,6 +1059,336 @@ const COACH_PLAN_PICKER_PERIODS = [
   { id: "semestral", label: "Semestral", discountPct: 12, badge: "Ahorra 12%" },
   { id: "anual", label: "Anual", discountPct: 20, badge: "Ahorra 20%" },
 ];
+
+const CHALLENGE_TYPE_OPTIONS = [
+  { id: "distancia", label: "Distancia (km)" },
+  { id: "tiempo", label: "Tiempo (min)" },
+  { id: "workouts", label: "Workouts completados" },
+  { id: "racha", label: "Racha (días)" },
+];
+
+const challengeValueLabel = (challenge) => {
+  const unit = String(challenge?.unit || "").trim();
+  const target = Number(challenge?.target_value || 0);
+  if (!Number.isFinite(target) || target <= 0) return "Meta pendiente";
+  if (unit) return `${target} ${unit}`;
+  return String(target);
+};
+
+const normalizeChallengeType = (raw) => {
+  const type = String(raw || "").trim().toLowerCase();
+  if (type === "distance") return "distancia";
+  if (type === "time") return "tiempo";
+  return type;
+};
+
+const computeWorkoutDayStreak = (workouts, startYmd, endYmd) => {
+  const doneDays = new Set(
+    (workouts || [])
+      .filter((w) => w.done)
+      .map((w) => normalizeScheduledDateYmd(w.scheduled_date))
+      .filter((ymd) => ymd && ymd >= startYmd && ymd <= endYmd),
+  );
+  let best = 0;
+  let current = 0;
+  const start = new Date(`${startYmd}T12:00:00`);
+  const end = new Date(`${endYmd}T12:00:00`);
+  for (let d = new Date(start.getTime()); d <= end; d = addDays(d, 1)) {
+    const ymd = formatLocalYMD(d);
+    if (doneDays.has(ymd)) {
+      current += 1;
+      if (current > best) best = current;
+    } else {
+      current = 0;
+    }
+  }
+  return best;
+};
+
+const computeChallengeProgressForAthlete = (challenge, workouts) => {
+  const startYmd = String(challenge?.start_date || "");
+  const endYmd = String(challenge?.end_date || "");
+  const target = Math.max(0, Number(challenge?.target_value) || 0);
+  const type = normalizeChallengeType(challenge?.challenge_type);
+  const inRange = (workouts || []).filter((w) => {
+    const ymd = normalizeScheduledDateYmd(w.scheduled_date);
+    return Boolean(ymd && ymd >= startYmd && ymd <= endYmd && w.done);
+  });
+  let value = 0;
+  if (type === "distancia") {
+    value = inRange.reduce((sum, w) => sum + (Number(w.total_km) || 0), 0);
+  } else if (type === "tiempo") {
+    value = inRange.reduce((sum, w) => sum + (Number(w.duration_min) || 0), 0);
+  } else if (type === "workouts") {
+    value = inRange.length;
+  } else if (type === "racha") {
+    value = computeWorkoutDayStreak(workouts, startYmd, endYmd);
+  }
+  const pct = target > 0 ? Math.max(0, Math.min(100, (value / target) * 100)) : 0;
+  return { value, target, pct };
+};
+
+function ChallengesHub({ profileRole, currentUserId, athleteId = null, workouts = [], notify }) {
+  const S = styles;
+  const isAdmin = profileRole === "admin" || String(currentUserId || "") === PLATFORM_ADMIN_USER_ID;
+  const isAthlete = profileRole === "athlete";
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [participantsByChallenge, setParticipantsByChallenge] = useState({});
+  const [myChallengeIds, setMyChallengeIds] = useState(() => new Set());
+  const [joiningChallengeId, setJoiningChallengeId] = useState("");
+  const [showCreate, setShowCreate] = useState(false);
+  const [savingCreate, setSavingCreate] = useState(false);
+  const [deletingId, setDeletingId] = useState("");
+  const [form, setForm] = useState({
+    title: "",
+    description: "",
+    challenge_type: "distancia",
+    target_value: "",
+    unit: "km",
+    start_date: formatLocalYMD(new Date()),
+    end_date: formatLocalYMD(addDays(new Date(), 30)),
+    emoji: "🏁",
+    color: "#a855f7",
+  });
+
+  const loadChallenges = useCallback(async () => {
+    setLoading(true);
+    const today = formatLocalYMD(new Date());
+    const { data, error } = await supabase
+      .from("challenges")
+      .select("*")
+      .eq("is_active", true)
+      .gte("end_date", today)
+      .order("end_date", { ascending: true });
+    if (error) {
+      console.error("load challenges:", error);
+      notify?.(error.message || "No se pudieron cargar los retos");
+      setRows([]);
+      setLoading(false);
+      return;
+    }
+    const list = Array.isArray(data) ? data : [];
+    setRows(list);
+    const ids = list.map((c) => c.id).filter(Boolean);
+    if (ids.length === 0) {
+      setParticipantsByChallenge({});
+      setMyChallengeIds(new Set());
+      setLoading(false);
+      return;
+    }
+    const { data: participants, error: pErr } = await supabase
+      .from("challenge_participants")
+      .select("id,challenge_id,user_id,athlete_id")
+      .in("challenge_id", ids);
+    if (pErr) {
+      console.error("load challenge_participants:", pErr);
+    }
+    const grouped = {};
+    const mine = new Set();
+    for (const p of participants || []) {
+      const cid = p.challenge_id;
+      if (!grouped[cid]) grouped[cid] = [];
+      grouped[cid].push(p);
+      if (
+        String(p.user_id || "") === String(currentUserId || "") ||
+        (athleteId != null && String(p.athlete_id || "") === String(athleteId))
+      ) {
+        mine.add(String(cid));
+      }
+    }
+    setParticipantsByChallenge(grouped);
+    setMyChallengeIds(mine);
+    setLoading(false);
+  }, [notify, currentUserId, athleteId]);
+
+  useEffect(() => {
+    loadChallenges();
+  }, [loadChallenges]);
+
+  const joinChallenge = async (challengeId) => {
+    if (!currentUserId || !athleteId) return;
+    setJoiningChallengeId(String(challengeId));
+    const { error } = await supabase.from("challenge_participants").insert({
+      challenge_id: challengeId,
+      user_id: currentUserId,
+      athlete_id: athleteId,
+    });
+    setJoiningChallengeId("");
+    if (error) {
+      notify?.(error.message || "No se pudo unir al reto");
+      return;
+    }
+    notify?.("Te uniste al reto ✅");
+    loadChallenges();
+  };
+
+  const createChallenge = async () => {
+    if (!isAdmin) return;
+    const title = form.title.trim();
+    const target = Number(form.target_value);
+    if (!title || !Number.isFinite(target) || target <= 0 || !form.start_date || !form.end_date) {
+      notify?.("Completa título, meta y rango de fechas válidos.");
+      return;
+    }
+    setSavingCreate(true);
+    const { error } = await supabase.from("challenges").insert({
+      title,
+      description: form.description.trim() || null,
+      challenge_type: form.challenge_type,
+      target_value: target,
+      unit: form.unit.trim() || null,
+      start_date: form.start_date,
+      end_date: form.end_date,
+      emoji: form.emoji.trim() || "🏁",
+      color: form.color || "#a855f7",
+      created_by: PLATFORM_ADMIN_USER_ID,
+      is_active: true,
+    });
+    setSavingCreate(false);
+    if (error) {
+      notify?.(error.message || "No se pudo crear el reto");
+      return;
+    }
+    setShowCreate(false);
+    setForm((prev) => ({ ...prev, title: "", description: "", target_value: "" }));
+    notify?.("Reto creado ✅");
+    loadChallenges();
+  };
+
+  const deleteChallenge = async (challengeId) => {
+    if (!isAdmin) return;
+    if (typeof window !== "undefined" && !window.confirm("¿Eliminar este reto?")) return;
+    setDeletingId(String(challengeId));
+    const { error } = await supabase.from("challenges").delete().eq("id", challengeId);
+    setDeletingId("");
+    if (error) {
+      notify?.(error.message || "No se pudo eliminar el reto");
+      return;
+    }
+    notify?.("Reto eliminado");
+    loadChallenges();
+  };
+
+  return (
+    <div style={{ ...S.card, marginBottom: 18 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
+        <div>
+          <div style={{ fontSize: "1.1em", fontWeight: 900, color: "#0f172a" }}>🏆 Retos</div>
+          <div style={{ color: "#64748b", fontSize: ".8em", marginTop: 3 }}>Retos activos de la comunidad</div>
+        </div>
+        {isAdmin ? (
+          <button
+            type="button"
+            onClick={() => setShowCreate((v) => !v)}
+            style={{ background: "linear-gradient(135deg,#7c3aed,#a855f7)", border: "none", borderRadius: 10, padding: "9px 14px", color: "#fff", fontWeight: 800, fontFamily: "inherit", cursor: "pointer", fontSize: ".78em" }}
+          >
+            ➕ Crear reto
+          </button>
+        ) : null}
+      </div>
+
+      {isAdmin && showCreate ? (
+        <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: 14, background: "#f8fafc", marginBottom: 14 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: 10 }}>
+            <input value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} placeholder="Título" style={{ border: "1px solid #dbe2ea", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit" }} />
+            <select value={form.challenge_type} onChange={(e) => setForm((f) => ({ ...f, challenge_type: e.target.value }))} style={{ border: "1px solid #dbe2ea", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit" }}>
+              {CHALLENGE_TYPE_OPTIONS.map((o) => (
+                <option key={o.id} value={o.id}>{o.label}</option>
+              ))}
+            </select>
+            <input type="number" min="1" value={form.target_value} onChange={(e) => setForm((f) => ({ ...f, target_value: e.target.value }))} placeholder="Meta" style={{ border: "1px solid #dbe2ea", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit" }} />
+            <input value={form.unit} onChange={(e) => setForm((f) => ({ ...f, unit: e.target.value }))} placeholder="Unidad" style={{ border: "1px solid #dbe2ea", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit" }} />
+            <input type="date" value={form.start_date} onChange={(e) => setForm((f) => ({ ...f, start_date: e.target.value }))} style={{ border: "1px solid #dbe2ea", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit" }} />
+            <input type="date" value={form.end_date} onChange={(e) => setForm((f) => ({ ...f, end_date: e.target.value }))} style={{ border: "1px solid #dbe2ea", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit" }} />
+            <input value={form.emoji} onChange={(e) => setForm((f) => ({ ...f, emoji: e.target.value }))} placeholder="Emoji" style={{ border: "1px solid #dbe2ea", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit" }} />
+            <input type="color" value={form.color} onChange={(e) => setForm((f) => ({ ...f, color: e.target.value }))} style={{ border: "1px solid #dbe2ea", borderRadius: 8, padding: "4px", background: "#fff", height: 36 }} />
+          </div>
+          <textarea value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} placeholder="Descripción" rows={3} style={{ marginTop: 10, width: "100%", border: "1px solid #dbe2ea", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", boxSizing: "border-box" }} />
+          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
+            <button
+              type="button"
+              disabled={savingCreate}
+              onClick={createChallenge}
+              style={{ background: savingCreate ? "#cbd5e1" : "linear-gradient(135deg,#7c3aed,#a855f7)", border: "none", borderRadius: 8, padding: "8px 12px", color: "#fff", fontWeight: 700, fontFamily: "inherit", cursor: savingCreate ? "not-allowed" : "pointer", fontSize: ".78em" }}
+            >
+              {savingCreate ? "Guardando…" : "Guardar reto"}
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {loading ? (
+        <div style={{ color: "#64748b", fontSize: ".85em" }}>Cargando retos…</div>
+      ) : rows.length === 0 ? (
+        <div style={{ color: "#94a3b8", fontSize: ".84em" }}>No hay retos activos por ahora.</div>
+      ) : (
+        <div style={{ display: "grid", gap: 12 }}>
+          {rows.map((challenge) => {
+            const participants = participantsByChallenge[challenge.id] || [];
+            const isMine = myChallengeIds.has(String(challenge.id));
+            const progress = computeChallengeProgressForAthlete(challenge, workouts);
+            return (
+              <div key={challenge.id} style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: "12px 14px", background: "#fff" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontSize: "1.25em" }}>{challenge.emoji || "🏁"}</span>
+                      <span style={{ fontWeight: 900, color: challenge.color || "#0f172a", fontSize: ".95em" }}>{challenge.title || "Reto"}</span>
+                    </div>
+                    <div style={{ color: "#64748b", fontSize: ".82em", marginTop: 4, lineHeight: 1.4 }}>{challenge.description || "Sin descripción"}</div>
+                  </div>
+                  <div style={{ color: "#475569", fontSize: ".76em", fontWeight: 700 }}>Meta: {challengeValueLabel(challenge)}</div>
+                </div>
+                <div style={{ marginTop: 10, color: "#64748b", fontSize: ".76em" }}>
+                  Fecha límite: {challenge.end_date ? new Date(`${challenge.end_date}T12:00:00`).toLocaleDateString("es-CO") : "—"} · Participantes: {participants.length}
+                </div>
+                {isAthlete ? (
+                  <>
+                    <div style={{ marginTop: 10, fontSize: ".76em", color: "#475569", fontWeight: 700 }}>
+                      Progreso: {progress.value.toFixed(1)} / {progress.target || 0}
+                    </div>
+                    <div style={{ height: 8, borderRadius: 999, background: "#e2e8f0", overflow: "hidden", marginTop: 6 }}>
+                      <div style={{ width: `${progress.pct}%`, height: "100%", background: challenge.color || "#a855f7" }} />
+                    </div>
+                  </>
+                ) : null}
+                <div style={{ marginTop: 10, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                  {isAthlete ? (
+                    isMine ? (
+                      <span style={{ fontSize: ".72em", fontWeight: 800, color: "#15803d", border: "1px solid rgba(34,197,94,.35)", background: "rgba(34,197,94,.14)", borderRadius: 999, padding: "4px 10px" }}>
+                        Participando
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={joiningChallengeId === String(challenge.id) || !athleteId}
+                        onClick={() => joinChallenge(challenge.id)}
+                        style={{ background: joiningChallengeId === String(challenge.id) ? "#cbd5e1" : "linear-gradient(135deg,#2563eb,#3b82f6)", border: "none", borderRadius: 8, padding: "8px 12px", color: "#fff", fontWeight: 800, fontFamily: "inherit", cursor: joiningChallengeId === String(challenge.id) ? "not-allowed" : "pointer", fontSize: ".75em" }}
+                      >
+                        {joiningChallengeId === String(challenge.id) ? "Uniendo…" : "Unirse"}
+                      </button>
+                    )
+                  ) : <span />}
+                  {isAdmin ? (
+                    <button
+                      type="button"
+                      disabled={deletingId === String(challenge.id)}
+                      onClick={() => deleteChallenge(challenge.id)}
+                      style={{ background: deletingId === String(challenge.id) ? "#e2e8f0" : "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "7px 10px", color: "#b91c1c", fontWeight: 700, cursor: deletingId === String(challenge.id) ? "not-allowed" : "pointer", fontFamily: "inherit", fontSize: ".72em" }}
+                    >
+                      🗑️ Eliminar
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function App() {
   const [view, setView] = useState("dashboard");
@@ -2863,6 +3194,15 @@ export default function App() {
               notify("Workout cargado en el generador. Puedes asignarlo a un atleta.");
             }}
             onCopiedGlobalToLibrary={() => setLibraryRefresh((r) => r + 1)}
+            notify={notify}
+          />
+        )}
+        {view === "challenges" && (
+          <ChallengesHub
+            profileRole={profile?.role ?? ""}
+            currentUserId={sessionUserId || null}
+            athleteId={null}
+            workouts={[]}
             notify={notify}
           />
         )}
@@ -5692,6 +6032,7 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
 function AthleteHome({ profile }) {
   const S = styles;
   const ATHLETE_TAB_STORAGE_KEY = "raf_athlete_tab";
+  const ATHLETE_SECTION_STORAGE_KEY = "raf_athlete_section";
   const [athleteInfo, setAthleteInfo] = useState(null);
   const [workouts, setWorkouts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -5704,6 +6045,10 @@ function AthleteHome({ profile }) {
   const [athletePremiumModalOpen, setAthletePremiumModalOpen] = useState(false);
   const [athleteNotRegistered, setAthleteNotRegistered] = useState(false);
   const [showEvaluation, setShowEvaluation] = useState(false);
+  const [athleteSection, setAthleteSection] = useState(() => {
+    if (typeof localStorage === "undefined") return "home";
+    return localStorage.getItem(ATHLETE_SECTION_STORAGE_KEY) || "home";
+  });
   const [athleteTabRestored, setAthleteTabRestored] = useState(false);
   const [achievementsCatalog, setAchievementsCatalog] = useState([]);
   const [earnedAchievements, setEarnedAchievements] = useState([]);
@@ -5729,6 +6074,9 @@ function AthleteHome({ profile }) {
   const [loadingPublicCoachesAthlete, setLoadingPublicCoachesAthlete] = useState(false);
   const [selectCoachBusyId, setSelectCoachBusyId] = useState("");
   const [coachAssignSuccess, setCoachAssignSuccess] = useState("");
+  const [workoutSummaryModal, setWorkoutSummaryModal] = useState(null);
+  const [manualSummaryForm, setManualSummaryForm] = useState({ distanceKm: "", timeHms: "", rpe: "", notes: "" });
+  const [manualSummarySaving, setManualSummarySaving] = useState(false);
 
   const profileUserId = profile?.user_id ?? null;
 
@@ -5747,6 +6095,11 @@ function AthleteHome({ profile }) {
     if (!athleteTabRestored || typeof localStorage === "undefined") return;
     localStorage.setItem(ATHLETE_TAB_STORAGE_KEY, showEvaluation ? "evaluation" : "home");
   }, [showEvaluation, athleteTabRestored]);
+
+  useEffect(() => {
+    if (typeof localStorage === "undefined") return;
+    localStorage.setItem(ATHLETE_SECTION_STORAGE_KEY, athleteSection);
+  }, [athleteSection, ATHLETE_SECTION_STORAGE_KEY]);
 
   useEffect(() => {
     if (!athleteTabRestored) return undefined;
@@ -6071,6 +6424,68 @@ function AthleteHome({ profile }) {
     [workouts],
   );
 
+  const openWorkoutSummaryModal = async (workoutRow) => {
+    if (!workoutRow?.scheduled_date) return;
+    const isStravaConnected = Boolean(stravaConnection?.access_token);
+    if (isStravaConnected && athleteInfo?.id) {
+      const dayStart = `${workoutRow.scheduled_date}T00:00:00`;
+      const dayEnd = `${formatLocalYMD(addDays(new Date(`${workoutRow.scheduled_date}T12:00:00`), 1))}T00:00:00`;
+      const { data, error } = await supabase
+        .from("strava_activities")
+        .select("*")
+        .eq("athlete_id", athleteInfo.id)
+        .gte("start_date_local", dayStart)
+        .lt("start_date_local", dayEnd)
+        .order("start_date_local", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) {
+        console.warn("No se pudo cargar actividad strava_activities:", error);
+      }
+      setWorkoutSummaryModal({ workout: workoutRow, stravaConnected: true, activity: data || null });
+      return;
+    }
+    setManualSummaryForm({
+      distanceKm: workoutRow.total_km ? String(workoutRow.total_km) : "",
+      timeHms: workoutRow.duration_min ? formatDurationClock(Number(workoutRow.duration_min) * 60) : "",
+      rpe: workoutRow.rpe ? String(workoutRow.rpe) : "",
+      notes: "",
+    });
+    setWorkoutSummaryModal({ workout: workoutRow, stravaConnected: false, activity: null });
+  };
+
+  const saveManualWorkoutSummary = async () => {
+    const workoutRow = workoutSummaryModal?.workout;
+    if (!workoutRow?.id) return;
+    const parsedDistance = Number(manualSummaryForm.distanceKm);
+    const secs = parseHmsToSeconds(manualSummaryForm.timeHms);
+    const rpe = clampWorkoutRpe(manualSummaryForm.rpe);
+    const summaryLines = [
+      "[Resumen manual]",
+      Number.isFinite(parsedDistance) && parsedDistance > 0 ? `Distancia: ${parsedDistance} km` : null,
+      Number.isFinite(secs) && secs > 0 ? `Tiempo: ${manualSummaryForm.timeHms}` : null,
+      rpe != null ? `RPE: ${rpe}` : null,
+      manualSummaryForm.notes.trim() ? `Notas: ${manualSummaryForm.notes.trim()}` : null,
+    ].filter(Boolean);
+    const payload = {
+      total_km: Number.isFinite(parsedDistance) && parsedDistance > 0 ? parsedDistance : workoutRow.total_km,
+      duration_min: Number.isFinite(secs) && secs > 0 ? Math.round(secs / 60) : workoutRow.duration_min,
+      rpe: rpe ?? workoutRow.rpe ?? null,
+      description: [workoutRow.description || "", summaryLines.join("\n")].filter(Boolean).join("\n\n"),
+    };
+    setManualSummarySaving(true);
+    const { error } = await supabase.from("workouts").update(payload).eq("id", workoutRow.id);
+    setManualSummarySaving(false);
+    if (error) {
+      setMessage(error.message || "No se pudo guardar el resumen.");
+      return;
+    }
+    setWorkouts((prev) =>
+      prev.map((w) => (String(w.id) === String(workoutRow.id) ? normalizeWorkoutRow({ ...w, ...payload }) : w)),
+    );
+    setWorkoutSummaryModal(null);
+  };
+
   const toggleDone = async (w) => {
     const next = !w.done;
     const payload = next ? { done: true } : { done: false, rpe: null };
@@ -6105,6 +6520,7 @@ function AthleteHome({ profile }) {
         setMedalToast(`¡Nueva medalla desbloqueada! 🎉 ${first?.icon || ""} ${first?.name || ""}`.trim());
         setTimeout(() => setMedalToast(""), 4200);
       }
+      await openWorkoutSummaryModal({ ...w, done: true, rpe: next ? w.rpe : null });
     }
   };
 
@@ -6433,8 +6849,37 @@ function AthleteHome({ profile }) {
     }
   };
 
+  if (athleteSection === "challenges") {
+    return (
+      <div style={{ ...S.page, paddingBottom: 88 }}>
+        {message ? (
+          <div style={{ ...S.card, border: "1px solid rgba(239,68,68,.35)", background: "rgba(239,68,68,.08)", color: "#fecaca", marginBottom: 14 }}>
+            {message}
+          </div>
+        ) : null}
+        <ChallengesHub
+          profileRole="athlete"
+          currentUserId={profile?.user_id ?? null}
+          athleteId={athleteInfo?.id ?? null}
+          workouts={workouts}
+          notify={(msg) => setMessage(msg)}
+        />
+        <nav className="pf-bottom-nav" aria-label="Navegación atleta">
+          <button type="button" onClick={() => setAthleteSection("home")}>
+            <span className="pf-bnav-icon">🏠</span>
+            <span style={{ fontSize: "0.62rem", lineHeight: 1.15, textAlign: "center" }}>Inicio</span>
+          </button>
+          <button type="button" style={{ color: "#c2410c", background: "rgba(245, 158, 11, 0.14)", fontWeight: 800 }}>
+            <span className="pf-bnav-icon">🏆</span>
+            <span style={{ fontSize: "0.62rem", lineHeight: 1.15, textAlign: "center" }}>Retos</span>
+          </button>
+        </nav>
+      </div>
+    );
+  }
+
   return (
-    <div style={S.page}>
+    <div style={{ ...S.page, paddingBottom: 88 }}>
       {/* ORDEN: header, progreso, calendario, chat, logros, evaluacion, cerrar sesion */}
       {medalToast ? (
         <div
@@ -7530,6 +7975,63 @@ function AthleteHome({ profile }) {
           Cerrar sesión
         </button>
       </div>
+      <nav className="pf-bottom-nav" aria-label="Navegación atleta">
+        <button type="button" style={{ color: "#c2410c", background: "rgba(245, 158, 11, 0.14)", fontWeight: 800 }}>
+          <span className="pf-bnav-icon">🏠</span>
+          <span style={{ fontSize: "0.62rem", lineHeight: 1.15, textAlign: "center" }}>Inicio</span>
+        </button>
+        <button type="button" onClick={() => setAthleteSection("challenges")}>
+          <span className="pf-bnav-icon">🏆</span>
+          <span style={{ fontSize: "0.62rem", lineHeight: 1.15, textAlign: "center" }}>Retos</span>
+        </button>
+      </nav>
+      {workoutSummaryModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.55)", zIndex: 10001, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ ...S.card, width: "100%", maxWidth: 520, margin: 0 }}>
+            <div style={{ fontSize: "1.1em", fontWeight: 900, color: "#0f172a", marginBottom: 6 }}>Resumen del entrenamiento</div>
+            <div style={{ color: "#64748b", fontSize: ".84em", marginBottom: 12 }}>
+              {(workoutSummaryModal.workout?.title || "Workout")} · {workoutSummaryModal.workout?.scheduled_date || "—"}
+            </div>
+            {workoutSummaryModal.stravaConnected ? (
+              workoutSummaryModal.activity ? (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 10, marginBottom: 14 }}>
+                  <div style={{ ...S.card, margin: 0, padding: 12 }}><div style={{ fontSize: ".72em", color: "#64748b" }}>Distancia</div><div style={{ fontWeight: 800 }}>{((Number(workoutSummaryModal.activity.distance) || 0) / 1000).toFixed(2)} km</div></div>
+                  <div style={{ ...S.card, margin: 0, padding: 12 }}><div style={{ fontSize: ".72em", color: "#64748b" }}>Tiempo total</div><div style={{ fontWeight: 800 }}>{formatDurationClock(Number(workoutSummaryModal.activity.elapsed_time || workoutSummaryModal.activity.moving_time || 0))}</div></div>
+                  <div style={{ ...S.card, margin: 0, padding: 12 }}><div style={{ fontSize: ".72em", color: "#64748b" }}>Ritmo prom.</div><div style={{ fontWeight: 800 }}>{formatStravaPace(Number(workoutSummaryModal.activity.distance || 0), Number(workoutSummaryModal.activity.moving_time || 0))}</div></div>
+                  <div style={{ ...S.card, margin: 0, padding: 12 }}><div style={{ fontSize: ".72em", color: "#64748b" }}>FC prom.</div><div style={{ fontWeight: 800 }}>{Number(workoutSummaryModal.activity.average_heartrate || 0) > 0 ? `${Math.round(Number(workoutSummaryModal.activity.average_heartrate))} lpm` : "—"}</div></div>
+                  <div style={{ ...S.card, margin: 0, padding: 12 }}><div style={{ fontSize: ".72em", color: "#64748b" }}>FC máxima</div><div style={{ fontWeight: 800 }}>{Number(workoutSummaryModal.activity.max_heartrate || 0) > 0 ? `${Math.round(Number(workoutSummaryModal.activity.max_heartrate))} lpm` : "—"}</div></div>
+                  <div style={{ ...S.card, margin: 0, padding: 12 }}><div style={{ fontSize: ".72em", color: "#64748b" }}>Elevación</div><div style={{ fontWeight: 800 }}>{Number(workoutSummaryModal.activity.total_elevation_gain || 0).toFixed(0)} m</div></div>
+                  <div style={{ ...S.card, margin: 0, padding: 12 }}><div style={{ fontSize: ".72em", color: "#64748b" }}>Calorías</div><div style={{ fontWeight: 800 }}>{Number(workoutSummaryModal.activity.calories || workoutSummaryModal.activity.kilojoules || 0).toFixed(0)}</div></div>
+                </div>
+              ) : (
+                <div style={{ color: "#64748b", fontSize: ".86em", marginBottom: 14 }}>No encontramos una actividad de Strava para ese día.</div>
+              )
+            ) : (
+              <div style={{ display: "grid", gap: 10, marginBottom: 14 }}>
+                <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(2,minmax(0,1fr))" }}>
+                  <input type="number" min="0" step="0.1" value={manualSummaryForm.distanceKm} onChange={(e) => setManualSummaryForm((f) => ({ ...f, distanceKm: e.target.value }))} placeholder="Distancia (km)" style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit" }} />
+                  <input value={manualSummaryForm.timeHms} onChange={(e) => setManualSummaryForm((f) => ({ ...f, timeHms: e.target.value }))} placeholder="Tiempo (HH:MM:SS)" style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit" }} />
+                </div>
+                <input type="number" min="1" max="10" value={manualSummaryForm.rpe} onChange={(e) => setManualSummaryForm((f) => ({ ...f, rpe: e.target.value }))} placeholder="RPE (1-10)" style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit" }} />
+                <textarea rows={3} value={manualSummaryForm.notes} onChange={(e) => setManualSummaryForm((f) => ({ ...f, notes: e.target.value }))} placeholder="Notas" style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit", boxSizing: "border-box" }} />
+                <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                  <button type="button" disabled={manualSummarySaving} onClick={saveManualWorkoutSummary} style={{ background: manualSummarySaving ? "#cbd5e1" : "linear-gradient(135deg,#0d9488,#14b8a6)", border: "none", borderRadius: 8, padding: "8px 12px", color: "#fff", fontWeight: 800, fontFamily: "inherit", cursor: manualSummarySaving ? "not-allowed" : "pointer", fontSize: ".78em" }}>{manualSummarySaving ? "Guardando…" : "Guardar resumen"}</button>
+                </div>
+              </div>
+            )}
+            {workoutSummaryModal.activity?.id ? (
+              <a href={`https://www.strava.com/activities/${workoutSummaryModal.activity.id}`} target="_blank" rel="noreferrer" style={{ color: "#ea580c", fontWeight: 700, fontSize: ".82em", textDecoration: "underline" }}>
+                Ver en Strava
+              </a>
+            ) : null}
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 14 }}>
+              <button type="button" onClick={() => setWorkoutSummaryModal(null)} style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#475569", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".8em" }}>
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {athletePremiumModalOpen && (
         <div
           style={{
@@ -10632,13 +11134,55 @@ function EvaluationView({ athletes, currentUserId, notify, athleteOnlyId = null 
 
         <div style={{ ...S.card, marginBottom: 16 }}>
           <div style={{ fontSize: ".76em", color: "#64748b", fontWeight: 700, marginBottom: 10 }}>TIEMPOS PREDICHOS</div>
-          <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))" }}>
-            {predictions.map((p) => (
-              <div key={p.id || p.label} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: "10px 12px", background: "#f8fafc" }}>
-                <div style={{ color: "#64748b", fontSize: ".75em", fontWeight: 700 }}>{p.label || String(p.id || "").toUpperCase()}</div>
-                <div style={{ color: "#0f172a", fontWeight: 800 }}>{formatSeconds(p.seconds)}</div>
-              </div>
-            ))}
+          <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}>
+            {predictions.map((p) => {
+              const pid = String(p.id || "").toLowerCase();
+              const totalSec = Number(p.seconds) || 0;
+              const palette =
+                pid === "5k"
+                  ? { border: "#22c55e55", bg: "#f0fdf4", accent: "#15803d" }
+                  : pid === "10k"
+                    ? { border: "#3b82f655", bg: "#eff6ff", accent: "#1d4ed8" }
+                    : pid === "21k"
+                      ? { border: "#f59e0b55", bg: "#fffbeb", accent: "#b45309" }
+                      : { border: "#ef444455", bg: "#fef2f2", accent: "#b91c1c" };
+              const level = (() => {
+                if (pid === "5k") {
+                  if (totalSec <= 1080) return { label: "Élite", color: "#065f46", bg: "#d1fae5" };
+                  if (totalSec <= 1320) return { label: "Avanzado", color: "#1d4ed8", bg: "#dbeafe" };
+                  if (totalSec <= 1620) return { label: "Intermedio", color: "#b45309", bg: "#fef3c7" };
+                  return { label: "Principiante", color: "#92400e", bg: "#ffedd5" };
+                }
+                if (pid === "10k") {
+                  if (totalSec <= 2280) return { label: "Élite", color: "#065f46", bg: "#d1fae5" };
+                  if (totalSec <= 2820) return { label: "Avanzado", color: "#1d4ed8", bg: "#dbeafe" };
+                  if (totalSec <= 3480) return { label: "Intermedio", color: "#b45309", bg: "#fef3c7" };
+                  return { label: "Principiante", color: "#92400e", bg: "#ffedd5" };
+                }
+                if (pid === "21k") {
+                  if (totalSec <= 4800) return { label: "Élite", color: "#065f46", bg: "#d1fae5" };
+                  if (totalSec <= 6000) return { label: "Avanzado", color: "#1d4ed8", bg: "#dbeafe" };
+                  if (totalSec <= 7500) return { label: "Intermedio", color: "#b45309", bg: "#fef3c7" };
+                  return { label: "Principiante", color: "#92400e", bg: "#ffedd5" };
+                }
+                if (totalSec <= 10200) return { label: "Élite", color: "#065f46", bg: "#d1fae5" };
+                if (totalSec <= 12600) return { label: "Avanzado", color: "#1d4ed8", bg: "#dbeafe" };
+                if (totalSec <= 15600) return { label: "Intermedio", color: "#b45309", bg: "#fef3c7" };
+                return { label: "Principiante", color: "#92400e", bg: "#ffedd5" };
+              })();
+              const hhmmss = formatDurationClock(totalSec);
+              return (
+                <div key={p.id || p.label} style={{ border: `1px solid ${palette.border}`, borderRadius: 12, padding: "12px 10px", background: palette.bg, textAlign: "center" }}>
+                  <div style={{ color: palette.accent, fontSize: ".98em", fontWeight: 900, letterSpacing: ".02em", marginBottom: 8 }}>
+                    {p.label || String(p.id || "").toUpperCase()}
+                  </div>
+                  <div style={{ color: "#0f172a", fontWeight: 900, fontSize: "1.26em", marginBottom: 10, fontFamily: "monospace" }}>{hhmmss}</div>
+                  <span style={{ display: "inline-flex", padding: "3px 9px", borderRadius: 999, fontSize: ".68em", fontWeight: 800, background: level.bg, color: level.color }}>
+                    {level.label}
+                  </span>
+                </div>
+              );
+            })}
           </div>
         </div>
       </>
