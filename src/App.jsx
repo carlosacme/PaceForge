@@ -12511,17 +12511,19 @@ function AdminCoachesProfilesPanel({ notify, adminUserId }) {
     load();
   };
 
+  /** Activa / renueva suscripción admin: siempre sobrescribe vencimiento y período desde HOY (no acumula ni compara con el período anterior). */
   const activateCoachWithMonths = (uid, months) => {
     const m = Number(months);
     if (![1, 6, 12].includes(m)) return;
-    const expires = addCalendarMonths(new Date(), m);
+    const now = new Date();
+    const subscription_expires_at = addCalendarMonths(now, m).toISOString();
     const subscription_period = m === 1 ? "mensual" : m === 6 ? "semestral" : "anual";
     runAction("act", uid, {
-      plan_status: "active",
-      plan_validated_at: new Date().toISOString(),
-      plan_validated_by: adminUserId,
-      subscription_expires_at: expires.toISOString(),
+      subscription_expires_at,
       subscription_period,
+      plan_status: "active",
+      plan_validated_at: now.toISOString(),
+      plan_validated_by: adminUserId,
     });
   };
 
@@ -12658,7 +12660,9 @@ function AdminCoachesProfilesPanel({ notify, adminUserId }) {
                             type="button"
                             disabled={busy}
                             onClick={() => {
-                              const months = Number(activateMonthsChoice[uid] ?? "1") || 1;
+                              const raw = activateMonthsChoice[uid] ?? "1";
+                              const months =
+                                raw === "12" || raw === 12 ? 12 : raw === "6" || raw === 6 ? 6 : 1;
                               activateCoachWithMonths(uid, months);
                             }}
                             style={{
