@@ -7513,7 +7513,24 @@ function AthleteHome({ profile }) {
         💬
       </button>
 
-      <nav className="pf-bottom-nav" aria-label="Navegación atleta" style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 9999 }}>
+      <nav
+        aria-label="Navegación atleta"
+        style={{
+          position: "fixed",
+          left: 0,
+          right: 0,
+          bottom: 0,
+          zIndex: 9999,
+          display: "flex",
+          flexDirection: "row",
+          justifyContent: "space-around",
+          alignItems: "center",
+          background: "white",
+          borderTop: "1px solid #e2e8f0",
+          padding: "8px 0 12px 0",
+          height: "60px",
+        }}
+      >
         <button type="button" style={{ minWidth: 60, color: athleteActiveTab === "" ? "#c2410c" : "#64748b", background: athleteActiveTab === "" ? "rgba(245,158,11,.14)" : "transparent", fontWeight: athleteActiveTab === "" ? 800 : 600 }} onClick={() => handleAthleteNavTabChange("")}><span className="pf-bnav-icon">🏠</span><span style={{ fontSize: "10px" }}>Inicio</span></button>
         <button type="button" style={{ minWidth: 60, color: athleteActiveTab === "marketplace" ? "#c2410c" : "#64748b", background: athleteActiveTab === "marketplace" ? "rgba(245,158,11,.14)" : "transparent", fontWeight: athleteActiveTab === "marketplace" ? 800 : 600 }} onClick={() => handleAthleteNavTabChange("marketplace")}><span className="pf-bnav-icon">🛒</span><span style={{ fontSize: "10px" }}>Market</span></button>
         <button type="button" style={{ minWidth: 60, color: athleteActiveTab === "challenges" ? "#c2410c" : "#64748b", background: athleteActiveTab === "challenges" ? "rgba(245,158,11,.14)" : "transparent", fontWeight: athleteActiveTab === "challenges" ? 800 : 600 }} onClick={() => handleAthleteNavTabChange("challenges")}><span className="pf-bnav-icon">🏆</span><span style={{ fontSize: "10px" }}>Retos</span></button>
@@ -8833,7 +8850,7 @@ function AthleteHome({ profile }) {
         </div>
       )}
       {corosModalOpen && (
-        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center',padding:'20px'}}>
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:10003,display:'flex',alignItems:'center',justifyContent:'center',padding:'20px'}}>
           <div style={{background:'white',borderRadius:'16px',padding:'24px',maxWidth:'420px',width:'100%',boxShadow:'0 20px 60px rgba(0,0,0,0.3)'}}>
             <h3 style={{marginBottom:'12px',fontSize:'18px',fontWeight:'700'}}>Sincronizar COROS</h3>
             <p style={{marginBottom:'20px',lineHeight:'1.7',color:'#444',fontSize:'14px'}}>COROS no ofrece API pública. Para sincronizar tus actividades automáticamente:<br/><br/>1️⃣ En tu app COROS ve a Perfil → Ajustes → Apps de terceros → Strava<br/>2️⃣ Conecta tu cuenta Strava<br/>3️⃣ Vuelve aquí y conecta Strava abajo<br/><br/>Cada actividad que termines en tu COROS llegará automáticamente a RunningApexFlow vía Strava.</p>
@@ -8845,7 +8862,7 @@ function AthleteHome({ profile }) {
         </div>
       )}
       {garminModalOpen && (
-        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center',padding:'20px'}}>
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:10003,display:'flex',alignItems:'center',justifyContent:'center',padding:'20px'}}>
           <div style={{background:'white',borderRadius:'16px',padding:'24px',maxWidth:'420px',width:'100%',boxShadow:'0 20px 60px rgba(0,0,0,0.3)'}}>
             <h3 style={{marginBottom:'12px',fontSize:'18px',fontWeight:'700'}}>Conectar Garmin</h3>
             <p style={{marginBottom:'20px',lineHeight:'1.7',color:'#444',fontSize:'14px'}}>Garmin requiere aprobación empresarial para API directa. Para sincronizar tus actividades automáticamente:<br/><br/>1️⃣ En Garmin Connect ve a Configuración → Aplicaciones de terceros → Strava<br/>2️⃣ Activa la sincronización con Strava<br/>3️⃣ Vuelve aquí y conecta Strava abajo<br/><br/>Cada actividad que termines en tu Garmin llegará automáticamente a RunningApexFlow vía Strava.</p>
