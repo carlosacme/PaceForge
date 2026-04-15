@@ -1132,6 +1132,7 @@ const COACH_NAV_BASE_ITEMS = [
   { id: "plans", icon: "◆", label: "Planes", shortLabel: "Planes", color: "#0d9488" },
   { id: "builder", icon: "◎", label: "Crear Workout", shortLabel: "IA", color: "#ea580c" },
   { id: "library", icon: "◈", label: "Biblioteca", shortLabel: "Biblio", color: "#6366f1" },
+  { id: "marketplace", icon: "🛒", label: "Marketplace", shortLabel: "Market", color: "#0ea5e9" },
   { id: "challenges", icon: "🏆", label: "Retos", shortLabel: "Retos", color: "#a855f7" },
 ];
 
@@ -3591,6 +3592,14 @@ export default function App() {
             currentUserId={sessionUserId || null}
             athleteId={null}
             workouts={[]}
+            notify={notify}
+          />
+        )}
+        {view === "marketplace" && (
+          <MarketplaceHub
+            profileRole={profile?.role ?? ""}
+            currentUserId={sessionUserId || null}
+            coachUserId={sessionUserId || null}
             notify={notify}
           />
         )}
@@ -7506,6 +7515,7 @@ function AthleteHome({ profile }) {
 
       <nav className="pf-bottom-nav" aria-label="Navegación atleta" style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 9999 }}>
         <button type="button" style={{ color: athleteActiveTab === "" ? "#c2410c" : "#64748b", background: athleteActiveTab === "" ? "rgba(245,158,11,.14)" : "transparent", fontWeight: athleteActiveTab === "" ? 800 : 600 }} onClick={() => handleAthleteNavTabChange("")}><span className="pf-bnav-icon">🏠</span><span style={{ fontSize: "0.62rem" }}>Inicio</span></button>
+        <button type="button" style={{ color: athleteActiveTab === "marketplace" ? "#c2410c" : "#64748b", background: athleteActiveTab === "marketplace" ? "rgba(245,158,11,.14)" : "transparent", fontWeight: athleteActiveTab === "marketplace" ? 800 : 600 }} onClick={() => handleAthleteNavTabChange("marketplace")}><span className="pf-bnav-icon">🛒</span><span style={{ fontSize: "0.62rem" }}>Marketplace</span></button>
         <button type="button" style={{ color: athleteActiveTab === "challenges" ? "#c2410c" : "#64748b", background: athleteActiveTab === "challenges" ? "rgba(245,158,11,.14)" : "transparent", fontWeight: athleteActiveTab === "challenges" ? 800 : 600 }} onClick={() => handleAthleteNavTabChange("challenges")}><span className="pf-bnav-icon">🏆</span><span style={{ fontSize: "0.62rem" }}>Retos</span></button>
         <button type="button" style={{ color: athleteActiveTab === "forma" ? "#c2410c" : "#64748b", background: athleteActiveTab === "forma" ? "rgba(245,158,11,.14)" : "transparent", fontWeight: athleteActiveTab === "forma" ? 800 : 600 }} onClick={() => handleAthleteNavTabChange("forma")}><span className="pf-bnav-icon">📊</span><span style={{ fontSize: "0.62rem" }}>Forma</span></button>
         <button type="button" style={{ color: athleteActiveTab === "eval" ? "#c2410c" : "#64748b", background: athleteActiveTab === "eval" ? "rgba(245,158,11,.14)" : "transparent", fontWeight: athleteActiveTab === "eval" ? 800 : 600 }} onClick={() => handleAthleteNavTabChange("eval")}><span className="pf-bnav-icon">⚡</span><span style={{ fontSize: "0.62rem" }}>Evaluación</span></button>
@@ -7517,10 +7527,19 @@ function AthleteHome({ profile }) {
           <div style={{ width: "100%", height: "100%", background: "#fff", borderTopLeftRadius: 18, borderTopRightRadius: 18, overflowY: "auto", padding: 16, paddingBottom: 94 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
               <div style={{ fontSize: "1.05em", fontWeight: 900, color: "#0f172a" }}>
-                {athleteActiveTab === "challenges" ? "🏆 Retos" : athleteActiveTab === "forma" ? "📊 Forma y Fatiga" : athleteActiveTab === "eval" ? "⚡ Evaluación VDOT" : "👤 Perfil"}
+                {athleteActiveTab === "marketplace" ? "🛒 Marketplace" : athleteActiveTab === "challenges" ? "🏆 Retos" : athleteActiveTab === "forma" ? "📊 Forma y Fatiga" : athleteActiveTab === "eval" ? "⚡ Evaluación VDOT" : "👤 Perfil"}
               </div>
               <button type="button" onClick={() => setAthleteActiveTab("")} style={{ border: "1px solid #e2e8f0", background: "#fff", borderRadius: 8, padding: "6px 10px", color: "#475569", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>✕</button>
             </div>
+
+            {athleteActiveTab === "marketplace" ? (
+              <MarketplaceHub
+                profileRole="athlete"
+                currentUserId={profile?.user_id ?? null}
+                coachUserId={null}
+                notify={(msg) => setMessage(msg)}
+              />
+            ) : null}
 
             {athleteActiveTab === "challenges" ? (
               <ChallengesHub profileRole="athlete" currentUserId={profile?.user_id ?? null} athleteId={athleteInfo?.id ?? null} workouts={workouts} notify={(msg) => setMessage(msg)} />
@@ -12438,8 +12457,550 @@ function AdminCoachesProfilesPanel({ notify, adminUserId }) {
   );
 }
 
+function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify }) {
+  const S = styles;
+  const isCoach = profileRole === "coach";
+  const isAthlete = profileRole === "athlete";
+  const [plans, setPlans] = useState([]);
+  const [loadingPlans, setLoadingPlans] = useState(true);
+  const [selectedPlan, setSelectedPlan] = useState(null);
+  const [showPublishModal, setShowPublishModal] = useState(false);
+  const [savingPlan, setSavingPlan] = useState(false);
+  const [coachLibraryRows, setCoachLibraryRows] = useState([]);
+  const [loadingLibrary, setLoadingLibrary] = useState(false);
+  const [planForm, setPlanForm] = useState({
+    title: "",
+    description: "",
+    level: "intermedio",
+    duration_weeks: "8",
+    sessions_per_week: "4",
+    price_cop: "120000",
+    preview_workouts: [],
+  });
+  const [salesByPlanId, setSalesByPlanId] = useState({});
+  const [ratingsByPlanId, setRatingsByPlanId] = useState({});
+
+  const loadMarketplace = useCallback(async () => {
+    setLoadingPlans(true);
+    const { data, error } = await supabase
+      .from("plan_marketplace")
+      .select("*")
+      .order("created_at", { ascending: false });
+    setLoadingPlans(false);
+    if (error) {
+      console.error("plan_marketplace load:", error);
+      setPlans([]);
+      return;
+    }
+    setPlans(data || []);
+  }, []);
+
+  const loadSales = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("plan_purchases")
+      .select("plan_id, payment_status, rating")
+      .order("created_at", { ascending: false });
+    if (error) {
+      console.error("plan_purchases load:", error);
+      setSalesByPlanId({});
+      setRatingsByPlanId({});
+      return;
+    }
+    const salesMap = {};
+    const ratingAcc = {};
+    for (const row of data || []) {
+      const pid = String(row.plan_id || "");
+      if (!pid) continue;
+      if (String(row.payment_status || "").toLowerCase() === "confirmed") {
+        salesMap[pid] = (salesMap[pid] || 0) + 1;
+      }
+      if (row.rating != null && Number.isFinite(Number(row.rating))) {
+        if (!ratingAcc[pid]) ratingAcc[pid] = { sum: 0, count: 0 };
+        ratingAcc[pid].sum += Number(row.rating);
+        ratingAcc[pid].count += 1;
+      }
+    }
+    const ratingsMap = {};
+    for (const [pid, acc] of Object.entries(ratingAcc)) {
+      ratingsMap[pid] = acc.count > 0 ? acc.sum / acc.count : 0;
+    }
+    setSalesByPlanId(salesMap);
+    setRatingsByPlanId(ratingsMap);
+  }, []);
+
+  const loadCoachLibrary = useCallback(async () => {
+    if (!coachUserId) return;
+    setLoadingLibrary(true);
+    const { data, error } = await supabase
+      .from("workout_library")
+      .select("id,title,type,total_km,duration_min,description,structure,workout_structure")
+      .eq("coach_id", coachUserId)
+      .order("created_at", { ascending: false });
+    setLoadingLibrary(false);
+    if (error) {
+      console.error("workout_library for marketplace:", error);
+      setCoachLibraryRows([]);
+      return;
+    }
+    setCoachLibraryRows(data || []);
+  }, [coachUserId]);
+
+  useEffect(() => {
+    loadMarketplace();
+    loadSales();
+  }, [loadMarketplace, loadSales]);
+
+  useEffect(() => {
+    if (!showPublishModal || !isCoach) return;
+    loadCoachLibrary();
+  }, [showPublishModal, isCoach, loadCoachLibrary]);
+
+  const plansVisible = useMemo(() => {
+    const all = plans || [];
+    return all.filter((p) => {
+      const active = Boolean(p.is_active);
+      const approved = Boolean(p.is_approved);
+      if (isCoach && String(p.coach_user_id || "") === String(coachUserId || "")) return active;
+      return active && approved;
+    });
+  }, [plans, isCoach, coachUserId]);
+
+  const coachOwnPlans = useMemo(
+    () => (plans || []).filter((p) => String(p.coach_user_id || "") === String(coachUserId || "")),
+    [plans, coachUserId],
+  );
+
+  const openPurchaseInstructions = (plan) => {
+    setSelectedPlan(plan);
+  };
+
+  const purchaseWhatsappHref = useMemo(() => {
+    if (!selectedPlan) return "https://wa.me/573233675434";
+    const txt = encodeURIComponent(
+      `Hola, pagué el plan ${selectedPlan.title || "Plan"} por $${formatCopInt(selectedPlan.price_cop)} COP`,
+    );
+    return `https://wa.me/573233675434?text=${txt}`;
+  }, [selectedPlan]);
+
+  const submitCoachPlan = async () => {
+    if (!coachUserId) return;
+    const title = String(planForm.title || "").trim();
+    if (!title) {
+      notify?.("Ingresa un título");
+      return;
+    }
+    const description = String(planForm.description || "").trim();
+    const durationWeeks = Math.max(1, Math.round(Number(planForm.duration_weeks) || 0));
+    const sessionsPerWeek = Math.max(1, Math.round(Number(planForm.sessions_per_week) || 0));
+    const priceCop = Math.max(0, Math.round(Number(String(planForm.price_cop).replace(/[^\d]/g, "")) || 0));
+    const selectedPreview = (coachLibraryRows || []).filter((w) => planForm.preview_workouts.includes(String(w.id)));
+    const previewWorkouts = selectedPreview.map((w) => ({
+      id: w.id,
+      title: w.title,
+      type: w.type,
+      total_km: Number(w.total_km || 0),
+      duration_min: Number(w.duration_min || 0),
+      description: w.description || "",
+      workout_structure: Array.isArray(w.workout_structure) ? w.workout_structure : Array.isArray(w.structure) ? w.structure : [],
+    }));
+    setSavingPlan(true);
+    const { error } = await supabase.from("plan_marketplace").insert({
+      coach_user_id: coachUserId,
+      coach_name: "",
+      title,
+      description,
+      level: String(planForm.level || "intermedio"),
+      duration_weeks: durationWeeks,
+      sessions_per_week: sessionsPerWeek,
+      price_cop: priceCop,
+      preview_workouts: previewWorkouts,
+      is_active: true,
+      is_approved: false,
+    });
+    setSavingPlan(false);
+    if (error) {
+      console.error("plan_marketplace insert:", error);
+      notify?.(error.message || "No se pudo publicar el plan");
+      return;
+    }
+    notify?.("Plan enviado. Quedó pendiente de aprobación.");
+    setShowPublishModal(false);
+    setPlanForm({
+      title: "",
+      description: "",
+      level: "intermedio",
+      duration_weeks: "8",
+      sessions_per_week: "4",
+      price_cop: "120000",
+      preview_workouts: [],
+    });
+    loadMarketplace();
+    loadSales();
+  };
+
+  const cardStyle = {
+    border: "1px solid #e2e8f0",
+    borderRadius: 12,
+    padding: "12px 14px",
+    background: "#fff",
+    boxShadow: "0 1px 2px rgba(15,23,42,.04)",
+  };
+
+  return (
+    <div style={S.page}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
+        <h1 style={{ ...S.pageTitle, marginBottom: 0 }}>🛒 Marketplace</h1>
+        {isCoach ? (
+          <button type="button" onClick={() => setShowPublishModal(true)} style={{ background: "linear-gradient(135deg,#0ea5e9,#0284c7)", border: "none", borderRadius: 9, padding: "8px 12px", color: "#fff", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".8em" }}>
+            ➕ Publicar plan
+          </button>
+        ) : null}
+      </div>
+
+      {isCoach ? (
+        <div style={{ ...S.card, marginBottom: 14 }}>
+          <div style={{ fontSize: ".72em", letterSpacing: ".12em", textTransform: "uppercase", color: "#64748b", marginBottom: 8 }}>
+            Mis planes publicados
+          </div>
+          {coachOwnPlans.length === 0 ? (
+            <div style={{ color: "#94a3b8", fontSize: ".85em" }}>Aún no has publicado planes.</div>
+          ) : (
+            <div style={{ display: "grid", gap: 10 }}>
+              {coachOwnPlans.map((p) => {
+                const sales = Number(salesByPlanId[String(p.id)] || 0);
+                const price = Number(p.price_cop || 0);
+                const coachEarnings = Math.round(price * sales * 0.8);
+                return (
+                  <div key={p.id} style={{ ...cardStyle, background: "#f8fafc" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                      <div>
+                        <div style={{ fontWeight: 800 }}>{p.title}</div>
+                        <div style={{ fontSize: ".8em", color: "#64748b", marginTop: 4 }}>
+                          {p.duration_weeks} semanas · {p.sessions_per_week} sesiones/sem
+                        </div>
+                      </div>
+                      <div style={{ textAlign: "right" }}>
+                        <div style={{ fontWeight: 800, color: p.is_approved ? "#16a34a" : "#b45309" }}>
+                          {p.is_approved ? "Aprobado" : "Pendiente de aprobación"}
+                        </div>
+                        <div style={{ fontSize: ".78em", color: "#64748b", marginTop: 4 }}>Ventas: {sales}</div>
+                      </div>
+                    </div>
+                    <div style={{ marginTop: 8, fontSize: ".82em", color: "#0f172a", fontWeight: 700 }}>
+                      Ganancia estimada: ${formatCopInt(coachEarnings)} COP
+                    </div>
+                    <div style={{ marginTop: 4, fontSize: ".75em", color: "#64748b" }}>
+                      Tu ganancia: ${formatCopInt(Math.round(price * 0.8))} COP (80% del precio)
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      ) : null}
+
+      {loadingPlans ? (
+        <div style={{ color: "#64748b" }}>Cargando planes…</div>
+      ) : plansVisible.length === 0 ? (
+        <div style={{ color: "#94a3b8" }}>No hay planes disponibles por ahora.</div>
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(240px,1fr))", gap: 12 }}>
+          {plansVisible.map((p) => {
+            const rating = Number(ratingsByPlanId[String(p.id)] || 0);
+            const ratingStars = "★".repeat(Math.round(Math.min(5, Math.max(0, rating)))) + "☆".repeat(5 - Math.round(Math.min(5, Math.max(0, rating))));
+            return (
+              <div key={p.id} style={cardStyle}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                  <div style={{ fontWeight: 800, color: "#0f172a" }}>{p.title}</div>
+                  <span style={{ fontSize: ".7em", borderRadius: 999, padding: "3px 8px", background: "rgba(14,165,233,.12)", color: "#0369a1", fontWeight: 800 }}>
+                    {String(p.level || "intermedio")}
+                  </span>
+                </div>
+                <div style={{ fontSize: ".78em", color: "#64748b", marginTop: 4 }}>Coach: {p.coach_name || "Coach"}</div>
+                <div style={{ fontSize: ".78em", color: "#64748b", marginTop: 2 }}>{p.duration_weeks} semanas · {p.sessions_per_week} sesiones/semana</div>
+                <div style={{ marginTop: 8, fontSize: ".95em", fontWeight: 800, color: "#0f172a" }}>${formatCopInt(p.price_cop)} COP</div>
+                <div style={{ marginTop: 6, fontSize: ".78em", color: "#f59e0b", fontWeight: 700 }}>{ratingStars} {rating > 0 ? rating.toFixed(1) : "0.0"}</div>
+                <button type="button" onClick={() => setSelectedPlan(p)} style={{ marginTop: 10, width: "100%", background: "linear-gradient(135deg,#0d9488,#14b8a6)", border: "none", borderRadius: 8, padding: "8px 10px", color: "#fff", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".78em" }}>
+                  Ver plan
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {selectedPlan ? (
+        <div style={{ position: "fixed", inset: 0, zIndex: 10030, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ ...S.card, width: "100%", maxWidth: 720, margin: 0, maxHeight: "90vh", overflowY: "auto" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginBottom: 8 }}>
+              <div style={{ fontSize: "1.05em", fontWeight: 900 }}>{selectedPlan.title}</div>
+              <button type="button" onClick={() => setSelectedPlan(null)} style={{ border: "1px solid #e2e8f0", background: "#fff", borderRadius: 8, padding: "6px 10px", cursor: "pointer", fontFamily: "inherit" }}>✕</button>
+            </div>
+            <div style={{ color: "#475569", fontSize: ".86em", marginBottom: 10 }}>{selectedPlan.description || "Sin descripción."}</div>
+            <div style={{ fontSize: ".78em", fontWeight: 800, color: "#334155", marginBottom: 8 }}>Workouts de muestra</div>
+            {(selectedPlan.preview_workouts || []).length === 0 ? (
+              <div style={{ color: "#94a3b8", fontSize: ".82em", marginBottom: 12 }}>No hay muestra de workouts.</div>
+            ) : (
+              <div style={{ display: "grid", gap: 8, marginBottom: 12 }}>
+                {(selectedPlan.preview_workouts || []).map((w, idx) => (
+                  <div key={`${w.id || idx}`} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", background: "#f8fafc" }}>
+                    <div style={{ fontWeight: 800, fontSize: ".85em" }}>{w.title || `Workout ${idx + 1}`}</div>
+                    <div style={{ fontSize: ".75em", color: "#64748b", marginTop: 2 }}>{w.total_km || 0} km · {w.duration_min || 0} min</div>
+                    <div style={{ marginTop: 6 }}>
+                      <WorkoutStructureTable structure={w.workout_structure || w.structure || []} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <button type="button" onClick={() => openPurchaseInstructions(selectedPlan)} style={{ width: "100%", background: "linear-gradient(135deg,#ea580c,#f97316)", border: "none", borderRadius: 10, padding: "10px 14px", color: "#fff", fontWeight: 900, cursor: "pointer", fontFamily: "inherit", fontSize: ".85em" }}>
+              Comprar - ${formatCopInt(selectedPlan.price_cop)} COP
+            </button>
+            <div style={{ marginTop: 12, border: "1px solid #e2e8f0", borderRadius: 10, padding: 12, background: "#fff7ed" }}>
+              <div style={{ fontWeight: 800, marginBottom: 6 }}>Realiza tu pago a:</div>
+              <div style={{ fontSize: ".84em", lineHeight: 1.5 }}>
+                📱 Nequi: 3233675434
+                <br />
+                📸 Envía comprobante por WhatsApp indicando el plan: {selectedPlan.title}
+                <br />
+                ✅ Recibirás el plan en menos de 24 horas
+              </div>
+              <a href={purchaseWhatsappHref} target="_blank" rel="noreferrer" style={{ display: "inline-block", marginTop: 10, background: "#16a34a", color: "#fff", textDecoration: "none", borderRadius: 8, padding: "8px 12px", fontWeight: 800, fontSize: ".8em" }}>
+                Enviar comprobante
+              </a>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {showPublishModal ? (
+        <div style={{ position: "fixed", inset: 0, zIndex: 10031, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ ...S.card, width: "100%", maxWidth: 760, margin: 0, maxHeight: "90vh", overflowY: "auto" }}>
+            <div style={{ fontSize: "1.02em", fontWeight: 900, marginBottom: 10 }}>➕ Publicar plan</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 10 }}>
+              <input value={planForm.title} onChange={(e) => setPlanForm((f) => ({ ...f, title: e.target.value }))} placeholder="Título" style={{ gridColumn: "1 / -1", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit" }} />
+              <textarea value={planForm.description} onChange={(e) => setPlanForm((f) => ({ ...f, description: e.target.value }))} rows={3} placeholder="Descripción" style={{ gridColumn: "1 / -1", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit", boxSizing: "border-box" }} />
+              <select value={planForm.level} onChange={(e) => setPlanForm((f) => ({ ...f, level: e.target.value }))} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit" }}>
+                <option value="principiante">principiante</option>
+                <option value="intermedio">intermedio</option>
+                <option value="avanzado">avanzado</option>
+              </select>
+              <input type="number" value={planForm.duration_weeks} onChange={(e) => setPlanForm((f) => ({ ...f, duration_weeks: e.target.value }))} placeholder="Duración semanas" style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit" }} />
+              <input type="number" value={planForm.sessions_per_week} onChange={(e) => setPlanForm((f) => ({ ...f, sessions_per_week: e.target.value }))} placeholder="Sesiones/semana" style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit" }} />
+              <input type="number" value={planForm.price_cop} onChange={(e) => setPlanForm((f) => ({ ...f, price_cop: e.target.value }))} placeholder="Precio COP" style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit" }} />
+              <div style={{ gridColumn: "1 / -1", border: "1px solid #e2e8f0", borderRadius: 10, padding: 10 }}>
+                <div style={{ fontSize: ".78em", fontWeight: 800, marginBottom: 8 }}>Workouts de muestra (biblioteca)</div>
+                {loadingLibrary ? (
+                  <div style={{ color: "#64748b", fontSize: ".82em" }}>Cargando biblioteca…</div>
+                ) : coachLibraryRows.length === 0 ? (
+                  <div style={{ color: "#94a3b8", fontSize: ".82em" }}>No tienes workouts en tu biblioteca.</div>
+                ) : (
+                  <div style={{ display: "grid", gap: 6, maxHeight: 220, overflowY: "auto" }}>
+                    {coachLibraryRows.map((w) => {
+                      const checked = planForm.preview_workouts.includes(String(w.id));
+                      return (
+                        <label key={w.id} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: ".82em", color: "#334155" }}>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() =>
+                              setPlanForm((f) => ({
+                                ...f,
+                                preview_workouts: checked
+                                  ? f.preview_workouts.filter((id) => id !== String(w.id))
+                                  : [...f.preview_workouts, String(w.id)],
+                              }))
+                            }
+                          />
+                          <span>{w.title} · {w.total_km || 0} km · {w.duration_min || 0} min</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+            <div style={{ marginTop: 8, fontSize: ".8em", color: "#334155", fontWeight: 700 }}>
+              Tu ganancia: ${formatCopInt(Math.round((Number(planForm.price_cop || 0) || 0) * 0.8))} COP (80% del precio)
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
+              <button type="button" onClick={() => setShowPublishModal(false)} style={{ border: "1px solid #e2e8f0", borderRadius: 8, background: "#fff", padding: "8px 12px", cursor: "pointer", fontFamily: "inherit" }}>Cancelar</button>
+              <button type="button" onClick={submitCoachPlan} disabled={savingPlan} style={{ border: "none", borderRadius: 8, background: savingPlan ? "#cbd5e1" : "linear-gradient(135deg,#0ea5e9,#0284c7)", padding: "8px 12px", color: "#fff", fontWeight: 800, cursor: savingPlan ? "not-allowed" : "pointer", fontFamily: "inherit" }}>{savingPlan ? "Guardando…" : "Publicar plan"}</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function AdminMarketplacePanel({ notify }) {
+  const S = styles;
+  const [plans, setPlans] = useState([]);
+  const [purchases, setPurchases] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const loadAll = useCallback(async () => {
+    setLoading(true);
+    const [plansRes, purchasesRes] = await Promise.all([
+      supabase.from("plan_marketplace").select("*").order("created_at", { ascending: false }),
+      supabase.from("plan_purchases").select("*").order("created_at", { ascending: false }),
+    ]);
+    setLoading(false);
+    if (plansRes.error) {
+      console.error("admin marketplace plans:", plansRes.error);
+      notify?.(plansRes.error.message || "No se pudieron cargar planes");
+      setPlans([]);
+    } else setPlans(plansRes.data || []);
+    if (purchasesRes.error) {
+      console.error("admin marketplace purchases:", purchasesRes.error);
+      setPurchases([]);
+    } else setPurchases(purchasesRes.data || []);
+  }, [notify]);
+
+  useEffect(() => {
+    loadAll();
+  }, [loadAll]);
+
+  const confirmedCountByPlan = useMemo(() => {
+    const m = {};
+    for (const p of purchases || []) {
+      if (String(p.payment_status || "").toLowerCase() !== "confirmed") continue;
+      const pid = String(p.plan_id || "");
+      if (!pid) continue;
+      m[pid] = (m[pid] || 0) + 1;
+    }
+    return m;
+  }, [purchases]);
+
+  const approvePlan = async (planId) => {
+    const { error } = await supabase.from("plan_marketplace").update({ is_approved: true, is_active: true }).eq("id", planId);
+    if (error) {
+      notify?.(error.message || "No se pudo aprobar");
+      return;
+    }
+    notify?.("Plan aprobado");
+    loadAll();
+  };
+  const rejectPlan = async (planId) => {
+    const { error } = await supabase.from("plan_marketplace").update({ is_active: false }).eq("id", planId);
+    if (error) {
+      notify?.(error.message || "No se pudo rechazar");
+      return;
+    }
+    notify?.("Plan rechazado");
+    loadAll();
+  };
+  const deletePlan = async (planId) => {
+    const { error } = await supabase.from("plan_marketplace").delete().eq("id", planId);
+    if (error) {
+      notify?.(error.message || "No se pudo eliminar");
+      return;
+    }
+    notify?.("Plan eliminado");
+    loadAll();
+  };
+  const confirmPayment = async (purchaseId) => {
+    const { error } = await supabase.from("plan_purchases").update({ payment_status: "confirmed" }).eq("id", purchaseId);
+    if (error) {
+      notify?.(error.message || "No se pudo confirmar pago");
+      return;
+    }
+    notify?.("Pago confirmado");
+    loadAll();
+  };
+
+  const pendingPurchases = (purchases || []).filter((p) => String(p.payment_status || "").toLowerCase() !== "confirmed");
+
+  return (
+    <div style={S.page}>
+      <h1 style={S.pageTitle}>🛒 Admin · Marketplace</h1>
+      {loading ? (
+        <div style={{ color: "#64748b" }}>Cargando marketplace…</div>
+      ) : (
+        <>
+          <div style={{ ...S.card, marginBottom: 16, overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 900 }}>
+              <thead>
+                <tr style={{ borderBottom: "1px solid #e2e8f0", color: "#64748b", fontSize: ".74em", textTransform: "uppercase", letterSpacing: ".08em" }}>
+                  <th style={{ textAlign: "left", padding: "8px 6px" }}>Coach</th>
+                  <th style={{ textAlign: "left", padding: "8px 6px" }}>Título</th>
+                  <th style={{ textAlign: "left", padding: "8px 6px" }}>Nivel</th>
+                  <th style={{ textAlign: "left", padding: "8px 6px" }}>Precio</th>
+                  <th style={{ textAlign: "left", padding: "8px 6px" }}>Estado</th>
+                  <th style={{ textAlign: "left", padding: "8px 6px" }}>Ventas</th>
+                  <th style={{ textAlign: "left", padding: "8px 6px" }}>Comisión</th>
+                  <th style={{ textAlign: "left", padding: "8px 6px" }}>Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(plans || []).map((p) => {
+                  const sales = Number(confirmedCountByPlan[String(p.id)] || 0);
+                  const commission = Math.round(Number(p.price_cop || 0) * sales * 0.2);
+                  return (
+                    <tr key={p.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                      <td style={{ padding: "8px 6px", fontSize: ".82em" }}>{p.coach_name || p.coach_user_id || "Coach"}</td>
+                      <td style={{ padding: "8px 6px", fontSize: ".82em", fontWeight: 700 }}>{p.title}</td>
+                      <td style={{ padding: "8px 6px", fontSize: ".82em" }}>{p.level}</td>
+                      <td style={{ padding: "8px 6px", fontSize: ".82em" }}>${formatCopInt(p.price_cop)}</td>
+                      <td style={{ padding: "8px 6px", fontSize: ".82em", fontWeight: 700, color: p.is_active ? (p.is_approved ? "#16a34a" : "#b45309") : "#ef4444" }}>
+                        {!p.is_active ? "Inactivo" : p.is_approved ? "Aprobado" : "Pendiente"}
+                      </td>
+                      <td style={{ padding: "8px 6px", fontSize: ".82em" }}>{sales}</td>
+                      <td style={{ padding: "8px 6px", fontSize: ".82em" }}>
+                        Comisión plataforma: ${formatCopInt(commission)} COP (20%)
+                      </td>
+                      <td style={{ padding: "8px 6px", fontSize: ".82em", display: "flex", gap: 6, flexWrap: "wrap" }}>
+                        <button type="button" onClick={() => approvePlan(p.id)} style={{ border: "1px solid #bbf7d0", background: "#f0fdf4", color: "#166534", borderRadius: 7, padding: "5px 8px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".74em" }}>✅ Aprobar</button>
+                        <button type="button" onClick={() => rejectPlan(p.id)} style={{ border: "1px solid #fecaca", background: "#fef2f2", color: "#b91c1c", borderRadius: 7, padding: "5px 8px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".74em" }}>🚫 Rechazar</button>
+                        <button type="button" onClick={() => deletePlan(p.id)} style={{ border: "1px solid #e2e8f0", background: "#fff", color: "#334155", borderRadius: 7, padding: "5px 8px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".74em" }}>🗑️ Eliminar</button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <div style={S.card}>
+            <div style={{ fontSize: ".72em", letterSpacing: ".1em", textTransform: "uppercase", color: "#64748b", marginBottom: 10 }}>
+              Compras pendientes de confirmar
+            </div>
+            {pendingPurchases.length === 0 ? (
+              <div style={{ color: "#94a3b8", fontSize: ".84em" }}>No hay compras pendientes.</div>
+            ) : (
+              <div style={{ display: "grid", gap: 8 }}>
+                {pendingPurchases.map((p) => (
+                  <div key={p.id} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: "10px 12px", background: "#f8fafc", display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                    <div style={{ fontSize: ".82em", color: "#334155" }}>
+                      Plan: <strong>{p.plan_title || p.plan_id}</strong> · ${formatCopInt(p.amount_cop || 0)} COP · {p.buyer_name || p.buyer_user_id || "Comprador"}
+                    </div>
+                    <button type="button" onClick={() => confirmPayment(p.id)} style={{ border: "1px solid #bbf7d0", background: "#f0fdf4", color: "#166534", borderRadius: 8, padding: "7px 10px", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".76em" }}>
+                      ✅ Confirmar pago
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function AdminPanel({ notify }) {
-  return <AdminPromoCodes notify={notify} />;
+  const [adminTab, setAdminTab] = useState("promo");
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "0 0 10px 0", padding: "0 16px" }}>
+        <button type="button" onClick={() => setAdminTab("promo")} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", background: adminTab === "promo" ? "rgba(124,58,237,.12)" : "#fff", color: adminTab === "promo" ? "#6d28d9" : "#334155", fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>🎟️ Promo</button>
+        <button type="button" onClick={() => setAdminTab("marketplace")} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", background: adminTab === "marketplace" ? "rgba(14,165,233,.12)" : "#fff", color: adminTab === "marketplace" ? "#0369a1" : "#334155", fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>🛒 Marketplace</button>
+      </div>
+      {adminTab === "promo" ? <AdminPromoCodes notify={notify} /> : <AdminMarketplacePanel notify={notify} />}
+    </div>
+  );
 }
 
 function AdminPromoCodes({ notify }) {
