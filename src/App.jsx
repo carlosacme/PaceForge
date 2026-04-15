@@ -13125,6 +13125,7 @@ function AdminMarketplacePanel({ notify }) {
   const [aiLevel, setAiLevel] = useState("principiante");
   const [aiGoal, setAiGoal] = useState("42K");
   const [aiDurationWeeks, setAiDurationWeeks] = useState("16");
+  const [showPreviewTable, setShowPreviewTable] = useState(false);
 
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -13205,6 +13206,7 @@ function AdminMarketplacePanel({ notify }) {
     if (Array.isArray(parsed)) return parsed;
     return [];
   };
+  const previewRows = useMemo(() => parsePreviewWorkoutsText(createForm.preview_workouts_text), [createForm.preview_workouts_text]);
 
   const createAdminPlan = async () => {
     const title = String(createForm.title || "").trim();
@@ -13314,22 +13316,81 @@ function AdminMarketplacePanel({ notify }) {
           </button>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 10 }}>
-          <input value={createForm.title} onChange={(e) => setCreateForm((f) => ({ ...f, title: e.target.value }))} placeholder="Título" style={{ gridColumn: "1 / -1", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit" }} />
-          <textarea value={createForm.description} onChange={(e) => setCreateForm((f) => ({ ...f, description: e.target.value }))} rows={3} placeholder="Descripción comercial" style={{ gridColumn: "1 / -1", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit", boxSizing: "border-box" }} />
-          <select value={createForm.level} onChange={(e) => setCreateForm((f) => ({ ...f, level: e.target.value }))} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit" }}>
-            <option value="principiante">Principiante</option>
-            <option value="intermedio">Intermedio</option>
-            <option value="avanzado">Avanzado</option>
-          </select>
-          <input type="number" value={createForm.duration_weeks} onChange={(e) => setCreateForm((f) => ({ ...f, duration_weeks: e.target.value }))} placeholder="Duración (semanas)" style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit" }} />
-          <input type="number" value={createForm.sessions_per_week} onChange={(e) => setCreateForm((f) => ({ ...f, sessions_per_week: e.target.value }))} placeholder="Sesiones/semana" style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit" }} />
-          <input type="number" value={createForm.price_cop} onChange={(e) => setCreateForm((f) => ({ ...f, price_cop: e.target.value }))} placeholder="Precio COP" style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit" }} />
-          <textarea value={createForm.preview_workouts_text} onChange={(e) => setCreateForm((f) => ({ ...f, preview_workouts_text: e.target.value }))} rows={8} placeholder='preview_workouts JSON' style={{ gridColumn: "1 / -1", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "monospace", fontSize: ".78em", boxSizing: "border-box" }} />
+          <div style={{ gridColumn: "1 / -1" }}>
+            <label style={{ display: "block", fontSize: ".72em", color: "#64748b", marginBottom: 5, fontWeight: 700 }}>Título del plan</label>
+            <input value={createForm.title} onChange={(e) => setCreateForm((f) => ({ ...f, title: e.target.value }))} placeholder="Título comercial del plan" style={{ width: "100%", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit", boxSizing: "border-box" }} />
+          </div>
+          <div style={{ gridColumn: "1 / -1" }}>
+            <label style={{ display: "block", fontSize: ".72em", color: "#64748b", marginBottom: 5, fontWeight: 700 }}>Descripción comercial</label>
+            <textarea value={createForm.description} onChange={(e) => setCreateForm((f) => ({ ...f, description: e.target.value }))} rows={3} placeholder="Descripción de venta (2-3 oraciones)" style={{ width: "100%", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit", boxSizing: "border-box" }} />
+          </div>
+          <div>
+            <label style={{ display: "block", fontSize: ".72em", color: "#64748b", marginBottom: 5, fontWeight: 700 }}>Nivel</label>
+            <select value={createForm.level} onChange={(e) => setCreateForm((f) => ({ ...f, level: e.target.value }))} style={{ width: "100%", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit" }}>
+              <option value="principiante">Principiante</option>
+              <option value="intermedio">Intermedio</option>
+              <option value="avanzado">Avanzado</option>
+            </select>
+          </div>
+          <div>
+            <label style={{ display: "block", fontSize: ".72em", color: "#64748b", marginBottom: 5, fontWeight: 700 }}>Duración (semanas)</label>
+            <input type="number" value={createForm.duration_weeks} onChange={(e) => setCreateForm((f) => ({ ...f, duration_weeks: e.target.value }))} placeholder="ej: 12" style={{ width: "100%", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit", boxSizing: "border-box" }} />
+          </div>
+          <div>
+            <label style={{ display: "block", fontSize: ".72em", color: "#64748b", marginBottom: 5, fontWeight: 700 }}>Sesiones por semana</label>
+            <input type="number" value={createForm.sessions_per_week} onChange={(e) => setCreateForm((f) => ({ ...f, sessions_per_week: e.target.value }))} placeholder="ej: 4" style={{ width: "100%", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit", boxSizing: "border-box" }} />
+          </div>
+          <div>
+            <label style={{ display: "block", fontSize: ".72em", color: "#64748b", marginBottom: 5, fontWeight: 700 }}>Precio (COP)</label>
+            <input type="text" value={createForm.price_cop} onChange={(e) => setCreateForm((f) => ({ ...f, price_cop: e.target.value }))} placeholder="ej: 120,000" style={{ width: "100%", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit", boxSizing: "border-box" }} />
+          </div>
+          <div style={{ gridColumn: "1 / -1" }}>
+            <label style={{ display: "block", fontSize: ".72em", color: "#64748b", marginBottom: 5, fontWeight: 700 }}>Workouts de muestra (JSON)</label>
+            <div style={{ fontSize: ".7em", color: "#64748b", marginBottom: 6 }}>
+              {'Formato: [{"week":1,"day":"Martes","title":"Rodaje suave","description":"...","duration_min":45,"distance_km":8}]'}
+            </div>
+            <textarea value={createForm.preview_workouts_text} onChange={(e) => setCreateForm((f) => ({ ...f, preview_workouts_text: e.target.value }))} rows={8} placeholder='[{"week":1,"day":"Martes","title":"Rodaje suave","description":"...","duration_min":45,"distance_km":8}]' style={{ width: "100%", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "monospace", fontSize: ".78em", boxSizing: "border-box" }} />
+          </div>
           <div style={{ gridColumn: "1 / -1", display: "flex", justifyContent: "flex-end" }}>
+            <button type="button" onClick={() => setShowPreviewTable((v) => !v)} style={{ border: "1px solid #cbd5e1", borderRadius: 8, padding: "9px 12px", background: "#f8fafc", color: "#334155", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", marginRight: 8 }}>
+              👁️ Vista previa
+            </button>
             <button type="button" onClick={createAdminPlan} disabled={creatingPlan} style={{ border: "none", borderRadius: 8, padding: "9px 14px", background: creatingPlan ? "#cbd5e1" : "linear-gradient(135deg,#0ea5e9,#0284c7)", color: "#fff", fontWeight: 800, cursor: creatingPlan ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
               {creatingPlan ? "Guardando…" : "Guardar plan (auto-aprobado)"}
             </button>
           </div>
+          {showPreviewTable ? (
+            <div style={{ gridColumn: "1 / -1", border: "1px solid #e2e8f0", borderRadius: 10, overflow: "hidden", marginTop: 2 }}>
+              {previewRows.length === 0 ? (
+                <div style={{ padding: "10px 12px", fontSize: ".8em", color: "#64748b", background: "#f8fafc" }}>No hay workouts parseables en el JSON.</div>
+              ) : (
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", minWidth: 560, borderCollapse: "collapse" }}>
+                    <thead>
+                      <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0", fontSize: ".72em", color: "#475569", textTransform: "uppercase", letterSpacing: ".05em" }}>
+                        <th style={{ textAlign: "left", padding: "8px 10px" }}>Semana</th>
+                        <th style={{ textAlign: "left", padding: "8px 10px" }}>Día</th>
+                        <th style={{ textAlign: "left", padding: "8px 10px" }}>Título</th>
+                        <th style={{ textAlign: "left", padding: "8px 10px" }}>Duración</th>
+                        <th style={{ textAlign: "left", padding: "8px 10px" }}>Distancia</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {previewRows.map((w, idx) => (
+                        <tr key={`${idx}-${w?.title || ""}`} style={{ borderBottom: "1px solid #f1f5f9", fontSize: ".8em", color: "#334155" }}>
+                          <td style={{ padding: "8px 10px" }}>{w?.week ?? "-"}</td>
+                          <td style={{ padding: "8px 10px" }}>{w?.day || "-"}</td>
+                          <td style={{ padding: "8px 10px", fontWeight: 700 }}>{w?.title || "-"}</td>
+                          <td style={{ padding: "8px 10px" }}>{w?.duration_min != null ? `${w.duration_min} min` : "-"}</td>
+                          <td style={{ padding: "8px 10px" }}>{w?.distance_km != null ? `${w.distance_km} km` : "-"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          ) : null}
         </div>
       </div>
       {loading ? (
@@ -13440,7 +13501,15 @@ function AdminMarketplacePanel({ notify }) {
 }
 
 function AdminPanel({ notify }) {
-  const [adminTab, setAdminTab] = useState("promo");
+  const [adminTab, setAdminTab] = useState(() => {
+    if (typeof localStorage === "undefined") return "promo";
+    const saved = localStorage.getItem("raf_admin_tab");
+    return saved || "promo";
+  });
+  useEffect(() => {
+    if (typeof localStorage === "undefined") return;
+    localStorage.setItem("raf_admin_tab", adminTab);
+  }, [adminTab]);
   return (
     <div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "0 0 10px 0", padding: "0 16px" }}>
