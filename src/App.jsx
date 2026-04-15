@@ -13110,11 +13110,8 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
 
 function AdminMarketplacePanel({ notify }) {
   const S = styles;
-  const [plans, setPlans] = useState([]);
-  const [purchases, setPurchases] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [creatingPlan, setCreatingPlan] = useState(false);
-  const [createForm, setCreateForm] = useState({
+  const ADMIN_PLAN_DRAFT_KEY = "raf_admin_plan_draft";
+  const EMPTY_ADMIN_PLAN_FORM = {
     title: "",
     description: "",
     level: "intermedio",
@@ -13122,7 +13119,12 @@ function AdminMarketplacePanel({ notify }) {
     sessions_per_week: "4",
     price_cop: "120000",
     preview_workouts_text: "",
-  });
+  };
+  const [plans, setPlans] = useState([]);
+  const [purchases, setPurchases] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [creatingPlan, setCreatingPlan] = useState(false);
+  const [createForm, setCreateForm] = useState(EMPTY_ADMIN_PLAN_FORM);
   const [aiModalOpen, setAiModalOpen] = useState(false);
   const [aiGenerating, setAiGenerating] = useState(false);
   const [aiContext, setAiContext] = useState("");
@@ -13152,6 +13154,38 @@ function AdminMarketplacePanel({ notify }) {
   useEffect(() => {
     loadAll();
   }, [loadAll]);
+
+  useEffect(() => {
+    if (typeof localStorage === "undefined") return;
+    const saved = localStorage.getItem(ADMIN_PLAN_DRAFT_KEY);
+    if (!saved) return;
+    try {
+      const parsed = JSON.parse(saved);
+      if (parsed && typeof parsed === "object") {
+        setCreateForm((prev) => ({ ...prev, ...parsed }));
+      }
+    } catch {
+      /* ignore malformed draft */
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof localStorage === "undefined") return;
+    const hasData = Boolean(
+      String(createForm.title || "").trim() ||
+        String(createForm.description || "").trim() ||
+        String(createForm.preview_workouts_text || "").trim() ||
+        String(createForm.level || "").trim() !== "intermedio" ||
+        String(createForm.duration_weeks || "").trim() !== "12" ||
+        String(createForm.sessions_per_week || "").trim() !== "4" ||
+        String(createForm.price_cop || "").trim() !== "120000",
+    );
+    if (!hasData) {
+      localStorage.removeItem(ADMIN_PLAN_DRAFT_KEY);
+      return;
+    }
+    localStorage.setItem(ADMIN_PLAN_DRAFT_KEY, JSON.stringify(createForm));
+  }, [createForm]);
 
   const confirmedCountByPlan = useMemo(() => {
     const m = {};
@@ -13202,6 +13236,17 @@ function AdminMarketplacePanel({ notify }) {
   };
 
   const pendingPurchases = (purchases || []).filter((p) => String(p.payment_status || "").toLowerCase() !== "confirmed");
+  const hasUnsavedDraft = useMemo(() => {
+    return Boolean(
+      String(createForm.title || "").trim() ||
+        String(createForm.description || "").trim() ||
+        String(createForm.preview_workouts_text || "").trim() ||
+        String(createForm.level || "").trim() !== "intermedio" ||
+        String(createForm.duration_weeks || "").trim() !== "12" ||
+        String(createForm.sessions_per_week || "").trim() !== "4" ||
+        String(createForm.price_cop || "").trim() !== "120000",
+    );
+  }, [createForm]);
 
   const parsePreviewWorkoutsText = (txt) => {
     const raw = String(txt || "").trim();
@@ -13239,15 +13284,8 @@ function AdminMarketplacePanel({ notify }) {
       return;
     }
     notify?.("Plan creado y aprobado automáticamente.");
-    setCreateForm({
-      title: "",
-      description: "",
-      level: "intermedio",
-      duration_weeks: "12",
-      sessions_per_week: "4",
-      price_cop: "120000",
-      preview_workouts_text: "",
-    });
+    setCreateForm(EMPTY_ADMIN_PLAN_FORM);
+    if (typeof localStorage !== "undefined") localStorage.removeItem(ADMIN_PLAN_DRAFT_KEY);
     loadAll();
   };
 
@@ -13311,13 +13349,30 @@ function AdminMarketplacePanel({ notify }) {
           <div style={{ fontSize: ".78em", letterSpacing: ".1em", textTransform: "uppercase", color: "#64748b", fontWeight: 800 }}>
             Crear plan (admin)
           </div>
-          <button
-            type="button"
-            onClick={() => setAiModalOpen(true)}
-            style={{ border: "none", borderRadius: 8, padding: "8px 12px", background: "linear-gradient(135deg,#8b5cf6,#6366f1)", color: "#fff", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".78em" }}
-          >
-            ✨ Generar plan con IA
-          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            {hasUnsavedDraft ? (
+              <span style={{ border: "1px solid #fde68a", background: "#fffbeb", color: "#92400e", borderRadius: 999, padding: "5px 9px", fontSize: ".72em", fontWeight: 800 }}>
+                📝 Borrador guardado
+              </span>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => {
+                setCreateForm(EMPTY_ADMIN_PLAN_FORM);
+                if (typeof localStorage !== "undefined") localStorage.removeItem(ADMIN_PLAN_DRAFT_KEY);
+              }}
+              style={{ border: "1px solid #fecaca", borderRadius: 8, padding: "8px 10px", background: "#fff1f2", color: "#b91c1c", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".76em" }}
+            >
+              🗑️ Limpiar borrador
+            </button>
+            <button
+              type="button"
+              onClick={() => setAiModalOpen(true)}
+              style={{ border: "none", borderRadius: 8, padding: "8px 12px", background: "linear-gradient(135deg,#8b5cf6,#6366f1)", color: "#fff", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".78em" }}
+            >
+              ✨ Generar plan con IA
+            </button>
+          </div>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 10 }}>
           <div style={{ gridColumn: "1 / -1" }}>
