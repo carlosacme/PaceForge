@@ -126,6 +126,18 @@ async function sendChatPushNotification({ token, title, body, logLabel = "chat p
   }
 }
 
+async function sendWorkoutAssignmentPushToAthlete({ athleteUserId, workoutTitle, scheduledDate }) {
+  if (!athleteUserId) return;
+  const { data: prof } = await supabase.from("profiles").select("fcm_token").eq("user_id", athleteUserId).maybeSingle();
+  const token = prof?.fcm_token ?? null;
+  await sendChatPushNotification({
+    token,
+    title: "🏃 Nuevo entrenamiento asignado",
+    body: `${workoutTitle || "Entrenamiento"} programado para el ${scheduledDate || "día asignado"}`,
+    logLabel: "workout coach→athlete",
+  });
+}
+
 const achievementKmTargets = [10, 50, 100, 500, 1000];
 const PAYMENT_METHOD_OPTIONS = ["Nequi", "Bancolombia", "Efectivo", "Transferencia", "Otro"];
 const PAYMENT_PLAN_OPTIONS = ["Basico", "Pro"];
@@ -576,6 +588,13 @@ const normalizeWorkoutRow = (row) => {
     structure: Array.isArray(structure) ? structure : [],
     done: Boolean(row.done),
     rpe: clampWorkoutRpe(row.rpe),
+    manual_distance_km: Number.isFinite(Number(row.manual_distance_km)) ? Number(row.manual_distance_km) : null,
+    manual_duration_min: Number.isFinite(Number(row.manual_duration_min)) ? Number(row.manual_duration_min) : null,
+    manual_avg_hr: Number.isFinite(Number(row.manual_avg_hr)) ? Math.round(Number(row.manual_avg_hr)) : null,
+    manual_max_hr: Number.isFinite(Number(row.manual_max_hr)) ? Math.round(Number(row.manual_max_hr)) : null,
+    manual_calories: Number.isFinite(Number(row.manual_calories)) ? Math.round(Number(row.manual_calories)) : null,
+    athlete_notes: typeof row.athlete_notes === "string" ? row.athlete_notes : "",
+    completed_at: row.completed_at || null,
   };
 };
 
@@ -4309,6 +4328,7 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
   const [raceMoveDate, setRaceMoveDate] = useState("");
   const [raceActionBusy, setRaceActionBusy] = useState(false);
   const [chatClearing, setChatClearing] = useState(false);
+  const [expandedWorkoutLogs, setExpandedWorkoutLogs] = useState({});
 
   const refreshRacesList = useCallback(async () => {
     if (!athlete?.id) return;
@@ -5561,50 +5581,79 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
                     ))}
                     {dayWorkouts.map(w => {
                       const wt = WORKOUT_TYPES.find(t => t.id === w.type) || WORKOUT_TYPES[0];
+                      const expanded = Boolean(expandedWorkoutLogs[w.id]);
+                      const feelingMatch = String(w.athlete_notes || "").match(/^Cómo me sentí:\s*(.+)$/m);
+                      const feelingText = feelingMatch ? feelingMatch[1] : "";
+                      const notesText = String(w.athlete_notes || "")
+                        .replace(/^Cómo me sentí:\s*.+$/m, "")
+                        .trim();
                       return (
-                        <button
-                          key={w.id}
-                          type="button"
-                          draggable
-                          onDragStart={(e) => {
-                            calendarDragRef.current = true;
-                            setDragWorkoutId(w.id);
-                            try {
-                              e.dataTransfer.setData("text/plain", String(w.id));
-                              e.dataTransfer.effectAllowed = "move";
-                            } catch (_) {}
-                          }}
-                          onDragEnd={() => {
-                            setDragWorkoutId(null);
-                            setTimeout(() => {
-                              calendarDragRef.current = false;
-                            }, 0);
-                          }}
-                          onClick={(e) => openCalendarWorkoutMenu(e, w)}
-                          title="Opciones del workout"
-                          style={{
-                            border: `1px solid ${w.done ? "rgba(34,197,94,.55)" : `${wt.color}55`}`,
-                            borderRadius: 5,
-                            padding: "4px 3px",
-                            background: w.done ? "rgba(34,197,94,.16)" : `${wt.color}12`,
-                            cursor: "pointer",
-                            fontFamily: "inherit",
-                            textAlign: "center",
-                            width: "100%",
-                            boxSizing: "border-box",
-                            position: "relative",
-                          }}
-                        >
-                          <div style={{ width: 5, height: 5, borderRadius: "50%", background: wt.color, margin: "0 auto 2px" }} />
-                          <div style={{ fontSize: ".52em", color: wt.color, fontWeight: 600, lineHeight: 1.15 }}>{w.title}</div>
-                          <div style={{ fontSize: ".5em", color: "#475569" }}>{w.total_km} km</div>
-                          {w.done && <div style={{ fontSize: ".52em", color: "#22c55e", marginTop: 1 }}>✓ Hecho</div>}
-                          {w.done && w.rpe != null && (
-                            <div style={{ fontSize: ".52em", color: "#94a3b8", marginTop: 2, lineHeight: 1.2 }}>
-                              {rpeBandMeta(w.rpe).emoji} RPE {w.rpe}
-                            </div>
-                          )}
-                        </button>
+                        <div key={w.id} style={{ display: "flex", flexDirection: "column", gap: 4, width: "100%" }}>
+                          <button
+                            type="button"
+                            draggable
+                            onDragStart={(e) => {
+                              calendarDragRef.current = true;
+                              setDragWorkoutId(w.id);
+                              try {
+                                e.dataTransfer.setData("text/plain", String(w.id));
+                                e.dataTransfer.effectAllowed = "move";
+                              } catch (_) {}
+                            }}
+                            onDragEnd={() => {
+                              setDragWorkoutId(null);
+                              setTimeout(() => {
+                                calendarDragRef.current = false;
+                              }, 0);
+                            }}
+                            onClick={(e) => openCalendarWorkoutMenu(e, w)}
+                            title="Opciones del workout"
+                            style={{
+                              border: `1px solid ${w.done ? "rgba(34,197,94,.55)" : `${wt.color}55`}`,
+                              borderRadius: 5,
+                              padding: "4px 3px",
+                              background: w.done ? "rgba(34,197,94,.16)" : `${wt.color}12`,
+                              cursor: "pointer",
+                              fontFamily: "inherit",
+                              textAlign: "center",
+                              width: "100%",
+                              boxSizing: "border-box",
+                              position: "relative",
+                            }}
+                          >
+                            <div style={{ width: 5, height: 5, borderRadius: "50%", background: wt.color, margin: "0 auto 2px" }} />
+                            <div style={{ fontSize: ".52em", color: wt.color, fontWeight: 600, lineHeight: 1.15 }}>{w.title}</div>
+                            <div style={{ fontSize: ".5em", color: "#475569" }}>{w.total_km} km</div>
+                            {w.done && <div style={{ fontSize: ".52em", color: "#22c55e", marginTop: 1 }}>✓ Hecho</div>}
+                            {w.done && w.rpe != null && (
+                              <div style={{ fontSize: ".52em", color: "#94a3b8", marginTop: 2, lineHeight: 1.2 }}>
+                                {rpeBandMeta(w.rpe).emoji} RPE {w.rpe}
+                              </div>
+                            )}
+                          </button>
+                          {w.done ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => setExpandedWorkoutLogs((prev) => ({ ...prev, [w.id]: !prev[w.id] }))}
+                                style={{ border: "1px solid #cbd5e1", borderRadius: 6, background: "#fff", color: "#334155", padding: "3px 6px", fontSize: ".56em", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}
+                              >
+                                {expanded ? "Ocultar registro" : "Ver registro"}
+                              </button>
+                              {expanded ? (
+                                <div style={{ border: "1px solid #e2e8f0", borderRadius: 7, background: "#fff", padding: "6px 7px", fontSize: ".54em", color: "#334155", textAlign: "left", lineHeight: 1.35 }}>
+                                  <div><strong>Distancia:</strong> {w.manual_distance_km != null ? `${w.manual_distance_km} km` : "—"}</div>
+                                  <div><strong>Duración:</strong> {w.manual_duration_min != null ? `${w.manual_duration_min} min` : "—"}</div>
+                                  <div><strong>FC prom/máx:</strong> {w.manual_avg_hr != null ? w.manual_avg_hr : "—"} / {w.manual_max_hr != null ? w.manual_max_hr : "—"} lpm</div>
+                                  <div><strong>Calorías:</strong> {w.manual_calories != null ? w.manual_calories : "—"}</div>
+                                  <div><strong>Cómo se sintió:</strong> {feelingText || "—"}</div>
+                                  <div><strong>Notas:</strong> {notesText || "—"}</div>
+                                  <div><strong>Completado:</strong> {w.completed_at ? new Date(w.completed_at).toLocaleString("es-CO") : "—"}</div>
+                                </div>
+                              ) : null}
+                            </>
+                          ) : null}
+                        </div>
                       );
                     })}
                   </div>
@@ -6356,7 +6405,15 @@ function AthleteHome({ profile }) {
   const [selectCoachBusyId, setSelectCoachBusyId] = useState("");
   const [coachAssignSuccess, setCoachAssignSuccess] = useState("");
   const [workoutSummaryModal, setWorkoutSummaryModal] = useState(null);
-  const [manualSummaryForm, setManualSummaryForm] = useState({ distanceKm: "", timeHms: "", rpe: "", notes: "" });
+  const [manualSummaryForm, setManualSummaryForm] = useState({
+    distanceKm: "",
+    durationMin: "",
+    avgHr: "",
+    maxHr: "",
+    calories: "",
+    feeling: "😐 Normal",
+    notes: "",
+  });
   const [manualSummarySaving, setManualSummarySaving] = useState(false);
 
   const profileUserId = profile?.user_id ?? null;
@@ -6749,14 +6806,26 @@ function AthleteHome({ profile }) {
       if (error) {
         console.warn("No se pudo cargar actividad strava_activities:", error);
       }
+      setManualSummaryForm({
+        distanceKm: data?.distance != null ? (Number(data.distance) / 1000).toFixed(2) : (workoutRow.total_km ? String(workoutRow.total_km) : ""),
+        durationMin: data?.moving_time != null ? String(Math.max(0, Math.round(Number(data.moving_time) / 60))) : (workoutRow.duration_min ? String(workoutRow.duration_min) : ""),
+        avgHr: data?.average_heartrate != null ? String(Math.round(Number(data.average_heartrate))) : "",
+        maxHr: data?.max_heartrate != null ? String(Math.round(Number(data.max_heartrate))) : "",
+        calories: data?.calories != null ? String(Math.round(Number(data.calories))) : data?.kilojoules != null ? String(Math.round(Number(data.kilojoules))) : "",
+        feeling: "😐 Normal",
+        notes: workoutRow.athlete_notes || "",
+      });
       setWorkoutSummaryModal({ workout: workoutRow, stravaConnected: true, activity: data || null });
       return;
     }
     setManualSummaryForm({
       distanceKm: workoutRow.total_km ? String(workoutRow.total_km) : "",
-      timeHms: workoutRow.duration_min ? formatDurationClock(Number(workoutRow.duration_min) * 60) : "",
-      rpe: workoutRow.rpe ? String(workoutRow.rpe) : "",
-      notes: "",
+      durationMin: workoutRow.duration_min ? String(workoutRow.duration_min) : "",
+      avgHr: workoutRow.manual_avg_hr != null ? String(workoutRow.manual_avg_hr) : "",
+      maxHr: workoutRow.manual_max_hr != null ? String(workoutRow.manual_max_hr) : "",
+      calories: workoutRow.manual_calories != null ? String(workoutRow.manual_calories) : "",
+      feeling: "😐 Normal",
+      notes: workoutRow.athlete_notes || "",
     });
     setWorkoutSummaryModal({ workout: workoutRow, stravaConnected: false, activity: null });
   };
@@ -6765,20 +6834,25 @@ function AthleteHome({ profile }) {
     const workoutRow = workoutSummaryModal?.workout;
     if (!workoutRow?.id) return;
     const parsedDistance = Number(manualSummaryForm.distanceKm);
-    const secs = parseHmsToSeconds(manualSummaryForm.timeHms);
-    const rpe = clampWorkoutRpe(manualSummaryForm.rpe);
-    const summaryLines = [
-      "[Resumen manual]",
-      Number.isFinite(parsedDistance) && parsedDistance > 0 ? `Distancia: ${parsedDistance} km` : null,
-      Number.isFinite(secs) && secs > 0 ? `Tiempo: ${manualSummaryForm.timeHms}` : null,
-      rpe != null ? `RPE: ${rpe}` : null,
-      manualSummaryForm.notes.trim() ? `Notas: ${manualSummaryForm.notes.trim()}` : null,
-    ].filter(Boolean);
+    const durationMin = Math.round(Number(manualSummaryForm.durationMin) || 0);
+    const avgHr = Math.round(Number(manualSummaryForm.avgHr) || 0);
+    const maxHr = Math.round(Number(manualSummaryForm.maxHr) || 0);
+    const calories = Math.round(Number(manualSummaryForm.calories) || 0);
+    const feelings = ["😴 Muy cansado", "😕 Cansado", "😐 Normal", "🙂 Bien", "💪 Excelente"];
+    const feelingText = feelings.includes(manualSummaryForm.feeling) ? manualSummaryForm.feeling : "😐 Normal";
+    const notesBody = manualSummaryForm.notes.trim();
+    const athleteNotes = [`Cómo me sentí: ${feelingText}`, notesBody].filter(Boolean).join("\n");
     const payload = {
+      manual_distance_km: Number.isFinite(parsedDistance) && parsedDistance > 0 ? parsedDistance : null,
+      manual_duration_min: Number.isFinite(durationMin) && durationMin > 0 ? durationMin : null,
+      manual_avg_hr: Number.isFinite(avgHr) && avgHr > 0 ? avgHr : null,
+      manual_max_hr: Number.isFinite(maxHr) && maxHr > 0 ? maxHr : null,
+      manual_calories: Number.isFinite(calories) && calories > 0 ? calories : null,
+      athlete_notes: athleteNotes,
       total_km: Number.isFinite(parsedDistance) && parsedDistance > 0 ? parsedDistance : workoutRow.total_km,
-      duration_min: Number.isFinite(secs) && secs > 0 ? Math.round(secs / 60) : workoutRow.duration_min,
-      rpe: rpe ?? workoutRow.rpe ?? null,
-      description: [workoutRow.description || "", summaryLines.join("\n")].filter(Boolean).join("\n\n"),
+      duration_min: Number.isFinite(durationMin) && durationMin > 0 ? durationMin : workoutRow.duration_min,
+      completed_at: new Date().toISOString(),
+      done: true,
     };
     setManualSummarySaving(true);
     const { error } = await supabase.from("workouts").update(payload).eq("id", workoutRow.id);
@@ -6790,6 +6864,15 @@ function AthleteHome({ profile }) {
     setWorkouts((prev) =>
       prev.map((w) => (String(w.id) === String(workoutRow.id) ? normalizeWorkoutRow({ ...w, ...payload }) : w)),
     );
+    if (athleteInfo?.coach_id) {
+      const { data: coachProf } = await supabase.from("profiles").select("fcm_token").eq("user_id", athleteInfo.coach_id).maybeSingle();
+      await sendChatPushNotification({
+        token: coachProf?.fcm_token ?? null,
+        title: "✅ Entrenamiento completado",
+        body: `${athleteName} completó ${workoutRow.title || "workout"} — ${(Number(payload.total_km) || 0).toFixed(1)}km en ${Number(payload.duration_min) || 0}min`,
+        logLabel: "workout athlete→coach",
+      });
+    }
     setWorkoutSummaryModal(null);
   };
 
@@ -7368,21 +7451,35 @@ function AthleteHome({ profile }) {
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 10, marginBottom: 14 }}>
                   <div style={{ ...S.card, margin: 0, padding: 12 }}><div style={{ fontSize: ".72em", color: "#64748b" }}>Distancia</div><div style={{ fontWeight: 800 }}>{((Number(workoutSummaryModal.activity.distance) || 0) / 1000).toFixed(2)} km</div></div>
                   <div style={{ ...S.card, margin: 0, padding: 12 }}><div style={{ fontSize: ".72em", color: "#64748b" }}>Tiempo total</div><div style={{ fontWeight: 800 }}>{formatDurationClock(Number(workoutSummaryModal.activity.elapsed_time || workoutSummaryModal.activity.moving_time || 0))}</div></div>
+                  <div style={{ ...S.card, margin: 0, padding: 12 }}><div style={{ fontSize: ".72em", color: "#64748b" }}>Ritmo promedio</div><div style={{ fontWeight: 800 }}>{formatStravaPace(Number(workoutSummaryModal.activity.distance || 0), Number(workoutSummaryModal.activity.moving_time || 0))}</div></div>
+                  <div style={{ ...S.card, margin: 0, padding: 12 }}><div style={{ fontSize: ".72em", color: "#64748b" }}>FC prom / máx</div><div style={{ fontWeight: 800 }}>{Number(workoutSummaryModal.activity.average_heartrate || 0) > 0 ? Math.round(Number(workoutSummaryModal.activity.average_heartrate)) : "—"} / {Number(workoutSummaryModal.activity.max_heartrate || 0) > 0 ? Math.round(Number(workoutSummaryModal.activity.max_heartrate)) : "—"} lpm</div></div>
+                  <div style={{ ...S.card, margin: 0, padding: 12 }}><div style={{ fontSize: ".72em", color: "#64748b" }}>Elevación</div><div style={{ fontWeight: 800 }}>{Math.round(Number(workoutSummaryModal.activity.total_elevation_gain || 0))} m</div></div>
+                  <div style={{ ...S.card, margin: 0, padding: 12 }}><div style={{ fontSize: ".72em", color: "#64748b" }}>Calorías</div><div style={{ fontWeight: 800 }}>{Math.round(Number(workoutSummaryModal.activity.calories || workoutSummaryModal.activity.kilojoules || 0))}</div></div>
                 </div>
               ) : <div style={{ color: "#64748b", fontSize: ".86em", marginBottom: 14 }}>No encontramos una actividad de Strava para ese día.</div>
             ) : (
-              <div style={{ display: "grid", gap: 10, marginBottom: 14 }}>
-                <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(2,minmax(0,1fr))" }}>
-                  <input type="number" min="0" step="0.1" value={manualSummaryForm.distanceKm} onChange={(e) => setManualSummaryForm((f) => ({ ...f, distanceKm: e.target.value }))} placeholder="Distancia (km)" style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit" }} />
-                  <input value={manualSummaryForm.timeHms} onChange={(e) => setManualSummaryForm((f) => ({ ...f, timeHms: e.target.value }))} placeholder="Tiempo (HH:MM:SS)" style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit" }} />
-                </div>
-                <input type="number" min="1" max="10" value={manualSummaryForm.rpe} onChange={(e) => setManualSummaryForm((f) => ({ ...f, rpe: e.target.value }))} placeholder="RPE (1-10)" style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit" }} />
-                <textarea rows={3} value={manualSummaryForm.notes} onChange={(e) => setManualSummaryForm((f) => ({ ...f, notes: e.target.value }))} placeholder="Notas" style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit", boxSizing: "border-box" }} />
-                <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                  <button type="button" disabled={manualSummarySaving} onClick={saveManualWorkoutSummary} style={{ background: manualSummarySaving ? "#cbd5e1" : "linear-gradient(135deg,#0d9488,#14b8a6)", border: "none", borderRadius: 8, padding: "8px 12px", color: "#fff", fontWeight: 800, fontFamily: "inherit", cursor: manualSummarySaving ? "not-allowed" : "pointer", fontSize: ".78em" }}>{manualSummarySaving ? "Guardando…" : "Guardar resumen"}</button>
-                </div>
-              </div>
+              <></>
             )}
+            <div style={{ display: "grid", gap: 10, marginBottom: 14 }}>
+              {!workoutSummaryModal.stravaConnected ? (
+                <>
+                  <input type="number" min="0" step="0.1" value={manualSummaryForm.distanceKm} onChange={(e) => setManualSummaryForm((f) => ({ ...f, distanceKm: e.target.value }))} placeholder="Distancia (km)" style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit" }} />
+                  <input type="number" min="0" step="1" value={manualSummaryForm.durationMin} onChange={(e) => setManualSummaryForm((f) => ({ ...f, durationMin: e.target.value }))} placeholder="Duración (minutos)" style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit" }} />
+                  <input type="number" min="0" step="1" value={manualSummaryForm.avgHr} onChange={(e) => setManualSummaryForm((f) => ({ ...f, avgHr: e.target.value }))} placeholder="FC promedio (lpm)" style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit" }} />
+                  <input type="number" min="0" step="1" value={manualSummaryForm.maxHr} onChange={(e) => setManualSummaryForm((f) => ({ ...f, maxHr: e.target.value }))} placeholder="FC máxima (lpm)" style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit" }} />
+                  <input type="number" min="0" step="1" value={manualSummaryForm.calories} onChange={(e) => setManualSummaryForm((f) => ({ ...f, calories: e.target.value }))} placeholder="Calorías" style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit" }} />
+                </>
+              ) : null}
+              <select value={manualSummaryForm.feeling} onChange={(e) => setManualSummaryForm((f) => ({ ...f, feeling: e.target.value }))} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit", background: "#fff" }}>
+                {["😴 Muy cansado", "😕 Cansado", "😐 Normal", "🙂 Bien", "💪 Excelente"].map((opt) => (
+                  <option key={opt} value={opt}>{opt}</option>
+                ))}
+              </select>
+              <textarea rows={3} value={manualSummaryForm.notes} onChange={(e) => setManualSummaryForm((f) => ({ ...f, notes: e.target.value }))} placeholder="Describe tu entrenamiento..." style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit", boxSizing: "border-box" }} />
+              <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                <button type="button" disabled={manualSummarySaving} onClick={saveManualWorkoutSummary} style={{ background: manualSummarySaving ? "#cbd5e1" : "linear-gradient(135deg,#0d9488,#14b8a6)", border: "none", borderRadius: 8, padding: "8px 12px", color: "#fff", fontWeight: 800, fontFamily: "inherit", cursor: manualSummarySaving ? "not-allowed" : "pointer", fontSize: ".78em" }}>{manualSummarySaving ? "Guardando…" : workoutSummaryModal.stravaConnected ? "Guardar notas" : "Guardar registro"}</button>
+              </div>
+            </div>
             <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 14 }}>
               <button type="button" onClick={() => setWorkoutSummaryModal(null)} style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#475569", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".8em" }}>
                 Cerrar
@@ -9531,6 +9628,13 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
         }
       }
       notify(`Plan asignado: ${rows.length} workouts guardados.`);
+      for (const wk of rows) {
+        await sendWorkoutAssignmentPushToAthlete({
+          athleteUserId: selectedAthlete?.user_id,
+          workoutTitle: wk.title,
+          scheduledDate: wk.scheduled_date,
+        });
+      }
     } finally {
       setAssignLoading(false);
     }
@@ -10344,6 +10448,12 @@ function WorkoutLibrary({ coachUserId, libraryRefresh, onUseWorkout, athletes, n
       return;
     }
     notify("Workout asignado directamente al atleta ✓");
+    const athleteRow = (athletes || []).find((a) => String(a.id) === String(assignAthleteId));
+    await sendWorkoutAssignmentPushToAthlete({
+      athleteUserId: athleteRow?.user_id,
+      workoutTitle: row.title,
+      scheduledDate: assignDate,
+    });
     setAssigningId(null);
   };
 
@@ -10862,6 +10972,11 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
           console.error("Error llamando /api/send-email:", e);
         }
       }
+      await sendWorkoutAssignmentPushToAthlete({
+        athleteUserId: selectedAthlete?.user_id,
+        workoutTitle: w.title,
+        scheduledDate: assignDate,
+      });
 
       setShowAssignModal(false);
       onWorkoutAssigned?.();
