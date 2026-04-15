@@ -1143,6 +1143,8 @@ function ChallengesHub({ profileRole, currentUserId, athleteId = null, workouts 
   const [aiGenerating, setAiGenerating] = useState(false);
   const [savingCreate, setSavingCreate] = useState(false);
   const [deletingId, setDeletingId] = useState("");
+  const [workoutsByAthlete, setWorkoutsByAthlete] = useState({});
+  const [participantsModalChallenge, setParticipantsModalChallenge] = useState(null);
   const [form, setForm] = useState({
     title: "",
     description: "",
@@ -1187,12 +1189,80 @@ function ChallengesHub({ profileRole, currentUserId, athleteId = null, workouts 
     if (pErr) {
       console.error("load challenge_participants:", pErr);
     }
+    const userIds = [...new Set((participants || []).map((p) => p.user_id).filter(Boolean))];
+    const athleteIds = [...new Set((participants || []).map((p) => p.athlete_id).filter(Boolean))];
+    const profileNameByUserId = {};
+    const athleteNameById = {};
+    if (userIds.length > 0) {
+      const { data: profileRows, error: profileErr } = await supabase
+        .from("profiles")
+        .select("user_id,name")
+        .in("user_id", userIds);
+      if (profileErr) {
+        console.error("load participant profiles:", profileErr);
+      } else {
+        for (const row of profileRows || []) {
+          profileNameByUserId[String(row.user_id)] = String(row.name || "").trim();
+        }
+      }
+    }
+    if (athleteIds.length > 0) {
+      const { data: athleteRows, error: athleteErr } = await supabase
+        .from("athletes")
+        .select("id,name")
+        .in("id", athleteIds);
+      if (athleteErr) {
+        console.error("load participant athletes:", athleteErr);
+      } else {
+        for (const row of athleteRows || []) {
+          athleteNameById[String(row.id)] = String(row.name || "").trim();
+        }
+      }
+    }
+    let workoutsMap = {};
+    if (athleteIds.length > 0) {
+      const dateRangeStart = list
+        .map((c) => String(c.start_date || ""))
+        .filter(Boolean)
+        .sort()[0];
+      const dateRangeEnd = [...list.map((c) => String(c.end_date || "")).filter(Boolean)].sort().slice(-1)[0];
+      const workoutsQuery = supabase
+        .from("workouts")
+        .select("id,athlete_id,scheduled_date,total_km,duration_min,done")
+        .eq("done", true)
+        .in("athlete_id", athleteIds);
+      const boundedQuery =
+        dateRangeStart && dateRangeEnd
+          ? workoutsQuery.gte("scheduled_date", dateRangeStart).lte("scheduled_date", dateRangeEnd)
+          : workoutsQuery;
+      const { data: doneWorkouts, error: workoutsErr } = await boundedQuery;
+      if (workoutsErr) {
+        console.error("load challenge workouts:", workoutsErr);
+      } else {
+        for (const row of doneWorkouts || []) {
+          const aid = String(row.athlete_id);
+          if (!workoutsMap[aid]) workoutsMap[aid] = [];
+          workoutsMap[aid].push(normalizeWorkoutRow(row));
+        }
+      }
+    }
     const grouped = {};
     const mine = new Set();
     for (const p of participants || []) {
       const cid = p.challenge_id;
       if (!grouped[cid]) grouped[cid] = [];
-      grouped[cid].push(p);
+      const profileName = profileNameByUserId[String(p.user_id)] || "";
+      const athleteName = athleteNameById[String(p.athlete_id)] || "";
+      const displayName = profileName || athleteName || "Participante";
+      const initials =
+        displayName
+          .split(/\s+/)
+          .filter(Boolean)
+          .slice(0, 2)
+          .map((chunk) => chunk[0])
+          .join("")
+          .toUpperCase() || "P";
+      grouped[cid].push({ ...p, displayName, initials });
       if (
         String(p.user_id || "") === String(currentUserId || "") ||
         (athleteId != null && String(p.athlete_id || "") === String(athleteId))
@@ -1201,6 +1271,7 @@ function ChallengesHub({ profileRole, currentUserId, athleteId = null, workouts 
       }
     }
     setParticipantsByChallenge(grouped);
+    setWorkoutsByAthlete(workoutsMap);
     setMyChallengeIds(mine);
     setLoading(false);
   }, [notify, currentUserId, athleteId]);
@@ -1466,6 +1537,57 @@ Responde SOLO con un JSON con esta estructura exacta, sin texto adicional:
                 <div style={{ marginTop: 10, color: "#64748b", fontSize: ".76em" }}>
                   Fecha límite: {challenge.end_date ? new Date(`${challenge.end_date}T12:00:00`).toLocaleDateString("es-CO") : "—"} · Participantes: {participants.length}
                 </div>
+                <div style={{ marginTop: 10, borderTop: "1px dashed #e2e8f0", paddingTop: 10 }}>
+                  <div style={{ fontSize: ".74em", color: "#475569", fontWeight: 800, marginBottom: 8 }}>👥 Participantes</div>
+                  {participants.length === 0 ? (
+                    <div style={{ color: "#94a3b8", fontSize: ".78em" }}>Sé el primero en unirte</div>
+                  ) : (
+                    <>
+                      <div style={{ display: "flex", gap: 10, alignItems: "flex-start", flexWrap: "wrap" }}>
+                        {participants.slice(0, 5).map((participant) => (
+                          <div key={participant.id} style={{ width: 64, textAlign: "center" }}>
+                            <div
+                              style={{
+                                width: 36,
+                                height: 36,
+                                margin: "0 auto 4px",
+                                borderRadius: "50%",
+                                background: "#e2e8f0",
+                                color: "#334155",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                fontWeight: 900,
+                                fontSize: ".78em",
+                              }}
+                            >
+                              {participant.initials}
+                            </div>
+                            <div style={{ fontSize: ".67em", color: "#475569", lineHeight: 1.25 }}>
+                              {participant.displayName}
+                            </div>
+                          </div>
+                        ))}
+                        {participants.length > 5 ? (
+                          <div style={{ alignSelf: "center", color: "#64748b", fontSize: ".74em", fontWeight: 700 }}>
+                            +{participants.length - 5} más
+                          </div>
+                        ) : null}
+                      </div>
+                      {participants.length > 5 ? (
+                        <div style={{ marginTop: 8 }}>
+                          <button
+                            type="button"
+                            onClick={() => setParticipantsModalChallenge(challenge)}
+                            style={{ background: "none", border: "none", color: "#2563eb", cursor: "pointer", fontWeight: 700, fontFamily: "inherit", fontSize: ".75em", padding: 0, textDecoration: "underline" }}
+                          >
+                            Ver todos
+                          </button>
+                        </div>
+                      ) : null}
+                    </>
+                  )}
+                </div>
                 {isAthlete ? (
                   <>
                     <div style={{ marginTop: 10, fontSize: ".76em", color: "#475569", fontWeight: 700 }}>
@@ -1509,6 +1631,44 @@ Responde SOLO con un JSON con esta estructura exacta, sin texto adicional:
           })}
         </div>
       )}
+      {participantsModalChallenge ? (
+        <div style={{ position: "fixed", inset: 0, zIndex: 10030, background: "rgba(15,23,42,.55)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ ...S.card, width: "100%", maxWidth: 560, margin: 0, maxHeight: "80vh", overflowY: "auto" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 10 }}>
+              <div style={{ fontSize: "1.02em", fontWeight: 900, color: "#0f172a" }}>👥 Participantes · {participantsModalChallenge.title || "Reto"}</div>
+              <button type="button" onClick={() => setParticipantsModalChallenge(null)} style={{ border: "1px solid #e2e8f0", background: "#fff", borderRadius: 8, padding: "6px 10px", color: "#475569", fontFamily: "inherit", fontWeight: 700, cursor: "pointer", fontSize: ".76em" }}>
+                Cerrar
+              </button>
+            </div>
+            {(participantsByChallenge[participantsModalChallenge.id] || []).length === 0 ? (
+              <div style={{ color: "#94a3b8", fontSize: ".82em" }}>Sin participantes</div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {(participantsByChallenge[participantsModalChallenge.id] || []).map((participant) => {
+                  const participantWorkouts = workoutsByAthlete[String(participant.athlete_id)] || [];
+                  const participantProgress =
+                    participant.athlete_id != null
+                      ? computeChallengeProgressForAthlete(participantsModalChallenge, participantWorkouts)
+                      : null;
+                  return (
+                    <div key={participant.id} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: "9px 10px", background: "#fff", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <div style={{ width: 34, height: 34, borderRadius: "50%", background: "#e2e8f0", color: "#334155", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, fontSize: ".75em" }}>
+                          {participant.initials}
+                        </div>
+                        <div style={{ fontSize: ".82em", color: "#0f172a", fontWeight: 700 }}>{participant.displayName}</div>
+                      </div>
+                      <div style={{ fontSize: ".75em", color: "#64748b", fontWeight: 700 }}>
+                        {participantProgress ? `${participantProgress.value.toFixed(1)} / ${participantProgress.target || 0}` : "Sin progreso"}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
