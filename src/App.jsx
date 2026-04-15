@@ -6315,7 +6315,6 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
 function AthleteHome({ profile }) {
   const S = styles;
   const ATHLETE_TAB_STORAGE_KEY = "raf_athlete_tab";
-  const ATHLETE_SECTION_STORAGE_KEY = "raf_athlete_section";
   const [athleteInfo, setAthleteInfo] = useState(null);
   const [workouts, setWorkouts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -6328,10 +6327,9 @@ function AthleteHome({ profile }) {
   const [athletePremiumModalOpen, setAthletePremiumModalOpen] = useState(false);
   const [athleteNotRegistered, setAthleteNotRegistered] = useState(false);
   const [showEvaluation, setShowEvaluation] = useState(false);
-  const [athleteSection, setAthleteSection] = useState(() => {
-    if (typeof localStorage === "undefined") return "home";
-    return localStorage.getItem(ATHLETE_SECTION_STORAGE_KEY) || "home";
-  });
+  const [athleteActiveModal, setAthleteActiveModal] = useState("");
+  const [athleteProfileTab, setAthleteProfileTab] = useState("logros");
+  const [athleteChatOpen, setAthleteChatOpen] = useState(false);
   const [athleteTabRestored, setAthleteTabRestored] = useState(false);
   const [achievementsCatalog, setAchievementsCatalog] = useState([]);
   const [earnedAchievements, setEarnedAchievements] = useState([]);
@@ -6378,11 +6376,6 @@ function AthleteHome({ profile }) {
     if (!athleteTabRestored || typeof localStorage === "undefined") return;
     localStorage.setItem(ATHLETE_TAB_STORAGE_KEY, showEvaluation ? "evaluation" : "home");
   }, [showEvaluation, athleteTabRestored]);
-
-  useEffect(() => {
-    if (typeof localStorage === "undefined") return;
-    localStorage.setItem(ATHLETE_SECTION_STORAGE_KEY, athleteSection);
-  }, [athleteSection, ATHLETE_SECTION_STORAGE_KEY]);
 
   useEffect(() => {
     if (!athleteTabRestored) return undefined;
@@ -6701,6 +6694,37 @@ function AthleteHome({ profile }) {
 
   const weeklyTotalKm = useMemo(() => weeklyWorkouts.reduce((s, w) => s + (Number(w.total_km) || 0), 0), [weeklyWorkouts]);
   const weeklyDoneKm = useMemo(() => weeklyWorkouts.filter(w => w.done).reduce((s, w) => s + (Number(w.total_km) || 0), 0), [weeklyWorkouts]);
+  const weeklyProgressPct = useMemo(() => {
+    if (!weeklyTotalKm || weeklyTotalKm <= 0) return 0;
+    return Math.max(0, Math.min(100, (weeklyDoneKm / weeklyTotalKm) * 100));
+  }, [weeklyDoneKm, weeklyTotalKm]);
+  const last4WeeksSummary = useMemo(() => {
+    const rows = [];
+    const currentStart = startOfWeekMonday(new Date());
+    for (let i = 0; i < 4; i += 1) {
+      const start = addDays(currentStart, -(i * 7));
+      const end = addDays(start, 6);
+      const startYmd = formatLocalYMD(start);
+      const endYmd = formatLocalYMD(end);
+      const weekRows = workouts.filter((w) => {
+        const ymd = normalizeScheduledDateYmd(w.scheduled_date);
+        return ymd && ymd >= startYmd && ymd <= endYmd;
+      });
+      const kmTotal = weekRows.reduce((sum, w) => sum + (Number(w.total_km) || 0), 0);
+      const completed = weekRows.filter((w) => w.done).length;
+      const adherence = weekRows.length > 0 ? Math.round((completed / weekRows.length) * 100) : 0;
+      rows.push({
+        key: `${startYmd}-${endYmd}`,
+        label: i === 0 ? "Semana actual" : `Hace ${i} semana${i === 1 ? "" : "s"}`,
+        range: `${startYmd} → ${endYmd}`,
+        kmTotal,
+        completed,
+        total: weekRows.length,
+        adherence,
+      });
+    }
+    return rows;
+  }, [workouts]);
 
   const workoutsAchSyncKey = useMemo(
     () => (workouts || []).map((w) => `${w.id}:${w.done ? 1 : 0}:${w.rpe ?? ""}`).join("|"),
@@ -7132,6 +7156,320 @@ function AthleteHome({ profile }) {
     }
   };
 
+  return (
+    <div style={{ ...S.page, paddingBottom: 96 }}>
+      {message ? (
+        <div style={{ ...S.card, border: "1px solid rgba(239,68,68,.35)", background: "rgba(239,68,68,.08)", color: "#fecaca", marginBottom: 14 }}>
+          {message}
+        </div>
+      ) : null}
+      <div style={{ marginBottom: 14 }}>
+        <h1 style={{ ...S.pageTitle, marginBottom: 4 }}>Hola, {athleteName}</h1>
+      </div>
+
+      <div style={{ ...S.card, marginBottom: 14 }}>
+        <div style={{ fontSize: ".72em", letterSpacing: ".13em", color: "#475569", textTransform: "uppercase", marginBottom: 8 }}>PROGRESO SEMANAL</div>
+        <div style={{ fontSize: "1.6em", fontWeight: 900, color: "#22c55e", fontFamily: "monospace" }}>
+          {weeklyDoneKm.toFixed(1)} / {weeklyTotalKm.toFixed(1)} km
+        </div>
+        <div style={{ color: "#64748b", fontSize: ".8em", marginTop: 6 }}>
+          Semana {thisWeekStartYmd} → {thisWeekEndYmd}
+        </div>
+        <div style={{ marginTop: 10, height: 10, borderRadius: 999, background: "#e2e8f0", overflow: "hidden" }}>
+          <div style={{ width: `${weeklyProgressPct}%`, height: "100%", background: "linear-gradient(90deg,#22c55e,#16a34a)" }} />
+        </div>
+      </div>
+
+      <div style={{ ...S.card, marginBottom: 14 }}>
+        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 10 }}>
+          <div style={{ fontSize: ".65em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase" }}>
+            CALENDARIO · {calendarMonthLabel}
+          </div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <button type="button" onClick={() => setCalendarViewMonth(({ y, m }) => (m === 0 ? { y: y - 1, m: 11 } : { y, m: m - 1 }))} style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "6px 10px", color: "#0f172a", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".78em" }}>←</button>
+            <button type="button" onClick={() => setCalendarViewMonth(({ y, m }) => (m === 11 ? { y: y + 1, m: 0 } : { y, m: m + 1 }))} style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "6px 10px", color: "#0f172a", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".78em" }}>→</button>
+          </div>
+        </div>
+        {loading ? (
+          <div style={{ color: "#64748b", fontSize: ".85em", padding: "20px 0" }}>Cargando...</div>
+        ) : (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 4 }}>
+            {DAYS.map((d) => <div key={d} style={{ fontSize: ".65em", textAlign: "center", color: "#334155", padding: "4px 0" }}>{d}</div>)}
+            {calendarCells.map((cellDate, i) => {
+              const ymd = calendarCellToIsoYmd(cellDate);
+              const dayWorkouts = workoutsByDate[ymd] || [];
+              const inViewMonth = cellIsInViewMonth(cellDate, calendarViewMonth.y, calendarViewMonth.m);
+              const hasDoneWorkout = dayWorkouts.some((w) => w.done);
+              return (
+                <div key={i} style={{ minHeight: 68, border: "1px solid #e2e8f0", borderRadius: 6, padding: "4px 3px", opacity: inViewMonth ? 1 : 0.42, background: hasDoneWorkout ? "rgba(34,197,94,.08)" : "#fff" }}>
+                  <div style={{ fontSize: ".58em", color: inViewMonth ? "#475569" : "#94a3b8", textAlign: "center", fontWeight: 600 }}>{cellDate.getDate()}</div>
+                  {dayWorkouts.slice(0, 2).map((w) => (
+                    <button key={w.id} type="button" onClick={(e) => openAthleteWorkoutMenu(e, w)} style={{ width: "100%", border: "1px solid #e2e8f0", borderRadius: 4, padding: "2px 3px", marginTop: 3, background: w.done ? "rgba(34,197,94,.15)" : "#f8fafc", fontSize: ".5em", color: "#334155", cursor: "pointer", fontFamily: "inherit", textAlign: "center" }}>
+                      {w.title}
+                    </button>
+                  ))}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <div style={{ ...S.card, marginBottom: 18 }}>
+        <div style={{ fontSize: ".72em", letterSpacing: ".13em", color: "#475569", textTransform: "uppercase", marginBottom: 10 }}>Resumen últimas 4 semanas</div>
+        <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit,minmax(190px,1fr))" }}>
+          {last4WeeksSummary.map((week) => (
+            <div key={week.key} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: "10px 12px", background: "#f8fafc" }}>
+              <div style={{ color: "#0f172a", fontWeight: 800, fontSize: ".82em" }}>{week.label}</div>
+              <div style={{ color: "#94a3b8", fontSize: ".68em", marginTop: 2 }}>{week.range}</div>
+              <div style={{ marginTop: 8, fontSize: ".75em", color: "#334155" }}>{week.kmTotal.toFixed(1)} km totales</div>
+              <div style={{ fontSize: ".75em", color: "#334155" }}>{week.completed} workouts completados</div>
+              <div style={{ fontSize: ".75em", color: "#334155" }}>Adherencia {week.adherence}%</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <button
+        type="button"
+        onClick={() => setAthleteChatOpen(true)}
+        style={{ position: "fixed", right: 18, bottom: 104, width: 52, height: 52, borderRadius: "50%", border: "none", background: "linear-gradient(135deg,#f59e0b,#ea580c)", color: "#fff", fontSize: "1.3em", boxShadow: "0 8px 20px rgba(234,88,12,.35)", cursor: "pointer", zIndex: 9000 }}
+      >
+        💬
+      </button>
+
+      <nav className="pf-bottom-nav" aria-label="Navegación atleta">
+        <button type="button" style={{ color: athleteActiveModal === "" ? "#c2410c" : "#64748b", background: athleteActiveModal === "" ? "rgba(245,158,11,.14)" : "transparent", fontWeight: athleteActiveModal === "" ? 800 : 600 }} onClick={() => setAthleteActiveModal("")}><span className="pf-bnav-icon">🏠</span><span style={{ fontSize: "0.62rem" }}>Inicio</span></button>
+        <button type="button" style={{ color: athleteActiveModal === "challenges" ? "#c2410c" : "#64748b", background: athleteActiveModal === "challenges" ? "rgba(245,158,11,.14)" : "transparent", fontWeight: athleteActiveModal === "challenges" ? 800 : 600 }} onClick={() => setAthleteActiveModal("challenges")}><span className="pf-bnav-icon">🏆</span><span style={{ fontSize: "0.62rem" }}>Retos</span></button>
+        <button type="button" style={{ color: athleteActiveModal === "forma" ? "#c2410c" : "#64748b", background: athleteActiveModal === "forma" ? "rgba(245,158,11,.14)" : "transparent", fontWeight: athleteActiveModal === "forma" ? 800 : 600 }} onClick={() => setAthleteActiveModal("forma")}><span className="pf-bnav-icon">📊</span><span style={{ fontSize: "0.62rem" }}>Forma</span></button>
+        <button type="button" style={{ color: athleteActiveModal === "eval" ? "#c2410c" : "#64748b", background: athleteActiveModal === "eval" ? "rgba(245,158,11,.14)" : "transparent", fontWeight: athleteActiveModal === "eval" ? 800 : 600 }} onClick={() => setAthleteActiveModal("eval")}><span className="pf-bnav-icon">⚡</span><span style={{ fontSize: "0.62rem" }}>Evaluación</span></button>
+        <button type="button" style={{ color: athleteActiveModal === "profile" ? "#c2410c" : "#64748b", background: athleteActiveModal === "profile" ? "rgba(245,158,11,.14)" : "transparent", fontWeight: athleteActiveModal === "profile" ? 800 : 600 }} onClick={() => setAthleteActiveModal("profile")}><span className="pf-bnav-icon">👤</span><span style={{ fontSize: "0.62rem" }}>Perfil</span></button>
+      </nav>
+
+      {athleteActiveModal ? (
+        <div style={{ position: "fixed", inset: 0, zIndex: 10010, background: "rgba(15,23,42,.4)", display: "flex", alignItems: "flex-end" }}>
+          <div style={{ width: "100%", height: "100%", background: "#fff", borderTopLeftRadius: 18, borderTopRightRadius: 18, overflowY: "auto", padding: 16 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <div style={{ fontSize: "1.05em", fontWeight: 900, color: "#0f172a" }}>
+                {athleteActiveModal === "challenges" ? "🏆 Retos" : athleteActiveModal === "forma" ? "📊 Forma y Fatiga" : athleteActiveModal === "eval" ? "⚡ Evaluación VDOT" : "👤 Perfil"}
+              </div>
+              <button type="button" onClick={() => setAthleteActiveModal("")} style={{ border: "1px solid #e2e8f0", background: "#fff", borderRadius: 8, padding: "6px 10px", color: "#475569", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>✕</button>
+            </div>
+
+            {athleteActiveModal === "challenges" ? (
+              <ChallengesHub profileRole="athlete" currentUserId={profile?.user_id ?? null} athleteId={athleteInfo?.id ?? null} workouts={workouts} notify={(msg) => setMessage(msg)} />
+            ) : null}
+
+            {athleteActiveModal === "forma" ? (
+              hasPremiumAccess ? (
+                <div style={{ ...S.card }}>
+                  <div style={{ fontSize: ".78em", color: "#64748b", marginBottom: 12, lineHeight: 1.45 }}>
+                    Basado en sesiones completadas con RPE: carga aguda = promedio (RPE × km) últimos 7 días; carga crónica = promedio (RPE × km) últimos 28 días; forma = crónica − aguda.
+                  </div>
+                  <div style={{ marginBottom: 12, fontWeight: 800, color: athleteFormaFatigaStatus.kind === "forma" ? "#22c55e" : athleteFormaFatigaStatus.kind === "fatiga" ? "#f87171" : "#94a3b8" }}>
+                    Estado actual: {athleteFormaFatigaStatus.label}
+                  </div>
+                  <FormaFatigaLineChart chronological={athleteFormaFatigaChronological} />
+                </div>
+              ) : (
+                <div style={{ ...S.card, textAlign: "center" }}>
+                  <p style={{ color: "#64748b" }}>Esta sección requiere Plan Premium Atleta.</p>
+                  <button type="button" onClick={() => setAthletePremiumModalOpen(true)} style={{ background: "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 10, padding: "10px 20px", color: "#fff", fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>Actualizar plan</button>
+                </div>
+              )
+            ) : null}
+
+            {athleteActiveModal === "eval" ? (
+              hasPremiumAccess ? (
+                <EvaluationView athletes={[normalizeAthlete(athleteInfo)]} currentUserId={profile?.user_id ?? null} notify={(msg) => setMessage(msg)} athleteOnlyId={athleteInfo?.id} />
+              ) : (
+                <div style={{ ...S.card, textAlign: "center" }}>
+                  <p style={{ color: "#64748b" }}>La evaluación VDOT requiere Plan Premium Atleta.</p>
+                  <button type="button" onClick={() => setAthletePremiumModalOpen(true)} style={{ background: "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 10, padding: "10px 20px", color: "#fff", fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>Actualizar plan</button>
+                </div>
+              )
+            ) : null}
+
+            {athleteActiveModal === "profile" ? (
+              <div>
+                <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+                  <button type="button" onClick={() => setAthleteProfileTab("logros")} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", background: athleteProfileTab === "logros" ? "rgba(245,158,11,.14)" : "#fff", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>🏅 Logros</button>
+                  <button type="button" onClick={() => setAthleteProfileTab("config")} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", background: athleteProfileTab === "config" ? "rgba(245,158,11,.14)" : "#fff", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>⚙️ Config</button>
+                  <button type="button" onClick={() => setAthleteProfileTab("pagos")} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", background: athleteProfileTab === "pagos" ? "rgba(245,158,11,.14)" : "#fff", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>💳 Pagos</button>
+                </div>
+                {athleteProfileTab === "logros" ? <div style={{ ...S.card }}>{/* Reusa logros existentes */}<div style={{ fontSize: ".72em", marginBottom: 10, color: "#475569", textTransform: "uppercase", letterSpacing: ".13em" }}>MIS LOGROS</div><div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(148px,1fr))", gap: 12 }}>{(achievementsCatalog || []).map((a) => { const earned = (earnedAchievements || []).some((e) => achievementJoinMeta(e)?.code === a.code); return <div key={a.id} style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: "14px 12px", background: earned ? "linear-gradient(145deg,#fffbeb,#fff7ed)" : "#f8fafc", opacity: earned ? 1 : .55, textAlign: "center" }}><div style={{ fontSize: "2rem", marginBottom: 6 }}>{earned ? a.icon : "🔒"}</div><div style={{ fontSize: ".75em", fontWeight: 800 }}>{a.name}</div></div>; })}</div></div> : null}
+                {athleteProfileTab === "config" ? <div style={{ ...S.card }}>{/* Config existente simplificada */}<div style={{ fontSize: ".72em", marginBottom: 10, color: "#475569", textTransform: "uppercase", letterSpacing: ".13em" }}>MI CONFIGURACIÓN</div><div style={{ color: "#64748b", fontSize: ".84em", marginBottom: 8 }}>Gestiona conexiones y preferencias.</div><button type="button" onClick={openAthleteStravaOAuth} style={{ background: "linear-gradient(135deg,#ea580c,#f97316)", border: "none", borderRadius: 8, padding: "8px 12px", color: "#fff", fontWeight: 800, fontFamily: "inherit", cursor: "pointer" }}>Conectar Strava</button></div> : null}
+                {athleteProfileTab === "pagos" ? <div style={{ ...S.card }}><div style={{ fontSize: ".72em", marginBottom: 10, color: "#475569", textTransform: "uppercase", letterSpacing: ".13em" }}>Mis Pagos</div>{loadingAthletePayments ? <div style={{ color: "#64748b", fontSize: ".84em" }}>Cargando pagos…</div> : athletePayments.length === 0 ? <div style={{ color: "#64748b", fontSize: ".84em" }}>Tu coach aún no ha registrado pagos.</div> : <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{athletePayments.map((p) => <div key={p.id} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: "10px 12px", background: "#f8fafc" }}><div style={{ fontWeight: 700, fontSize: ".84em" }}>${Number(p.amount || 0).toLocaleString("es-CO")} {p.currency || "COP"} · {p.plan}</div><div style={{ marginTop: 4, color: "#64748b", fontSize: ".74em" }}>{new Date(p.payment_date).toLocaleDateString("es-CO")} · {p.payment_method}</div></div>)}</div>}</div> : null}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
+      {athleteChatOpen ? (
+        <div style={{ position: "fixed", inset: 0, zIndex: 10011, background: "rgba(15,23,42,.4)", display: "flex", alignItems: "flex-end" }}>
+          <div style={{ width: "100%", height: "100%", background: "#fff", borderTopLeftRadius: 18, borderTopRightRadius: 18, overflowY: "auto", padding: 16 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+              <div style={{ fontSize: "1.05em", fontWeight: 900 }}>💬 Chat con tu coach</div>
+              <button type="button" onClick={() => setAthleteChatOpen(false)} style={{ border: "1px solid #e2e8f0", background: "#fff", borderRadius: 8, padding: "6px 10px", color: "#475569", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>✕</button>
+            </div>
+            {!coachIdForChat ? (
+              <div style={{ color: "#64748b", fontSize: ".85em" }}>Sin datos de coach. Contacta a soporte si esto continúa.</div>
+            ) : (
+              <>
+                <div ref={athleteChatScrollRef} style={{ maxHeight: 420, overflowY: "auto", padding: "10px 8px", borderRadius: 10, background: "#f1f5f9", border: "1px solid #e2e8f0", marginBottom: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+                  {athleteChatMessages.length === 0 ? <div style={{ color: "#64748b", fontSize: ".8em", textAlign: "center", padding: "12px 0" }}>Sin mensajes aún</div> : athleteChatMessages.map((m) => { const isCoach = m.sender_role === "coach"; return <div key={m.id} style={{ alignSelf: isCoach ? "flex-end" : "flex-start", maxWidth: "88%", padding: "8px 12px", borderRadius: 10, background: isCoach ? "linear-gradient(135deg, rgba(180,83,9,.85), rgba(245,158,11,.75))" : "#eff6ff", border: `1px solid ${isCoach ? "rgba(245,158,11,.5)" : "rgba(59,130,246,.35)"}`, color: isCoach ? "#f8fafc" : "#0f172a", fontSize: ".82em", lineHeight: 1.45 }}><div>{m.body}</div><div style={{ fontSize: ".65em", color: isCoach ? "rgba(255,255,255,.85)" : "#64748b", marginTop: 6 }}>{formatMessageTimestamp(m.created_at)}</div></div>; })}
+                </div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input type="text" value={athleteChatDraft} onChange={(e) => setAthleteChatDraft(e.target.value)} onKeyDown={(e) => e.key === "Enter" && sendAthleteChat()} placeholder="Escribe un mensaje a tu coach…" style={{ flex: 1, background: "#f1f5f9", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", color: "#0f172a", fontFamily: "inherit", fontSize: ".85em" }} />
+                  <button type="button" onClick={sendAthleteChat} disabled={athleteChatSending || !athleteChatDraft.trim()} style={{ background: athleteChatSending || !athleteChatDraft.trim() ? "#e2e8f0" : "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 8, padding: "10px 16px", color: athleteChatSending || !athleteChatDraft.trim() ? "#64748b" : "#fff", fontWeight: 800, cursor: athleteChatSending || !athleteChatDraft.trim() ? "not-allowed" : "pointer", fontFamily: "inherit", fontSize: ".82em" }}>Enviar</button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      ) : null}
+
+      {workoutSummaryModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.55)", zIndex: 10001, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ ...S.card, width: "100%", maxWidth: 520, margin: 0 }}>
+            <div style={{ fontSize: "1.1em", fontWeight: 900, color: "#0f172a", marginBottom: 6 }}>Resumen del entrenamiento</div>
+            <div style={{ color: "#64748b", fontSize: ".84em", marginBottom: 12 }}>
+              {(workoutSummaryModal.workout?.title || "Workout")} · {workoutSummaryModal.workout?.scheduled_date || "—"}
+            </div>
+            {workoutSummaryModal.stravaConnected ? (
+              workoutSummaryModal.activity ? (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 10, marginBottom: 14 }}>
+                  <div style={{ ...S.card, margin: 0, padding: 12 }}><div style={{ fontSize: ".72em", color: "#64748b" }}>Distancia</div><div style={{ fontWeight: 800 }}>{((Number(workoutSummaryModal.activity.distance) || 0) / 1000).toFixed(2)} km</div></div>
+                  <div style={{ ...S.card, margin: 0, padding: 12 }}><div style={{ fontSize: ".72em", color: "#64748b" }}>Tiempo total</div><div style={{ fontWeight: 800 }}>{formatDurationClock(Number(workoutSummaryModal.activity.elapsed_time || workoutSummaryModal.activity.moving_time || 0))}</div></div>
+                </div>
+              ) : <div style={{ color: "#64748b", fontSize: ".86em", marginBottom: 14 }}>No encontramos una actividad de Strava para ese día.</div>
+            ) : (
+              <div style={{ display: "grid", gap: 10, marginBottom: 14 }}>
+                <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(2,minmax(0,1fr))" }}>
+                  <input type="number" min="0" step="0.1" value={manualSummaryForm.distanceKm} onChange={(e) => setManualSummaryForm((f) => ({ ...f, distanceKm: e.target.value }))} placeholder="Distancia (km)" style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit" }} />
+                  <input value={manualSummaryForm.timeHms} onChange={(e) => setManualSummaryForm((f) => ({ ...f, timeHms: e.target.value }))} placeholder="Tiempo (HH:MM:SS)" style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit" }} />
+                </div>
+                <input type="number" min="1" max="10" value={manualSummaryForm.rpe} onChange={(e) => setManualSummaryForm((f) => ({ ...f, rpe: e.target.value }))} placeholder="RPE (1-10)" style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit" }} />
+                <textarea rows={3} value={manualSummaryForm.notes} onChange={(e) => setManualSummaryForm((f) => ({ ...f, notes: e.target.value }))} placeholder="Notas" style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit", boxSizing: "border-box" }} />
+                <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                  <button type="button" disabled={manualSummarySaving} onClick={saveManualWorkoutSummary} style={{ background: manualSummarySaving ? "#cbd5e1" : "linear-gradient(135deg,#0d9488,#14b8a6)", border: "none", borderRadius: 8, padding: "8px 12px", color: "#fff", fontWeight: 800, fontFamily: "inherit", cursor: manualSummarySaving ? "not-allowed" : "pointer", fontSize: ".78em" }}>{manualSummarySaving ? "Guardando…" : "Guardar resumen"}</button>
+                </div>
+              </div>
+            )}
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 14 }}>
+              <button type="button" onClick={() => setWorkoutSummaryModal(null)} style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#475569", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".8em" }}>
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {athletePremiumModalOpen && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(15,23,42,0.55)",
+            zIndex: 10000,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 20,
+          }}
+          onClick={() => setAthletePremiumModalOpen(false)}
+          onKeyDown={(e) => e.key === "Escape" && setAthletePremiumModalOpen(false)}
+          role="presentation"
+        >
+          <div
+            style={{
+              background: "#fff",
+              borderRadius: 16,
+              padding: 24,
+              maxWidth: 440,
+              width: "100%",
+              boxShadow: "0 20px 60px rgba(15,23,42,.25)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="athlete-premium-modal-title"
+          >
+            <h3 id="athlete-premium-modal-title" style={{ margin: "0 0 16px", fontSize: "1.25em", fontWeight: 800, color: "#0f172a" }}>
+              Plan Premium Atleta
+            </h3>
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              {[
+                { period: "Mensual", amount: "$20,000", note: null },
+                { period: "Semestral", amount: "$105,600", note: "Ahorra 12%" },
+                { period: "Anual", amount: "$192,000", note: "Ahorra 20%" },
+              ].map((row) => (
+                <div
+                  key={row.period}
+                  style={{
+                    border: "1px solid #e2e8f0",
+                    borderRadius: 12,
+                    padding: "12px 14px",
+                    display: "flex",
+                    flexWrap: "wrap",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 10,
+                  }}
+                >
+                  <div>
+                    <div style={{ fontWeight: 800, color: "#0f172a" }}>{row.period}</div>
+                    <div style={{ fontSize: ".95em", color: "#334155", marginTop: 4 }}>
+                      {row.amount} COP
+                      {row.note ? <span style={{ color: "#15803d", fontSize: ".82em", marginLeft: 8 }}>{row.note}</span> : null}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => openAthletePremiumWa(row.period, row.amount)}
+                    style={{
+                      padding: "8px 14px",
+                      borderRadius: 8,
+                      border: "none",
+                      background: "linear-gradient(135deg,#0d9488,#14b8a6)",
+                      color: "#fff",
+                      fontWeight: 800,
+                      fontSize: ".8em",
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    Suscribirme
+                  </button>
+                </div>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => setAthletePremiumModalOpen(false)}
+              style={{
+                marginTop: 18,
+                width: "100%",
+                padding: "10px 14px",
+                borderRadius: 8,
+                border: "1px solid #e2e8f0",
+                background: "#f8fafc",
+                color: "#64748b",
+                fontWeight: 700,
+                cursor: "pointer",
+                fontFamily: "inherit",
+                fontSize: ".85em",
+              }}
+            >
+              Cerrar
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
   if (athleteSection === "challenges") {
     return (
       <div style={{ ...S.page, paddingBottom: 88 }}>
