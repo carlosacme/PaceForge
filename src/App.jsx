@@ -6408,6 +6408,7 @@ function AthleteHome({ profile }) {
   const [manualSummaryForm, setManualSummaryForm] = useState({
     distanceKm: "",
     durationMin: "",
+    rpe: "",
     avgHr: "",
     maxHr: "",
     calories: "",
@@ -6809,6 +6810,7 @@ function AthleteHome({ profile }) {
       setManualSummaryForm({
         distanceKm: data?.distance != null ? (Number(data.distance) / 1000).toFixed(2) : (workoutRow.total_km ? String(workoutRow.total_km) : ""),
         durationMin: data?.moving_time != null ? String(Math.max(0, Math.round(Number(data.moving_time) / 60))) : (workoutRow.duration_min ? String(workoutRow.duration_min) : ""),
+        rpe: workoutRow.rpe != null ? String(workoutRow.rpe) : "",
         avgHr: data?.average_heartrate != null ? String(Math.round(Number(data.average_heartrate))) : "",
         maxHr: data?.max_heartrate != null ? String(Math.round(Number(data.max_heartrate))) : "",
         calories: data?.calories != null ? String(Math.round(Number(data.calories))) : data?.kilojoules != null ? String(Math.round(Number(data.kilojoules))) : "",
@@ -6821,6 +6823,7 @@ function AthleteHome({ profile }) {
     setManualSummaryForm({
       distanceKm: workoutRow.total_km ? String(workoutRow.total_km) : "",
       durationMin: workoutRow.duration_min ? String(workoutRow.duration_min) : "",
+      rpe: workoutRow.rpe != null ? String(workoutRow.rpe) : "",
       avgHr: workoutRow.manual_avg_hr != null ? String(workoutRow.manual_avg_hr) : "",
       maxHr: workoutRow.manual_max_hr != null ? String(workoutRow.manual_max_hr) : "",
       calories: workoutRow.manual_calories != null ? String(workoutRow.manual_calories) : "",
@@ -6835,6 +6838,7 @@ function AthleteHome({ profile }) {
     if (!workoutRow?.id) return;
     const parsedDistance = Number(manualSummaryForm.distanceKm);
     const durationMin = Math.round(Number(manualSummaryForm.durationMin) || 0);
+    const parsedRpe = clampWorkoutRpe(manualSummaryForm.rpe);
     const avgHr = Math.round(Number(manualSummaryForm.avgHr) || 0);
     const maxHr = Math.round(Number(manualSummaryForm.maxHr) || 0);
     const calories = Math.round(Number(manualSummaryForm.calories) || 0);
@@ -6851,6 +6855,7 @@ function AthleteHome({ profile }) {
       athlete_notes: athleteNotes,
       total_km: Number.isFinite(parsedDistance) && parsedDistance > 0 ? parsedDistance : workoutRow.total_km,
       duration_min: Number.isFinite(durationMin) && durationMin > 0 ? durationMin : workoutRow.duration_min,
+      rpe: parsedRpe ?? workoutRow.rpe ?? null,
       completed_at: new Date().toISOString(),
       done: true,
     };
@@ -7444,7 +7449,7 @@ function AthleteHome({ profile }) {
       ) : null}
 
       {workoutSummaryModal && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.55)", zIndex: 9987, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.55)", zIndex: 10001, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
           <div style={{ ...S.card, width: "100%", maxWidth: 520, margin: 0 }}>
             <div style={{ fontSize: "1.1em", fontWeight: 900, color: "#0f172a", marginBottom: 6 }}>Resumen del entrenamiento</div>
             <div style={{ color: "#64748b", fontSize: ".84em", marginBottom: 12 }}>
@@ -7468,7 +7473,8 @@ function AthleteHome({ profile }) {
               {!workoutSummaryModal.stravaConnected ? (
                 <>
                   <input type="number" min="0" step="0.1" value={manualSummaryForm.distanceKm} onChange={(e) => setManualSummaryForm((f) => ({ ...f, distanceKm: e.target.value }))} placeholder="Distancia (km)" style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit" }} />
-                  <input type="number" min="0" step="1" value={manualSummaryForm.durationMin} onChange={(e) => setManualSummaryForm((f) => ({ ...f, durationMin: e.target.value }))} placeholder="Duración (minutos)" style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit" }} />
+                  <input type="number" min="0" step="1" value={manualSummaryForm.durationMin} onChange={(e) => setManualSummaryForm((f) => ({ ...f, durationMin: e.target.value }))} placeholder="Tiempo (minutos)" style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit" }} />
+                  <input type="number" min="1" max="10" value={manualSummaryForm.rpe} onChange={(e) => setManualSummaryForm((f) => ({ ...f, rpe: e.target.value }))} placeholder="RPE (1-10)" style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit" }} />
                   <input type="number" min="0" step="1" value={manualSummaryForm.avgHr} onChange={(e) => setManualSummaryForm((f) => ({ ...f, avgHr: e.target.value }))} placeholder="FC promedio (lpm)" style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit" }} />
                   <input type="number" min="0" step="1" value={manualSummaryForm.maxHr} onChange={(e) => setManualSummaryForm((f) => ({ ...f, maxHr: e.target.value }))} placeholder="FC máxima (lpm)" style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit" }} />
                   <input type="number" min="0" step="1" value={manualSummaryForm.calories} onChange={(e) => setManualSummaryForm((f) => ({ ...f, calories: e.target.value }))} placeholder="Calorías" style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit" }} />
@@ -7922,9 +7928,9 @@ function AthleteHome({ profile }) {
                 <button
                   type="button"
                   onMouseDown={(e) => e.preventDefault()}
-                  onClick={(e) => {
+                  onClick={async (e) => {
                     e.stopPropagation();
-                    toggleDone(ctxMenuAthleteWorkout);
+                    await toggleDone(ctxMenuAthleteWorkout);
                     closeAthleteCalendarCtxMenu();
                   }}
                   style={{
