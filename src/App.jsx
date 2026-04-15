@@ -1138,6 +1138,9 @@ function ChallengesHub({ profileRole, currentUserId, athleteId = null, workouts 
   const [myChallengeIds, setMyChallengeIds] = useState(() => new Set());
   const [joiningChallengeId, setJoiningChallengeId] = useState("");
   const [showCreate, setShowCreate] = useState(false);
+  const [showAiGenerateModal, setShowAiGenerateModal] = useState(false);
+  const [aiContextPrompt, setAiContextPrompt] = useState("");
+  const [aiGenerating, setAiGenerating] = useState(false);
   const [savingCreate, setSavingCreate] = useState(false);
   const [deletingId, setDeletingId] = useState("");
   const [form, setForm] = useState({
@@ -1256,6 +1259,91 @@ function ChallengesHub({ profileRole, currentUserId, athleteId = null, workouts 
     loadChallenges();
   };
 
+  const applyAiChallengeDraftToForm = (draft) => {
+    const typeRaw = String(draft?.type || "").trim().toLowerCase();
+    const mappedType =
+      typeRaw === "distance"
+        ? "distancia"
+        : typeRaw === "time"
+          ? "tiempo"
+          : typeRaw === "workouts"
+            ? "workouts"
+            : typeRaw === "streak"
+              ? "racha"
+              : "distancia";
+    const unitRaw = String(draft?.goal_unit || "").trim().toLowerCase();
+    const mappedUnit =
+      unitRaw === "sesiones" ? "sesiones" : unitRaw === "días" ? "días" : unitRaw || (mappedType === "distancia" ? "km" : mappedType === "tiempo" ? "min" : "");
+    const durationDays = Math.max(7, Math.min(30, Math.round(Number(draft?.duration_days) || 14)));
+    const start = new Date();
+    const end = addDays(start, durationDays);
+    setForm((prev) => ({
+      ...prev,
+      title: String(draft?.title || "").trim(),
+      description: String(draft?.description || "").trim(),
+      challenge_type: mappedType,
+      target_value: String(Number(draft?.goal_value) || ""),
+      unit: mappedUnit,
+      start_date: formatLocalYMD(start),
+      end_date: formatLocalYMD(end),
+      emoji: String(draft?.badge_emoji || "🏁").trim() || "🏁",
+      color: String(draft?.badge_color || "#a855f7").trim() || "#a855f7",
+    }));
+    setShowCreate(true);
+  };
+
+  const generateChallengeWithAi = async () => {
+    if (!isAdmin) return;
+    if (!aiContextPrompt.trim()) {
+      notify?.("Escribe un contexto para generar el reto.");
+      return;
+    }
+    setAiGenerating(true);
+    try {
+      const system = `Eres un experto en coaching de running. Genera un reto de running motivador para una plataforma de coaching.
+Responde SOLO con un JSON con esta estructura exacta, sin texto adicional:
+{
+  "title": "título corto y motivador del reto",
+  "description": "descripción del reto en 1-2 oraciones que motive a participar",
+  "type": "distance" | "time" | "workouts" | "streak",
+  "goal_value": número,
+  "goal_unit": "km" | "min" | "sesiones" | "días",
+  "duration_days": número de días que dura el reto (entre 7 y 30),
+  "badge_emoji": un emoji representativo,
+  "badge_color": color hex motivador
+}`;
+      const res = await fetch("/api/generate-workout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 1800,
+          system,
+          messages: [{ role: "user", content: aiContextPrompt.trim() }],
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        notify?.(data?.error || "Error al generar reto con IA.");
+        return;
+      }
+      const text = data.content?.find((b) => b.type === "text")?.text || "";
+      const parsed = extractJsonFromAnthropicText(text);
+      if (!parsed || typeof parsed !== "object") {
+        notify?.("La IA no devolvió un JSON válido.");
+        return;
+      }
+      applyAiChallengeDraftToForm(parsed);
+      setShowAiGenerateModal(false);
+      notify?.("Reto generado con IA. Revisa y guarda cuando quieras.");
+    } catch (e) {
+      console.error("generate challenge ai:", e);
+      notify?.("No se pudo generar el reto con IA.");
+    } finally {
+      setAiGenerating(false);
+    }
+  };
+
   const deleteChallenge = async (challengeId) => {
     if (!isAdmin) return;
     if (typeof window !== "undefined" && !window.confirm("¿Eliminar este reto?")) return;
@@ -1278,15 +1366,50 @@ function ChallengesHub({ profileRole, currentUserId, athleteId = null, workouts 
           <div style={{ color: "#64748b", fontSize: ".8em", marginTop: 3 }}>Retos activos de la comunidad</div>
         </div>
         {isAdmin ? (
-          <button
-            type="button"
-            onClick={() => setShowCreate((v) => !v)}
-            style={{ background: "linear-gradient(135deg,#7c3aed,#a855f7)", border: "none", borderRadius: 10, padding: "9px 14px", color: "#fff", fontWeight: 800, fontFamily: "inherit", cursor: "pointer", fontSize: ".78em" }}
-          >
-            ➕ Crear reto
-          </button>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button
+              type="button"
+              onClick={() => setShowAiGenerateModal(true)}
+              style={{ background: "linear-gradient(135deg,#0ea5e9,#6366f1)", border: "none", borderRadius: 10, padding: "9px 14px", color: "#fff", fontWeight: 800, fontFamily: "inherit", cursor: "pointer", fontSize: ".78em" }}
+            >
+              ✨ Generar con IA
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowCreate((v) => !v)}
+              style={{ background: "linear-gradient(135deg,#7c3aed,#a855f7)", border: "none", borderRadius: 10, padding: "9px 14px", color: "#fff", fontWeight: 800, fontFamily: "inherit", cursor: "pointer", fontSize: ".78em" }}
+            >
+              ➕ Crear reto
+            </button>
+          </div>
         ) : null}
       </div>
+
+      {isAdmin && showAiGenerateModal ? (
+        <div style={{ position: "fixed", inset: 0, zIndex: 10020, background: "rgba(15,23,42,.55)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ ...S.card, width: "100%", maxWidth: 560, margin: 0 }}>
+            <div style={{ fontSize: "1.02em", fontWeight: 900, color: "#0f172a", marginBottom: 8 }}>✨ Generar reto con IA</div>
+            <div style={{ color: "#64748b", fontSize: ".82em", marginBottom: 10 }}>
+              Describe el contexto del reto y la IA pre-rellenará el formulario de creación.
+            </div>
+            <textarea
+              rows={4}
+              value={aiContextPrompt}
+              onChange={(e) => setAiContextPrompt(e.target.value)}
+              placeholder='Ej: "Reto de abril para motivar corredores principiantes"'
+              style={{ width: "100%", border: "1px solid #dbe2ea", borderRadius: 8, padding: "10px 12px", fontFamily: "inherit", boxSizing: "border-box" }}
+            />
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
+              <button type="button" disabled={aiGenerating} onClick={() => setShowAiGenerateModal(false)} style={{ border: "1px solid #e2e8f0", background: "#fff", borderRadius: 8, padding: "8px 12px", color: "#475569", fontFamily: "inherit", fontWeight: 700, cursor: aiGenerating ? "not-allowed" : "pointer", fontSize: ".78em" }}>
+                Cerrar
+              </button>
+              <button type="button" disabled={aiGenerating} onClick={generateChallengeWithAi} style={{ border: "none", background: aiGenerating ? "#cbd5e1" : "linear-gradient(135deg,#0ea5e9,#6366f1)", borderRadius: 8, padding: "8px 12px", color: "#fff", fontFamily: "inherit", fontWeight: 800, cursor: aiGenerating ? "not-allowed" : "pointer", fontSize: ".78em" }}>
+                {aiGenerating ? "Generando…" : "Confirmar"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {isAdmin && showCreate ? (
         <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: 14, background: "#f8fafc", marginBottom: 14 }}>
