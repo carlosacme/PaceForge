@@ -6327,7 +6327,7 @@ function AthleteHome({ profile }) {
   const [athletePremiumModalOpen, setAthletePremiumModalOpen] = useState(false);
   const [athleteNotRegistered, setAthleteNotRegistered] = useState(false);
   const [showEvaluation, setShowEvaluation] = useState(false);
-  const [athleteActiveModal, setAthleteActiveModal] = useState("");
+  const [athleteActiveTab, setAthleteActiveTab] = useState("");
   const [athleteProfileTab, setAthleteProfileTab] = useState("logros");
   const [athleteChatOpen, setAthleteChatOpen] = useState(false);
   const [athleteTabRestored, setAthleteTabRestored] = useState(false);
@@ -7238,29 +7238,29 @@ function AthleteHome({ profile }) {
         💬
       </button>
 
-      <nav className="pf-bottom-nav" aria-label="Navegación atleta">
-        <button type="button" style={{ color: athleteActiveModal === "" ? "#c2410c" : "#64748b", background: athleteActiveModal === "" ? "rgba(245,158,11,.14)" : "transparent", fontWeight: athleteActiveModal === "" ? 800 : 600 }} onClick={() => setAthleteActiveModal("")}><span className="pf-bnav-icon">🏠</span><span style={{ fontSize: "0.62rem" }}>Inicio</span></button>
-        <button type="button" style={{ color: athleteActiveModal === "challenges" ? "#c2410c" : "#64748b", background: athleteActiveModal === "challenges" ? "rgba(245,158,11,.14)" : "transparent", fontWeight: athleteActiveModal === "challenges" ? 800 : 600 }} onClick={() => setAthleteActiveModal("challenges")}><span className="pf-bnav-icon">🏆</span><span style={{ fontSize: "0.62rem" }}>Retos</span></button>
-        <button type="button" style={{ color: athleteActiveModal === "forma" ? "#c2410c" : "#64748b", background: athleteActiveModal === "forma" ? "rgba(245,158,11,.14)" : "transparent", fontWeight: athleteActiveModal === "forma" ? 800 : 600 }} onClick={() => setAthleteActiveModal("forma")}><span className="pf-bnav-icon">📊</span><span style={{ fontSize: "0.62rem" }}>Forma</span></button>
-        <button type="button" style={{ color: athleteActiveModal === "eval" ? "#c2410c" : "#64748b", background: athleteActiveModal === "eval" ? "rgba(245,158,11,.14)" : "transparent", fontWeight: athleteActiveModal === "eval" ? 800 : 600 }} onClick={() => setAthleteActiveModal("eval")}><span className="pf-bnav-icon">⚡</span><span style={{ fontSize: "0.62rem" }}>Evaluación</span></button>
-        <button type="button" style={{ color: athleteActiveModal === "profile" ? "#c2410c" : "#64748b", background: athleteActiveModal === "profile" ? "rgba(245,158,11,.14)" : "transparent", fontWeight: athleteActiveModal === "profile" ? 800 : 600 }} onClick={() => setAthleteActiveModal("profile")}><span className="pf-bnav-icon">👤</span><span style={{ fontSize: "0.62rem" }}>Perfil</span></button>
+      <nav className="pf-bottom-nav" aria-label="Navegación atleta" style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 10020 }}>
+        <button type="button" style={{ color: athleteActiveTab === "" ? "#c2410c" : "#64748b", background: athleteActiveTab === "" ? "rgba(245,158,11,.14)" : "transparent", fontWeight: athleteActiveTab === "" ? 800 : 600 }} onClick={() => setAthleteActiveTab("")}><span className="pf-bnav-icon">🏠</span><span style={{ fontSize: "0.62rem" }}>Inicio</span></button>
+        <button type="button" style={{ color: athleteActiveTab === "challenges" ? "#c2410c" : "#64748b", background: athleteActiveTab === "challenges" ? "rgba(245,158,11,.14)" : "transparent", fontWeight: athleteActiveTab === "challenges" ? 800 : 600 }} onClick={() => setAthleteActiveTab("challenges")}><span className="pf-bnav-icon">🏆</span><span style={{ fontSize: "0.62rem" }}>Retos</span></button>
+        <button type="button" style={{ color: athleteActiveTab === "forma" ? "#c2410c" : "#64748b", background: athleteActiveTab === "forma" ? "rgba(245,158,11,.14)" : "transparent", fontWeight: athleteActiveTab === "forma" ? 800 : 600 }} onClick={() => setAthleteActiveTab("forma")}><span className="pf-bnav-icon">📊</span><span style={{ fontSize: "0.62rem" }}>Forma</span></button>
+        <button type="button" style={{ color: athleteActiveTab === "eval" ? "#c2410c" : "#64748b", background: athleteActiveTab === "eval" ? "rgba(245,158,11,.14)" : "transparent", fontWeight: athleteActiveTab === "eval" ? 800 : 600 }} onClick={() => setAthleteActiveTab("eval")}><span className="pf-bnav-icon">⚡</span><span style={{ fontSize: "0.62rem" }}>Evaluación</span></button>
+        <button type="button" style={{ color: athleteActiveTab === "profile" ? "#c2410c" : "#64748b", background: athleteActiveTab === "profile" ? "rgba(245,158,11,.14)" : "transparent", fontWeight: athleteActiveTab === "profile" ? 800 : 600 }} onClick={() => setAthleteActiveTab("profile")}><span className="pf-bnav-icon">👤</span><span style={{ fontSize: "0.62rem" }}>Perfil</span></button>
       </nav>
 
-      {athleteActiveModal ? (
-        <div style={{ position: "fixed", inset: 0, zIndex: 10010, background: "rgba(15,23,42,.4)", display: "flex", alignItems: "flex-end" }}>
-          <div style={{ width: "100%", height: "100%", background: "#fff", borderTopLeftRadius: 18, borderTopRightRadius: 18, overflowY: "auto", padding: 16 }}>
+      {athleteActiveTab ? (
+        <div style={{ position: "fixed", inset: 0, zIndex: 10005, background: "rgba(15,23,42,.4)", display: "flex", alignItems: "flex-end" }}>
+          <div style={{ width: "100%", height: "100%", background: "#fff", borderTopLeftRadius: 18, borderTopRightRadius: 18, overflowY: "auto", padding: 16, paddingBottom: 94 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
               <div style={{ fontSize: "1.05em", fontWeight: 900, color: "#0f172a" }}>
-                {athleteActiveModal === "challenges" ? "🏆 Retos" : athleteActiveModal === "forma" ? "📊 Forma y Fatiga" : athleteActiveModal === "eval" ? "⚡ Evaluación VDOT" : "👤 Perfil"}
+                {athleteActiveTab === "challenges" ? "🏆 Retos" : athleteActiveTab === "forma" ? "📊 Forma y Fatiga" : athleteActiveTab === "eval" ? "⚡ Evaluación VDOT" : "👤 Perfil"}
               </div>
-              <button type="button" onClick={() => setAthleteActiveModal("")} style={{ border: "1px solid #e2e8f0", background: "#fff", borderRadius: 8, padding: "6px 10px", color: "#475569", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>✕</button>
+              <button type="button" onClick={() => setAthleteActiveTab("")} style={{ border: "1px solid #e2e8f0", background: "#fff", borderRadius: 8, padding: "6px 10px", color: "#475569", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>✕</button>
             </div>
 
-            {athleteActiveModal === "challenges" ? (
+            {athleteActiveTab === "challenges" ? (
               <ChallengesHub profileRole="athlete" currentUserId={profile?.user_id ?? null} athleteId={athleteInfo?.id ?? null} workouts={workouts} notify={(msg) => setMessage(msg)} />
             ) : null}
 
-            {athleteActiveModal === "forma" ? (
+            {athleteActiveTab === "forma" ? (
               hasPremiumAccess ? (
                 <div style={{ ...S.card }}>
                   <div style={{ fontSize: ".78em", color: "#64748b", marginBottom: 12, lineHeight: 1.45 }}>
@@ -7279,7 +7279,7 @@ function AthleteHome({ profile }) {
               )
             ) : null}
 
-            {athleteActiveModal === "eval" ? (
+            {athleteActiveTab === "eval" ? (
               hasPremiumAccess ? (
                 <EvaluationView athletes={[normalizeAthlete(athleteInfo)]} currentUserId={profile?.user_id ?? null} notify={(msg) => setMessage(msg)} athleteOnlyId={athleteInfo?.id} />
               ) : (
@@ -7290,7 +7290,7 @@ function AthleteHome({ profile }) {
               )
             ) : null}
 
-            {athleteActiveModal === "profile" ? (
+            {athleteActiveTab === "profile" ? (
               <div>
                 <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
                   <button type="button" onClick={() => setAthleteProfileTab("logros")} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", background: athleteProfileTab === "logros" ? "rgba(245,158,11,.14)" : "#fff", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>🏅 Logros</button>
@@ -7300,6 +7300,32 @@ function AthleteHome({ profile }) {
                 {athleteProfileTab === "logros" ? <div style={{ ...S.card }}>{/* Reusa logros existentes */}<div style={{ fontSize: ".72em", marginBottom: 10, color: "#475569", textTransform: "uppercase", letterSpacing: ".13em" }}>MIS LOGROS</div><div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(148px,1fr))", gap: 12 }}>{(achievementsCatalog || []).map((a) => { const earned = (earnedAchievements || []).some((e) => achievementJoinMeta(e)?.code === a.code); return <div key={a.id} style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: "14px 12px", background: earned ? "linear-gradient(145deg,#fffbeb,#fff7ed)" : "#f8fafc", opacity: earned ? 1 : .55, textAlign: "center" }}><div style={{ fontSize: "2rem", marginBottom: 6 }}>{earned ? a.icon : "🔒"}</div><div style={{ fontSize: ".75em", fontWeight: 800 }}>{a.name}</div></div>; })}</div></div> : null}
                 {athleteProfileTab === "config" ? <div style={{ ...S.card }}>{/* Config existente simplificada */}<div style={{ fontSize: ".72em", marginBottom: 10, color: "#475569", textTransform: "uppercase", letterSpacing: ".13em" }}>MI CONFIGURACIÓN</div><div style={{ color: "#64748b", fontSize: ".84em", marginBottom: 8 }}>Gestiona conexiones y preferencias.</div><button type="button" onClick={openAthleteStravaOAuth} style={{ background: "linear-gradient(135deg,#ea580c,#f97316)", border: "none", borderRadius: 8, padding: "8px 12px", color: "#fff", fontWeight: 800, fontFamily: "inherit", cursor: "pointer" }}>Conectar Strava</button></div> : null}
                 {athleteProfileTab === "pagos" ? <div style={{ ...S.card }}><div style={{ fontSize: ".72em", marginBottom: 10, color: "#475569", textTransform: "uppercase", letterSpacing: ".13em" }}>Mis Pagos</div>{loadingAthletePayments ? <div style={{ color: "#64748b", fontSize: ".84em" }}>Cargando pagos…</div> : athletePayments.length === 0 ? <div style={{ color: "#64748b", fontSize: ".84em" }}>Tu coach aún no ha registrado pagos.</div> : <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{athletePayments.map((p) => <div key={p.id} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: "10px 12px", background: "#f8fafc" }}><div style={{ fontWeight: 700, fontSize: ".84em" }}>${Number(p.amount || 0).toLocaleString("es-CO")} {p.currency || "COP"} · {p.plan}</div><div style={{ marginTop: 4, color: "#64748b", fontSize: ".74em" }}>{new Date(p.payment_date).toLocaleDateString("es-CO")} · {p.payment_method}</div></div>)}</div>}</div> : null}
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const { error } = await supabase.auth.signOut();
+                    if (error) {
+                      console.error("Error al cerrar sesión:", error);
+                      alert(`Error al cerrar sesión: ${error.message}`);
+                    }
+                  }}
+                  style={{
+                    width: "100%",
+                    marginTop: 12,
+                    background: "rgba(239,68,68,.08)",
+                    border: "1px solid rgba(239,68,68,.25)",
+                    borderRadius: 8,
+                    padding: "10px 14px",
+                    color: "#ef4444",
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                    fontSize: ".82em",
+                    fontWeight: 700,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  Cerrar sesión
+                </button>
               </div>
             ) : null}
           </div>
@@ -13588,3 +13614,5 @@ const styles = {
     boxShadow: "0 4px 20px rgba(15,23,42,0.12)",
   },
 };
+
+
