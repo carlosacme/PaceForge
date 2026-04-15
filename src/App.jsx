@@ -7565,9 +7565,9 @@ function AthleteHome({ profile }) {
             </h3>
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
               {[
-                { period: "Mensual", amount: "$50.000", note: null },
-                { period: "Semestral", amount: "$264.000", note: "Ahorra 12%" },
-                { period: "Anual", amount: "$480.000", note: "Ahorra 20%" },
+                { period: "Mensual", amount: "$20,000", note: null },
+                { period: "Semestral", amount: "$105,600", note: "Ahorra 12%" },
+                { period: "Anual", amount: "$192,000", note: "Ahorra 20%" },
               ].map((row) => (
                 <div
                   key={row.period}
