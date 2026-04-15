@@ -3712,6 +3712,7 @@ export default function App() {
               notify("Workout cargado en el generador. Puedes asignarlo a un atleta.");
             }}
             onCopiedGlobalToLibrary={() => setLibraryRefresh((r) => r + 1)}
+            onOpenAdminMarketplaceDraft={() => setView("admin")}
             notify={notify}
           />
         )}
@@ -10488,7 +10489,17 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
   );
 }
 
-function WorkoutLibrary({ coachUserId, libraryRefresh, onUseWorkout, athletes, notify, profileRole, adminLibraryOwnerId, onCopiedGlobalToLibrary }) {
+function WorkoutLibrary({
+  coachUserId,
+  libraryRefresh,
+  onUseWorkout,
+  athletes,
+  notify,
+  profileRole,
+  adminLibraryOwnerId,
+  onCopiedGlobalToLibrary,
+  onOpenAdminMarketplaceDraft,
+}) {
   const S = styles;
   const [libraryTab, setLibraryTab] = useState("mine");
   const [items, setItems] = useState([]);
@@ -10503,6 +10514,11 @@ function WorkoutLibrary({ coachUserId, libraryRefresh, onUseWorkout, athletes, n
   const [assignDate, setAssignDate] = useState(() => formatLocalYMD(new Date()));
   const [assignSaving, setAssignSaving] = useState(false);
   const [globalCopyingId, setGlobalCopyingId] = useState(null);
+  const [marketplacePlansForAdmin, setMarketplacePlansForAdmin] = useState([]);
+  const [marketplacePlansAdminLoading, setMarketplacePlansAdminLoading] = useState(false);
+  const [marketplaceCoachLabelById, setMarketplaceCoachLabelById] = useState({});
+  const [libraryMarketplacePlanDetail, setLibraryMarketplacePlanDetail] = useState(null);
+  const [adminMarketplaceCopyingId, setAdminMarketplaceCopyingId] = useState(null);
 
   const load = useCallback(async () => {
     if (!coachUserId) {
@@ -10569,6 +10585,99 @@ function WorkoutLibrary({ coachUserId, libraryRefresh, onUseWorkout, athletes, n
   useEffect(() => {
     if (libraryTab === "global" && isLibraryAdmin) loadGlobalAll();
   }, [libraryTab, isLibraryAdmin, loadGlobalAll, libraryRefresh]);
+
+  const loadMarketplacePlansAdmin = useCallback(async () => {
+    if (!isLibraryAdmin) {
+      setMarketplacePlansForAdmin([]);
+      setMarketplaceCoachLabelById({});
+      return;
+    }
+    setMarketplacePlansAdminLoading(true);
+    const { data, error } = await supabase.from("plan_marketplace").select("*").order("created_at", { ascending: false });
+    if (error) {
+      console.error("plan_marketplace admin library:", error);
+      notify("No se pudieron cargar los planes del marketplace.");
+      setMarketplacePlansForAdmin([]);
+      setMarketplaceCoachLabelById({});
+      setMarketplacePlansAdminLoading(false);
+      return;
+    }
+    const rows = data || [];
+    setMarketplacePlansForAdmin(rows);
+    const ids = [...new Set(rows.map((p) => p.coach_user_id).filter(Boolean))];
+    if (ids.length === 0) {
+      setMarketplaceCoachLabelById({});
+      setMarketplacePlansAdminLoading(false);
+      return;
+    }
+    const { data: profs, error: pErr } = await supabase.from("profiles").select("user_id,name,email").in("user_id", ids);
+    if (pErr) console.warn("profiles for marketplace plans:", pErr);
+    const nm = {};
+    for (const p of profs || []) {
+      nm[String(p.user_id)] = (p.name && String(p.name).trim()) || p.email || String(p.user_id);
+    }
+    setMarketplaceCoachLabelById(nm);
+    setMarketplacePlansAdminLoading(false);
+  }, [isLibraryAdmin, notify]);
+
+  useEffect(() => {
+    if (libraryTab === "marketplace_plans" && isLibraryAdmin) loadMarketplacePlansAdmin();
+  }, [libraryTab, isLibraryAdmin, loadMarketplacePlansAdmin, libraryRefresh]);
+
+  const copyMarketplacePlanForAdminEdit = async (plan) => {
+    if (!adminLibraryOwnerId || !onOpenAdminMarketplaceDraft) return;
+    setAdminMarketplaceCopyingId(plan.id);
+    const preview = Array.isArray(plan.preview_workouts) ? plan.preview_workouts : [];
+    const { data: created, error } = await supabase
+      .from("plan_marketplace")
+      .insert({
+        coach_user_id: adminLibraryOwnerId,
+        coach_id: adminLibraryOwnerId,
+        coach_name: "RunningApexFlow",
+        is_admin_copy: true,
+        source_plan_id: plan.id,
+        is_approved: false,
+        is_active: true,
+        title: plan.title,
+        description: plan.description ?? "",
+        level: plan.level ?? "intermedio",
+        duration_weeks: plan.duration_weeks ?? 8,
+        sessions_per_week: plan.sessions_per_week ?? 4,
+        price_cop: plan.price_cop ?? 0,
+        preview_workouts: preview,
+      })
+      .select("id")
+      .single();
+    setAdminMarketplaceCopyingId(null);
+    if (error) {
+      notify(error.message || "No se pudo crear la copia.");
+      return;
+    }
+    const newId = created?.id;
+    if (!newId) {
+      notify("No se obtuvo el id de la copia.");
+      return;
+    }
+    const draft = {
+      title: String(plan.title || ""),
+      description: String(plan.description || ""),
+      level: String(plan.level || "intermedio"),
+      duration_weeks: String(plan.duration_weeks ?? 12),
+      sessions_per_week: String(plan.sessions_per_week ?? 4),
+      price_cop: String(plan.price_cop ?? 120000),
+      preview_workouts_text: JSON.stringify(preview, null, 2),
+      editing_plan_id: newId,
+    };
+    try {
+      localStorage.setItem("raf_admin_plan_draft", JSON.stringify(draft));
+      localStorage.setItem("raf_admin_tab", "marketplace");
+    } catch {
+      /* ignore */
+    }
+    onOpenAdminMarketplaceDraft();
+    notify("Copia creada. Edítala y publica en Admin · Marketplace.");
+    loadMarketplacePlansAdmin();
+  };
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -10740,6 +10849,9 @@ function WorkoutLibrary({ coachUserId, libraryRefresh, onUseWorkout, athletes, n
             <button type="button" style={libTabBtn(activeTab === "global")} onClick={() => setLibraryTab("global")}>
               📚 Todos los coaches
             </button>
+            <button type="button" style={libTabBtn(activeTab === "marketplace_plans")} onClick={() => setLibraryTab("marketplace_plans")}>
+              📋 Planes Marketplace
+            </button>
           </div>
         ) : null}
       </div>
@@ -10766,6 +10878,87 @@ function WorkoutLibrary({ coachUserId, libraryRefresh, onUseWorkout, athletes, n
       </div>
       {!coachUserId ? (
         <div style={{ color: "#64748b", fontSize: ".9em" }}>Inicia sesión para ver tu biblioteca.</div>
+      ) : activeTab === "marketplace_plans" && showGlobalTab ? (
+        marketplacePlansAdminLoading ? (
+          <div style={{ color: "#64748b", fontSize: ".9em" }}>Cargando planes del marketplace…</div>
+        ) : marketplacePlansForAdmin.length === 0 ? (
+          <div style={{ ...S.card, color: "#64748b", fontSize: ".9em" }}>No hay planes en marketplace.</div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {marketplacePlansForAdmin.map((p) => {
+              const coachOrigin =
+                marketplaceCoachLabelById[String(p.coach_user_id)] || p.coach_name || p.coach_user_id || "Coach";
+              const estado = !p.is_active ? "Inactivo" : p.is_approved ? "Aprobado" : "Pendiente";
+              const estadoColor = !p.is_active ? "#ef4444" : p.is_approved ? "#16a34a" : "#b45309";
+              return (
+                <div
+                  key={p.id}
+                  style={{
+                    ...S.card,
+                    margin: 0,
+                    padding: 14,
+                    border: "1px solid #e2e8f0",
+                    display: "flex",
+                    flexWrap: "wrap",
+                    justifyContent: "space-between",
+                    gap: 12,
+                    alignItems: "flex-start",
+                  }}
+                >
+                  <div style={{ flex: "1 1 260px", minWidth: 0 }}>
+                    <div style={{ fontWeight: 800, color: "#0f172a", fontSize: ".95em" }}>{p.title}</div>
+                    <div style={{ fontSize: ".78em", color: "#64748b", marginTop: 6, lineHeight: 1.5 }}>
+                      <div>
+                        <strong>Coach origen:</strong> {coachOrigin}
+                      </div>
+                      <div>
+                        Nivel: {p.level || "—"} · {p.duration_weeks ?? "—"} sem · {p.sessions_per_week ?? "—"} sesiones/sem · ${formatCopInt(p.price_cop || 0)} COP
+                      </div>
+                      <div style={{ fontWeight: 800, color: estadoColor, marginTop: 4 }}>Estado: {estado}</div>
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+                    <button
+                      type="button"
+                      onClick={() => setLibraryMarketplacePlanDetail(p)}
+                      style={{
+                        padding: "8px 12px",
+                        borderRadius: 8,
+                        border: "1px solid #bae6fd",
+                        background: "#f0f9ff",
+                        color: "#0369a1",
+                        fontWeight: 800,
+                        fontSize: ".78em",
+                        cursor: "pointer",
+                        fontFamily: "inherit",
+                      }}
+                    >
+                      👁️ Ver completo
+                    </button>
+                    <button
+                      type="button"
+                      disabled={adminMarketplaceCopyingId === p.id}
+                      onClick={() => copyMarketplacePlanForAdminEdit(p)}
+                      style={{
+                        padding: "8px 12px",
+                        borderRadius: 8,
+                        border: "none",
+                        background: adminMarketplaceCopyingId === p.id ? "#e2e8f0" : "linear-gradient(135deg,#6366f1,#818cf8)",
+                        color: adminMarketplaceCopyingId === p.id ? "#64748b" : "#fff",
+                        fontWeight: 800,
+                        fontSize: ".78em",
+                        cursor: adminMarketplaceCopyingId === p.id ? "not-allowed" : "pointer",
+                        fontFamily: "inherit",
+                      }}
+                    >
+                      {adminMarketplaceCopyingId === p.id ? "Copiando…" : "✏️ Copiar y editar"}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )
       ) : activeTab === "global" && showGlobalTab ? (
         globalLoading ? (
           <div style={{ color: "#64748b", fontSize: ".9em" }}>Cargando todos los coaches…</div>
@@ -10961,6 +11154,26 @@ function WorkoutLibrary({ coachUserId, libraryRefresh, onUseWorkout, athletes, n
           })}
         </div>
       )}
+      {libraryMarketplacePlanDetail ? (
+        <div style={{ position: "fixed", inset: 0, zIndex: 10032, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ ...S.card, width: "100%", maxWidth: 720, margin: 0, maxHeight: "90vh", overflowY: "auto" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginBottom: 8 }}>
+              <div style={{ fontSize: "1.05em", fontWeight: 900 }}>{libraryMarketplacePlanDetail.title}</div>
+              <button type="button" onClick={() => setLibraryMarketplacePlanDetail(null)} style={{ border: "1px solid #e2e8f0", background: "#fff", borderRadius: 8, padding: "6px 10px", cursor: "pointer", fontFamily: "inherit" }}>
+                ✕
+              </button>
+            </div>
+            <div style={{ color: "#475569", fontSize: ".86em", marginBottom: 10 }}>{libraryMarketplacePlanDetail.description || "Sin descripción."}</div>
+            <div style={{ fontSize: ".78em", fontWeight: 800, color: "#334155", marginBottom: 8 }}>Workouts de muestra</div>
+            <MarketplacePlanWorkoutsAccordion previewWorkouts={libraryMarketplacePlanDetail.preview_workouts} resetKey={libraryMarketplacePlanDetail.id} />
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
+              <button type="button" onClick={() => setLibraryMarketplacePlanDetail(null)} style={{ border: "1px solid #e2e8f0", background: "#fff", borderRadius: 8, padding: "8px 12px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       {assigningWorkoutRow ? (
         <div style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
           <div style={{ ...S.card, width: "100%", maxWidth: 540, margin: 0 }}>
@@ -12739,6 +12952,132 @@ function AdminCoachesProfilesPanel({ notify, adminUserId }) {
   );
 }
 
+/** Acordeón por semana para preview_workouts (modal Marketplace y Biblioteca admin). */
+function MarketplacePlanWorkoutsAccordion({ previewWorkouts, resetKey }) {
+  const list = Array.isArray(previewWorkouts) ? previewWorkouts : [];
+  const weekGroups = useMemo(() => {
+    const arr = Array.isArray(previewWorkouts) ? previewWorkouts : [];
+    const groups = new Map();
+    for (let i = 0; i < arr.length; i++) {
+      const w = arr[i];
+      const wn = w?.week != null && w.week !== "" ? Number(w.week) : NaN;
+      const key = Number.isFinite(wn) && wn > 0 ? wn : 0;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push({ w, i });
+    }
+    return [...groups.entries()].sort((a, b) => {
+      if (a[0] === 0) return 1;
+      if (b[0] === 0) return -1;
+      return a[0] - b[0];
+    });
+  }, [previewWorkouts]);
+
+  const [openWeeks, setOpenWeeks] = useState(() => new Set([1]));
+
+  useEffect(() => {
+    const arr = Array.isArray(previewWorkouts) ? previewWorkouts : [];
+    const weekNums = [
+      ...new Set(
+        arr
+          .map((w) => (w?.week != null && w.week !== "" ? Number(w.week) : NaN))
+          .filter((n) => Number.isFinite(n) && n > 0),
+      ),
+    ].sort((a, b) => a - b);
+    const defaultW = weekNums.includes(1) ? 1 : weekNums.length ? weekNums[0] : 1;
+    setOpenWeeks(new Set([defaultW]));
+  }, [resetKey, previewWorkouts]);
+
+  if (list.length === 0) {
+    return <div style={{ color: "#94a3b8", fontSize: ".82em", marginBottom: 12 }}>No hay muestra de workouts.</div>;
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
+      {weekGroups.map(([weekKey, items]) => {
+        const open = openWeeks.has(weekKey);
+        const label = weekKey === 0 ? "Sin número de semana" : `Semana ${weekKey}`;
+        return (
+          <div key={weekKey} style={{ border: "1px solid #e2e8f0", borderRadius: 10, overflow: "hidden" }}>
+            <button
+              type="button"
+              onClick={() =>
+                setOpenWeeks((prev) => {
+                  if (prev.has(weekKey) && prev.size === 1) return new Set();
+                  return new Set([weekKey]);
+                })
+              }
+              style={{
+                width: "100%",
+                textAlign: "left",
+                padding: "10px 12px",
+                border: "none",
+                background: open ? "#f1f5f9" : "#fff",
+                fontWeight: 800,
+                fontSize: ".82em",
+                color: "#0f172a",
+                cursor: "pointer",
+                fontFamily: "inherit",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                boxSizing: "border-box",
+              }}
+            >
+              <span>
+                {label}
+                <span style={{ fontWeight: 600, color: "#64748b", marginLeft: 6 }}>
+                  ({items.length} {items.length === 1 ? "sesión" : "sesiones"})
+                </span>
+              </span>
+              <span style={{ fontSize: ".75em", color: "#64748b" }}>{open ? "▾" : "▸"}</span>
+            </button>
+            {open ? (
+              <div style={{ padding: "8px 10px 10px", background: "#fafafa", display: "grid", gap: 8 }}>
+                {items.map(({ w, i }) => {
+                  const struct = w.workout_structure || w.structure;
+                  const hasStructure = Array.isArray(struct) && struct.length > 0;
+                  const km =
+                    w.distance_km != null && w.distance_km !== "" && Number.isFinite(Number(w.distance_km))
+                      ? Number(w.distance_km)
+                      : w.total_km != null && w.total_km !== ""
+                        ? Number(w.total_km)
+                        : null;
+                  const mins = w.duration_min != null && w.duration_min !== "" ? Number(w.duration_min) : null;
+                  const metaParts = [];
+                  if (km != null && Number.isFinite(km)) metaParts.push(`${km} km`);
+                  if (mins != null && Number.isFinite(mins)) metaParts.push(`${mins} min`);
+                  return (
+                    <div
+                      key={w.id != null ? String(w.id) : `wk-${weekKey}-row-${i}`}
+                      style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", background: "#fff" }}
+                    >
+                      <div style={{ fontWeight: 800, fontSize: ".85em" }}>
+                        {w.day ? `${w.day} · ` : ""}
+                        {w.title || `Sesión ${i + 1}`}
+                      </div>
+                      {w.description ? (
+                        <div style={{ fontSize: ".78em", color: "#475569", marginTop: 4, lineHeight: 1.4 }}>{w.description}</div>
+                      ) : null}
+                      {metaParts.length > 0 ? (
+                        <div style={{ fontSize: ".75em", color: "#64748b", marginTop: 4 }}>{metaParts.join(" · ")}</div>
+                      ) : null}
+                      {hasStructure ? (
+                        <div style={{ marginTop: 6 }}>
+                          <WorkoutStructureTable structure={struct} />
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : null}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify }) {
   const S = styles;
   const isCoach = profileRole === "coach";
@@ -12761,8 +13100,6 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
   });
   const [salesByPlanId, setSalesByPlanId] = useState({});
   const [ratingsByPlanId, setRatingsByPlanId] = useState({});
-  /** Semanas expandidas en el modal «Ver plan» (por número de semana) */
-  const [planDetailOpenWeeks, setPlanDetailOpenWeeks] = useState(() => new Set([1]));
 
   const loadMarketplace = useCallback(async () => {
     setLoadingPlans(true);
@@ -12839,23 +13176,6 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
     loadCoachLibrary();
   }, [showPublishModal, isCoach, loadCoachLibrary]);
 
-  useEffect(() => {
-    if (!selectedPlan) {
-      setPlanDetailOpenWeeks(new Set([1]));
-      return;
-    }
-    const arr = selectedPlan.preview_workouts || [];
-    const weekNums = [
-      ...new Set(
-        arr
-          .map((w) => (w?.week != null && w.week !== "" ? Number(w.week) : NaN))
-          .filter((n) => Number.isFinite(n) && n > 0),
-      ),
-    ].sort((a, b) => a - b);
-    const defaultW = weekNums.includes(1) ? 1 : weekNums.length ? weekNums[0] : 1;
-    setPlanDetailOpenWeeks(new Set([defaultW]));
-  }, [selectedPlan?.id]);
-
   const plansVisible = useMemo(() => {
     const all = plans || [];
     return all.filter((p) => {
@@ -12870,24 +13190,6 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
     () => (plans || []).filter((p) => String(p.coach_user_id || "") === String(coachUserId || "")),
     [plans, coachUserId],
   );
-
-  const selectedPlanWeekGroups = useMemo(() => {
-    if (!selectedPlan) return [];
-    const list = Array.isArray(selectedPlan.preview_workouts) ? selectedPlan.preview_workouts : [];
-    const groups = new Map();
-    for (let i = 0; i < list.length; i++) {
-      const w = list[i];
-      const wn = w?.week != null && w.week !== "" ? Number(w.week) : NaN;
-      const key = Number.isFinite(wn) && wn > 0 ? wn : 0;
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key).push({ w, i });
-    }
-    return [...groups.entries()].sort((a, b) => {
-      if (a[0] === 0) return 1;
-      if (b[0] === 0) return -1;
-      return a[0] - b[0];
-    });
-  }, [selectedPlan]);
 
   const openPurchaseInstructions = (plan) => {
     setSelectedPlan(plan);
@@ -13058,93 +13360,7 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
             </div>
             <div style={{ color: "#475569", fontSize: ".86em", marginBottom: 10 }}>{selectedPlan.description || "Sin descripción."}</div>
             <div style={{ fontSize: ".78em", fontWeight: 800, color: "#334155", marginBottom: 8 }}>Workouts de muestra</div>
-            {(selectedPlan.preview_workouts || []).length === 0 ? (
-              <div style={{ color: "#94a3b8", fontSize: ".82em", marginBottom: 12 }}>No hay muestra de workouts.</div>
-            ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
-                {selectedPlanWeekGroups.map(([weekKey, items]) => {
-                  const open = planDetailOpenWeeks.has(weekKey);
-                  const label = weekKey === 0 ? "Sin número de semana" : `Semana ${weekKey}`;
-                  return (
-                    <div key={weekKey} style={{ border: "1px solid #e2e8f0", borderRadius: 10, overflow: "hidden" }}>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setPlanDetailOpenWeeks((prev) => {
-                            if (prev.has(weekKey) && prev.size === 1) return new Set();
-                            return new Set([weekKey]);
-                          })
-                        }
-                        style={{
-                          width: "100%",
-                          textAlign: "left",
-                          padding: "10px 12px",
-                          border: "none",
-                          background: open ? "#f1f5f9" : "#fff",
-                          fontWeight: 800,
-                          fontSize: ".82em",
-                          color: "#0f172a",
-                          cursor: "pointer",
-                          fontFamily: "inherit",
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "center",
-                          boxSizing: "border-box",
-                        }}
-                      >
-                        <span>
-                          {label}
-                          <span style={{ fontWeight: 600, color: "#64748b", marginLeft: 6 }}>
-                            ({items.length} {items.length === 1 ? "sesión" : "sesiones"})
-                          </span>
-                        </span>
-                        <span style={{ fontSize: ".75em", color: "#64748b" }}>{open ? "▾" : "▸"}</span>
-                      </button>
-                      {open ? (
-                        <div style={{ padding: "8px 10px 10px", background: "#fafafa", display: "grid", gap: 8 }}>
-                          {items.map(({ w, i }) => {
-                            const struct = w.workout_structure || w.structure;
-                            const hasStructure = Array.isArray(struct) && struct.length > 0;
-                            const km =
-                              w.distance_km != null && w.distance_km !== "" && Number.isFinite(Number(w.distance_km))
-                                ? Number(w.distance_km)
-                                : w.total_km != null && w.total_km !== ""
-                                  ? Number(w.total_km)
-                                  : null;
-                            const mins = w.duration_min != null && w.duration_min !== "" ? Number(w.duration_min) : null;
-                            const metaParts = [];
-                            if (km != null && Number.isFinite(km)) metaParts.push(`${km} km`);
-                            if (mins != null && Number.isFinite(mins)) metaParts.push(`${mins} min`);
-                            return (
-                              <div
-                                key={w.id != null ? String(w.id) : `wk-${weekKey}-row-${i}`}
-                                style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", background: "#fff" }}
-                              >
-                                <div style={{ fontWeight: 800, fontSize: ".85em" }}>
-                                  {w.day ? `${w.day} · ` : ""}
-                                  {w.title || `Sesión ${i + 1}`}
-                                </div>
-                                {w.description ? (
-                                  <div style={{ fontSize: ".78em", color: "#475569", marginTop: 4, lineHeight: 1.4 }}>{w.description}</div>
-                                ) : null}
-                                {metaParts.length > 0 ? (
-                                  <div style={{ fontSize: ".75em", color: "#64748b", marginTop: 4 }}>{metaParts.join(" · ")}</div>
-                                ) : null}
-                                {hasStructure ? (
-                                  <div style={{ marginTop: 6 }}>
-                                    <WorkoutStructureTable structure={struct} />
-                                  </div>
-                                ) : null}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      ) : null}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+            <MarketplacePlanWorkoutsAccordion previewWorkouts={selectedPlan.preview_workouts} resetKey={selectedPlan.id} />
             <button type="button" onClick={() => openPurchaseInstructions(selectedPlan)} style={{ width: "100%", background: "linear-gradient(135deg,#ea580c,#f97316)", border: "none", borderRadius: 10, padding: "10px 14px", color: "#fff", fontWeight: 900, cursor: "pointer", fontFamily: "inherit", fontSize: ".85em" }}>
               Comprar - ${formatCopInt(selectedPlan.price_cop)} COP
             </button>
@@ -13237,6 +13453,7 @@ function AdminMarketplacePanel({ notify }) {
     sessions_per_week: "4",
     price_cop: "120000",
     preview_workouts_text: "",
+    editing_plan_id: null,
   };
   const [plans, setPlans] = useState([]);
   const [purchases, setPurchases] = useState([]);
@@ -13293,7 +13510,8 @@ function AdminMarketplacePanel({ notify }) {
   useEffect(() => {
     if (typeof localStorage === "undefined") return;
     const hasData = Boolean(
-      String(createForm.title || "").trim() ||
+      createForm.editing_plan_id ||
+        String(createForm.title || "").trim() ||
         String(createForm.description || "").trim() ||
         String(createForm.preview_workouts_text || "").trim() ||
         String(createForm.level || "").trim() !== "intermedio" ||
@@ -13359,7 +13577,8 @@ function AdminMarketplacePanel({ notify }) {
   const pendingPurchases = (purchases || []).filter((p) => String(p.payment_status || "").toLowerCase() !== "confirmed");
   const hasUnsavedDraft = useMemo(() => {
     return Boolean(
-      String(createForm.title || "").trim() ||
+      createForm.editing_plan_id ||
+        String(createForm.title || "").trim() ||
         String(createForm.description || "").trim() ||
         String(createForm.preview_workouts_text || "").trim() ||
         String(createForm.level || "").trim() !== "intermedio" ||
@@ -13473,28 +13692,56 @@ function AdminMarketplacePanel({ notify }) {
       notify?.("Indica un título para el plan");
       return;
     }
-    const payload = {
-      coach_user_id: PLATFORM_ADMIN_USER_ID,
-      coach_id: PLATFORM_ADMIN_USER_ID,
-      coach_name: "RunningApexFlow",
-      title,
-      description: String(createForm.description || "").trim(),
-      level: String(createForm.level || "intermedio"),
-      duration_weeks: Math.max(1, Math.round(Number(createForm.duration_weeks) || 0)),
-      sessions_per_week: Math.max(1, Math.round(Number(createForm.sessions_per_week) || 0)),
-      price_cop: Math.max(50000, Math.min(300000, Math.round(Number(String(createForm.price_cop || "0").replace(/[^\d]/g, "")) || 0))),
-      preview_workouts: parsePreviewWorkoutsText(createForm.preview_workouts_text),
-      is_active: true,
-      is_approved: true,
-    };
+    const description = String(createForm.description || "").trim();
+    const level = String(createForm.level || "intermedio");
+    const duration_weeks = Math.max(1, Math.round(Number(createForm.duration_weeks) || 0));
+    const sessions_per_week = Math.max(1, Math.round(Number(createForm.sessions_per_week) || 0));
+    const price_cop = Math.max(50000, Math.min(300000, Math.round(Number(String(createForm.price_cop || "0").replace(/[^\d]/g, "")) || 0)));
+    const preview_workouts = parsePreviewWorkoutsText(createForm.preview_workouts_text);
+    const editingId = createForm.editing_plan_id || null;
+
     setCreatingPlan(true);
-    const { error } = await supabase.from("plan_marketplace").insert(payload);
+    let error = null;
+    if (editingId) {
+      const res = await supabase
+        .from("plan_marketplace")
+        .update({
+          title,
+          description,
+          level,
+          duration_weeks,
+          sessions_per_week,
+          price_cop,
+          preview_workouts,
+          is_active: true,
+          is_approved: true,
+        })
+        .eq("id", editingId)
+        .eq("coach_user_id", PLATFORM_ADMIN_USER_ID);
+      error = res.error;
+    } else {
+      const res = await supabase.from("plan_marketplace").insert({
+        coach_user_id: PLATFORM_ADMIN_USER_ID,
+        coach_id: PLATFORM_ADMIN_USER_ID,
+        coach_name: "RunningApexFlow",
+        title,
+        description,
+        level,
+        duration_weeks,
+        sessions_per_week,
+        price_cop,
+        preview_workouts,
+        is_active: true,
+        is_approved: true,
+      });
+      error = res.error;
+    }
     setCreatingPlan(false);
     if (error) {
-      notify?.(error.message || "No se pudo crear el plan");
+      notify?.(error.message || "No se pudo guardar el plan");
       return;
     }
-    notify?.("Plan creado y aprobado automáticamente.");
+    notify?.(editingId ? "Plan actualizado y aprobado." : "Plan creado y aprobado automáticamente.");
     setCreateForm(EMPTY_ADMIN_PLAN_FORM);
     setPlanTableEdit(null);
     if (typeof localStorage !== "undefined") localStorage.removeItem(ADMIN_PLAN_DRAFT_KEY);
@@ -13555,6 +13802,7 @@ Reglas obligatorias:
       }
       setCreateForm((prev) => ({
         ...prev,
+        editing_plan_id: null,
         title: String(parsed.title || prev.title || ""),
         description: String(parsed.description || prev.description || ""),
         level: String(parsed.level || aiLevel || "intermedio"),
@@ -13844,7 +14092,7 @@ Reglas obligatorias:
           </div>
           <div style={{ gridColumn: "1 / -1", display: "flex", justifyContent: "flex-end" }}>
             <button type="button" onClick={createAdminPlan} disabled={creatingPlan} style={{ border: "none", borderRadius: 8, padding: "9px 14px", background: creatingPlan ? "#cbd5e1" : "linear-gradient(135deg,#0ea5e9,#0284c7)", color: "#fff", fontWeight: 800, cursor: creatingPlan ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
-              {creatingPlan ? "Guardando…" : "Guardar plan (auto-aprobado)"}
+              {creatingPlan ? "Guardando…" : createForm.editing_plan_id ? "Guardar y aprobar copia" : "Guardar plan (auto-aprobado)"}
             </button>
           </div>
         </div>
