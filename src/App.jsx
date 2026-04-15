@@ -6133,15 +6133,15 @@ function AthleteHome({ profile }) {
     }
   };
 
-  const isAthletePremium = useMemo(
-    () => String(athleteInfo?.athlete_plan || "").trim().toLowerCase() === "premium",
-    [athleteInfo?.athlete_plan],
-  );
+  const hasPremiumAccess = useMemo(() => {
+    const isAthleteOfAdminCoach = athleteInfo?.coach_id === "b5c9e44a-6695-4800-99bd-f19b05d2f66f";
+    return isAthleteOfAdminCoach || String(athleteInfo?.athlete_plan).toLowerCase() === "premium";
+  }, [athleteInfo?.coach_id, athleteInfo?.athlete_plan]);
 
   useEffect(() => {
     if (!athleteTabRestored || !athleteInfo?.id) return;
-    if (!isAthletePremium) setShowEvaluation(false);
-  }, [athleteInfo?.id, athleteInfo?.athlete_plan, athleteTabRestored, isAthletePremium]);
+    if (!hasPremiumAccess) setShowEvaluation(false);
+  }, [athleteInfo?.id, athleteInfo?.athlete_plan, athleteInfo?.coach_id, athleteTabRestored, hasPremiumAccess]);
 
   const athleteFormaFatigaPoints = useMemo(() => computeFormaFatigaWeeklyPoints(workouts), [workouts]);
   const athleteFormaFatigaChronological = useMemo(() => [...athleteFormaFatigaPoints].reverse(), [athleteFormaFatigaPoints]);
@@ -7095,7 +7095,7 @@ function AthleteHome({ profile }) {
           <div style={{ fontSize: ".65em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase" }}>
             FORMA Y FATIGA · EXPORTAR PDF
           </div>
-          {!isAthletePremium ? (
+          {!hasPremiumAccess ? (
             <span
               style={{
                 fontSize: ".68em",
@@ -7112,7 +7112,7 @@ function AthleteHome({ profile }) {
             </span>
           ) : null}
         </div>
-        {isAthletePremium ? (
+        {hasPremiumAccess ? (
           <>
             <div style={{ fontSize: ".78em", color: "#64748b", marginBottom: 12, lineHeight: 1.45 }}>
               Basado en sesiones completadas con RPE: carga aguda = promedio (RPE × km) últimos 7 días; carga crónica = promedio (RPE × km) últimos 28 días; forma = crónica − aguda.
@@ -7250,7 +7250,7 @@ function AthleteHome({ profile }) {
         )}
       </div>
 
-      {isAthletePremium ? (
+      {hasPremiumAccess ? (
         <>
           <div style={{ ...S.card, marginBottom: 18, order: 7 }}>
             <button
