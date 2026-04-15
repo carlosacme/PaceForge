@@ -12761,6 +12761,8 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
   });
   const [salesByPlanId, setSalesByPlanId] = useState({});
   const [ratingsByPlanId, setRatingsByPlanId] = useState({});
+  /** Semanas expandidas en el modal «Ver plan» (por número de semana) */
+  const [planDetailOpenWeeks, setPlanDetailOpenWeeks] = useState(() => new Set([1]));
 
   const loadMarketplace = useCallback(async () => {
     setLoadingPlans(true);
@@ -12837,6 +12839,23 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
     loadCoachLibrary();
   }, [showPublishModal, isCoach, loadCoachLibrary]);
 
+  useEffect(() => {
+    if (!selectedPlan) {
+      setPlanDetailOpenWeeks(new Set([1]));
+      return;
+    }
+    const arr = selectedPlan.preview_workouts || [];
+    const weekNums = [
+      ...new Set(
+        arr
+          .map((w) => (w?.week != null && w.week !== "" ? Number(w.week) : NaN))
+          .filter((n) => Number.isFinite(n) && n > 0),
+      ),
+    ].sort((a, b) => a - b);
+    const defaultW = weekNums.includes(1) ? 1 : weekNums.length ? weekNums[0] : 1;
+    setPlanDetailOpenWeeks(new Set([defaultW]));
+  }, [selectedPlan?.id]);
+
   const plansVisible = useMemo(() => {
     const all = plans || [];
     return all.filter((p) => {
@@ -12851,6 +12870,24 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
     () => (plans || []).filter((p) => String(p.coach_user_id || "") === String(coachUserId || "")),
     [plans, coachUserId],
   );
+
+  const selectedPlanWeekGroups = useMemo(() => {
+    if (!selectedPlan) return [];
+    const list = Array.isArray(selectedPlan.preview_workouts) ? selectedPlan.preview_workouts : [];
+    const groups = new Map();
+    for (let i = 0; i < list.length; i++) {
+      const w = list[i];
+      const wn = w?.week != null && w.week !== "" ? Number(w.week) : NaN;
+      const key = Number.isFinite(wn) && wn > 0 ? wn : 0;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push({ w, i });
+    }
+    return [...groups.entries()].sort((a, b) => {
+      if (a[0] === 0) return 1;
+      if (b[0] === 0) return -1;
+      return a[0] - b[0];
+    });
+  }, [selectedPlan]);
 
   const openPurchaseInstructions = (plan) => {
     setSelectedPlan(plan);
@@ -13024,16 +13061,88 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
             {(selectedPlan.preview_workouts || []).length === 0 ? (
               <div style={{ color: "#94a3b8", fontSize: ".82em", marginBottom: 12 }}>No hay muestra de workouts.</div>
             ) : (
-              <div style={{ display: "grid", gap: 8, marginBottom: 12 }}>
-                {(selectedPlan.preview_workouts || []).map((w, idx) => (
-                  <div key={`${w.id || idx}`} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", background: "#f8fafc" }}>
-                    <div style={{ fontWeight: 800, fontSize: ".85em" }}>{w.title || `Workout ${idx + 1}`}</div>
-                    <div style={{ fontSize: ".75em", color: "#64748b", marginTop: 2 }}>{w.total_km || 0} km · {w.duration_min || 0} min</div>
-                    <div style={{ marginTop: 6 }}>
-                      <WorkoutStructureTable structure={w.workout_structure || w.structure || []} />
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
+                {selectedPlanWeekGroups.map(([weekKey, items]) => {
+                  const open = planDetailOpenWeeks.has(weekKey);
+                  const label = weekKey === 0 ? "Sin número de semana" : `Semana ${weekKey}`;
+                  return (
+                    <div key={weekKey} style={{ border: "1px solid #e2e8f0", borderRadius: 10, overflow: "hidden" }}>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setPlanDetailOpenWeeks((prev) => {
+                            if (prev.has(weekKey) && prev.size === 1) return new Set();
+                            return new Set([weekKey]);
+                          })
+                        }
+                        style={{
+                          width: "100%",
+                          textAlign: "left",
+                          padding: "10px 12px",
+                          border: "none",
+                          background: open ? "#f1f5f9" : "#fff",
+                          fontWeight: 800,
+                          fontSize: ".82em",
+                          color: "#0f172a",
+                          cursor: "pointer",
+                          fontFamily: "inherit",
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          boxSizing: "border-box",
+                        }}
+                      >
+                        <span>
+                          {label}
+                          <span style={{ fontWeight: 600, color: "#64748b", marginLeft: 6 }}>
+                            ({items.length} {items.length === 1 ? "sesión" : "sesiones"})
+                          </span>
+                        </span>
+                        <span style={{ fontSize: ".75em", color: "#64748b" }}>{open ? "▾" : "▸"}</span>
+                      </button>
+                      {open ? (
+                        <div style={{ padding: "8px 10px 10px", background: "#fafafa", display: "grid", gap: 8 }}>
+                          {items.map(({ w, i }) => {
+                            const struct = w.workout_structure || w.structure;
+                            const hasStructure = Array.isArray(struct) && struct.length > 0;
+                            const km =
+                              w.distance_km != null && w.distance_km !== "" && Number.isFinite(Number(w.distance_km))
+                                ? Number(w.distance_km)
+                                : w.total_km != null && w.total_km !== ""
+                                  ? Number(w.total_km)
+                                  : null;
+                            const mins = w.duration_min != null && w.duration_min !== "" ? Number(w.duration_min) : null;
+                            const metaParts = [];
+                            if (km != null && Number.isFinite(km)) metaParts.push(`${km} km`);
+                            if (mins != null && Number.isFinite(mins)) metaParts.push(`${mins} min`);
+                            return (
+                              <div
+                                key={w.id != null ? String(w.id) : `wk-${weekKey}-row-${i}`}
+                                style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", background: "#fff" }}
+                              >
+                                <div style={{ fontWeight: 800, fontSize: ".85em" }}>
+                                  {w.day ? `${w.day} · ` : ""}
+                                  {w.title || `Sesión ${i + 1}`}
+                                </div>
+                                {w.description ? (
+                                  <div style={{ fontSize: ".78em", color: "#475569", marginTop: 4, lineHeight: 1.4 }}>{w.description}</div>
+                                ) : null}
+                                {metaParts.length > 0 ? (
+                                  <div style={{ fontSize: ".75em", color: "#64748b", marginTop: 4 }}>{metaParts.join(" · ")}</div>
+                                ) : null}
+                                {hasStructure ? (
+                                  <div style={{ marginTop: 6 }}>
+                                    <WorkoutStructureTable structure={struct} />
+                                  </div>
+                                ) : null}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : null}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
             <button type="button" onClick={() => openPurchaseInstructions(selectedPlan)} style={{ width: "100%", background: "linear-gradient(135deg,#ea580c,#f97316)", border: "none", borderRadius: 10, padding: "10px 14px", color: "#fff", fontWeight: 900, cursor: "pointer", fontFamily: "inherit", fontSize: ".85em" }}>
@@ -13395,6 +13504,7 @@ function AdminMarketplacePanel({ notify }) {
   const generatePlanWithAi = async () => {
     const sessionsFixed = [3, 4, 5].includes(Number(aiSessionsPerWeek)) ? Number(aiSessionsPerWeek) : 4;
     const duracionSemanas = Math.max(1, Math.round(Number(aiDurationWeeks) || 12));
+    const totalPreviewEntries = duracionSemanas * sessionsFixed;
     const systemPrompt = `Eres un experto en coaching de running. Genera un plan de entrenamiento completo para vender en un marketplace. Responde SOLO con JSON sin texto adicional ni markdown:
 {
   "title": "título comercial atractivo",
@@ -13410,10 +13520,9 @@ function AdminMarketplacePanel({ notify }) {
 Reglas obligatorias:
 - El campo "duration_weeks" en tu respuesta JSON debe ser exactamente ${duracionSemanas}.
 - El campo "sessions_per_week" en tu respuesta JSON debe ser exactamente el número ${sessionsFixed} (valor fijo; no uses otro número).
-- Genera el plan completo con TODAS las ${duracionSemanas} semanas. En preview_workouts incluye UNA sesión representativa por cada semana del plan (${duracionSemanas} entradas en total, una por semana), con el día más importante de esa semana. Esto da al atleta una visión completa de la progresión.
-- El diseño semanal del plan (descrito en title/description) debe reflejar ${sessionsFixed} sesiones por semana en días no consecutivos; preview_workouts solo lista la sesión representativa de cada semana, no todas las sesiones.
+- En preview_workouts incluye TODAS las sesiones de TODAS las semanas: ${duracionSemanas} semanas × ${sessionsFixed} sesiones = ${totalPreviewEntries} entradas en total. Cada semana debe tener exactamente ${sessionsFixed} sesiones en días no consecutivos.
 - Cada elemento de preview_workouts debe incluir: week (del 1 al ${duracionSemanas}), day, title, description, duration_min, distance_km.
-- preview_workouts debe tener exactamente ${duracionSemanas} elementos, en orden de semana creciente (1…${duracionSemanas}).`;
+- preview_workouts debe tener exactamente ${totalPreviewEntries} objetos: ordena por semana creciente (1…${duracionSemanas}); dentro de cada semana, ${sessionsFixed} filas con el mismo "week" y días no consecutivos.`;
     const userPrompt = [
       `Describe el plan: ${aiContext || "Plan de running para marketplace"}`,
       `Nivel: ${aiLevel}`,
@@ -13428,7 +13537,7 @@ Reglas obligatorias:
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           model: "claude-sonnet-4-20250514",
-          max_tokens: 8192,
+          max_tokens: 16384,
           system: systemPrompt,
           messages: [{ role: "user", content: userPrompt }],
         }),
