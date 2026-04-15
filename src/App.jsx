@@ -7259,7 +7259,7 @@ function AthleteHome({ profile }) {
         <h1 style={{ ...S.pageTitle, marginBottom: 4 }}>Hola, {athleteName}</h1>
       </div>
 
-      <div style={{ ...S.card, marginBottom: 14 }}>
+      <div style={{ ...S.card, marginBottom: 14, overflow: "visible" }}>
         <div style={{ fontSize: ".72em", letterSpacing: ".13em", color: "#475569", textTransform: "uppercase", marginBottom: 8 }}>PROGRESO SEMANAL</div>
         <div style={{ fontSize: "1.6em", fontWeight: 900, color: "#22c55e", fontFamily: "monospace" }}>
           {weeklyDoneKm.toFixed(1)} / {weeklyTotalKm.toFixed(1)} km
@@ -7285,7 +7285,7 @@ function AthleteHome({ profile }) {
         {loading ? (
           <div style={{ color: "#64748b", fontSize: ".85em", padding: "20px 0" }}>Cargando...</div>
         ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 4 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 4, overflow: "visible" }}>
             {DAYS.map((d) => <div key={d} style={{ fontSize: ".65em", textAlign: "center", color: "#334155", padding: "4px 0" }}>{d}</div>)}
             {calendarCells.map((cellDate, i) => {
               const ymd = calendarCellToIsoYmd(cellDate);
@@ -7709,255 +7709,7 @@ function AthleteHome({ profile }) {
         </div>
       </div>
 
-      {!athleteNotRegistered && (
-      <>
-      <div style={{ ...S.card, order: 3 }}>
-        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 10 }}>
-          <div style={{ fontSize: ".65em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase" }}>
-            CALENDARIO · {calendarMonthLabel}
-          </div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
-            <button
-              type="button"
-              onClick={() => setCalendarViewMonth(({ y, m }) => (m === 0 ? { y: y - 1, m: 11 } : { y, m: m - 1 }))}
-              style={{
-                background: "#ffffff",
-                border: "1px solid #e2e8f0",
-                borderRadius: 8,
-                padding: "6px 12px",
-                color: "#0f172a",
-                fontWeight: 700,
-                cursor: "pointer",
-                fontFamily: "inherit",
-                fontSize: ".78em",
-              }}
-            >
-              ← Mes anterior
-            </button>
-            <button
-              type="button"
-              onClick={() => setCalendarViewMonth(({ y, m }) => (m === 11 ? { y: y + 1, m: 0 } : { y, m: m + 1 }))}
-              style={{
-                background: "#ffffff",
-                border: "1px solid #e2e8f0",
-                borderRadius: 8,
-                padding: "6px 12px",
-                color: "#0f172a",
-                fontWeight: 700,
-                cursor: "pointer",
-                fontFamily: "inherit",
-                fontSize: ".78em",
-              }}
-            >
-              Mes siguiente →
-            </button>
-          </div>
-        </div>
-
-        {loading ? (
-          <div style={{ color: "#64748b", fontSize: ".85em", padding: "20px 0" }}>Cargando...</div>
-        ) : (
-          <>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 4 }}>
-              {DAYS.map(d => <div key={d} style={{ fontSize: ".65em", textAlign: "center", color: "#334155", padding: "4px 0" }}>{d}</div>)}
-              {calendarCells.map((cellDate, i) => {
-                const ymd = calendarCellToIsoYmd(cellDate);
-                const dayWorkouts = workoutsByDate[ymd] || [];
-                const dayRaces = racesByDate[ymd] || [];
-                const dayStrava = stravaActivitiesByDate[ymd] || [];
-                const hasWorkout = dayWorkouts.length > 0;
-                const hasDoneWorkout = dayWorkouts.some(w => w.done);
-                const hasRace = dayRaces.length > 0;
-                const hasStrava = dayStrava.length > 0;
-                const isRaceToday = hasRace && ymd === athleteTodayYmd;
-                const inViewMonth = cellIsInViewMonth(cellDate, calendarViewMonth.y, calendarViewMonth.m);
-                let borderColor = "#f1f5f9";
-                if (hasRace) borderColor = "rgba(245,158,11,.55)";
-                else if (hasStrava) borderColor = "rgba(249,115,22,.45)";
-                else if (hasWorkout) borderColor = `${WORKOUT_TYPES.find(t => t.id === dayWorkouts[0].type)?.color || "#64748b"}40`;
-                let cellBackground = "transparent";
-                if (isRaceToday) cellBackground = "linear-gradient(160deg,#fffbeb 0%,#fde68a 55%,#fff7ed 100%)";
-                else if (hasRace) cellBackground = "linear-gradient(145deg,#fffbeb,#ffedd5)";
-                else if (hasStrava) cellBackground = "linear-gradient(145deg,#fff7ed,#ffedd5)";
-                else if (hasDoneWorkout) cellBackground = "rgba(34,197,94,.08)";
-                else if (hasWorkout) cellBackground = "#f8fafc";
-
-                return (
-                  <div
-                    key={i}
-                    className={isRaceToday ? "raf-race-day" : undefined}
-                    style={{
-                      minHeight: 72,
-                      border: `1px solid ${borderColor}`,
-                      borderRadius: 6,
-                      padding: "4px 3px",
-                      display: "flex",
-                      flexDirection: "column",
-                      alignItems: "stretch",
-                      gap: 3,
-                      background: cellBackground,
-                      opacity: inViewMonth ? 1 : 0.42,
-                    }}
-                  >
-                    <div style={{ fontSize: ".58em", color: inViewMonth ? "#475569" : "#94a3b8", textAlign: "center", fontWeight: 600 }}>{cellDate.getDate()}</div>
-                    {dayRaces.map((race) => (
-                      <div
-                        key={race.id}
-                        title={`${race.name} · ${race.distance}${race.city ? ` · ${race.city}` : ""}`}
-                        style={{
-                          fontSize: ".48em",
-                          fontWeight: 800,
-                          color: "#b45309",
-                          textAlign: "center",
-                          lineHeight: 1.2,
-                          padding: "2px 2px",
-                          borderRadius: 4,
-                          background: "rgba(255,255,255,.65)",
-                          border: "1px solid rgba(245,158,11,.35)",
-                        }}
-                      >
-                        🏁 {race.name}
-                      </div>
-                    ))}
-                    {dayStrava.map((a) => (
-                      <div
-                        key={`strava-${a.id}`}
-                        title={`${a.name} · ${a.distanceKm.toFixed(2)} km · ${a.type}`}
-                        style={{
-                          fontSize: ".48em",
-                          fontWeight: 800,
-                          color: "#c2410c",
-                          textAlign: "center",
-                          lineHeight: 1.2,
-                          padding: "2px 2px",
-                          borderRadius: 4,
-                          background: "rgba(255,255,255,.65)",
-                          border: "1px solid rgba(249,115,22,.35)",
-                        }}
-                      >
-                        🟠 {a.icon} Strava
-                      </div>
-                    ))}
-                    {dayWorkouts.map(w => {
-                      const wt = WORKOUT_TYPES.find(t => t.id === w.type) || WORKOUT_TYPES[0];
-                      return (
-                        <div key={w.id} style={{ display: "flex", flexDirection: "column", gap: 3, width: "100%", minWidth: 0 }}>
-                          <button
-                            type="button"
-                            onClick={(e) => openAthleteWorkoutMenu(e, w)}
-                            title="Opciones del entrenamiento"
-                            style={{
-                              border: `1px solid ${w.done ? "rgba(34,197,94,.55)" : `${wt.color}55`}`,
-                              borderRadius: 5,
-                              padding: "4px 3px",
-                              background: w.done ? "rgba(34,197,94,.16)" : `${wt.color}12`,
-                              cursor: "pointer",
-                              fontFamily: "inherit",
-                              textAlign: "center",
-                              width: "100%",
-                              boxSizing: "border-box",
-                              position: "relative",
-                              zIndex: 10001,
-                            }}
-                          >
-                            <div style={{ width: 5, height: 5, borderRadius: "50%", background: wt.color, margin: "0 auto 2px" }} />
-                            <div style={{ fontSize: ".52em", color: wt.color, fontWeight: 600, lineHeight: 1.15 }}>{w.title}</div>
-                            <div style={{ fontSize: ".5em", color: "#475569" }}>{w.total_km} km</div>
-                            {w.done && <div style={{ fontSize: ".52em", color: "#22c55e", marginTop: 1 }}>✓ Hecho</div>}
-                          </button>
-                          {w.done && (
-                            <label style={{ display: "flex", flexDirection: "column", gap: 2, fontSize: ".48em", color: "#64748b", textAlign: "center" }}>
-                              <span style={{ letterSpacing: ".04em" }}>¿Cómo te sentiste? (RPE)</span>
-                              <select
-                                value={w.rpe ?? ""}
-                                onChange={(e) => {
-                                  const v = e.target.value;
-                                  if (v === "") return;
-                                  saveWorkoutRpe(w, v);
-                                }}
-                                onClick={(e) => e.stopPropagation()}
-                                style={{
-                                  width: "100%",
-                                  maxWidth: "100%",
-                                  background: "rgba(0,0,0,.35)",
-                                  border: "1px solid #cbd5e1",
-                                  borderRadius: 4,
-                                  padding: "3px 2px",
-                                  color: "#0f172a",
-                                  fontFamily: "inherit",
-                                  fontSize: "inherit",
-                                  cursor: "pointer",
-                                  boxSizing: "border-box",
-                                }}
-                              >
-                                <option value="">Elegir 1–10…</option>
-                                {Array.from({ length: 10 }, (_, i) => {
-                                  const n = i + 1;
-                                  const { emoji, label } = rpeBandMeta(n);
-                                  return (
-                                    <option key={n} value={String(n)}>
-                                      {n} {emoji} {label}
-                                    </option>
-                                  );
-                                })}
-                              </select>
-                            </label>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
-              })}
-            </div>
-            {athleteCalendarCtxMenu && ctxMenuAthleteWorkout ? (
-              <div
-                ref={athleteCalendarCtxMenuRef}
-                style={{
-                  position: "fixed",
-                  left: athleteCalendarCtxMenu.x,
-                  top: athleteCalendarCtxMenu.y,
-                  zIndex: 10002,
-                  minWidth: 240,
-                  maxWidth: "min(92vw, 300px)",
-                  background: "#ffffff",
-                  borderRadius: 10,
-                  boxShadow: "0 10px 40px rgba(15,23,42,.2)",
-                  border: "1px solid #e2e8f0",
-                  padding: 6,
-                }}
-              >
-                <button
-                  type="button"
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={async (e) => {
-                    e.stopPropagation();
-                    await toggleDone(ctxMenuAthleteWorkout);
-                    closeAthleteCalendarCtxMenu();
-                  }}
-                  style={{
-                    display: "block",
-                    width: "100%",
-                    textAlign: "left",
-                    background: "transparent",
-                    border: "none",
-                    borderRadius: 8,
-                    padding: "10px 12px",
-                    color: "#0f172a",
-                    fontWeight: 600,
-                    cursor: "pointer",
-                    fontFamily: "inherit",
-                    fontSize: ".82em",
-                  }}
-                >
-                  {ctxMenuAthleteWorkout.done ? "✓ Marcar pendiente" : "✓ Marcar hecho"}
-                </button>
-              </div>
-            ) : null}
-          </>
-        )}
-      </div>
-
+      {!athleteNotRegistered && null}
       {athleteNeedsCoachLink ? (
         <div style={{ ...S.card, order: 3, marginTop: 16 }}>
           <div style={{ fontSize: ".68em", letterSpacing: ".14em", color: "#334155", textTransform: "uppercase", marginBottom: 14, fontWeight: 800 }}>
@@ -8094,9 +7846,6 @@ function AthleteHome({ profile }) {
           </div>
         </div>
       ) : null}
-      </>
-      )}
-
       {!athleteNotRegistered && (
       <div style={{ ...S.card, marginTop: 20, order: 4 }}>
         <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 10 }}>
