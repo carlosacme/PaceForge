@@ -578,6 +578,15 @@ const extractJsonFromAnthropicText = (text) => {
       /* continue */
     }
   }
+  const startArr = raw.indexOf("[");
+  const endArr = raw.lastIndexOf("]");
+  if (startArr >= 0 && endArr > startArr) {
+    try {
+      return JSON.parse(raw.slice(startArr, endArr + 1));
+    } catch {
+      /* continue */
+    }
+  }
   const start = raw.indexOf("{");
   const end = raw.lastIndexOf("}");
   if (start >= 0 && end > start) {
@@ -13250,11 +13259,28 @@ function AdminMarketplacePanel({ notify }) {
     );
   }, [createForm]);
 
+  const isPreviewWorkoutRowShape = (o) =>
+    o && typeof o === "object" && !Array.isArray(o) && ("week" in o || "day" in o || "title" in o);
+
   const parsePreviewWorkoutsText = (txt) => {
     const raw = String(txt || "").trim();
     if (!raw) return [];
+    try {
+      const direct = JSON.parse(raw);
+      if (Array.isArray(direct)) return direct;
+      if (direct && typeof direct === "object") {
+        if (Array.isArray(direct.preview_workouts)) return direct.preview_workouts;
+        if (isPreviewWorkoutRowShape(direct)) return [direct];
+      }
+    } catch {
+      /* fall through */
+    }
     const parsed = extractJsonFromAnthropicText(raw);
     if (Array.isArray(parsed)) return parsed;
+    if (parsed && typeof parsed === "object") {
+      if (Array.isArray(parsed.preview_workouts)) return parsed.preview_workouts;
+      if (isPreviewWorkoutRowShape(parsed)) return [parsed];
+    }
     return [];
   };
   const previewRows = useMemo(() => parsePreviewWorkoutsText(createForm.preview_workouts_text), [createForm.preview_workouts_text]);
@@ -13267,7 +13293,7 @@ function AdminMarketplacePanel({ notify }) {
     }
     const payload = {
       coach_user_id: PLATFORM_ADMIN_USER_ID,
-      coach_name: "Admin",
+      coach_name: "RunningApexFlow",
       title,
       description: String(createForm.description || "").trim(),
       level: String(createForm.level || "intermedio"),
@@ -13349,7 +13375,15 @@ Reglas obligatorias:
         duration_weeks: String(parsed.duration_weeks || aiDurationWeeks || "12"),
         sessions_per_week: String(sessionsFixed),
         price_cop: String(parsed.price_cop || prev.price_cop || "120000"),
-        preview_workouts_text: JSON.stringify(Array.isArray(parsed.preview_workouts) ? parsed.preview_workouts : [], null, 2),
+        preview_workouts_text: JSON.stringify(
+          Array.isArray(parsed.preview_workouts)
+            ? parsed.preview_workouts
+            : isPreviewWorkoutRowShape(parsed.preview_workouts)
+              ? [parsed.preview_workouts]
+              : [],
+          null,
+          2,
+        ),
       }));
       notify?.("Plan generado con IA y formulario prellenado.");
       setShowFullGeneratedPlanPreview(true);
@@ -13477,11 +13511,19 @@ Reglas obligatorias:
             </div>
           ) : null}
         </div>
-        {previewRows.length > 0 ? (
+        {previewRows.length > 0 || String(createForm.preview_workouts_text || "").trim() ? (
           <div style={{ marginTop: 14, borderTop: "1px solid #e2e8f0", paddingTop: 12 }}>
-            <button
-              type="button"
-              onClick={() => setShowFullGeneratedPlanPreview((v) => !v)}
+            <div
+              role="button"
+              tabIndex={0}
+              aria-expanded={showFullGeneratedPlanPreview}
+              onClick={() => setShowFullGeneratedPlanPreview((open) => !open)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setShowFullGeneratedPlanPreview((open) => !open);
+                }
+              }}
               style={{
                 width: "100%",
                 textAlign: "left",
@@ -13497,39 +13539,46 @@ Reglas obligatorias:
                 display: "flex",
                 justifyContent: "space-between",
                 alignItems: "center",
+                boxSizing: "border-box",
               }}
             >
               <span>📋 Plan generado completo</span>
               <span style={{ fontSize: ".75em", color: "#64748b" }}>{showFullGeneratedPlanPreview ? "Ocultar" : "Ver"}</span>
-            </button>
+            </div>
             {showFullGeneratedPlanPreview ? (
               <div style={{ marginTop: 10, border: "1px solid #e2e8f0", borderRadius: 10, overflow: "hidden" }}>
-                <div style={{ overflowX: "auto" }}>
-                  <table style={{ width: "100%", minWidth: 720, borderCollapse: "collapse" }}>
-                    <thead>
-                      <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0", fontSize: ".7em", color: "#475569", textTransform: "uppercase", letterSpacing: ".05em" }}>
-                        <th style={{ textAlign: "left", padding: "8px 10px" }}>Semana</th>
-                        <th style={{ textAlign: "left", padding: "8px 10px" }}>Día</th>
-                        <th style={{ textAlign: "left", padding: "8px 10px" }}>Título</th>
-                        <th style={{ textAlign: "left", padding: "8px 10px" }}>Descripción</th>
-                        <th style={{ textAlign: "left", padding: "8px 10px" }}>Duración</th>
-                        <th style={{ textAlign: "left", padding: "8px 10px" }}>Distancia</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {previewRows.map((w, idx) => (
-                        <tr key={`full-${idx}-${w?.week}-${w?.day}-${w?.title || ""}`} style={{ borderBottom: "1px solid #f1f5f9", fontSize: ".78em", color: "#334155", verticalAlign: "top" }}>
-                          <td style={{ padding: "8px 10px", whiteSpace: "nowrap" }}>{w?.week ?? "-"}</td>
-                          <td style={{ padding: "8px 10px", whiteSpace: "nowrap" }}>{w?.day || "-"}</td>
-                          <td style={{ padding: "8px 10px", fontWeight: 700 }}>{w?.title || "-"}</td>
-                          <td style={{ padding: "8px 10px", maxWidth: 280, lineHeight: 1.4 }}>{w?.description != null ? String(w.description) : "—"}</td>
-                          <td style={{ padding: "8px 10px", whiteSpace: "nowrap" }}>{w?.duration_min != null ? `${w.duration_min} min` : "-"}</td>
-                          <td style={{ padding: "8px 10px", whiteSpace: "nowrap" }}>{w?.distance_km != null ? `${w.distance_km} km` : "-"}</td>
+                {previewRows.length === 0 ? (
+                  <div style={{ padding: "12px 14px", fontSize: ".8em", color: "#64748b", background: "#f8fafc" }}>
+                    No hay filas parseables en el JSON. Usa un array de sesiones o un objeto con <code style={{ fontSize: "1em" }}>preview_workouts</code>.
+                  </div>
+                ) : (
+                  <div style={{ overflowX: "auto" }}>
+                    <table style={{ width: "100%", minWidth: 720, borderCollapse: "collapse" }}>
+                      <thead>
+                        <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0", fontSize: ".7em", color: "#475569", textTransform: "uppercase", letterSpacing: ".05em" }}>
+                          <th style={{ textAlign: "left", padding: "8px 10px" }}>Semana</th>
+                          <th style={{ textAlign: "left", padding: "8px 10px" }}>Día</th>
+                          <th style={{ textAlign: "left", padding: "8px 10px" }}>Título</th>
+                          <th style={{ textAlign: "left", padding: "8px 10px" }}>Descripción</th>
+                          <th style={{ textAlign: "left", padding: "8px 10px" }}>Duración</th>
+                          <th style={{ textAlign: "left", padding: "8px 10px" }}>Distancia</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody>
+                        {previewRows.map((w, idx) => (
+                          <tr key={`full-${idx}-${w?.week}-${w?.day}-${w?.title || ""}`} style={{ borderBottom: "1px solid #f1f5f9", fontSize: ".78em", color: "#334155", verticalAlign: "top" }}>
+                            <td style={{ padding: "8px 10px", whiteSpace: "nowrap" }}>{w?.week ?? "-"}</td>
+                            <td style={{ padding: "8px 10px", whiteSpace: "nowrap" }}>{w?.day || "-"}</td>
+                            <td style={{ padding: "8px 10px", fontWeight: 700 }}>{w?.title || "-"}</td>
+                            <td style={{ padding: "8px 10px", maxWidth: 280, lineHeight: 1.4 }}>{w?.description != null ? String(w.description) : "—"}</td>
+                            <td style={{ padding: "8px 10px", whiteSpace: "nowrap" }}>{w?.duration_min != null ? `${w.duration_min} min` : "-"}</td>
+                            <td style={{ padding: "8px 10px", whiteSpace: "nowrap" }}>{w?.distance_km != null ? `${w.distance_km} km` : "-"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             ) : null}
           </div>
