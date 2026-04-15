@@ -13366,6 +13366,7 @@ function AdminMarketplacePanel({ notify }) {
     }
     const payload = {
       coach_user_id: PLATFORM_ADMIN_USER_ID,
+      coach_id: PLATFORM_ADMIN_USER_ID,
       coach_name: "RunningApexFlow",
       title,
       description: String(createForm.description || "").trim(),
@@ -13393,12 +13394,13 @@ function AdminMarketplacePanel({ notify }) {
 
   const generatePlanWithAi = async () => {
     const sessionsFixed = [3, 4, 5].includes(Number(aiSessionsPerWeek)) ? Number(aiSessionsPerWeek) : 4;
+    const duracionSemanas = Math.max(1, Math.round(Number(aiDurationWeeks) || 12));
     const systemPrompt = `Eres un experto en coaching de running. Genera un plan de entrenamiento completo para vender en un marketplace. Responde SOLO con JSON sin texto adicional ni markdown:
 {
   "title": "título comercial atractivo",
   "description": "descripción de venta de 2-3 oraciones que convenza al atleta",
   "level": "principiante|intermedio|avanzado",
-  "duration_weeks": número,
+  "duration_weeks": ${duracionSemanas},
   "sessions_per_week": ${sessionsFixed},
   "price_cop": precio sugerido entre 50000 y 300000,
   "preview_workouts": [
@@ -13406,16 +13408,18 @@ function AdminMarketplacePanel({ notify }) {
   ]
 }
 Reglas obligatorias:
+- El campo "duration_weeks" en tu respuesta JSON debe ser exactamente ${duracionSemanas}.
 - El campo "sessions_per_week" en tu respuesta JSON debe ser exactamente el número ${sessionsFixed} (valor fijo; no uses otro número).
-- Cada semana incluida en preview_workouts debe tener exactamente ${sessionsFixed} sesiones, en días no consecutivos (ej. separar con al menos un día de descanso entre sesiones de la misma semana).
-- Cada elemento de preview_workouts debe incluir: week, day, title, description, duration_min, distance_km.`;
+- Genera el plan completo con TODAS las ${duracionSemanas} semanas. En preview_workouts incluye UNA sesión representativa por cada semana del plan (${duracionSemanas} entradas en total, una por semana), con el día más importante de esa semana. Esto da al atleta una visión completa de la progresión.
+- El diseño semanal del plan (descrito en title/description) debe reflejar ${sessionsFixed} sesiones por semana en días no consecutivos; preview_workouts solo lista la sesión representativa de cada semana, no todas las sesiones.
+- Cada elemento de preview_workouts debe incluir: week (del 1 al ${duracionSemanas}), day, title, description, duration_min, distance_km.
+- preview_workouts debe tener exactamente ${duracionSemanas} elementos, en orden de semana creciente (1…${duracionSemanas}).`;
     const userPrompt = [
       `Describe el plan: ${aiContext || "Plan de running para marketplace"}`,
       `Nivel: ${aiLevel}`,
       `Objetivo: ${aiGoal}`,
-      `Duración: ${aiDurationWeeks} semanas`,
+      `Duración: ${duracionSemanas} semanas`,
       `El plan debe tener exactamente ${sessionsFixed} sesiones por semana, distribuidas en días no consecutivos.`,
-      `Incluye al menos 3 semanas de ejemplo en preview_workouts (semana 1, semana de medio punto y semana final) con ${sessionsFixed} sesiones cada una.`,
     ].join("\n");
     setAiGenerating(true);
     try {
@@ -13424,7 +13428,7 @@ Reglas obligatorias:
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           model: "claude-sonnet-4-20250514",
-          max_tokens: 4096,
+          max_tokens: 8192,
           system: systemPrompt,
           messages: [{ role: "user", content: userPrompt }],
         }),
