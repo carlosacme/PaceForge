@@ -13141,8 +13141,9 @@ function AdminMarketplacePanel({ notify }) {
   const [aiGoal, setAiGoal] = useState("42K");
   const [aiDurationWeeks, setAiDurationWeeks] = useState("16");
   const [aiSessionsPerWeek, setAiSessionsPerWeek] = useState("4");
-  const [showPreviewTable, setShowPreviewTable] = useState(false);
-  const [showFullGeneratedPlanPreview, setShowFullGeneratedPlanPreview] = useState(false);
+  const [planTableEdit, setPlanTableEdit] = useState(null);
+  const [planTableEditDraft, setPlanTableEditDraft] = useState("");
+  const planTableInputRef = useRef(null);
 
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -13285,6 +13286,78 @@ function AdminMarketplacePanel({ notify }) {
   };
   const previewRows = useMemo(() => parsePreviewWorkoutsText(createForm.preview_workouts_text), [createForm.preview_workouts_text]);
 
+  const emptyPlanPreviewRow = () => ({
+    week: 1,
+    day: "",
+    title: "",
+    description: "",
+    duration_min: null,
+    distance_km: null,
+  });
+
+  const commitPlanCellEdit = () => {
+    if (!planTableEdit) return;
+    const { rowIndex, field } = planTableEdit;
+    const draft = planTableEditDraft;
+    const next = previewRows.map((r, i) => {
+      const copy = { ...(r && typeof r === "object" && !Array.isArray(r) ? r : {}) };
+      if (i !== rowIndex) return copy;
+      if (field === "week") {
+        const n = String(draft).trim();
+        copy.week = n === "" ? null : Math.max(0, Math.round(Number(n)) || 0);
+      } else if (field === "duration_min") {
+        const n = String(draft).trim();
+        copy.duration_min = n === "" ? null : Math.max(0, Math.round(Number(n)) || 0);
+      } else if (field === "distance_km") {
+        const n = String(draft).trim();
+        if (n === "") copy.distance_km = null;
+        else {
+          const x = Number(n);
+          copy.distance_km = Number.isFinite(x) ? x : null;
+        }
+      } else if (field === "day" || field === "title" || field === "description") {
+        copy[field] = draft;
+      }
+      return copy;
+    });
+    setCreateForm((f) => ({ ...f, preview_workouts_text: JSON.stringify(next, null, 2) }));
+    setPlanTableEdit(null);
+  };
+
+  const beginPlanCellEdit = (rowIndex, field) => {
+    const r = previewRows[rowIndex] || {};
+    const raw = r[field];
+    setPlanTableEditDraft(raw === null || raw === undefined ? "" : String(raw));
+    setPlanTableEdit({ rowIndex, field });
+  };
+
+  useEffect(() => {
+    if (!planTableEdit || !planTableInputRef.current) return;
+    const el = planTableInputRef.current;
+    el.focus();
+    if (typeof el.select === "function") el.select();
+  }, [planTableEdit]);
+
+  const duplicatePlanRow = (idx) => {
+    const row = previewRows[idx];
+    const clone = row && typeof row === "object" && !Array.isArray(row) ? { ...row } : emptyPlanPreviewRow();
+    const next = [...previewRows.slice(0, idx + 1), clone, ...previewRows.slice(idx + 1)];
+    setCreateForm((f) => ({ ...f, preview_workouts_text: JSON.stringify(next, null, 2) }));
+    setPlanTableEdit(null);
+  };
+
+  const deletePlanRow = (idx) => {
+    const next = previewRows.filter((_, i) => i !== idx);
+    setCreateForm((f) => ({ ...f, preview_workouts_text: JSON.stringify(next, null, 2) }));
+    setPlanTableEdit(null);
+  };
+
+  const appendPlanRow = () => {
+    const next = [...previewRows, emptyPlanPreviewRow()];
+    setCreateForm((f) => ({ ...f, preview_workouts_text: JSON.stringify(next, null, 2) }));
+    setPlanTableEdit(null);
+  };
+
   const createAdminPlan = async () => {
     const title = String(createForm.title || "").trim();
     if (!title) {
@@ -13313,7 +13386,7 @@ function AdminMarketplacePanel({ notify }) {
     }
     notify?.("Plan creado y aprobado automáticamente.");
     setCreateForm(EMPTY_ADMIN_PLAN_FORM);
-    setShowFullGeneratedPlanPreview(false);
+    setPlanTableEdit(null);
     if (typeof localStorage !== "undefined") localStorage.removeItem(ADMIN_PLAN_DRAFT_KEY);
     loadAll();
   };
@@ -13386,7 +13459,7 @@ Reglas obligatorias:
         ),
       }));
       notify?.("Plan generado con IA y formulario prellenado.");
-      setShowFullGeneratedPlanPreview(true);
+      setPlanTableEdit(null);
       setAiModalOpen(false);
     } catch (e) {
       console.error("generatePlanWithAi:", e);
@@ -13414,7 +13487,7 @@ Reglas obligatorias:
               type="button"
               onClick={() => {
                 setCreateForm(EMPTY_ADMIN_PLAN_FORM);
-                setShowFullGeneratedPlanPreview(false);
+                setPlanTableEdit(null);
                 if (typeof localStorage !== "undefined") localStorage.removeItem(ADMIN_PLAN_DRAFT_KEY);
               }}
               style={{ border: "1px solid #fecaca", borderRadius: 8, padding: "8px 10px", background: "#fff1f2", color: "#b91c1c", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".76em" }}
@@ -13470,119 +13543,198 @@ Reglas obligatorias:
             </div>
             <textarea value={createForm.preview_workouts_text} onChange={(e) => setCreateForm((f) => ({ ...f, preview_workouts_text: e.target.value }))} rows={8} placeholder='[{"week":1,"day":"Martes","title":"Rodaje suave","description":"...","duration_min":45,"distance_km":8}]' style={{ width: "100%", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "monospace", fontSize: ".78em", boxSizing: "border-box" }} />
           </div>
+          <div style={{ gridColumn: "1 / -1" }}>
+            <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 8, fontWeight: 800 }}>Plan completo</div>
+            <div style={{ border: "1px solid #e2e8f0", borderRadius: 10, overflow: "hidden" }}>
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", minWidth: 920, borderCollapse: "collapse" }}>
+                  <thead>
+                    <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0", fontSize: ".7em", color: "#475569", textTransform: "uppercase", letterSpacing: ".05em" }}>
+                      <th style={{ textAlign: "left", padding: "8px 10px" }}>Semana</th>
+                      <th style={{ textAlign: "left", padding: "8px 10px" }}>Día</th>
+                      <th style={{ textAlign: "left", padding: "8px 10px" }}>Título</th>
+                      <th style={{ textAlign: "left", padding: "8px 10px" }}>Descripción</th>
+                      <th style={{ textAlign: "left", padding: "8px 10px" }}>Duración</th>
+                      <th style={{ textAlign: "left", padding: "8px 10px" }}>Distancia</th>
+                      <th style={{ textAlign: "left", padding: "8px 10px" }}>Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {previewRows.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} style={{ padding: "12px 14px", fontSize: ".82em", color: "#64748b", background: "#fafafa" }}>
+                          Aún no hay sesiones. Usa el JSON arriba, genera con IA o pulsa «Agregar sesión».
+                        </td>
+                      </tr>
+                    ) : (
+                      previewRows.map((w, idx) => {
+                        const inpStyle = {
+                          width: "100%",
+                          minWidth: 56,
+                          boxSizing: "border-box",
+                          border: "1px solid #cbd5e1",
+                          borderRadius: 6,
+                          padding: "6px 8px",
+                          fontFamily: "inherit",
+                          fontSize: ".9em",
+                          color: "#334155",
+                        };
+                        const cellPad = { padding: "6px 8px", verticalAlign: "top" };
+                        const editing = (f) => planTableEdit && planTableEdit.rowIndex === idx && planTableEdit.field === f;
+                        return (
+                          <tr key={`plan-row-${idx}`} style={{ borderBottom: "1px solid #f1f5f9", fontSize: ".78em", color: "#334155" }}>
+                            <td style={{ ...cellPad, cursor: "pointer" }} onClick={() => beginPlanCellEdit(idx, "week")}>
+                              {editing("week") ? (
+                                <input
+                                  ref={planTableInputRef}
+                                  type="number"
+                                  min={0}
+                                  value={planTableEditDraft}
+                                  onChange={(e) => setPlanTableEditDraft(e.target.value)}
+                                  onBlur={commitPlanCellEdit}
+                                  onClick={(e) => e.stopPropagation()}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") {
+                                      e.preventDefault();
+                                      commitPlanCellEdit();
+                                    }
+                                  }}
+                                  style={inpStyle}
+                                />
+                              ) : (
+                                <span>{w?.week != null && w.week !== "" ? w.week : "—"}</span>
+                              )}
+                            </td>
+                            <td style={{ ...cellPad, cursor: "pointer", minWidth: 88 }} onClick={() => beginPlanCellEdit(idx, "day")}>
+                              {editing("day") ? (
+                                <input
+                                  ref={planTableInputRef}
+                                  type="text"
+                                  value={planTableEditDraft}
+                                  onChange={(e) => setPlanTableEditDraft(e.target.value)}
+                                  onBlur={commitPlanCellEdit}
+                                  onClick={(e) => e.stopPropagation()}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") {
+                                      e.preventDefault();
+                                      commitPlanCellEdit();
+                                    }
+                                  }}
+                                  style={inpStyle}
+                                />
+                              ) : (
+                                <span>{w?.day ? String(w.day) : "—"}</span>
+                              )}
+                            </td>
+                            <td style={{ ...cellPad, cursor: "pointer", minWidth: 120 }} onClick={() => beginPlanCellEdit(idx, "title")}>
+                              {editing("title") ? (
+                                <input
+                                  ref={planTableInputRef}
+                                  type="text"
+                                  value={planTableEditDraft}
+                                  onChange={(e) => setPlanTableEditDraft(e.target.value)}
+                                  onBlur={commitPlanCellEdit}
+                                  onClick={(e) => e.stopPropagation()}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") {
+                                      e.preventDefault();
+                                      commitPlanCellEdit();
+                                    }
+                                  }}
+                                  style={inpStyle}
+                                />
+                              ) : (
+                                <span style={{ fontWeight: 700 }}>{w?.title ? String(w.title) : "—"}</span>
+                              )}
+                            </td>
+                            <td style={{ ...cellPad, cursor: "pointer", maxWidth: 280, minWidth: 160 }} onClick={() => beginPlanCellEdit(idx, "description")}>
+                              {editing("description") ? (
+                                <textarea
+                                  ref={planTableInputRef}
+                                  value={planTableEditDraft}
+                                  onChange={(e) => setPlanTableEditDraft(e.target.value)}
+                                  onBlur={commitPlanCellEdit}
+                                  onClick={(e) => e.stopPropagation()}
+                                  rows={2}
+                                  style={{ ...inpStyle, minHeight: 44, resize: "vertical" }}
+                                />
+                              ) : (
+                                <span style={{ lineHeight: 1.35 }}>{w?.description != null && String(w.description) !== "" ? String(w.description) : "—"}</span>
+                              )}
+                            </td>
+                            <td style={{ ...cellPad, cursor: "pointer", whiteSpace: "nowrap" }} onClick={() => beginPlanCellEdit(idx, "duration_min")}>
+                              {editing("duration_min") ? (
+                                <input
+                                  ref={planTableInputRef}
+                                  type="number"
+                                  min={0}
+                                  value={planTableEditDraft}
+                                  onChange={(e) => setPlanTableEditDraft(e.target.value)}
+                                  onBlur={commitPlanCellEdit}
+                                  onClick={(e) => e.stopPropagation()}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") {
+                                      e.preventDefault();
+                                      commitPlanCellEdit();
+                                    }
+                                  }}
+                                  style={inpStyle}
+                                />
+                              ) : (
+                                <span>{w?.duration_min != null && w.duration_min !== "" ? `${w.duration_min} min` : "—"}</span>
+                              )}
+                            </td>
+                            <td style={{ ...cellPad, cursor: "pointer", whiteSpace: "nowrap" }} onClick={() => beginPlanCellEdit(idx, "distance_km")}>
+                              {editing("distance_km") ? (
+                                <input
+                                  ref={planTableInputRef}
+                                  type="number"
+                                  min={0}
+                                  step="0.1"
+                                  value={planTableEditDraft}
+                                  onChange={(e) => setPlanTableEditDraft(e.target.value)}
+                                  onBlur={commitPlanCellEdit}
+                                  onClick={(e) => e.stopPropagation()}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") {
+                                      e.preventDefault();
+                                      commitPlanCellEdit();
+                                    }
+                                  }}
+                                  style={inpStyle}
+                                />
+                              ) : (
+                                <span>{w?.distance_km != null && w.distance_km !== "" && Number.isFinite(Number(w.distance_km)) ? `${w.distance_km} km` : "—"}</span>
+                              )}
+                            </td>
+                            <td style={{ ...cellPad, whiteSpace: "nowrap" }}>
+                              <button type="button" onClick={() => duplicatePlanRow(idx)} style={{ border: "1px solid #e2e8f0", borderRadius: 6, padding: "5px 8px", background: "#fff", cursor: "pointer", fontFamily: "inherit", fontSize: ".85em", marginRight: 6 }}>
+                                ➕ Duplicar
+                              </button>
+                              <button type="button" onClick={() => deletePlanRow(idx)} style={{ border: "1px solid #fecaca", borderRadius: 6, padding: "5px 8px", background: "#fef2f2", color: "#b91c1c", cursor: "pointer", fontFamily: "inherit", fontSize: ".85em" }}>
+                                🗑️ Eliminar
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              <div style={{ padding: "10px 12px", borderTop: "1px solid #e2e8f0", background: "#fafafa" }}>
+                <button type="button" onClick={appendPlanRow} style={{ border: "1px solid #bae6fd", borderRadius: 8, padding: "8px 12px", background: "#f0f9ff", color: "#0369a1", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".8em" }}>
+                  ➕ Agregar sesión
+                </button>
+              </div>
+            </div>
+          </div>
           <div style={{ gridColumn: "1 / -1", display: "flex", justifyContent: "flex-end" }}>
-            <button type="button" onClick={() => setShowPreviewTable((v) => !v)} style={{ border: "1px solid #cbd5e1", borderRadius: 8, padding: "9px 12px", background: "#f8fafc", color: "#334155", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", marginRight: 8 }}>
-              👁️ Vista previa
-            </button>
             <button type="button" onClick={createAdminPlan} disabled={creatingPlan} style={{ border: "none", borderRadius: 8, padding: "9px 14px", background: creatingPlan ? "#cbd5e1" : "linear-gradient(135deg,#0ea5e9,#0284c7)", color: "#fff", fontWeight: 800, cursor: creatingPlan ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
               {creatingPlan ? "Guardando…" : "Guardar plan (auto-aprobado)"}
             </button>
           </div>
-          {showPreviewTable ? (
-            <div style={{ gridColumn: "1 / -1", border: "1px solid #e2e8f0", borderRadius: 10, overflow: "hidden", marginTop: 2 }}>
-              {previewRows.length === 0 ? (
-                <div style={{ padding: "10px 12px", fontSize: ".8em", color: "#64748b", background: "#f8fafc" }}>No hay workouts parseables en el JSON.</div>
-              ) : (
-                <div style={{ overflowX: "auto" }}>
-                  <table style={{ width: "100%", minWidth: 560, borderCollapse: "collapse" }}>
-                    <thead>
-                      <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0", fontSize: ".72em", color: "#475569", textTransform: "uppercase", letterSpacing: ".05em" }}>
-                        <th style={{ textAlign: "left", padding: "8px 10px" }}>Semana</th>
-                        <th style={{ textAlign: "left", padding: "8px 10px" }}>Día</th>
-                        <th style={{ textAlign: "left", padding: "8px 10px" }}>Título</th>
-                        <th style={{ textAlign: "left", padding: "8px 10px" }}>Duración</th>
-                        <th style={{ textAlign: "left", padding: "8px 10px" }}>Distancia</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {previewRows.map((w, idx) => (
-                        <tr key={`${idx}-${w?.title || ""}`} style={{ borderBottom: "1px solid #f1f5f9", fontSize: ".8em", color: "#334155" }}>
-                          <td style={{ padding: "8px 10px" }}>{w?.week ?? "-"}</td>
-                          <td style={{ padding: "8px 10px" }}>{w?.day || "-"}</td>
-                          <td style={{ padding: "8px 10px", fontWeight: 700 }}>{w?.title || "-"}</td>
-                          <td style={{ padding: "8px 10px" }}>{w?.duration_min != null ? `${w.duration_min} min` : "-"}</td>
-                          <td style={{ padding: "8px 10px" }}>{w?.distance_km != null ? `${w.distance_km} km` : "-"}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          ) : null}
         </div>
-        {previewRows.length > 0 || String(createForm.preview_workouts_text || "").trim() ? (
-          <div style={{ marginTop: 14, borderTop: "1px solid #e2e8f0", paddingTop: 12 }}>
-            <div
-              role="button"
-              tabIndex={0}
-              aria-expanded={showFullGeneratedPlanPreview}
-              onClick={() => setShowFullGeneratedPlanPreview((open) => !open)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  setShowFullGeneratedPlanPreview((open) => !open);
-                }
-              }}
-              style={{
-                width: "100%",
-                textAlign: "left",
-                border: "1px solid #e2e8f0",
-                borderRadius: 10,
-                padding: "10px 12px",
-                background: showFullGeneratedPlanPreview ? "#f1f5f9" : "#fff",
-                fontWeight: 800,
-                fontSize: ".85em",
-                color: "#0f172a",
-                cursor: "pointer",
-                fontFamily: "inherit",
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                boxSizing: "border-box",
-              }}
-            >
-              <span>📋 Plan generado completo</span>
-              <span style={{ fontSize: ".75em", color: "#64748b" }}>{showFullGeneratedPlanPreview ? "Ocultar" : "Ver"}</span>
-            </div>
-            {showFullGeneratedPlanPreview ? (
-              <div style={{ marginTop: 10, border: "1px solid #e2e8f0", borderRadius: 10, overflow: "hidden" }}>
-                {previewRows.length === 0 ? (
-                  <div style={{ padding: "12px 14px", fontSize: ".8em", color: "#64748b", background: "#f8fafc" }}>
-                    No hay filas parseables en el JSON. Usa un array de sesiones o un objeto con <code style={{ fontSize: "1em" }}>preview_workouts</code>.
-                  </div>
-                ) : (
-                  <div style={{ overflowX: "auto" }}>
-                    <table style={{ width: "100%", minWidth: 720, borderCollapse: "collapse" }}>
-                      <thead>
-                        <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0", fontSize: ".7em", color: "#475569", textTransform: "uppercase", letterSpacing: ".05em" }}>
-                          <th style={{ textAlign: "left", padding: "8px 10px" }}>Semana</th>
-                          <th style={{ textAlign: "left", padding: "8px 10px" }}>Día</th>
-                          <th style={{ textAlign: "left", padding: "8px 10px" }}>Título</th>
-                          <th style={{ textAlign: "left", padding: "8px 10px" }}>Descripción</th>
-                          <th style={{ textAlign: "left", padding: "8px 10px" }}>Duración</th>
-                          <th style={{ textAlign: "left", padding: "8px 10px" }}>Distancia</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {previewRows.map((w, idx) => (
-                          <tr key={`full-${idx}-${w?.week}-${w?.day}-${w?.title || ""}`} style={{ borderBottom: "1px solid #f1f5f9", fontSize: ".78em", color: "#334155", verticalAlign: "top" }}>
-                            <td style={{ padding: "8px 10px", whiteSpace: "nowrap" }}>{w?.week ?? "-"}</td>
-                            <td style={{ padding: "8px 10px", whiteSpace: "nowrap" }}>{w?.day || "-"}</td>
-                            <td style={{ padding: "8px 10px", fontWeight: 700 }}>{w?.title || "-"}</td>
-                            <td style={{ padding: "8px 10px", maxWidth: 280, lineHeight: 1.4 }}>{w?.description != null ? String(w.description) : "—"}</td>
-                            <td style={{ padding: "8px 10px", whiteSpace: "nowrap" }}>{w?.duration_min != null ? `${w.duration_min} min` : "-"}</td>
-                            <td style={{ padding: "8px 10px", whiteSpace: "nowrap" }}>{w?.distance_km != null ? `${w.distance_km} km` : "-"}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            ) : null}
-          </div>
-        ) : null}
       </div>
       {loading ? (
         <div style={{ color: "#64748b" }}>Cargando marketplace…</div>
