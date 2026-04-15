@@ -104,7 +104,7 @@ const pushBodySnippet = (text, max = 400) => {
   return `${s.slice(0, max - 1)}…`;
 };
 
-async function sendChatPushNotification({ token, title, body, logLabel = "chat push" }) {
+async function sendChatPushNotification({ token, title, body, data = null, logLabel = "chat push" }) {
   const tokenOk = token != null && String(token).trim() !== "";
   console.log(`[${logLabel}] Token FCM del destinatario:`, tokenOk ? token : "Token FCM no disponible");
   if (!tokenOk || typeof window === "undefined") return;
@@ -117,6 +117,7 @@ async function sendChatPushNotification({ token, title, body, logLabel = "chat p
         token,
         title,
         body: pushBodySnippet(body),
+        data: data && typeof data === "object" ? data : undefined,
       }),
     });
     if (!res.ok) console.warn(`[${logLabel}] /api/send-notification respuesta no OK`, await res.text());
@@ -148,6 +149,13 @@ const STRAVA_ACTIVITY_ICONS = {
   Walk: "🚶",
   Hike: "🥾",
   Workout: "🏋️",
+};
+const WORKOUT_BLOCK_TYPES = ["Calentamiento", "Intervalo", "Recuperación", "Enfriamiento"];
+const WORKOUT_BLOCK_COLORS = {
+  Calentamiento: { bg: "rgba(245,158,11,.14)", border: "rgba(245,158,11,.45)", text: "#b45309" },
+  Intervalo: { bg: "rgba(239,68,68,.12)", border: "rgba(239,68,68,.4)", text: "#b91c1c" },
+  Recuperación: { bg: "rgba(34,197,94,.12)", border: "rgba(34,197,94,.38)", text: "#166534" },
+  Enfriamiento: { bg: "rgba(59,130,246,.12)", border: "rgba(59,130,246,.38)", text: "#1d4ed8" },
 };
 
 const paymentStatusLabel = (status) =>
@@ -568,11 +576,84 @@ const rpeBandMeta = (rpe) => {
   return { emoji: "🔥", label: "Máximo" };
 };
 
+const normalizeWorkoutStructure = (rawStructure) => {
+  const arr = Array.isArray(rawStructure) ? rawStructure : [];
+  return arr
+    .map((s) => {
+      const block_type =
+        WORKOUT_BLOCK_TYPES.includes(String(s?.block_type || "").trim())
+          ? String(s.block_type).trim()
+          : String(s?.phase || "").trim() || "Intervalo";
+      const duration_min =
+        s?.duration_min != null && String(s.duration_min).trim() !== ""
+          ? String(s.duration_min).trim()
+          : String(s?.duration || "").trim();
+      const distance_km =
+        s?.distance_km != null && String(s.distance_km).trim() !== "" ? String(s.distance_km).trim() : "";
+      const target_pace =
+        s?.target_pace != null && String(s.target_pace).trim() !== ""
+          ? String(s.target_pace).trim()
+          : String(s?.pace || "").trim();
+      const target_hr =
+        s?.target_hr != null && String(s.target_hr).trim() !== ""
+          ? String(s.target_hr).trim()
+          : String(s?.intensity || "").trim();
+      const description =
+        s?.description != null && String(s.description).trim() !== "" ? String(s.description).trim() : "";
+      if (!block_type && !duration_min && !distance_km && !target_pace && !target_hr && !description) return null;
+      return { block_type, duration_min, distance_km, target_pace, target_hr, description };
+    })
+    .filter(Boolean);
+};
+
+const WorkoutStructureTable = ({ structure = [] }) => {
+  const rows = normalizeWorkoutStructure(structure);
+  if (!rows.length) return null;
+  return (
+    <div style={{ overflowX: "auto", border: "1px solid #e2e8f0", borderRadius: 10 }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: ".8em" }}>
+        <thead style={{ background: "#f8fafc" }}>
+          <tr>
+            <th style={{ textAlign: "left", padding: "8px 10px", borderBottom: "1px solid #e2e8f0" }}>Paso</th>
+            <th style={{ textAlign: "left", padding: "8px 10px", borderBottom: "1px solid #e2e8f0" }}>Tipo</th>
+            <th style={{ textAlign: "left", padding: "8px 10px", borderBottom: "1px solid #e2e8f0" }}>Duración (min)</th>
+            <th style={{ textAlign: "left", padding: "8px 10px", borderBottom: "1px solid #e2e8f0" }}>Distancia (km)</th>
+            <th style={{ textAlign: "left", padding: "8px 10px", borderBottom: "1px solid #e2e8f0" }}>Ritmo</th>
+            <th style={{ textAlign: "left", padding: "8px 10px", borderBottom: "1px solid #e2e8f0" }}>FC objetivo</th>
+            <th style={{ textAlign: "left", padding: "8px 10px", borderBottom: "1px solid #e2e8f0" }}>Descripción</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((step, i) => {
+            const c = WORKOUT_BLOCK_COLORS[step.block_type] || { bg: "#f8fafc", border: "#e2e8f0", text: "#334155" };
+            return (
+              <tr key={`${step.block_type}-${i}`}>
+                <td style={{ padding: "8px 10px", borderBottom: "1px solid #f1f5f9" }}>{i + 1}</td>
+                <td style={{ padding: "8px 10px", borderBottom: "1px solid #f1f5f9" }}>
+                  <span style={{ padding: "3px 8px", borderRadius: 999, background: c.bg, border: `1px solid ${c.border}`, color: c.text, fontWeight: 800 }}>
+                    {step.block_type}
+                  </span>
+                </td>
+                <td style={{ padding: "8px 10px", borderBottom: "1px solid #f1f5f9" }}>{step.duration_min || "—"}</td>
+                <td style={{ padding: "8px 10px", borderBottom: "1px solid #f1f5f9" }}>{step.distance_km || "—"}</td>
+                <td style={{ padding: "8px 10px", borderBottom: "1px solid #f1f5f9" }}>{step.target_pace || "—"}</td>
+                <td style={{ padding: "8px 10px", borderBottom: "1px solid #f1f5f9" }}>{step.target_hr || "—"}</td>
+                <td style={{ padding: "8px 10px", borderBottom: "1px solid #f1f5f9" }}>{step.description || "—"}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+};
+
 const normalizeWorkoutRow = (row) => {
-  let structure = row.structure;
+  let structure = row.workout_structure ?? row.structure;
   if (typeof structure === "string") {
     try { structure = JSON.parse(structure); } catch { structure = []; }
   }
+  structure = normalizeWorkoutStructure(structure);
   const scheduled = normalizeScheduledDateYmd(row.scheduled_date);
   const type = row.type && WORKOUT_TYPES.some(t => t.id === row.type) ? row.type : "easy";
   return {
@@ -586,6 +667,7 @@ const normalizeWorkoutRow = (row) => {
     duration_min: Number.isFinite(Number(row.duration_min)) ? Number(row.duration_min) : 0,
     description: row.description || "",
     structure: Array.isArray(structure) ? structure : [],
+    workout_structure: Array.isArray(structure) ? structure : [],
     done: Boolean(row.done),
     rpe: clampWorkoutRpe(row.rpe),
     manual_distance_km: Number.isFinite(Number(row.manual_distance_km)) ? Number(row.manual_distance_km) : null,
@@ -598,33 +680,35 @@ const normalizeWorkoutRow = (row) => {
   };
 };
 
-const emptyWorkoutStructureRow = () => ({ phase: "", duration: "", pace: "", intensity: "" });
+const emptyWorkoutStructureRow = () => ({ block_type: "Intervalo", duration_min: "", distance_km: "", target_pace: "", target_hr: "", description: "" });
 
 /** Convierte structure del workout a filas editables (fases). */
 const workoutStructureToEditableRows = (structure) => {
-  const arr = Array.isArray(structure) ? structure : [];
-  return arr.map((s) => ({
-    phase: String(s?.phase ?? s?.name ?? ""),
-    duration: String(s?.duration ?? ""),
-    pace: String(s?.pace ?? ""),
-    intensity: String(s?.intensity ?? ""),
-  }));
+  return normalizeWorkoutStructure(structure);
 };
 
 /** Filas del formulario → JSON guardado en workouts.structure */
 const editableRowsToWorkoutStructure = (rows) => {
   const out = (rows || [])
     .map((r) => {
-      const phase = (r?.phase ?? "").trim();
-      const duration = (r?.duration ?? "").trim();
-      const pace = (r?.pace ?? "").trim();
-      const intensity = (r?.intensity ?? "").trim();
-      if (!phase && !duration && !pace && !intensity) return null;
-      const o = {};
-      if (phase) o.phase = phase;
-      if (duration) o.duration = duration;
-      if (pace) o.pace = pace;
-      if (intensity) o.intensity = intensity;
+      const block_type = WORKOUT_BLOCK_TYPES.includes(String(r?.block_type || "").trim()) ? String(r.block_type).trim() : "Intervalo";
+      const duration_min = (r?.duration_min ?? "").toString().trim();
+      const distance_km = (r?.distance_km ?? "").toString().trim();
+      const target_pace = (r?.target_pace ?? "").toString().trim();
+      const target_hr = (r?.target_hr ?? "").toString().trim();
+      const description = (r?.description ?? "").toString().trim();
+      if (!block_type && !duration_min && !distance_km && !target_pace && !target_hr && !description) return null;
+      const o = { block_type };
+      if (duration_min) o.duration_min = duration_min;
+      if (distance_km) o.distance_km = distance_km;
+      if (target_pace) o.target_pace = target_pace;
+      if (target_hr) o.target_hr = target_hr;
+      if (description) o.description = description;
+      // compatibilidad visual con código legado
+      o.phase = block_type;
+      o.duration = duration_min;
+      o.pace = target_pace;
+      o.intensity = target_hr || description;
       return Object.keys(o).length ? o : null;
     })
     .filter(Boolean);
@@ -632,10 +716,11 @@ const editableRowsToWorkoutStructure = (rows) => {
 };
 
 const normalizeLibraryRow = (row) => {
-  let structure = row.structure;
+  let structure = row.workout_structure ?? row.structure;
   if (typeof structure === "string") {
     try { structure = JSON.parse(structure); } catch { structure = []; }
   }
+  structure = normalizeWorkoutStructure(structure);
   const type = row.type && WORKOUT_TYPES.some((t) => t.id === row.type) ? row.type : "easy";
   const totalKm = Number.isFinite(Number(row.total_km)) ? Number(row.total_km) : 0;
   const distKm = Number.isFinite(Number(row.distance_km)) ? Number(row.distance_km) : totalKm;
@@ -651,6 +736,7 @@ const normalizeLibraryRow = (row) => {
     duration_min: Number.isFinite(Number(row.duration_min)) ? Math.round(Number(row.duration_min)) : 0,
     description: row.description || "",
     structure: Array.isArray(structure) ? structure : [],
+    workout_structure: Array.isArray(structure) ? structure : [],
     created_at: row.created_at ?? null,
     intensity: row.intensity != null ? String(row.intensity) : "",
     notes: row.notes != null ? String(row.notes) : "",
@@ -4664,6 +4750,7 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
       duration_min: Math.round(Number(workoutEditForm.duration_min) || 0),
       description: workoutEditForm.description || "",
       structure,
+      workout_structure: structure,
     };
     setWorkoutFormSaving(true);
     const prev = workouts;
@@ -6040,6 +6127,7 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
                   <textarea rows={3} value={workoutEditForm.description} onChange={(e) => setWorkoutEditForm((f) => ({ ...f, description: e.target.value }))} style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", color: "#0f172a", fontFamily: "inherit", fontSize: ".84em", boxSizing: "border-box", resize: "vertical" }} />
                 </div>
                 <div style={{ gridColumn: "1 / -1" }}>
+                  <WorkoutStructureTable structure={workoutEditForm.structureRows} />
                   <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 8 }}>Estructura (fases, duración, ritmo objetivo)</div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                     {workoutEditForm.structureRows.map((row, idx) => (
@@ -6080,62 +6168,94 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
                           </button>
                         </div>
                         <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 8 }}>
-                          <div style={{ gridColumn: "1 / -1" }}>
-                            <div style={{ fontSize: ".65em", color: "#94a3b8", marginBottom: 4 }}>Nombre de la fase</div>
-                            <input
-                              value={row.phase}
+                          <div>
+                            <div style={{ fontSize: ".65em", color: "#94a3b8", marginBottom: 4 }}>Tipo de bloque</div>
+                            <select
+                              value={row.block_type}
                               onChange={(e) =>
                                 setWorkoutEditForm((f) => {
                                   const next = [...f.structureRows];
-                                  next[idx] = { ...next[idx], phase: e.target.value };
+                                  next[idx] = { ...next[idx], block_type: e.target.value };
                                   return { ...f, structureRows: next };
                                 })
                               }
                               style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", color: "#0f172a", fontFamily: "inherit", fontSize: ".82em", boxSizing: "border-box" }}
-                            />
+                            >
+                              {WORKOUT_BLOCK_TYPES.map((bt) => <option key={bt} value={bt}>{bt}</option>)}
+                            </select>
                           </div>
                           <div>
-                            <div style={{ fontSize: ".65em", color: "#94a3b8", marginBottom: 4 }}>Duración</div>
+                            <div style={{ fontSize: ".65em", color: "#94a3b8", marginBottom: 4 }}>Duración (min)</div>
                             <input
-                              value={row.duration}
+                              value={row.duration_min}
                               onChange={(e) =>
                                 setWorkoutEditForm((f) => {
                                   const next = [...f.structureRows];
-                                  next[idx] = { ...next[idx], duration: e.target.value };
+                                  next[idx] = { ...next[idx], duration_min: e.target.value };
                                   return { ...f, structureRows: next };
                                 })
                               }
-                              placeholder="ej. 10 min o 2 km"
+                              placeholder="Ej: 12"
+                              style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", color: "#0f172a", fontFamily: "inherit", fontSize: ".82em", boxSizing: "border-box" }}
+                            />
+                          </div>
+                          <div>
+                            <div style={{ fontSize: ".65em", color: "#94a3b8", marginBottom: 4 }}>Distancia (km)</div>
+                            <input
+                              value={row.distance_km}
+                              onChange={(e) =>
+                                setWorkoutEditForm((f) => {
+                                  const next = [...f.structureRows];
+                                  next[idx] = { ...next[idx], distance_km: e.target.value };
+                                  return { ...f, structureRows: next };
+                                })
+                              }
+                              placeholder="Opcional"
                               style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", color: "#0f172a", fontFamily: "inherit", fontSize: ".82em", boxSizing: "border-box" }}
                             />
                           </div>
                           <div>
                             <div style={{ fontSize: ".65em", color: "#94a3b8", marginBottom: 4 }}>Ritmo objetivo</div>
                             <input
-                              value={row.pace}
+                              value={row.target_pace}
                               onChange={(e) =>
                                 setWorkoutEditForm((f) => {
                                   const next = [...f.structureRows];
-                                  next[idx] = { ...next[idx], pace: e.target.value };
+                                  next[idx] = { ...next[idx], target_pace: e.target.value };
                                   return { ...f, structureRows: next };
                                 })
                               }
-                              placeholder="ej. 4:45/km"
+                              placeholder="MM:SS /km"
+                              style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", color: "#0f172a", fontFamily: "inherit", fontSize: ".82em", boxSizing: "border-box" }}
+                            />
+                          </div>
+                          <div>
+                            <div style={{ fontSize: ".65em", color: "#94a3b8", marginBottom: 4 }}>FC objetivo (lpm)</div>
+                            <input
+                              value={row.target_hr}
+                              onChange={(e) =>
+                                setWorkoutEditForm((f) => {
+                                  const next = [...f.structureRows];
+                                  next[idx] = { ...next[idx], target_hr: e.target.value };
+                                  return { ...f, structureRows: next };
+                                })
+                              }
+                              placeholder="Ej: 140-160"
                               style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", color: "#0f172a", fontFamily: "inherit", fontSize: ".82em", boxSizing: "border-box" }}
                             />
                           </div>
                           <div style={{ gridColumn: "1 / -1" }}>
-                            <div style={{ fontSize: ".65em", color: "#94a3b8", marginBottom: 4 }}>Intensidad / notas</div>
+                            <div style={{ fontSize: ".65em", color: "#94a3b8", marginBottom: 4 }}>Descripción</div>
                             <input
-                              value={row.intensity}
+                              value={row.description}
                               onChange={(e) =>
                                 setWorkoutEditForm((f) => {
                                   const next = [...f.structureRows];
-                                  next[idx] = { ...next[idx], intensity: e.target.value };
+                                  next[idx] = { ...next[idx], description: e.target.value };
                                   return { ...f, structureRows: next };
                                 })
                               }
-                              placeholder="Z3, umbral…"
+                              placeholder="Notas del bloque"
                               style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", color: "#0f172a", fontFamily: "inherit", fontSize: ".82em", boxSizing: "border-box" }}
                             />
                           </div>
@@ -6869,15 +6989,6 @@ function AthleteHome({ profile }) {
     setWorkouts((prev) =>
       prev.map((w) => (String(w.id) === String(workoutRow.id) ? normalizeWorkoutRow({ ...w, ...payload }) : w)),
     );
-    if (athleteInfo?.coach_id) {
-      const { data: coachProf } = await supabase.from("profiles").select("fcm_token").eq("user_id", athleteInfo.coach_id).maybeSingle();
-      await sendChatPushNotification({
-        token: coachProf?.fcm_token ?? null,
-        title: "✅ Entrenamiento completado",
-        body: `${athleteName} completó ${workoutRow.title || "workout"} — ${(Number(payload.total_km) || 0).toFixed(1)}km en ${Number(payload.duration_min) || 0}min`,
-        logLabel: "workout athlete→coach",
-      });
-    }
     setWorkoutSummaryModal(null);
   };
 
@@ -6894,6 +7005,23 @@ function AthleteHome({ profile }) {
       return;
     }
     if (next && athleteInfo?.id) {
+      try {
+        if (athleteInfo?.coach_id) {
+          const { data: coachProf } = await supabase.from("profiles").select("fcm_token").eq("user_id", athleteInfo.coach_id).maybeSingle();
+          const coachToken = coachProf?.fcm_token ?? null;
+          if (coachToken && String(coachToken).trim() !== "") {
+            await sendChatPushNotification({
+              token: coachToken,
+              title: "✅ Workout completado",
+              body: `${athleteInfo.name || "Atleta"} completó: ${w.title || "Workout"}`,
+              data: { type: "workout_done", athlete_id: athleteInfo.id, workout_id: w.id },
+              logLabel: "workout done athlete→coach",
+            });
+          }
+        }
+      } catch (_) {
+        // diagnóstico silencioso para no bloquear UX de marcado completado
+      }
       const doneAfterToggle = nextWorkouts.filter((x) => x.done);
       const workoutsCompletadosTotales = doneAfterToggle.length;
       const kmTotalesAcumulados = doneAfterToggle.reduce((s, x) => s + (Number(x.total_km) || 0), 0);
@@ -7501,6 +7629,7 @@ function AthleteHome({ profile }) {
             <div style={{ color: "#64748b", fontSize: ".84em", marginBottom: 12 }}>
               {(workoutSummaryModal.workout?.title || "Workout")} · {workoutSummaryModal.workout?.scheduled_date || "—"}
             </div>
+            <WorkoutStructureTable structure={workoutSummaryModal.workout?.workout_structure || workoutSummaryModal.workout?.structure || []} />
             {workoutSummaryModal.stravaConnected ? (
               workoutSummaryModal.activity ? (
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 10, marginBottom: 14 }}>
@@ -9358,6 +9487,7 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
           duration_min: Number.isFinite(Number(wo.duration_min)) ? Number(wo.duration_min) : 0,
           description: String(wo.description || ""),
           structure,
+          workout_structure: structure,
           scheduled_date,
           done: false,
         });
@@ -10244,6 +10374,8 @@ function WorkoutLibrary({ coachUserId, libraryRefresh, onUseWorkout, athletes, n
       total_km: Number(row.total_km) || 0,
       duration_min: Number(row.duration_min) || 0,
       description: row.description || "",
+      structure: Array.isArray(row.structure) ? row.structure : [],
+      workout_structure: Array.isArray(row.structure) ? row.structure : [],
       done: false,
       scheduled_date: assignDate,
     };
@@ -10312,6 +10444,7 @@ function WorkoutLibrary({ coachUserId, libraryRefresh, onUseWorkout, athletes, n
       duration_min: Number.isFinite(Number(row.duration_min)) ? Math.round(Number(row.duration_min)) : 0,
       description: row.description != null ? String(row.description) : "",
       structure,
+      workout_structure: structure,
     };
     if (row.intensity) ins.intensity = String(row.intensity);
     if (row.notes) ins.notes = String(row.notes);
@@ -10737,6 +10870,7 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
     try {
       const payload = {
         ...w,
+        workout_structure: Array.isArray(w.structure) ? w.structure : [],
         athlete_id: selectedAthlete.id,
         coach_id: userData.user.id,
         scheduled_date: assignDate,
@@ -10867,6 +11001,7 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
       duration_min: Number.isFinite(Number(w.duration_min)) ? Math.round(Number(w.duration_min)) : 0,
       description: w.description != null ? String(w.description) : "",
       structure: Array.isArray(w.structure) ? w.structure : [],
+      workout_structure: Array.isArray(w.structure) ? w.structure : [],
     };
     setSavingLibrary(true);
     try {
@@ -11059,7 +11194,7 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
                   style={{ width: "100%", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", color: "#0f172a", fontFamily: "inherit", fontSize: ".85em", resize: "vertical", boxSizing: "border-box" }}
                 />
               </div>
-              <div style={{ fontSize: ".65em", letterSpacing: ".13em", color: "#475569", textTransform: "uppercase", marginBottom: 10 }}>ESTRUCTURA POR FASES</div>
+              <div style={{ fontSize: ".65em", letterSpacing: ".13em", color: "#475569", textTransform: "uppercase", marginBottom: 10 }}>ESTRUCTURA DEL WORKOUT</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 {manualForm.structureRows.map((row, idx) => (
                   <div
@@ -11072,7 +11207,7 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
                     }}
                   >
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 8 }}>
-                      <span style={{ fontSize: ".75em", fontWeight: 800, color: "#334155" }}>Fase {idx + 1}</span>
+                      <span style={{ fontSize: ".75em", fontWeight: 800, color: "#334155" }}>Paso {idx + 1}</span>
                       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                         <button
                           type="button"
@@ -11129,68 +11264,99 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
                             fontWeight: 700,
                           }}
                         >
-                          Eliminar
+                          🗑️
                         </button>
                       </div>
                     </div>
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 8 }}>
-                      <div style={{ gridColumn: "1 / -1" }}>
-                        <div style={{ fontSize: ".65em", color: "#94a3b8", marginBottom: 4 }}>Nombre de la fase</div>
-                        <input
-                          value={row.phase}
+                      <div>
+                        <div style={{ fontSize: ".65em", color: "#94a3b8", marginBottom: 4 }}>Tipo de bloque</div>
+                        <select
+                          value={row.block_type}
                           onChange={(e) =>
                             setManualForm((f) => {
                               const next = [...f.structureRows];
-                              next[idx] = { ...next[idx], phase: e.target.value };
+                              next[idx] = { ...next[idx], block_type: e.target.value };
                               return { ...f, structureRows: next };
                             })
                           }
-                          placeholder="Calentamiento, Intervalos…"
+                          style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", fontSize: ".82em", fontFamily: "inherit", boxSizing: "border-box" }}
+                        >
+                          {WORKOUT_BLOCK_TYPES.map((bt) => <option key={bt} value={bt}>{bt}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: ".65em", color: "#94a3b8", marginBottom: 4 }}>Duración (minutos)</div>
+                        <input
+                          value={row.duration_min}
+                          onChange={(e) =>
+                            setManualForm((f) => {
+                              const next = [...f.structureRows];
+                              next[idx] = { ...next[idx], duration_min: e.target.value };
+                              return { ...f, structureRows: next };
+                            })
+                          }
+                          placeholder="Ej: 12"
                           style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", fontSize: ".82em", fontFamily: "inherit", boxSizing: "border-box" }}
                         />
                       </div>
                       <div>
-                        <div style={{ fontSize: ".65em", color: "#94a3b8", marginBottom: 4 }}>Duración de la fase</div>
+                        <div style={{ fontSize: ".65em", color: "#94a3b8", marginBottom: 4 }}>Distancia (km)</div>
                         <input
-                          value={row.duration}
+                          value={row.distance_km}
                           onChange={(e) =>
                             setManualForm((f) => {
                               const next = [...f.structureRows];
-                              next[idx] = { ...next[idx], duration: e.target.value };
+                              next[idx] = { ...next[idx], distance_km: e.target.value };
                               return { ...f, structureRows: next };
                             })
                           }
-                          placeholder="15 min, 2 km…"
+                          placeholder="Opcional"
                           style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", fontSize: ".82em", fontFamily: "inherit", boxSizing: "border-box" }}
                         />
                       </div>
                       <div>
-                        <div style={{ fontSize: ".65em", color: "#94a3b8", marginBottom: 4 }}>Intensidad (Z1–Z5 o texto)</div>
+                        <div style={{ fontSize: ".65em", color: "#94a3b8", marginBottom: 4 }}>Ritmo objetivo (MM:SS /km)</div>
                         <input
-                          value={row.intensity}
+                          value={row.target_pace}
                           onChange={(e) =>
                             setManualForm((f) => {
                               const next = [...f.structureRows];
-                              next[idx] = { ...next[idx], intensity: e.target.value };
+                              next[idx] = { ...next[idx], target_pace: e.target.value };
                               return { ...f, structureRows: next };
                             })
                           }
-                          placeholder="Z3, umbral…"
+                          placeholder="Ej: 4:30"
+                          style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", fontSize: ".82em", fontFamily: "inherit", boxSizing: "border-box" }}
+                        />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: ".65em", color: "#94a3b8", marginBottom: 4 }}>FC objetivo (lpm)</div>
+                        <input
+                          value={row.target_hr}
+                          onChange={(e) =>
+                            setManualForm((f) => {
+                              const next = [...f.structureRows];
+                              next[idx] = { ...next[idx], target_hr: e.target.value };
+                              return { ...f, structureRows: next };
+                            })
+                          }
+                          placeholder="Ej: 140-160"
                           style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", fontSize: ".82em", fontFamily: "inherit", boxSizing: "border-box" }}
                         />
                       </div>
                       <div style={{ gridColumn: "1 / -1" }}>
-                        <div style={{ fontSize: ".65em", color: "#94a3b8", marginBottom: 4 }}>Ritmo objetivo (min/km)</div>
+                        <div style={{ fontSize: ".65em", color: "#94a3b8", marginBottom: 4 }}>Descripción</div>
                         <input
-                          value={row.pace}
+                          value={row.description}
                           onChange={(e) =>
                             setManualForm((f) => {
                               const next = [...f.structureRows];
-                              next[idx] = { ...next[idx], pace: e.target.value };
+                              next[idx] = { ...next[idx], description: e.target.value };
                               return { ...f, structureRows: next };
                             })
                           }
-                          placeholder="5:00, 4:30/km…"
+                          placeholder="Texto libre"
                           style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", fontSize: ".82em", fontFamily: "inherit", boxSizing: "border-box" }}
                         />
                       </div>
@@ -11215,7 +11381,7 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
                   fontSize: ".82em",
                 }}
               >
-                ＋ Agregar fase
+                ➕ Agregar bloque
               </button>
             </>
           )}
@@ -11240,20 +11406,7 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
               {(previewWorkout.structure || []).length === 0 ? (
                 <div style={{ fontSize: ".8em", color: "#94a3b8", marginBottom: 12 }}>Sin fases en estructura (opcional).</div>
               ) : (
-                (previewWorkout.structure || []).map((step, i) => (
-                  <div key={i} style={{ display: "flex", gap: 10, alignItems: "center", background: "#f8fafc", borderRadius: 7, padding: "8px 10px", marginBottom: 6 }}>
-                    <div style={{ width: 22, height: 22, borderRadius: "50%", background: "rgba(245,158,11,.15)", color: "#f59e0b", display: "flex", alignItems: "center", justifyContent: "center", fontSize: ".7em", fontWeight: 700, flexShrink: 0 }}>{i + 1}</div>
-                    <div style={{ flex: 1, fontSize: ".85em" }}>
-                      <span style={{ color: "#0f172a", fontWeight: 600 }}>{step.phase}</span>
-                      <span style={{ color: "#64748b" }}>
-                        {" "}
-                        · {step.duration}
-                        {step.intensity ? ` · ${step.intensity}` : ""}
-                      </span>
-                    </div>
-                    <div style={{ fontSize: ".78em", color: "#f59e0b", fontFamily: "monospace" }}>{step.pace}</div>
-                  </div>
-                ))
+                <WorkoutStructureTable structure={previewWorkout.structure} />
               )}
               <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 16 }}>
                 <button type="button" onClick={exportGarmin} style={{ background: "rgba(22,163,74,.12)", border: "1px solid rgba(22,163,74,.3)", borderRadius: 8, padding: "8px 14px", color: "#22c55e", cursor: "pointer", fontSize: ".78em", fontFamily: "inherit", fontWeight: 600 }}>⌚ Exportar a Garmin</button>
