@@ -7296,7 +7296,7 @@ function AthleteHome({ profile }) {
                 <div key={i} style={{ minHeight: 68, border: "1px solid #e2e8f0", borderRadius: 6, padding: "4px 3px", opacity: inViewMonth ? 1 : 0.42, background: hasDoneWorkout ? "rgba(34,197,94,.08)" : "#fff" }}>
                   <div style={{ fontSize: ".58em", color: inViewMonth ? "#475569" : "#94a3b8", textAlign: "center", fontWeight: 600 }}>{cellDate.getDate()}</div>
                   {dayWorkouts.slice(0, 2).map((w) => (
-                    <button key={w.id} type="button" onClick={(e) => openAthleteWorkoutMenu(e, w)} style={{ width: "100%", border: "1px solid #e2e8f0", borderRadius: 4, padding: "2px 3px", marginTop: 3, background: w.done ? "rgba(34,197,94,.15)" : "#f8fafc", fontSize: ".5em", color: "#334155", cursor: "pointer", fontFamily: "inherit", textAlign: "center" }}>
+                    <button key={w.id} type="button" onClick={(e) => openAthleteWorkoutMenu(e, w)} style={{ width: "100%", border: "1px solid #e2e8f0", borderRadius: 4, padding: "2px 3px", marginTop: 3, background: w.done ? "rgba(34,197,94,.15)" : "#f8fafc", fontSize: ".5em", color: "#334155", cursor: "pointer", fontFamily: "inherit", textAlign: "center", position: "relative", zIndex: 10001 }}>
                       {w.title}
                     </button>
                   ))}
@@ -7856,6 +7856,8 @@ function AthleteHome({ profile }) {
                               textAlign: "center",
                               width: "100%",
                               boxSizing: "border-box",
+                              position: "relative",
+                              zIndex: 10001,
                             }}
                           >
                             <div style={{ width: 5, height: 5, borderRadius: "50%", background: wt.color, margin: "0 auto 2px" }} />
@@ -7915,7 +7917,7 @@ function AthleteHome({ profile }) {
                   position: "fixed",
                   left: athleteCalendarCtxMenu.x,
                   top: athleteCalendarCtxMenu.y,
-                  zIndex: 300,
+                  zIndex: 10002,
                   minWidth: 240,
                   maxWidth: "min(92vw, 300px)",
                   background: "#ffffff",
