@@ -10,6 +10,8 @@ import {
 
 const BRAND_NAME = "RunningApexFlow";
 const STRAVA_CALLBACK_URL = "https://pace-forge-eta.vercel.app/api/strava/callback";
+/** Persistencia del atleta seleccionado en la vista Atletas del coach. */
+const RAF_SELECTED_ATHLETE_STORAGE_KEY = "raf_selected_athlete";
 
 const WORKOUT_TYPES = [
   { id: "easy", label: "Rodaje Suave", color: "#22c55e" },
@@ -1598,6 +1600,28 @@ export default function App() {
     loadAthletes();
   }, [session]);
 
+  useEffect(() => {
+    if (typeof localStorage === "undefined") return;
+    if (selectedAthlete?.id != null) {
+      localStorage.setItem(RAF_SELECTED_ATHLETE_STORAGE_KEY, String(selectedAthlete.id));
+    }
+  }, [selectedAthlete?.id]);
+
+  useEffect(() => {
+    if (!athletes.length || typeof localStorage === "undefined") return;
+    const raw = localStorage.getItem(RAF_SELECTED_ATHLETE_STORAGE_KEY);
+    const foundByLs = raw ? athletes.find((a) => String(a.id) === String(raw)) : null;
+    if (raw && !foundByLs) {
+      localStorage.removeItem(RAF_SELECTED_ATHLETE_STORAGE_KEY);
+    }
+    setSelectedAthlete((prev) => {
+      if (prev && athletes.some((a) => String(a.id) === String(prev.id))) {
+        return prev;
+      }
+      return foundByLs || null;
+    });
+  }, [athletes]);
+
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
     setAuthError("");
@@ -1790,6 +1814,10 @@ export default function App() {
       console.error("Error al cerrar sesión:", error);
       alert(`Error al cerrar sesión: ${error.message}`);
     }
+    if (typeof localStorage !== "undefined") {
+      localStorage.removeItem(RAF_SELECTED_ATHLETE_STORAGE_KEY);
+    }
+    setSelectedAthlete(null);
     setLandingAuthOpen(false);
     setDemoModalOpen(false);
     setAuthMode("login");
@@ -1892,7 +1920,13 @@ export default function App() {
       return;
     }
     setAthletes((prev) => prev.filter((a) => String(a.id) !== String(id)));
-    setSelectedAthlete((prev) => (prev && String(prev.id) === String(id) ? null : prev));
+    setSelectedAthlete((prev) => {
+      if (prev && String(prev.id) === String(id) && typeof localStorage !== "undefined") {
+        localStorage.removeItem(RAF_SELECTED_ATHLETE_STORAGE_KEY);
+        return null;
+      }
+      return prev;
+    });
     setWorkoutsRefresh((r) => r + 1);
     notify("Atleta eliminado");
   };
@@ -2509,7 +2543,6 @@ export default function App() {
 
   const goCoachView = (id) => {
     setView(id);
-    setSelectedAthlete(null);
     setShowAddAthleteForm(false);
   };
 
@@ -2717,7 +2750,11 @@ export default function App() {
         {view === "dashboard" && (
           <Dashboard
             coachUserId={session?.user?.id ?? null}
-            onSelect={a => { setSelectedAthlete(a); setView("athletes"); setShowAddAthleteForm(false); }}
+            onSelect={(a) => {
+              setSelectedAthlete(a);
+              setView("athletes");
+              setShowAddAthleteForm(false);
+            }}
             onRequestAddAthlete={() => setShowAddAthleteForm(true)}
             showAddAthleteForm={showAddAthleteForm}
             planLimitWarning={planLimitWarning}
@@ -10841,10 +10878,21 @@ function AdminCoachesProfilesPanel({ notify, adminUserId }) {
     );
   };
 
-  const trialCol = (p) => {
-    if (p.plan_status !== "trial" || !p.trial_started_at) return "—";
-    const d = coachTrialDaysRemainingFromStart(p);
-    return d == null ? "—" : String(d);
+  /** Días hasta subscription_expires_at; si no hay fecha, muestra días de trial cuando aplica. */
+  const subscriptionDaysRemainingCol = (p) => {
+    const raw = p.subscription_expires_at;
+    if (raw) {
+      const end = new Date(raw);
+      if (Number.isNaN(end.getTime())) return "—";
+      const days = Math.ceil((end.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+      if (days < 0) return "Vencido";
+      return `Vence en ${days} día${days === 1 ? "" : "s"}`;
+    }
+    if (p.plan_status === "trial" && p.trial_started_at) {
+      const d = coachTrialDaysRemainingFromStart(p);
+      return d == null ? "—" : `${d} día${d === 1 ? "" : "s"} (trial)`;
+    }
+    return "—";
   };
 
   const validatedCol = (p) =>
@@ -10913,11 +10961,13 @@ function AdminCoachesProfilesPanel({ notify, adminUserId }) {
     const m = Number(months);
     if (![1, 6, 12].includes(m)) return;
     const expires = addCalendarMonths(new Date(), m);
+    const subscription_period = m === 1 ? "mensual" : m === 6 ? "semestral" : "anual";
     runAction("act", uid, {
       plan_status: "active",
       plan_validated_at: new Date().toISOString(),
       plan_validated_by: adminUserId,
       subscription_expires_at: expires.toISOString(),
+      subscription_period,
     });
   };
 
@@ -10971,7 +11021,7 @@ function AdminCoachesProfilesPanel({ notify, adminUserId }) {
                 <th style={th}>Plan elegido</th>
                 <th style={th}>Período</th>
                 <th style={th}>Monto</th>
-                <th style={th}>Días restantes trial</th>
+                <th style={th}>Días restantes</th>
                 <th style={th}>Fecha validación</th>
                 <th style={th}>Generaciones</th>
                 <th style={th}>Acciones</th>
@@ -10990,7 +11040,7 @@ function AdminCoachesProfilesPanel({ notify, adminUserId }) {
                     <td style={cell}>{chosenPlanBadge(p.subscription_plan)}</td>
                     <td style={cell}>{subscriptionPeriodLabel(p.subscription_period)}</td>
                     <td style={cell}>{formatSubscriptionAmountCop(p.subscription_amount)}</td>
-                    <td style={cell}>{trialCol(p)}</td>
+                    <td style={cell}>{subscriptionDaysRemainingCol(p)}</td>
                     <td style={cell}>{validatedCol(p)}</td>
                     <td style={cell}>
                       <div style={{ fontWeight: 700, color: "#0f172a", marginBottom: 8 }}>
