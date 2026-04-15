@@ -231,6 +231,126 @@ const computeAchievementProgress = (doneWorkouts) => {
   return { unlockedByCode, totalKm, doneCount, longestStreak, rpeCount };
 };
 
+const ATHLETE_ACHIEVEMENT_DISPLAY_LIST = [
+  { id: "first_race", icon: "🥇", name: "Primera Carrera", requirement: "Completa tu primer workout", metric: "doneCount", target: 1, codes: ["FIRST_WORKOUT", "FIRST_KM"] },
+  { id: "three_streak", icon: "🔥", name: "Tres en Raya", requirement: "Completa 3 días seguidos de entrenamiento", metric: "longestConsecutiveDays", target: 3, codes: ["STREAK_3", "STREAK_7"] },
+  { id: "first_10k", icon: "🏃", name: "Primeros 10K", requirement: "Acumula 10km completados en total", metric: "totalKm", target: 10, codes: ["KM_10"] },
+  { id: "weekly_streak", icon: "💪", name: "Racha Semanal", requirement: "Completa todos los workouts de una semana", metric: "fullWeeksCompleted", target: 1, codes: ["WEEK_COMPLETE_1"] },
+  { id: "speedster", icon: "⚡", name: "Velocista", requirement: "Completa un workout de intervalos", metric: "intervalCount", target: 1, codes: ["SPEED_DEMON"] },
+  { id: "fifty_km", icon: "🎯", name: "Medio Centenar", requirement: "Acumula 50km completados en total", metric: "totalKm", target: 50, codes: ["KM_50"] },
+  { id: "centurion", icon: "🏅", name: "Centurión", requirement: "Acumula 100km completados en total", metric: "totalKm", target: 100, codes: ["KM_100"] },
+  { id: "early_bird", icon: "🌅", name: "Madrugador", requirement: "Completa 5 workouts marcados antes de las 8am", metric: "earlyMorningDoneCount", target: 5, codes: ["EARLY_BIRD"] },
+  { id: "consistent_4w", icon: "🗓️", name: "Constante", requirement: "Completa workouts durante 4 semanas seguidas", metric: "consecutiveDoneWeeks", target: 4, codes: ["CONSISTENT"] },
+  { id: "super_athlete", icon: "🚀", name: "Súper Atleta", requirement: "Completa 50 workouts en total", metric: "doneCount", target: 50, codes: ["WORKOUT_50"] },
+  { id: "no_excuses", icon: "💯", name: "Sin Excusas", requirement: "Completa 10 workouts seguidos sin fallar ninguno", metric: "longestDoneNoFailStreak", target: 10, codes: ["NO_EXCUSES_10"] },
+  { id: "marathoner", icon: "🏆", name: "Maratonista", requirement: "Acumula 200km completados en total", metric: "totalKm", target: 200, codes: ["KM_200"] },
+  { id: "heart", icon: "❤️", name: "Corazón de Atleta", requirement: "Registra FC en 10 workouts", metric: "hrLoggedCount", target: 10, codes: ["HR_10", "RPE_MASTER"] },
+  { id: "in_shape", icon: "📈", name: "En Forma", requirement: "Mejora tu VDOT en 2 evaluaciones consecutivas", metric: "vdotImprovementStreak", target: 2, codes: ["VDOT_UP_2"] },
+  { id: "elite", icon: "🌟", name: "Élite", requirement: "Acumula 500km completados en total", metric: "totalKm", target: 500, codes: ["KM_500"] },
+  { id: "legend", icon: "🎖️", name: "Leyenda", requirement: "Completa 100 workouts en total", metric: "doneCount", target: 100, codes: ["WORKOUT_100", "KM_1000"] },
+];
+
+const getWorkoutReferenceDate = (w) => {
+  const raw = w?.completed_at || w?.scheduled_date || w?.created_at;
+  if (!raw) return null;
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return null;
+  return d;
+};
+
+const getWeekStartYmdFromDate = (d) => {
+  if (!d || Number.isNaN(d.getTime())) return null;
+  return formatLocalYMD(startOfWeekMonday(d));
+};
+
+const getLongestConsecutiveWeeks = (weekKeys) => {
+  if (!Array.isArray(weekKeys) || weekKeys.length === 0) return 0;
+  const uniq = [...new Set(weekKeys)].sort();
+  let best = 1;
+  let current = 1;
+  for (let i = 1; i < uniq.length; i++) {
+    const prev = new Date(`${uniq[i - 1]}T12:00:00`);
+    const now = new Date(`${uniq[i]}T12:00:00`);
+    const diffDays = Math.round((now.getTime() - prev.getTime()) / 86400000);
+    if (diffDays === 7) current += 1;
+    else current = 1;
+    if (current > best) best = current;
+  }
+  return best;
+};
+
+const computeAthleteAchievementVisualProgress = (allWorkouts, evaluations) => {
+  const all = Array.isArray(allWorkouts) ? allWorkouts : [];
+  const done = all.filter((w) => w?.done);
+  const todayYmd = formatLocalYMD(new Date());
+  const totalKm = done.reduce((sum, w) => sum + (Number(w.total_km) || 0), 0);
+  const doneCount = done.length;
+  const longestConsecutiveDays = getLongestConsecutiveDays(done.map((w) => normalizeScheduledDateYmd(w.scheduled_date || w.completed_at)).filter(Boolean));
+  const intervalCount = done.filter((w) => String(w.type || "").toLowerCase() === "interval").length;
+  const hrLoggedCount = done.filter((w) => {
+    const candidates = [w.manual_avg_hr, w.manual_max_hr, w.avg_hr, w.average_heartrate, w.strava_avg_hr];
+    return candidates.some((v) => Number(v) > 0);
+  }).length;
+  const earlyMorningDoneCount = done.filter((w) => {
+    const d = getWorkoutReferenceDate(w);
+    return d && d.getHours() < 8;
+  }).length;
+
+  const sortedScheduled = [...all]
+    .filter((w) => normalizeScheduledDateYmd(w.scheduled_date || w.completed_at) && normalizeScheduledDateYmd(w.scheduled_date || w.completed_at) <= todayYmd)
+    .sort((a, b) => {
+      const ad = getWorkoutReferenceDate(a)?.getTime() || 0;
+      const bd = getWorkoutReferenceDate(b)?.getTime() || 0;
+      return ad - bd;
+    });
+  let streak = 0;
+  let longestDoneNoFailStreak = 0;
+  for (const w of sortedScheduled) {
+    if (w?.done) streak += 1;
+    else streak = 0;
+    if (streak > longestDoneNoFailStreak) longestDoneNoFailStreak = streak;
+  }
+
+  const weekMap = {};
+  for (const w of sortedScheduled) {
+    const refDate = getWorkoutReferenceDate(w);
+    const weekKey = getWeekStartYmdFromDate(refDate);
+    if (!weekKey) continue;
+    if (!weekMap[weekKey]) weekMap[weekKey] = { total: 0, done: 0 };
+    weekMap[weekKey].total += 1;
+    if (w?.done) weekMap[weekKey].done += 1;
+  }
+  const fullWeeksCompleted = Object.values(weekMap).filter((x) => x.total > 0 && x.done >= x.total).length;
+
+  const doneWeekKeys = done
+    .map((w) => getWeekStartYmdFromDate(getWorkoutReferenceDate(w)))
+    .filter(Boolean);
+  const consecutiveDoneWeeks = getLongestConsecutiveWeeks(doneWeekKeys);
+
+  const evalRows = Array.isArray(evaluations) ? evaluations : [];
+  const vdotValues = evalRows.map((r) => Number(r?.vdot)).filter((v) => Number.isFinite(v) && v > 0);
+  let vdotImprovementStreak = 0;
+  let vdotCurrent = 0;
+  for (let i = 1; i < vdotValues.length; i++) {
+    if (vdotValues[i] > vdotValues[i - 1]) vdotCurrent += 1;
+    else vdotCurrent = 0;
+    if (vdotCurrent > vdotImprovementStreak) vdotImprovementStreak = vdotCurrent;
+  }
+
+  return {
+    totalKm,
+    doneCount,
+    longestConsecutiveDays,
+    fullWeeksCompleted,
+    intervalCount,
+    hrLoggedCount,
+    earlyMorningDoneCount,
+    consecutiveDoneWeeks,
+    longestDoneNoFailStreak,
+    vdotImprovementStreak,
+  };
+};
+
 async function loadAthleteAchievementSnapshot(athleteId) {
   if (!athleteId) return { achievements: [], earned: [] };
   try {
@@ -6512,6 +6632,7 @@ function AthleteHome({ profile }) {
   const [achievementsCatalog, setAchievementsCatalog] = useState([]);
   const [earnedAchievements, setEarnedAchievements] = useState([]);
   const [achProgress, setAchProgress] = useState(null);
+  const [athleteEvaluations, setAthleteEvaluations] = useState([]);
   const [medalToast, setMedalToast] = useState("");
   const [athletePayments, setAthletePayments] = useState([]);
   const [loadingAthletePayments, setLoadingAthletePayments] = useState(false);
@@ -6585,6 +6706,7 @@ function AthleteHome({ profile }) {
       prevProfileUserIdRef.current = null;
       setAthleteInfo(null);
       setWorkouts([]);
+      setAthleteEvaluations([]);
       setLoading(false);
       return;
     }
@@ -6615,6 +6737,7 @@ function AthleteHome({ profile }) {
         console.error("Error obteniendo sesión:", authErr);
         setAthleteInfo(null);
         setWorkouts([]);
+        setAthleteEvaluations([]);
         setLoading(false);
         if (!userEmail) setMessage("No se pudo obtener el email de tu cuenta.");
         return;
@@ -6638,6 +6761,7 @@ function AthleteHome({ profile }) {
         console.error("Error cargando atleta:", athleteErr);
         setAthleteInfo(null);
         setWorkouts([]);
+        setAthleteEvaluations([]);
         setLoading(false);
         return;
       }
@@ -6646,6 +6770,7 @@ function AthleteHome({ profile }) {
       if (!athleteRow) {
         setAthleteInfo(null);
         setWorkouts([]);
+        setAthleteEvaluations([]);
         setAthleteNotRegistered(true);
         setLoading(false);
         markInitialLoadFinished();
@@ -6668,6 +6793,11 @@ function AthleteHome({ profile }) {
         .select("*")
         .eq("athlete_id", athleteRow.id)
         .order("scheduled_date", { ascending: true });
+      const { data: evalRows } = await supabase
+        .from("athlete_evaluations")
+        .select("vdot, created_at")
+        .eq("athlete_id", athleteRow.id)
+        .order("created_at", { ascending: true });
 
       console.log("[AthleteHome] consulta workouts (athlete_id)", {
         athlete_id: athleteRow.id,
@@ -6680,9 +6810,11 @@ function AthleteHome({ profile }) {
       if (workoutsErr) {
         console.error("Error cargando workouts atleta:", workoutsErr);
         setWorkouts([]);
+        setAthleteEvaluations(evalRows || []);
       } else {
         const normalizedWorkouts = (workoutsRows || []).map(normalizeWorkoutRow);
         setWorkouts(normalizedWorkouts);
+        setAthleteEvaluations(evalRows || []);
         if ((normalizedWorkouts || []).some((w) => w.done)) {
           const { snapshot, progress } = await evaluateAndAwardAthleteAchievements(athleteRow.id);
           if (!cancelled) {
@@ -6704,6 +6836,19 @@ function AthleteHome({ profile }) {
   }, [profileUserId]);
 
   const athleteCoachIdPrimitive = athleteInfo?.coach_id ?? null;
+  const achievementDisplayProgress = useMemo(
+    () => computeAthleteAchievementVisualProgress(workouts, athleteEvaluations),
+    [workouts, athleteEvaluations],
+  );
+  const earnedAchievementDateByCode = useMemo(() => {
+    const m = {};
+    for (const row of earnedAchievements || []) {
+      const code = String(row?.achievement_code || "");
+      if (!code) continue;
+      if (!m[code]) m[code] = row?.awarded_at || null;
+    }
+    return m;
+  }, [earnedAchievements]);
 
   useEffect(() => {
     if (!athleteInfo?.id || athleteNotRegistered || athleteCoachIdPrimitive) {
@@ -7580,7 +7725,60 @@ function AthleteHome({ profile }) {
                   <button type="button" onClick={() => setAthleteProfileTab("config")} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", background: athleteProfileTab === "config" ? "rgba(245,158,11,.14)" : "#fff", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>⚙️ Config</button>
                   <button type="button" onClick={() => setAthleteProfileTab("pagos")} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", background: athleteProfileTab === "pagos" ? "rgba(245,158,11,.14)" : "#fff", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>💳 Pagos</button>
                 </div>
-                {athleteProfileTab === "logros" ? <div style={{ ...S.card }}>{/* Reusa logros existentes */}<div style={{ fontSize: ".72em", marginBottom: 10, color: "#475569", textTransform: "uppercase", letterSpacing: ".13em" }}>MIS LOGROS</div><div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(148px,1fr))", gap: 12 }}>{(achievementsCatalog || []).map((a) => { const earned = (earnedAchievements || []).some((e) => achievementJoinMeta(e)?.code === a.code); return <div key={a.id} style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: "14px 12px", background: earned ? "linear-gradient(145deg,#fffbeb,#fff7ed)" : "#f8fafc", opacity: earned ? 1 : .55, textAlign: "center" }}><div style={{ fontSize: "2rem", marginBottom: 6 }}>{earned ? a.icon : "🔒"}</div><div style={{ fontSize: ".75em", fontWeight: 800 }}>{a.name}</div></div>; })}</div></div> : null}
+                {athleteProfileTab === "logros" ? (
+                  <div style={{ ...S.card }}>
+                    <div style={{ fontSize: ".72em", marginBottom: 10, color: "#475569", textTransform: "uppercase", letterSpacing: ".13em" }}>MIS LOGROS</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(230px,1fr))", gap: 12 }}>
+                      {ATHLETE_ACHIEVEMENT_DISPLAY_LIST.map((a) => {
+                        const currentValue = Number(achievementDisplayProgress?.[a.metric] || 0);
+                        const progressRatio = a.target > 0 ? Math.min(1, currentValue / a.target) : 0;
+                        const progressPct = Math.round(progressRatio * 100);
+                        const awardedAt = (a.codes || []).map((code) => earnedAchievementDateByCode[code]).find(Boolean) || null;
+                        const earnedByProgress = currentValue >= a.target;
+                        const earned = Boolean(awardedAt || earnedByProgress);
+                        const formattedDate = awardedAt ? new Date(awardedAt).toLocaleDateString("es-CO") : "Sin fecha registrada";
+                        const currentLabel =
+                          a.metric === "totalKm"
+                            ? `${currentValue.toFixed(1)} / ${a.target} km`
+                            : `${Math.round(currentValue)} / ${a.target}`;
+                        return (
+                          <div key={a.id} style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: "14px 12px", background: earned ? "linear-gradient(145deg,#fffbeb,#fff7ed)" : "#f8fafc" }}>
+                            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
+                              <div style={{ fontSize: "1.9rem", lineHeight: 1 }}>{a.icon}</div>
+                              {earned ? (
+                                <span style={{ fontSize: ".66em", fontWeight: 800, color: "#166534", background: "#dcfce7", border: "1px solid #86efac", borderRadius: 999, padding: "4px 8px", whiteSpace: "nowrap" }}>
+                                  ✅ Ganado
+                                </span>
+                              ) : (
+                                <span style={{ fontSize: ".66em", fontWeight: 700, color: "#64748b", background: "#e2e8f0", border: "1px solid #cbd5e1", borderRadius: 999, padding: "4px 8px", whiteSpace: "nowrap" }}>
+                                  🔒 Bloqueado
+                                </span>
+                              )}
+                            </div>
+                            <div style={{ fontSize: ".87em", fontWeight: 900, marginTop: 8, color: "#0f172a" }}>{a.name}</div>
+                            <div style={{ fontSize: ".77em", color: "#475569", marginTop: 6, lineHeight: 1.45 }}>{a.requirement}</div>
+                            {earned ? (
+                              <div style={{ marginTop: 10, fontSize: ".72em", color: "#166534", fontWeight: 700 }}>
+                                Fecha de logro: {formattedDate}
+                              </div>
+                            ) : (
+                              <div style={{ marginTop: 10 }}>
+                                <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 5 }}>{a.requirement}</div>
+                                <div style={{ height: 8, borderRadius: 999, background: "#e2e8f0", overflow: "hidden" }}>
+                                  <div style={{ width: `${progressPct}%`, height: "100%", background: "linear-gradient(90deg,#f59e0b,#f97316)" }} />
+                                </div>
+                                <div style={{ marginTop: 5, fontSize: ".7em", color: "#64748b", display: "flex", justifyContent: "space-between" }}>
+                                  <span>{currentLabel}</span>
+                                  <span>{progressPct}%</span>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
                 {athleteProfileTab === "forma" ? (
                   hasPremiumAccess ? (
                     <div style={{ ...S.card }}>
