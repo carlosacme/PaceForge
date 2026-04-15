@@ -22,6 +22,13 @@ const WORKOUT_TYPES = [
   { id: "race", label: "Carrera", color: "#dc2626" },
 ];
 
+/** Días completos para planes marketplace (admin) y formulario de sesión. */
+const PLAN_PREVIEW_FULL_DAYS = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
+const PLAN_SESSION_TYPE_OPTIONS = [
+  ...WORKOUT_TYPES.filter((t) => t.id !== "race"),
+  { id: "fartlek", label: "Fartlek", color: "#0d9488" },
+];
+
 const DAYS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
 
 const MONTH_INDEX = {
@@ -13467,9 +13474,18 @@ function AdminMarketplacePanel({ notify }) {
   const [aiGoal, setAiGoal] = useState("42K");
   const [aiDurationWeeks, setAiDurationWeeks] = useState("16");
   const [aiSessionsPerWeek, setAiSessionsPerWeek] = useState("4");
-  const [planTableEdit, setPlanTableEdit] = useState(null);
-  const [planTableEditDraft, setPlanTableEditDraft] = useState("");
-  const planTableInputRef = useRef(null);
+  const [planSessionModalOpen, setPlanSessionModalOpen] = useState(false);
+  const [planSessionModalIndex, setPlanSessionModalIndex] = useState(null);
+  const [planSessionForm, setPlanSessionForm] = useState(() => ({
+    week: "1",
+    day: PLAN_PREVIEW_FULL_DAYS[0],
+    title: "",
+    type: "easy",
+    description: "",
+    duration_min: "",
+    distance_km: "",
+    structureRows: [emptyWorkoutStructureRow()],
+  }));
 
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -13618,72 +13634,127 @@ function AdminMarketplacePanel({ notify }) {
     week: 1,
     day: "",
     title: "",
+    type: "easy",
     description: "",
     duration_min: null,
     distance_km: null,
   });
 
-  const commitPlanCellEdit = () => {
-    if (!planTableEdit) return;
-    const { rowIndex, field } = planTableEdit;
-    const draft = planTableEditDraft;
-    const next = previewRows.map((r, i) => {
-      const copy = { ...(r && typeof r === "object" && !Array.isArray(r) ? r : {}) };
-      if (i !== rowIndex) return copy;
-      if (field === "week") {
-        const n = String(draft).trim();
-        copy.week = n === "" ? null : Math.max(0, Math.round(Number(n)) || 0);
-      } else if (field === "duration_min") {
-        const n = String(draft).trim();
-        copy.duration_min = n === "" ? null : Math.max(0, Math.round(Number(n)) || 0);
-      } else if (field === "distance_km") {
-        const n = String(draft).trim();
-        if (n === "") copy.distance_km = null;
-        else {
-          const x = Number(n);
-          copy.distance_km = Number.isFinite(x) ? x : null;
-        }
-      } else if (field === "day" || field === "title" || field === "description") {
-        copy[field] = draft;
-      }
-      return copy;
+  const resetPlanSessionFormFields = () => ({
+    week: "1",
+    day: PLAN_PREVIEW_FULL_DAYS[0],
+    title: "",
+    type: "easy",
+    description: "",
+    duration_min: "",
+    distance_km: "",
+    structureRows: [emptyWorkoutStructureRow()],
+  });
+
+  const normalizeDayToFull = (dayRaw) => {
+    const s = String(dayRaw || "").trim();
+    if (PLAN_PREVIEW_FULL_DAYS.includes(s)) return s;
+    const low = s.toLowerCase();
+    const exact = PLAN_PREVIEW_FULL_DAYS.find((d) => d.toLowerCase() === low);
+    if (exact) return exact;
+    const fuzzy = PLAN_PREVIEW_FULL_DAYS.find(
+      (d) => d.toLowerCase().startsWith(low) || (low.length >= 2 && low.startsWith(d.slice(0, 3).toLowerCase())),
+    );
+    return fuzzy || PLAN_PREVIEW_FULL_DAYS[0];
+  };
+
+  const resolvePlanSessionTypeId = (w) => {
+    const id = w?.type;
+    if (id && PLAN_SESSION_TYPE_OPTIONS.some((t) => t.id === id)) return id;
+    return "easy";
+  };
+
+  const rowToPlanSessionForm = (row) => {
+    const r = row && typeof row === "object" && !Array.isArray(row) ? row : {};
+    const struct = r.workout_structure ?? r.structure;
+    const baseRows = workoutStructureToEditableRows(struct);
+    return {
+      week: String(r.week != null && r.week !== "" ? r.week : 1),
+      day: normalizeDayToFull(r.day),
+      title: String(r.title || ""),
+      type: resolvePlanSessionTypeId(r),
+      description: String(r.description || ""),
+      duration_min: r.duration_min != null && r.duration_min !== "" ? String(r.duration_min) : "",
+      distance_km: r.distance_km != null && r.distance_km !== "" ? String(r.distance_km) : "",
+      structureRows: baseRows.length ? baseRows.map((x) => ({ ...x })) : [emptyWorkoutStructureRow()],
+    };
+  };
+
+  const closePlanSessionModal = () => {
+    setPlanSessionModalOpen(false);
+    setPlanSessionModalIndex(null);
+  };
+
+  const openPlanSessionModalAdd = () => {
+    setPlanSessionModalIndex(null);
+    setPlanSessionForm(resetPlanSessionFormFields());
+    setPlanSessionModalOpen(true);
+  };
+
+  const openPlanSessionModalEdit = (idx) => {
+    setPlanSessionModalIndex(idx);
+    setPlanSessionForm(rowToPlanSessionForm(previewRows[idx]));
+    setPlanSessionModalOpen(true);
+  };
+
+  const movePlanSessionStructureRow = (idx, delta) => {
+    setPlanSessionForm((f) => {
+      const arr = [...f.structureRows];
+      const j = idx + delta;
+      if (j < 0 || j >= arr.length) return f;
+      const tmp = arr[idx];
+      arr[idx] = arr[j];
+      arr[j] = tmp;
+      return { ...f, structureRows: arr };
     });
+  };
+
+  const savePlanSessionModal = () => {
+    const title = String(planSessionForm.title || "").trim();
+    if (!title) {
+      notify?.("Indica el título del workout");
+      return;
+    }
+    const weekNum = Math.max(1, Math.round(Number(planSessionForm.week) || 1));
+    const dm = String(planSessionForm.duration_min).trim();
+    const duration_min = dm === "" ? null : Math.max(0, Math.round(Number(dm)) || 0);
+    const dk = String(planSessionForm.distance_km).trim();
+    const distance_km = dk === "" ? null : Number.isFinite(Number(dk)) ? Number(dk) : null;
+    const st = editableRowsToWorkoutStructure(planSessionForm.structureRows);
+    const row = {
+      week: weekNum,
+      day: planSessionForm.day,
+      title,
+      type: planSessionForm.type,
+      description: String(planSessionForm.description || ""),
+      duration_min,
+      distance_km,
+    };
+    if (st.length) row.workout_structure = st;
+    const next = [...previewRows];
+    if (planSessionModalIndex == null) next.push(row);
+    else next[planSessionModalIndex] = row;
     setCreateForm((f) => ({ ...f, preview_workouts_text: JSON.stringify(next, null, 2) }));
-    setPlanTableEdit(null);
+    closePlanSessionModal();
   };
-
-  const beginPlanCellEdit = (rowIndex, field) => {
-    const r = previewRows[rowIndex] || {};
-    const raw = r[field];
-    setPlanTableEditDraft(raw === null || raw === undefined ? "" : String(raw));
-    setPlanTableEdit({ rowIndex, field });
-  };
-
-  useEffect(() => {
-    if (!planTableEdit || !planTableInputRef.current) return;
-    const el = planTableInputRef.current;
-    el.focus();
-    if (typeof el.select === "function") el.select();
-  }, [planTableEdit]);
 
   const duplicatePlanRow = (idx) => {
+    if (planSessionModalOpen && planSessionModalIndex === idx) closePlanSessionModal();
     const row = previewRows[idx];
     const clone = row && typeof row === "object" && !Array.isArray(row) ? { ...row } : emptyPlanPreviewRow();
     const next = [...previewRows.slice(0, idx + 1), clone, ...previewRows.slice(idx + 1)];
     setCreateForm((f) => ({ ...f, preview_workouts_text: JSON.stringify(next, null, 2) }));
-    setPlanTableEdit(null);
   };
 
   const deletePlanRow = (idx) => {
+    if (planSessionModalOpen) closePlanSessionModal();
     const next = previewRows.filter((_, i) => i !== idx);
     setCreateForm((f) => ({ ...f, preview_workouts_text: JSON.stringify(next, null, 2) }));
-    setPlanTableEdit(null);
-  };
-
-  const appendPlanRow = () => {
-    const next = [...previewRows, emptyPlanPreviewRow()];
-    setCreateForm((f) => ({ ...f, preview_workouts_text: JSON.stringify(next, null, 2) }));
-    setPlanTableEdit(null);
   };
 
   const createAdminPlan = async () => {
@@ -13743,7 +13814,7 @@ function AdminMarketplacePanel({ notify }) {
     }
     notify?.(editingId ? "Plan actualizado y aprobado." : "Plan creado y aprobado automáticamente.");
     setCreateForm(EMPTY_ADMIN_PLAN_FORM);
-    setPlanTableEdit(null);
+    closePlanSessionModal();
     if (typeof localStorage !== "undefined") localStorage.removeItem(ADMIN_PLAN_DRAFT_KEY);
     loadAll();
   };
@@ -13820,7 +13891,7 @@ Reglas obligatorias:
         ),
       }));
       notify?.("Plan generado con IA y formulario prellenado.");
-      setPlanTableEdit(null);
+      closePlanSessionModal();
       setAiModalOpen(false);
     } catch (e) {
       console.error("generatePlanWithAi:", e);
@@ -13848,7 +13919,7 @@ Reglas obligatorias:
               type="button"
               onClick={() => {
                 setCreateForm(EMPTY_ADMIN_PLAN_FORM);
-                setPlanTableEdit(null);
+                closePlanSessionModal();
                 if (typeof localStorage !== "undefined") localStorage.removeItem(ADMIN_PLAN_DRAFT_KEY);
               }}
               style={{ border: "1px solid #fecaca", borderRadius: 8, padding: "8px 10px", background: "#fff1f2", color: "#b91c1c", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".76em" }}
@@ -13908,12 +13979,13 @@ Reglas obligatorias:
             <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 8, fontWeight: 800 }}>Plan completo</div>
             <div style={{ border: "1px solid #e2e8f0", borderRadius: 10, overflow: "hidden" }}>
               <div style={{ overflowX: "auto" }}>
-                <table style={{ width: "100%", minWidth: 920, borderCollapse: "collapse" }}>
+                <table style={{ width: "100%", minWidth: 1020, borderCollapse: "collapse" }}>
                   <thead>
                     <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0", fontSize: ".7em", color: "#475569", textTransform: "uppercase", letterSpacing: ".05em" }}>
                       <th style={{ textAlign: "left", padding: "8px 10px" }}>Semana</th>
                       <th style={{ textAlign: "left", padding: "8px 10px" }}>Día</th>
                       <th style={{ textAlign: "left", padding: "8px 10px" }}>Título</th>
+                      <th style={{ textAlign: "left", padding: "8px 10px" }}>Tipo</th>
                       <th style={{ textAlign: "left", padding: "8px 10px" }}>Descripción</th>
                       <th style={{ textAlign: "left", padding: "8px 10px" }}>Duración</th>
                       <th style={{ textAlign: "left", padding: "8px 10px" }}>Distancia</th>
@@ -13923,152 +13995,37 @@ Reglas obligatorias:
                   <tbody>
                     {previewRows.length === 0 ? (
                       <tr>
-                        <td colSpan={7} style={{ padding: "12px 14px", fontSize: ".82em", color: "#64748b", background: "#fafafa" }}>
+                        <td colSpan={8} style={{ padding: "12px 14px", fontSize: ".82em", color: "#64748b", background: "#fafafa" }}>
                           Aún no hay sesiones. Usa el JSON arriba, genera con IA o pulsa «Agregar sesión».
                         </td>
                       </tr>
                     ) : (
                       previewRows.map((w, idx) => {
-                        const inpStyle = {
-                          width: "100%",
-                          minWidth: 56,
-                          boxSizing: "border-box",
-                          border: "1px solid #cbd5e1",
-                          borderRadius: 6,
-                          padding: "6px 8px",
-                          fontFamily: "inherit",
-                          fontSize: ".9em",
-                          color: "#334155",
-                        };
-                        const cellPad = { padding: "6px 8px", verticalAlign: "top" };
-                        const editing = (f) => planTableEdit && planTableEdit.rowIndex === idx && planTableEdit.field === f;
+                        const cellPad = { padding: "8px 10px", verticalAlign: "top" };
+                        const tid = resolvePlanSessionTypeId(w);
+                        const tmeta = PLAN_SESSION_TYPE_OPTIONS.find((t) => t.id === tid);
+                        const structPreview = w?.workout_structure ?? w?.structure;
+                        const nStruct = Array.isArray(structPreview) ? normalizeWorkoutStructure(structPreview).length : 0;
                         return (
                           <tr key={`plan-row-${idx}`} style={{ borderBottom: "1px solid #f1f5f9", fontSize: ".78em", color: "#334155" }}>
-                            <td style={{ ...cellPad, cursor: "pointer" }} onClick={() => beginPlanCellEdit(idx, "week")}>
-                              {editing("week") ? (
-                                <input
-                                  ref={planTableInputRef}
-                                  type="number"
-                                  min={0}
-                                  value={planTableEditDraft}
-                                  onChange={(e) => setPlanTableEditDraft(e.target.value)}
-                                  onBlur={commitPlanCellEdit}
-                                  onClick={(e) => e.stopPropagation()}
-                                  onKeyDown={(e) => {
-                                    if (e.key === "Enter") {
-                                      e.preventDefault();
-                                      commitPlanCellEdit();
-                                    }
-                                  }}
-                                  style={inpStyle}
-                                />
-                              ) : (
-                                <span>{w?.week != null && w.week !== "" ? w.week : "—"}</span>
-                              )}
+                            <td style={cellPad}>{w?.week != null && w.week !== "" ? w.week : "—"}</td>
+                            <td style={{ ...cellPad, minWidth: 88 }}>{w?.day ? String(w.day) : "—"}</td>
+                            <td style={{ ...cellPad, minWidth: 120, fontWeight: 700 }}>{w?.title ? String(w.title) : "—"}</td>
+                            <td style={cellPad}>
+                              <span style={{ padding: "3px 8px", borderRadius: 999, background: `${tmeta?.color || "#64748b"}18`, color: tmeta?.color || "#64748b", fontWeight: 800, fontSize: ".92em" }}>
+                                {tmeta?.label || tid || "—"}
+                              </span>
                             </td>
-                            <td style={{ ...cellPad, cursor: "pointer", minWidth: 88 }} onClick={() => beginPlanCellEdit(idx, "day")}>
-                              {editing("day") ? (
-                                <input
-                                  ref={planTableInputRef}
-                                  type="text"
-                                  value={planTableEditDraft}
-                                  onChange={(e) => setPlanTableEditDraft(e.target.value)}
-                                  onBlur={commitPlanCellEdit}
-                                  onClick={(e) => e.stopPropagation()}
-                                  onKeyDown={(e) => {
-                                    if (e.key === "Enter") {
-                                      e.preventDefault();
-                                      commitPlanCellEdit();
-                                    }
-                                  }}
-                                  style={inpStyle}
-                                />
-                              ) : (
-                                <span>{w?.day ? String(w.day) : "—"}</span>
-                              )}
-                            </td>
-                            <td style={{ ...cellPad, cursor: "pointer", minWidth: 120 }} onClick={() => beginPlanCellEdit(idx, "title")}>
-                              {editing("title") ? (
-                                <input
-                                  ref={planTableInputRef}
-                                  type="text"
-                                  value={planTableEditDraft}
-                                  onChange={(e) => setPlanTableEditDraft(e.target.value)}
-                                  onBlur={commitPlanCellEdit}
-                                  onClick={(e) => e.stopPropagation()}
-                                  onKeyDown={(e) => {
-                                    if (e.key === "Enter") {
-                                      e.preventDefault();
-                                      commitPlanCellEdit();
-                                    }
-                                  }}
-                                  style={inpStyle}
-                                />
-                              ) : (
-                                <span style={{ fontWeight: 700 }}>{w?.title ? String(w.title) : "—"}</span>
-                              )}
-                            </td>
-                            <td style={{ ...cellPad, cursor: "pointer", maxWidth: 280, minWidth: 160 }} onClick={() => beginPlanCellEdit(idx, "description")}>
-                              {editing("description") ? (
-                                <textarea
-                                  ref={planTableInputRef}
-                                  value={planTableEditDraft}
-                                  onChange={(e) => setPlanTableEditDraft(e.target.value)}
-                                  onBlur={commitPlanCellEdit}
-                                  onClick={(e) => e.stopPropagation()}
-                                  rows={2}
-                                  style={{ ...inpStyle, minHeight: 44, resize: "vertical" }}
-                                />
-                              ) : (
-                                <span style={{ lineHeight: 1.35 }}>{w?.description != null && String(w.description) !== "" ? String(w.description) : "—"}</span>
-                              )}
-                            </td>
-                            <td style={{ ...cellPad, cursor: "pointer", whiteSpace: "nowrap" }} onClick={() => beginPlanCellEdit(idx, "duration_min")}>
-                              {editing("duration_min") ? (
-                                <input
-                                  ref={planTableInputRef}
-                                  type="number"
-                                  min={0}
-                                  value={planTableEditDraft}
-                                  onChange={(e) => setPlanTableEditDraft(e.target.value)}
-                                  onBlur={commitPlanCellEdit}
-                                  onClick={(e) => e.stopPropagation()}
-                                  onKeyDown={(e) => {
-                                    if (e.key === "Enter") {
-                                      e.preventDefault();
-                                      commitPlanCellEdit();
-                                    }
-                                  }}
-                                  style={inpStyle}
-                                />
-                              ) : (
-                                <span>{w?.duration_min != null && w.duration_min !== "" ? `${w.duration_min} min` : "—"}</span>
-                              )}
-                            </td>
-                            <td style={{ ...cellPad, cursor: "pointer", whiteSpace: "nowrap" }} onClick={() => beginPlanCellEdit(idx, "distance_km")}>
-                              {editing("distance_km") ? (
-                                <input
-                                  ref={planTableInputRef}
-                                  type="number"
-                                  min={0}
-                                  step="0.1"
-                                  value={planTableEditDraft}
-                                  onChange={(e) => setPlanTableEditDraft(e.target.value)}
-                                  onBlur={commitPlanCellEdit}
-                                  onClick={(e) => e.stopPropagation()}
-                                  onKeyDown={(e) => {
-                                    if (e.key === "Enter") {
-                                      e.preventDefault();
-                                      commitPlanCellEdit();
-                                    }
-                                  }}
-                                  style={inpStyle}
-                                />
-                              ) : (
-                                <span>{w?.distance_km != null && w.distance_km !== "" && Number.isFinite(Number(w.distance_km)) ? `${w.distance_km} km` : "—"}</span>
-                              )}
-                            </td>
+                            <td style={{ ...cellPad, maxWidth: 260, minWidth: 140, lineHeight: 1.35 }}>{w?.description != null && String(w.description) !== "" ? String(w.description) : "—"}</td>
+                            <td style={{ ...cellPad, whiteSpace: "nowrap" }}>{w?.duration_min != null && w.duration_min !== "" ? `${w.duration_min} min` : "—"}</td>
+                            <td style={{ ...cellPad, whiteSpace: "nowrap" }}>{w?.distance_km != null && w.distance_km !== "" && Number.isFinite(Number(w.distance_km)) ? `${w.distance_km} km` : "—"}</td>
                             <td style={{ ...cellPad, whiteSpace: "nowrap" }}>
+                              {nStruct > 0 ? (
+                                <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>{nStruct} bloque{nStruct !== 1 ? "s" : ""}</div>
+                              ) : null}
+                              <button type="button" onClick={() => openPlanSessionModalEdit(idx)} style={{ border: "1px solid #bae6fd", borderRadius: 6, padding: "5px 8px", background: "#f0f9ff", color: "#0369a1", cursor: "pointer", fontFamily: "inherit", fontSize: ".85em", marginRight: 6 }}>
+                                ✏️ Editar
+                              </button>
                               <button type="button" onClick={() => duplicatePlanRow(idx)} style={{ border: "1px solid #e2e8f0", borderRadius: 6, padding: "5px 8px", background: "#fff", cursor: "pointer", fontFamily: "inherit", fontSize: ".85em", marginRight: 6 }}>
                                 ➕ Duplicar
                               </button>
@@ -14084,7 +14041,7 @@ Reglas obligatorias:
                 </table>
               </div>
               <div style={{ padding: "10px 12px", borderTop: "1px solid #e2e8f0", background: "#fafafa" }}>
-                <button type="button" onClick={appendPlanRow} style={{ border: "1px solid #bae6fd", borderRadius: 8, padding: "8px 12px", background: "#f0f9ff", color: "#0369a1", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".8em" }}>
+                <button type="button" onClick={openPlanSessionModalAdd} style={{ border: "1px solid #bae6fd", borderRadius: 8, padding: "8px 12px", background: "#f0f9ff", color: "#0369a1", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".8em" }}>
                   ➕ Agregar sesión
                 </button>
               </div>
@@ -14203,6 +14160,315 @@ Reglas obligatorias:
             <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
               <button type="button" onClick={generatePlanWithAi} disabled={aiGenerating} style={{ border: "none", borderRadius: 8, padding: "9px 14px", background: aiGenerating ? "#cbd5e1" : "linear-gradient(135deg,#8b5cf6,#6366f1)", color: "#fff", fontWeight: 800, cursor: aiGenerating ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
                 {aiGenerating ? "Generando…" : "Generar con IA"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {planSessionModalOpen ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{ position: "fixed", inset: 0, zIndex: 10045, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "stretch", justifyContent: "flex-end", padding: 0 }}
+        >
+          <div
+            style={{
+              width: "100%",
+              maxWidth: 520,
+              height: "100%",
+              overflowY: "auto",
+              background: "#fff",
+              boxShadow: "-8px 0 32px rgba(15,23,42,.12)",
+              borderLeft: "1px solid #e2e8f0",
+              boxSizing: "border-box",
+              padding: "18px 18px 24px",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, gap: 10 }}>
+              <div style={{ fontSize: "1.02em", fontWeight: 900, color: "#0f172a" }}>{planSessionModalIndex == null ? "➕ Nueva sesión del plan" : "✏️ Editar sesión"}</div>
+              <button type="button" onClick={closePlanSessionModal} style={{ border: "1px solid #e2e8f0", background: "#fff", borderRadius: 8, padding: "6px 10px", cursor: "pointer", fontFamily: "inherit" }}>
+                ✕
+              </button>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 10, marginBottom: 10 }}>
+              <div>
+                <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6, fontWeight: 700 }}>Semana</div>
+                <input
+                  type="number"
+                  min={1}
+                  value={planSessionForm.week}
+                  onChange={(e) => setPlanSessionForm((f) => ({ ...f, week: e.target.value }))}
+                  style={{ width: "100%", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", color: "#0f172a", fontFamily: "inherit", fontSize: ".85em", boxSizing: "border-box" }}
+                />
+              </div>
+              <div>
+                <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6, fontWeight: 700 }}>Día</div>
+                <select
+                  value={planSessionForm.day}
+                  onChange={(e) => setPlanSessionForm((f) => ({ ...f, day: e.target.value }))}
+                  style={{ width: "100%", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", color: "#0f172a", fontFamily: "inherit", fontSize: ".85em", boxSizing: "border-box" }}
+                >
+                  {PLAN_PREVIEW_FULL_DAYS.map((d) => (
+                    <option key={d} value={d}>
+                      {d}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div style={{ gridColumn: "1 / -1" }}>
+                <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6, fontWeight: 700 }}>Título del workout</div>
+                <input
+                  value={planSessionForm.title}
+                  onChange={(e) => setPlanSessionForm((f) => ({ ...f, title: e.target.value }))}
+                  placeholder="Ej: Rodaje suave 45 min"
+                  style={{ width: "100%", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", color: "#0f172a", fontFamily: "inherit", fontSize: ".85em", boxSizing: "border-box" }}
+                />
+              </div>
+              <div style={{ gridColumn: "1 / -1" }}>
+                <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6, fontWeight: 700 }}>Tipo</div>
+                <select
+                  value={planSessionForm.type}
+                  onChange={(e) => setPlanSessionForm((f) => ({ ...f, type: e.target.value }))}
+                  style={{ width: "100%", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", color: "#0f172a", fontFamily: "inherit", fontSize: ".85em", boxSizing: "border-box" }}
+                >
+                  {PLAN_SESSION_TYPE_OPTIONS.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div style={{ gridColumn: "1 / -1" }}>
+                <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6, fontWeight: 700 }}>Descripción</div>
+                <textarea
+                  value={planSessionForm.description}
+                  onChange={(e) => setPlanSessionForm((f) => ({ ...f, description: e.target.value }))}
+                  rows={3}
+                  placeholder="Notas para el atleta, objetivo de la sesión…"
+                  style={{ width: "100%", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", color: "#0f172a", fontFamily: "inherit", fontSize: ".85em", resize: "vertical", boxSizing: "border-box" }}
+                />
+              </div>
+              <div>
+                <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6, fontWeight: 700 }}>Duración (minutos)</div>
+                <input
+                  type="number"
+                  min={0}
+                  value={planSessionForm.duration_min}
+                  onChange={(e) => setPlanSessionForm((f) => ({ ...f, duration_min: e.target.value }))}
+                  style={{ width: "100%", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", color: "#0f172a", fontFamily: "inherit", fontSize: ".85em", boxSizing: "border-box" }}
+                />
+              </div>
+              <div>
+                <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6, fontWeight: 700 }}>Distancia (km)</div>
+                <input
+                  type="number"
+                  min={0}
+                  step="0.1"
+                  value={planSessionForm.distance_km}
+                  onChange={(e) => setPlanSessionForm((f) => ({ ...f, distance_km: e.target.value }))}
+                  style={{ width: "100%", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", color: "#0f172a", fontFamily: "inherit", fontSize: ".85em", boxSizing: "border-box" }}
+                />
+              </div>
+            </div>
+            <div style={{ fontSize: ".65em", letterSpacing: ".13em", color: "#475569", textTransform: "uppercase", marginBottom: 10 }}>Estructura de intervalos</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {planSessionForm.structureRows.map((row, idx) => (
+                <div
+                  key={idx}
+                  style={{
+                    border: "1px solid #e2e8f0",
+                    borderRadius: 10,
+                    padding: "12px 12px",
+                    background: "#f8fafc",
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 8 }}>
+                    <span style={{ fontSize: ".75em", fontWeight: 800, color: "#334155" }}>Paso {idx + 1}</span>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      <button
+                        type="button"
+                        disabled={idx === 0}
+                        onClick={() => movePlanSessionStructureRow(idx, -1)}
+                        style={{
+                          background: idx === 0 ? "#f1f5f9" : "#fff",
+                          border: "1px solid #e2e8f0",
+                          borderRadius: 6,
+                          padding: "4px 10px",
+                          fontSize: ".72em",
+                          cursor: idx === 0 ? "not-allowed" : "pointer",
+                          fontFamily: "inherit",
+                          fontWeight: 700,
+                        }}
+                      >
+                        ↑
+                      </button>
+                      <button
+                        type="button"
+                        disabled={idx >= planSessionForm.structureRows.length - 1}
+                        onClick={() => movePlanSessionStructureRow(idx, 1)}
+                        style={{
+                          background: idx >= planSessionForm.structureRows.length - 1 ? "#f1f5f9" : "#fff",
+                          border: "1px solid #e2e8f0",
+                          borderRadius: 6,
+                          padding: "4px 10px",
+                          fontSize: ".72em",
+                          cursor: idx >= planSessionForm.structureRows.length - 1 ? "not-allowed" : "pointer",
+                          fontFamily: "inherit",
+                          fontWeight: 700,
+                        }}
+                      >
+                        ↓
+                      </button>
+                      <button
+                        type="button"
+                        disabled={planSessionForm.structureRows.length <= 1}
+                        onClick={() =>
+                          setPlanSessionForm((f) => ({
+                            ...f,
+                            structureRows: f.structureRows.length <= 1 ? f.structureRows : f.structureRows.filter((_, j) => j !== idx),
+                          }))
+                        }
+                        style={{
+                          background: "transparent",
+                          border: "1px solid #fecaca",
+                          borderRadius: 6,
+                          padding: "4px 10px",
+                          fontSize: ".72em",
+                          color: planSessionForm.structureRows.length <= 1 ? "#cbd5e1" : "#b91c1c",
+                          cursor: planSessionForm.structureRows.length <= 1 ? "not-allowed" : "pointer",
+                          fontFamily: "inherit",
+                          fontWeight: 700,
+                        }}
+                      >
+                        🗑️
+                      </button>
+                    </div>
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 8 }}>
+                    <div>
+                      <div style={{ fontSize: ".65em", color: "#94a3b8", marginBottom: 4 }}>Tipo de bloque</div>
+                      <select
+                        value={row.block_type}
+                        onChange={(e) =>
+                          setPlanSessionForm((f) => {
+                            const next = [...f.structureRows];
+                            next[idx] = { ...next[idx], block_type: e.target.value };
+                            return { ...f, structureRows: next };
+                          })
+                        }
+                        style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", fontSize: ".82em", fontFamily: "inherit", boxSizing: "border-box" }}
+                      >
+                        {WORKOUT_BLOCK_TYPES.map((bt) => (
+                          <option key={bt} value={bt}>
+                            {bt}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: ".65em", color: "#94a3b8", marginBottom: 4 }}>Duración (minutos)</div>
+                      <input
+                        value={row.duration_min}
+                        onChange={(e) =>
+                          setPlanSessionForm((f) => {
+                            const next = [...f.structureRows];
+                            next[idx] = { ...next[idx], duration_min: e.target.value };
+                            return { ...f, structureRows: next };
+                          })
+                        }
+                        placeholder="Ej: 12"
+                        style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", fontSize: ".82em", fontFamily: "inherit", boxSizing: "border-box" }}
+                      />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: ".65em", color: "#94a3b8", marginBottom: 4 }}>Distancia (km)</div>
+                      <input
+                        value={row.distance_km}
+                        onChange={(e) =>
+                          setPlanSessionForm((f) => {
+                            const next = [...f.structureRows];
+                            next[idx] = { ...next[idx], distance_km: e.target.value };
+                            return { ...f, structureRows: next };
+                          })
+                        }
+                        placeholder="Opcional"
+                        style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", fontSize: ".82em", fontFamily: "inherit", boxSizing: "border-box" }}
+                      />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: ".65em", color: "#94a3b8", marginBottom: 4 }}>Ritmo objetivo (MM:SS /km)</div>
+                      <input
+                        value={row.target_pace}
+                        onChange={(e) =>
+                          setPlanSessionForm((f) => {
+                            const next = [...f.structureRows];
+                            next[idx] = { ...next[idx], target_pace: e.target.value };
+                            return { ...f, structureRows: next };
+                          })
+                        }
+                        placeholder="Ej: 4:30"
+                        style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", fontSize: ".82em", fontFamily: "inherit", boxSizing: "border-box" }}
+                      />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: ".65em", color: "#94a3b8", marginBottom: 4 }}>FC objetivo (lpm)</div>
+                      <input
+                        value={row.target_hr}
+                        onChange={(e) =>
+                          setPlanSessionForm((f) => {
+                            const next = [...f.structureRows];
+                            next[idx] = { ...next[idx], target_hr: e.target.value };
+                            return { ...f, structureRows: next };
+                          })
+                        }
+                        placeholder="Ej: 140-160"
+                        style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", fontSize: ".82em", fontFamily: "inherit", boxSizing: "border-box" }}
+                      />
+                    </div>
+                    <div style={{ gridColumn: "1 / -1" }}>
+                      <div style={{ fontSize: ".65em", color: "#94a3b8", marginBottom: 4 }}>Descripción</div>
+                      <input
+                        value={row.description}
+                        onChange={(e) =>
+                          setPlanSessionForm((f) => {
+                            const next = [...f.structureRows];
+                            next[idx] = { ...next[idx], description: e.target.value };
+                            return { ...f, structureRows: next };
+                          })
+                        }
+                        placeholder="Texto libre"
+                        style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", fontSize: ".82em", fontFamily: "inherit", boxSizing: "border-box" }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => setPlanSessionForm((f) => ({ ...f, structureRows: [...f.structureRows, emptyWorkoutStructureRow()] }))}
+              style={{
+                marginTop: 12,
+                width: "100%",
+                background: "#eff6ff",
+                border: "1px solid #bfdbfe",
+                borderRadius: 8,
+                padding: "10px 14px",
+                color: "#1d4ed8",
+                fontWeight: 800,
+                cursor: "pointer",
+                fontFamily: "inherit",
+                fontSize: ".82em",
+              }}
+            >
+              ➕ Agregar bloque
+            </button>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18, flexWrap: "wrap" }}>
+              <button type="button" onClick={closePlanSessionModal} style={{ border: "1px solid #e2e8f0", borderRadius: 8, background: "#fff", padding: "10px 16px", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, color: "#475569" }}>
+                Cancelar
+              </button>
+              <button type="button" onClick={savePlanSessionModal} style={{ border: "none", borderRadius: 8, padding: "10px 16px", background: "linear-gradient(135deg,#0ea5e9,#0284c7)", color: "#fff", fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>
+                Guardar sesión
               </button>
             </div>
           </div>
