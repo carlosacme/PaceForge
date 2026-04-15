@@ -13131,7 +13131,9 @@ function AdminMarketplacePanel({ notify }) {
   const [aiLevel, setAiLevel] = useState("principiante");
   const [aiGoal, setAiGoal] = useState("42K");
   const [aiDurationWeeks, setAiDurationWeeks] = useState("16");
+  const [aiSessionsPerWeek, setAiSessionsPerWeek] = useState("4");
   const [showPreviewTable, setShowPreviewTable] = useState(false);
+  const [showFullGeneratedPlanPreview, setShowFullGeneratedPlanPreview] = useState(false);
 
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -13285,18 +13287,36 @@ function AdminMarketplacePanel({ notify }) {
     }
     notify?.("Plan creado y aprobado automáticamente.");
     setCreateForm(EMPTY_ADMIN_PLAN_FORM);
+    setShowFullGeneratedPlanPreview(false);
     if (typeof localStorage !== "undefined") localStorage.removeItem(ADMIN_PLAN_DRAFT_KEY);
     loadAll();
   };
 
   const generatePlanWithAi = async () => {
-    const systemPrompt =
-      'Eres un experto en coaching de running. Genera un plan de entrenamiento completo para vender en un marketplace. Responde SOLO con JSON sin texto adicional:\n{\n  "title": "título comercial atractivo",\n  "description": "descripción de venta de 2-3 oraciones que convenza al atleta",\n  "level": "principiante|intermedio|avanzado",\n  "duration_weeks": número,\n  "sessions_per_week": número,\n  "price_cop": precio sugerido entre 50000 y 300000,\n  "preview_workouts": [\n    {"week": 1, "day": "Martes", "title": "título sesión", "description": "descripción", "duration_min": número, "distance_km": número},\n    {"week": 1, "day": "Jueves", "title": "título sesión", "description": "descripción", "duration_min": número, "distance_km": número},\n    {"week": 1, "day": "Sábado", "title": "título sesión", "description": "descripción", "duration_min": número, "distance_km": número}\n  ]\n}';
+    const sessionsFixed = [3, 4, 5].includes(Number(aiSessionsPerWeek)) ? Number(aiSessionsPerWeek) : 4;
+    const systemPrompt = `Eres un experto en coaching de running. Genera un plan de entrenamiento completo para vender en un marketplace. Responde SOLO con JSON sin texto adicional ni markdown:
+{
+  "title": "título comercial atractivo",
+  "description": "descripción de venta de 2-3 oraciones que convenza al atleta",
+  "level": "principiante|intermedio|avanzado",
+  "duration_weeks": número,
+  "sessions_per_week": ${sessionsFixed},
+  "price_cop": precio sugerido entre 50000 y 300000,
+  "preview_workouts": [
+    {"week": 1, "day": "Martes", "title": "título sesión", "description": "descripción", "duration_min": número, "distance_km": número}
+  ]
+}
+Reglas obligatorias:
+- El campo "sessions_per_week" en tu respuesta JSON debe ser exactamente el número ${sessionsFixed} (valor fijo; no uses otro número).
+- Cada semana incluida en preview_workouts debe tener exactamente ${sessionsFixed} sesiones, en días no consecutivos (ej. separar con al menos un día de descanso entre sesiones de la misma semana).
+- Cada elemento de preview_workouts debe incluir: week, day, title, description, duration_min, distance_km.`;
     const userPrompt = [
       `Describe el plan: ${aiContext || "Plan de running para marketplace"}`,
       `Nivel: ${aiLevel}`,
       `Objetivo: ${aiGoal}`,
       `Duración: ${aiDurationWeeks} semanas`,
+      `El plan debe tener exactamente ${sessionsFixed} sesiones por semana, distribuidas en días no consecutivos.`,
+      `Incluye al menos 3 semanas de ejemplo en preview_workouts (semana 1, semana de medio punto y semana final) con ${sessionsFixed} sesiones cada una.`,
     ].join("\n");
     setAiGenerating(true);
     try {
@@ -13305,7 +13325,7 @@ function AdminMarketplacePanel({ notify }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           model: "claude-sonnet-4-20250514",
-          max_tokens: 2200,
+          max_tokens: 4096,
           system: systemPrompt,
           messages: [{ role: "user", content: userPrompt }],
         }),
@@ -13327,11 +13347,12 @@ function AdminMarketplacePanel({ notify }) {
         description: String(parsed.description || prev.description || ""),
         level: String(parsed.level || aiLevel || "intermedio"),
         duration_weeks: String(parsed.duration_weeks || aiDurationWeeks || "12"),
-        sessions_per_week: String(parsed.sessions_per_week || prev.sessions_per_week || "4"),
+        sessions_per_week: String(sessionsFixed),
         price_cop: String(parsed.price_cop || prev.price_cop || "120000"),
         preview_workouts_text: JSON.stringify(Array.isArray(parsed.preview_workouts) ? parsed.preview_workouts : [], null, 2),
       }));
       notify?.("Plan generado con IA y formulario prellenado.");
+      setShowFullGeneratedPlanPreview(true);
       setAiModalOpen(false);
     } catch (e) {
       console.error("generatePlanWithAi:", e);
@@ -13359,6 +13380,7 @@ function AdminMarketplacePanel({ notify }) {
               type="button"
               onClick={() => {
                 setCreateForm(EMPTY_ADMIN_PLAN_FORM);
+                setShowFullGeneratedPlanPreview(false);
                 if (typeof localStorage !== "undefined") localStorage.removeItem(ADMIN_PLAN_DRAFT_KEY);
               }}
               style={{ border: "1px solid #fecaca", borderRadius: 8, padding: "8px 10px", background: "#fff1f2", color: "#b91c1c", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".76em" }}
@@ -13367,7 +13389,11 @@ function AdminMarketplacePanel({ notify }) {
             </button>
             <button
               type="button"
-              onClick={() => setAiModalOpen(true)}
+              onClick={() => {
+                const s = String(createForm.sessions_per_week || "4");
+                if (s === "3" || s === "4" || s === "5") setAiSessionsPerWeek(s);
+                setAiModalOpen(true);
+              }}
               style={{ border: "none", borderRadius: 8, padding: "8px 12px", background: "linear-gradient(135deg,#8b5cf6,#6366f1)", color: "#fff", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".78em" }}
             >
               ✨ Generar plan con IA
@@ -13451,6 +13477,63 @@ function AdminMarketplacePanel({ notify }) {
             </div>
           ) : null}
         </div>
+        {previewRows.length > 0 ? (
+          <div style={{ marginTop: 14, borderTop: "1px solid #e2e8f0", paddingTop: 12 }}>
+            <button
+              type="button"
+              onClick={() => setShowFullGeneratedPlanPreview((v) => !v)}
+              style={{
+                width: "100%",
+                textAlign: "left",
+                border: "1px solid #e2e8f0",
+                borderRadius: 10,
+                padding: "10px 12px",
+                background: showFullGeneratedPlanPreview ? "#f1f5f9" : "#fff",
+                fontWeight: 800,
+                fontSize: ".85em",
+                color: "#0f172a",
+                cursor: "pointer",
+                fontFamily: "inherit",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+              }}
+            >
+              <span>📋 Plan generado completo</span>
+              <span style={{ fontSize: ".75em", color: "#64748b" }}>{showFullGeneratedPlanPreview ? "Ocultar" : "Ver"}</span>
+            </button>
+            {showFullGeneratedPlanPreview ? (
+              <div style={{ marginTop: 10, border: "1px solid #e2e8f0", borderRadius: 10, overflow: "hidden" }}>
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", minWidth: 720, borderCollapse: "collapse" }}>
+                    <thead>
+                      <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0", fontSize: ".7em", color: "#475569", textTransform: "uppercase", letterSpacing: ".05em" }}>
+                        <th style={{ textAlign: "left", padding: "8px 10px" }}>Semana</th>
+                        <th style={{ textAlign: "left", padding: "8px 10px" }}>Día</th>
+                        <th style={{ textAlign: "left", padding: "8px 10px" }}>Título</th>
+                        <th style={{ textAlign: "left", padding: "8px 10px" }}>Descripción</th>
+                        <th style={{ textAlign: "left", padding: "8px 10px" }}>Duración</th>
+                        <th style={{ textAlign: "left", padding: "8px 10px" }}>Distancia</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {previewRows.map((w, idx) => (
+                        <tr key={`full-${idx}-${w?.week}-${w?.day}-${w?.title || ""}`} style={{ borderBottom: "1px solid #f1f5f9", fontSize: ".78em", color: "#334155", verticalAlign: "top" }}>
+                          <td style={{ padding: "8px 10px", whiteSpace: "nowrap" }}>{w?.week ?? "-"}</td>
+                          <td style={{ padding: "8px 10px", whiteSpace: "nowrap" }}>{w?.day || "-"}</td>
+                          <td style={{ padding: "8px 10px", fontWeight: 700 }}>{w?.title || "-"}</td>
+                          <td style={{ padding: "8px 10px", maxWidth: 280, lineHeight: 1.4 }}>{w?.description != null ? String(w.description) : "—"}</td>
+                          <td style={{ padding: "8px 10px", whiteSpace: "nowrap" }}>{w?.duration_min != null ? `${w.duration_min} min` : "-"}</td>
+                          <td style={{ padding: "8px 10px", whiteSpace: "nowrap" }}>{w?.distance_km != null ? `${w.distance_km} km` : "-"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
       </div>
       {loading ? (
         <div style={{ color: "#64748b" }}>Cargando marketplace…</div>
@@ -13546,6 +13629,14 @@ function AdminMarketplacePanel({ notify }) {
               <select value={aiDurationWeeks} onChange={(e) => setAiDurationWeeks(e.target.value)} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit" }}>
                 {["8", "12", "16", "20", "24"].map((w) => <option key={w} value={w}>{w} semanas</option>)}
               </select>
+              <div style={{ gridColumn: "1 / -1" }}>
+                <label style={{ display: "block", fontSize: ".72em", color: "#64748b", marginBottom: 6, fontWeight: 700 }}>Sesiones por semana</label>
+                <select value={aiSessionsPerWeek} onChange={(e) => setAiSessionsPerWeek(e.target.value)} style={{ width: "100%", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit", boxSizing: "border-box" }}>
+                  <option value="3">3</option>
+                  <option value="4">4</option>
+                  <option value="5">5</option>
+                </select>
+              </div>
             </div>
             <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
               <button type="button" onClick={generatePlanWithAi} disabled={aiGenerating} style={{ border: "none", borderRadius: 8, padding: "9px 14px", background: aiGenerating ? "#cbd5e1" : "linear-gradient(135deg,#8b5cf6,#6366f1)", color: "#fff", fontWeight: 800, cursor: aiGenerating ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
