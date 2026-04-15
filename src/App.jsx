@@ -6960,6 +6960,10 @@ function AthleteHome({ profile }) {
   };
 
   const athleteName = profile?.name || athleteInfo?.name || "Atleta";
+  const handleAthleteNavTabChange = (tabId) => {
+    setAthleteChatOpen(false);
+    setAthleteActiveTab(tabId);
+  };
   const nextRaceText = athleteInfo?.next_race ? `🏁 ${getRaceCountdownText(athleteInfo.next_race)}` : "🏁 Próxima carrera · fecha pendiente";
 
   const coachIdForChat = athleteInfo?.coach_id || null;
@@ -7321,16 +7325,16 @@ function AthleteHome({ profile }) {
         💬
       </button>
 
-      <nav className="pf-bottom-nav" aria-label="Navegación atleta" style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 10020 }}>
-        <button type="button" style={{ color: athleteActiveTab === "" ? "#c2410c" : "#64748b", background: athleteActiveTab === "" ? "rgba(245,158,11,.14)" : "transparent", fontWeight: athleteActiveTab === "" ? 800 : 600 }} onClick={() => setAthleteActiveTab("")}><span className="pf-bnav-icon">🏠</span><span style={{ fontSize: "0.62rem" }}>Inicio</span></button>
-        <button type="button" style={{ color: athleteActiveTab === "challenges" ? "#c2410c" : "#64748b", background: athleteActiveTab === "challenges" ? "rgba(245,158,11,.14)" : "transparent", fontWeight: athleteActiveTab === "challenges" ? 800 : 600 }} onClick={() => setAthleteActiveTab("challenges")}><span className="pf-bnav-icon">🏆</span><span style={{ fontSize: "0.62rem" }}>Retos</span></button>
-        <button type="button" style={{ color: athleteActiveTab === "forma" ? "#c2410c" : "#64748b", background: athleteActiveTab === "forma" ? "rgba(245,158,11,.14)" : "transparent", fontWeight: athleteActiveTab === "forma" ? 800 : 600 }} onClick={() => setAthleteActiveTab("forma")}><span className="pf-bnav-icon">📊</span><span style={{ fontSize: "0.62rem" }}>Forma</span></button>
-        <button type="button" style={{ color: athleteActiveTab === "eval" ? "#c2410c" : "#64748b", background: athleteActiveTab === "eval" ? "rgba(245,158,11,.14)" : "transparent", fontWeight: athleteActiveTab === "eval" ? 800 : 600 }} onClick={() => setAthleteActiveTab("eval")}><span className="pf-bnav-icon">⚡</span><span style={{ fontSize: "0.62rem" }}>Evaluación</span></button>
-        <button type="button" style={{ color: athleteActiveTab === "profile" ? "#c2410c" : "#64748b", background: athleteActiveTab === "profile" ? "rgba(245,158,11,.14)" : "transparent", fontWeight: athleteActiveTab === "profile" ? 800 : 600 }} onClick={() => setAthleteActiveTab("profile")}><span className="pf-bnav-icon">👤</span><span style={{ fontSize: "0.62rem" }}>Perfil</span></button>
+      <nav className="pf-bottom-nav" aria-label="Navegación atleta" style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 9999 }}>
+        <button type="button" style={{ color: athleteActiveTab === "" ? "#c2410c" : "#64748b", background: athleteActiveTab === "" ? "rgba(245,158,11,.14)" : "transparent", fontWeight: athleteActiveTab === "" ? 800 : 600 }} onClick={() => handleAthleteNavTabChange("")}><span className="pf-bnav-icon">🏠</span><span style={{ fontSize: "0.62rem" }}>Inicio</span></button>
+        <button type="button" style={{ color: athleteActiveTab === "challenges" ? "#c2410c" : "#64748b", background: athleteActiveTab === "challenges" ? "rgba(245,158,11,.14)" : "transparent", fontWeight: athleteActiveTab === "challenges" ? 800 : 600 }} onClick={() => handleAthleteNavTabChange("challenges")}><span className="pf-bnav-icon">🏆</span><span style={{ fontSize: "0.62rem" }}>Retos</span></button>
+        <button type="button" style={{ color: athleteActiveTab === "forma" ? "#c2410c" : "#64748b", background: athleteActiveTab === "forma" ? "rgba(245,158,11,.14)" : "transparent", fontWeight: athleteActiveTab === "forma" ? 800 : 600 }} onClick={() => handleAthleteNavTabChange("forma")}><span className="pf-bnav-icon">📊</span><span style={{ fontSize: "0.62rem" }}>Forma</span></button>
+        <button type="button" style={{ color: athleteActiveTab === "eval" ? "#c2410c" : "#64748b", background: athleteActiveTab === "eval" ? "rgba(245,158,11,.14)" : "transparent", fontWeight: athleteActiveTab === "eval" ? 800 : 600 }} onClick={() => handleAthleteNavTabChange("eval")}><span className="pf-bnav-icon">⚡</span><span style={{ fontSize: "0.62rem" }}>Evaluación</span></button>
+        <button type="button" style={{ color: athleteActiveTab === "profile" ? "#c2410c" : "#64748b", background: athleteActiveTab === "profile" ? "rgba(245,158,11,.14)" : "transparent", fontWeight: athleteActiveTab === "profile" ? 800 : 600 }} onClick={() => handleAthleteNavTabChange("profile")}><span className="pf-bnav-icon">👤</span><span style={{ fontSize: "0.62rem" }}>Perfil</span></button>
       </nav>
 
       {athleteActiveTab ? (
-        <div style={{ position: "fixed", inset: 0, zIndex: 10005, background: "rgba(15,23,42,.4)", display: "flex", alignItems: "flex-end" }}>
+        <div style={{ position: "fixed", inset: 0, zIndex: 9988, background: "rgba(15,23,42,.4)", display: "flex", alignItems: "flex-end" }}>
           <div style={{ width: "100%", height: "100%", background: "#fff", borderTopLeftRadius: 18, borderTopRightRadius: 18, overflowY: "auto", padding: 16, paddingBottom: 94 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
               <div style={{ fontSize: "1.05em", fontWeight: 900, color: "#0f172a" }}>
@@ -7416,8 +7420,8 @@ function AthleteHome({ profile }) {
       ) : null}
 
       {athleteChatOpen ? (
-        <div style={{ position: "fixed", inset: 0, zIndex: 10011, background: "rgba(15,23,42,.4)", display: "flex", alignItems: "flex-end" }}>
-          <div style={{ width: "100%", height: "100%", background: "#fff", borderTopLeftRadius: 18, borderTopRightRadius: 18, overflowY: "auto", padding: 16 }}>
+        <div style={{ position: "fixed", inset: 0, zIndex: 9989, background: "rgba(15,23,42,.4)", display: "flex", alignItems: "flex-end" }}>
+          <div style={{ width: "100%", height: "100%", background: "#fff", borderTopLeftRadius: 18, borderTopRightRadius: 18, overflowY: "auto", padding: 16, paddingBottom: 94 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
               <div style={{ fontSize: "1.05em", fontWeight: 900 }}>💬 Chat con tu coach</div>
               <button type="button" onClick={() => setAthleteChatOpen(false)} style={{ border: "1px solid #e2e8f0", background: "#fff", borderRadius: 8, padding: "6px 10px", color: "#475569", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>✕</button>
@@ -7440,7 +7444,7 @@ function AthleteHome({ profile }) {
       ) : null}
 
       {workoutSummaryModal && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.55)", zIndex: 10001, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.55)", zIndex: 9987, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
           <div style={{ ...S.card, width: "100%", maxWidth: 520, margin: 0 }}>
             <div style={{ fontSize: "1.1em", fontWeight: 900, color: "#0f172a", marginBottom: 6 }}>Resumen del entrenamiento</div>
             <div style={{ color: "#64748b", fontSize: ".84em", marginBottom: 12 }}>
@@ -7495,7 +7499,7 @@ function AthleteHome({ profile }) {
             position: "fixed",
             inset: 0,
             background: "rgba(15,23,42,0.55)",
-            zIndex: 10000,
+            zIndex: 9986,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
