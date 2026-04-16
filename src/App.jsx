@@ -12960,7 +12960,7 @@ function AdminCoachesProfilesPanel({ notify, adminUserId }) {
 }
 
 /** Acordeón por semana para preview_workouts (modal Marketplace y Biblioteca admin). */
-function MarketplacePlanWorkoutsAccordion({ previewWorkouts, resetKey }) {
+function MarketplacePlanWorkoutsAccordion({ previewWorkouts, resetKey, lockAfterWeek1 = false }) {
   const list = Array.isArray(previewWorkouts) ? previewWorkouts : [];
   const weekGroups = useMemo(() => {
     const arr = Array.isArray(previewWorkouts) ? previewWorkouts : [];
@@ -12979,6 +12979,9 @@ function MarketplacePlanWorkoutsAccordion({ previewWorkouts, resetKey }) {
     });
   }, [previewWorkouts]);
 
+  const week1Groups = useMemo(() => weekGroups.filter(([k]) => k === 1), [weekGroups]);
+  const lockedWeekGroups = useMemo(() => weekGroups.filter(([k]) => k !== 1), [weekGroups]);
+
   const [openWeeks, setOpenWeeks] = useState(() => new Set([1]));
 
   useEffect(() => {
@@ -12990,97 +12993,165 @@ function MarketplacePlanWorkoutsAccordion({ previewWorkouts, resetKey }) {
           .filter((n) => Number.isFinite(n) && n > 0),
       ),
     ].sort((a, b) => a - b);
-    const defaultW = weekNums.includes(1) ? 1 : weekNums.length ? weekNums[0] : 1;
+    const defaultW = lockAfterWeek1 ? 1 : weekNums.includes(1) ? 1 : weekNums.length ? weekNums[0] : 1;
     setOpenWeeks(new Set([defaultW]));
-  }, [resetKey, previewWorkouts]);
+  }, [resetKey, previewWorkouts, lockAfterWeek1]);
+
+  const renderSessionCard = (w, i, weekKey) => {
+    const struct = w.workout_structure || w.structure;
+    const hasStructure = Array.isArray(struct) && struct.length > 0;
+    const km =
+      w.distance_km != null && w.distance_km !== "" && Number.isFinite(Number(w.distance_km))
+        ? Number(w.distance_km)
+        : w.total_km != null && w.total_km !== ""
+          ? Number(w.total_km)
+          : null;
+    const mins = w.duration_min != null && w.duration_min !== "" ? Number(w.duration_min) : null;
+    const metaParts = [];
+    if (km != null && Number.isFinite(km)) metaParts.push(`${km} km`);
+    if (mins != null && Number.isFinite(mins)) metaParts.push(`${mins} min`);
+    return (
+      <div
+        key={w.id != null ? String(w.id) : `wk-${weekKey}-row-${i}`}
+        style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", background: "#fff" }}
+      >
+        <div style={{ fontWeight: 800, fontSize: ".85em" }}>
+          {w.day ? `${w.day} · ` : ""}
+          {w.title || `Sesión ${i + 1}`}
+        </div>
+        {w.description ? <div style={{ fontSize: ".78em", color: "#475569", marginTop: 4, lineHeight: 1.4 }}>{w.description}</div> : null}
+        {metaParts.length > 0 ? <div style={{ fontSize: ".75em", color: "#64748b", marginTop: 4 }}>{metaParts.join(" · ")}</div> : null}
+        {hasStructure ? (
+          <div style={{ marginTop: 6 }}>
+            <WorkoutStructureTable structure={struct} />
+          </div>
+        ) : null}
+      </div>
+    );
+  };
 
   if (list.length === 0) {
     return <div style={{ color: "#94a3b8", fontSize: ".82em", marginBottom: 12 }}>No hay muestra de workouts.</div>;
   }
 
+  const headerBtnStyle = {
+    width: "100%",
+    textAlign: "left",
+    padding: "10px 12px",
+    border: "none",
+    background: "#fff",
+    fontWeight: 800,
+    fontSize: ".82em",
+    color: "#0f172a",
+    cursor: "pointer",
+    fontFamily: "inherit",
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    boxSizing: "border-box",
+  };
+
+  const renderInteractiveWeek = ([weekKey, items]) => {
+    const open = openWeeks.has(weekKey);
+    const label = weekKey === 0 ? "Sin número de semana" : `Semana ${weekKey}`;
+    return (
+      <div key={weekKey} style={{ border: "1px solid #e2e8f0", borderRadius: 10, overflow: "hidden" }}>
+        <button
+          type="button"
+          onClick={() =>
+            setOpenWeeks((prev) => {
+              if (prev.has(weekKey) && prev.size === 1) return new Set();
+              return new Set([weekKey]);
+            })
+          }
+          style={{
+            ...headerBtnStyle,
+            background: open ? "#f1f5f9" : "#fff",
+          }}
+        >
+          <span>
+            {label}
+            <span style={{ fontWeight: 600, color: "#64748b", marginLeft: 6 }}>
+              ({items.length} {items.length === 1 ? "sesión" : "sesiones"})
+            </span>
+          </span>
+          <span style={{ fontSize: ".75em", color: "#64748b" }}>{open ? "▾" : "▸"}</span>
+        </button>
+        {open ? (
+          <div style={{ padding: "8px 10px 10px", background: "#fafafa", display: "grid", gap: 8 }}>
+            {items.map(({ w, i }) => renderSessionCard(w, i, weekKey))}
+          </div>
+        ) : null}
+      </div>
+    );
+  };
+
+  const renderLockedWeek = ([weekKey, items]) => {
+    const label = weekKey === 0 ? "Sin número de semana" : `Semana ${weekKey}`;
+    return (
+      <div key={`locked-${weekKey}`} style={{ border: "1px solid #e2e8f0", borderRadius: 10, overflow: "hidden", marginTop: 6 }}>
+        <div
+          style={{
+            ...headerBtnStyle,
+            background: "#f8fafc",
+            cursor: "default",
+            borderBottom: "1px solid #e2e8f0",
+          }}
+        >
+          <span>
+            {label}
+            <span style={{ marginLeft: 8 }} aria-hidden="true">
+              🔒
+            </span>
+            <span style={{ fontWeight: 600, color: "#64748b", marginLeft: 6 }}>
+              ({items.length} {items.length === 1 ? "sesión" : "sesiones"})
+            </span>
+          </span>
+        </div>
+        <div style={{ position: "relative", background: "#fafafa" }}>
+          <div style={{ padding: "8px 10px 10px", display: "grid", gap: 8, filter: "blur(3px)", userSelect: "none", pointerEvents: "none" }}>
+            {items.map(({ w, i }) => renderSessionCard(w, i, weekKey))}
+          </div>
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              background: "rgba(248,250,252,0.82)",
+              backdropFilter: "blur(2px)",
+              WebkitBackdropFilter: "blur(2px)",
+              pointerEvents: "auto",
+            }}
+            aria-hidden="true"
+          />
+        </div>
+      </div>
+    );
+  };
+
+  if (lockAfterWeek1) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
+        <div style={{ fontSize: ".72em", fontWeight: 800, color: "#0369a1", marginBottom: 2 }}>Muestra gratuita · Semana 1</div>
+        {week1Groups.length === 0 ? (
+          <div style={{ color: "#64748b", fontSize: ".82em", padding: "10px 12px", border: "1px dashed #cbd5e1", borderRadius: 10, background: "#fff" }}>
+            No hay sesiones numeradas como semana 1 en esta vista previa.
+          </div>
+        ) : (
+          week1Groups.map(renderInteractiveWeek)
+        )}
+        {lockedWeekGroups.length > 0 ? (
+          <>
+            <div style={{ fontSize: ".72em", fontWeight: 800, color: "#64748b", marginTop: 8, marginBottom: 2 }}>Resto del plan</div>
+            {lockedWeekGroups.map(renderLockedWeek)}
+          </>
+        ) : null}
+      </div>
+    );
+  }
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
-      {weekGroups.map(([weekKey, items]) => {
-        const open = openWeeks.has(weekKey);
-        const label = weekKey === 0 ? "Sin número de semana" : `Semana ${weekKey}`;
-        return (
-          <div key={weekKey} style={{ border: "1px solid #e2e8f0", borderRadius: 10, overflow: "hidden" }}>
-            <button
-              type="button"
-              onClick={() =>
-                setOpenWeeks((prev) => {
-                  if (prev.has(weekKey) && prev.size === 1) return new Set();
-                  return new Set([weekKey]);
-                })
-              }
-              style={{
-                width: "100%",
-                textAlign: "left",
-                padding: "10px 12px",
-                border: "none",
-                background: open ? "#f1f5f9" : "#fff",
-                fontWeight: 800,
-                fontSize: ".82em",
-                color: "#0f172a",
-                cursor: "pointer",
-                fontFamily: "inherit",
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                boxSizing: "border-box",
-              }}
-            >
-              <span>
-                {label}
-                <span style={{ fontWeight: 600, color: "#64748b", marginLeft: 6 }}>
-                  ({items.length} {items.length === 1 ? "sesión" : "sesiones"})
-                </span>
-              </span>
-              <span style={{ fontSize: ".75em", color: "#64748b" }}>{open ? "▾" : "▸"}</span>
-            </button>
-            {open ? (
-              <div style={{ padding: "8px 10px 10px", background: "#fafafa", display: "grid", gap: 8 }}>
-                {items.map(({ w, i }) => {
-                  const struct = w.workout_structure || w.structure;
-                  const hasStructure = Array.isArray(struct) && struct.length > 0;
-                  const km =
-                    w.distance_km != null && w.distance_km !== "" && Number.isFinite(Number(w.distance_km))
-                      ? Number(w.distance_km)
-                      : w.total_km != null && w.total_km !== ""
-                        ? Number(w.total_km)
-                        : null;
-                  const mins = w.duration_min != null && w.duration_min !== "" ? Number(w.duration_min) : null;
-                  const metaParts = [];
-                  if (km != null && Number.isFinite(km)) metaParts.push(`${km} km`);
-                  if (mins != null && Number.isFinite(mins)) metaParts.push(`${mins} min`);
-                  return (
-                    <div
-                      key={w.id != null ? String(w.id) : `wk-${weekKey}-row-${i}`}
-                      style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", background: "#fff" }}
-                    >
-                      <div style={{ fontWeight: 800, fontSize: ".85em" }}>
-                        {w.day ? `${w.day} · ` : ""}
-                        {w.title || `Sesión ${i + 1}`}
-                      </div>
-                      {w.description ? (
-                        <div style={{ fontSize: ".78em", color: "#475569", marginTop: 4, lineHeight: 1.4 }}>{w.description}</div>
-                      ) : null}
-                      {metaParts.length > 0 ? (
-                        <div style={{ fontSize: ".75em", color: "#64748b", marginTop: 4 }}>{metaParts.join(" · ")}</div>
-                      ) : null}
-                      {hasStructure ? (
-                        <div style={{ marginTop: 6 }}>
-                          <WorkoutStructureTable structure={struct} />
-                        </div>
-                      ) : null}
-                    </div>
-                  );
-                })}
-              </div>
-            ) : null}
-          </div>
-        );
-      })}
+      {weekGroups.map(renderInteractiveWeek)}
     </div>
   );
 }
@@ -13209,6 +13280,19 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
     );
     return `https://wa.me/573233675434?text=${txt}`;
   }, [selectedPlan]);
+
+  /** Vista atleta: hay semanas distintas de la 1 (o sin numerar) → CTA de desbloqueo bajo el acordeón. */
+  const planPreviewHasLockedWeeks = useMemo(() => {
+    if (!selectedPlan || !isAthlete) return false;
+    const arr = Array.isArray(selectedPlan.preview_workouts) ? selectedPlan.preview_workouts : [];
+    for (let j = 0; j < arr.length; j++) {
+      const w = arr[j];
+      const wn = w?.week != null && w.week !== "" ? Number(w.week) : NaN;
+      const key = Number.isFinite(wn) && wn > 0 ? wn : 0;
+      if (key !== 1) return true;
+    }
+    return false;
+  }, [selectedPlan, isAthlete]);
 
   const submitCoachPlan = async () => {
     if (!coachUserId) return;
@@ -13367,10 +13451,21 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
             </div>
             <div style={{ color: "#475569", fontSize: ".86em", marginBottom: 10 }}>{selectedPlan.description || "Sin descripción."}</div>
             <div style={{ fontSize: ".78em", fontWeight: 800, color: "#334155", marginBottom: 8 }}>Workouts de muestra</div>
-            <MarketplacePlanWorkoutsAccordion previewWorkouts={selectedPlan.preview_workouts} resetKey={selectedPlan.id} />
-            <button type="button" onClick={() => openPurchaseInstructions(selectedPlan)} style={{ width: "100%", background: "linear-gradient(135deg,#ea580c,#f97316)", border: "none", borderRadius: 10, padding: "10px 14px", color: "#fff", fontWeight: 900, cursor: "pointer", fontFamily: "inherit", fontSize: ".85em" }}>
-              Comprar - ${formatCopInt(selectedPlan.price_cop)} COP
-            </button>
+            <MarketplacePlanWorkoutsAccordion previewWorkouts={selectedPlan.preview_workouts} resetKey={selectedPlan.id} lockAfterWeek1={isAthlete} />
+            {isAthlete && planPreviewHasLockedWeeks ? (
+              <div style={{ marginTop: 14, marginBottom: 12, padding: "14px 16px", borderRadius: 12, background: "linear-gradient(180deg,#f1f5f9,#fff)", border: "1px solid #e2e8f0", textAlign: "center" }}>
+                <div style={{ fontSize: ".9em", fontWeight: 800, color: "#0f172a", marginBottom: 12, lineHeight: 1.45 }}>
+                  Adquiere este plan para desbloquear todas las semanas
+                </div>
+                <button type="button" onClick={() => openPurchaseInstructions(selectedPlan)} style={{ width: "100%", background: "linear-gradient(135deg,#ea580c,#f97316)", border: "none", borderRadius: 10, padding: "10px 14px", color: "#fff", fontWeight: 900, cursor: "pointer", fontFamily: "inherit", fontSize: ".85em" }}>
+                  Comprar - ${formatCopInt(selectedPlan.price_cop)} COP
+                </button>
+              </div>
+            ) : (
+              <button type="button" onClick={() => openPurchaseInstructions(selectedPlan)} style={{ width: "100%", background: "linear-gradient(135deg,#ea580c,#f97316)", border: "none", borderRadius: 10, padding: "10px 14px", color: "#fff", fontWeight: 900, cursor: "pointer", fontFamily: "inherit", fontSize: ".85em", marginTop: 10 }}>
+                Comprar - ${formatCopInt(selectedPlan.price_cop)} COP
+              </button>
+            )}
             <div style={{ marginTop: 12, border: "1px solid #e2e8f0", borderRadius: 10, padding: 12, background: "#fff7ed" }}>
               <div style={{ fontWeight: 800, marginBottom: 6 }}>Realiza tu pago a:</div>
               <div style={{ fontSize: ".84em", lineHeight: 1.5 }}>
