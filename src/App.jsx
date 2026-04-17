@@ -1927,58 +1927,80 @@ Responde SOLO con un JSON con esta estructura exacta, sin texto adicional:
                   Fecha límite: {challenge.end_date ? new Date(`${challenge.end_date}T12:00:00`).toLocaleDateString("es-CO") : "—"} · Participantes: {participants.length}
                 </div>
                 <div style={{ marginTop: 10, borderTop: "1px dashed #e2e8f0", paddingTop: 10 }}>
-                  <div style={{ fontSize: ".74em", color: "#475569", fontWeight: 800, marginBottom: 8 }}>👥 Participantes</div>
+                  <button
+                    type="button"
+                    onClick={() => setParticipantsModalChallenge(challenge)}
+                    style={{
+                      fontSize: ".74em",
+                      color: "#475569",
+                      fontWeight: 800,
+                      marginBottom: 8,
+                      background: "none",
+                      border: "none",
+                      padding: 0,
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                      textAlign: "left",
+                      display: "block",
+                      width: "100%",
+                    }}
+                  >
+                    👥 Participantes
+                  </button>
                   {participants.length === 0 ? (
                     <div style={{ color: "#94a3b8", fontSize: ".78em" }}>Sé el primero en unirte</div>
                   ) : (
-                    <>
-                      <div style={{ display: "flex", gap: 10, alignItems: "flex-start", flexWrap: "wrap" }}>
-                        {participants.slice(0, 5).map((participant) => (
-                          <div key={participant.id} style={{ width: 64, textAlign: "center" }}>
-                            <div
-                              style={{
-                                width: 36,
-                                height: 36,
-                                margin: "0 auto 4px",
-                                borderRadius: "50%",
-                                background: "#e2e8f0",
-                                color: "#334155",
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                fontWeight: 900,
-                                fontSize: ".78em",
-                              }}
-                            >
-                              {participant.initials}
-                            </div>
-                            <div style={{ fontSize: ".67em", color: "#475569", lineHeight: 1.25 }}>
-                              {participant.displayName}
-                            </div>
-                          </div>
-                        ))}
-                        {participants.length > 5 ? (
-                          <div style={{ alignSelf: "center", color: "#64748b", fontSize: ".74em", fontWeight: 700 }}>
-                            +{participants.length - 5} más
-                          </div>
-                        ) : null}
-                      </div>
-                      {participants.length > 5 ? (
-                        <div style={{ marginTop: 8 }}>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setParticipantsModalChallenge(challenge);
-                              loadChallenges();
+                    <div style={{ display: "flex", gap: 10, alignItems: "flex-start", flexWrap: "wrap" }}>
+                      {participants.slice(0, 5).map((participant) => (
+                        <div key={participant.id} style={{ width: 64, textAlign: "center" }}>
+                          <div
+                            style={{
+                              width: 36,
+                              height: 36,
+                              margin: "0 auto 4px",
+                              borderRadius: "50%",
+                              background: "#e2e8f0",
+                              color: "#334155",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              fontWeight: 900,
+                              fontSize: ".78em",
                             }}
-                            style={{ background: "none", border: "none", color: "#2563eb", cursor: "pointer", fontWeight: 700, fontFamily: "inherit", fontSize: ".75em", padding: 0, textDecoration: "underline" }}
                           >
-                            Ver todos
-                          </button>
+                            {participant.initials}
+                          </div>
+                          <div style={{ fontSize: ".67em", color: "#475569", lineHeight: 1.25 }}>
+                            {participant.displayName}
+                          </div>
+                        </div>
+                      ))}
+                      {participants.length > 5 ? (
+                        <div style={{ alignSelf: "center", color: "#64748b", fontSize: ".74em", fontWeight: 700 }}>
+                          +{participants.length - 5} más
                         </div>
                       ) : null}
-                    </>
+                    </div>
                   )}
+                  <div style={{ marginTop: 10 }}>
+                    <button
+                      type="button"
+                      onClick={() => setParticipantsModalChallenge(challenge)}
+                      style={{
+                        border: "1px solid #cbd5e1",
+                        background: "#f8fafc",
+                        borderRadius: 8,
+                        padding: "7px 14px",
+                        color: "#334155",
+                        fontWeight: 700,
+                        fontFamily: "inherit",
+                        fontSize: ".75em",
+                        cursor: "pointer",
+                      }}
+                    >
+                      Ver progreso
+                    </button>
+                  </div>
                 </div>
                 {isAthlete ? (
                   <>
