@@ -1,10 +1,17 @@
 export default async function handler(req, res) {
   const SUPA_URL = process.env.VITE_SUPABASE_URL;
-  const SUPA_KEY = process.env.VITE_SUPABASE_KEY;
+  /** Preferir service role en servidor para leer `athlete_achievements` sin JWT del coach (RLS). */
+  const SUPA_KEY =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.VITE_SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.VITE_SUPABASE_KEY;
   const headers = { apikey: SUPA_KEY, Authorization: `Bearer ${SUPA_KEY}`, "Content-Type": "application/json" };
 
   if (!SUPA_URL || !SUPA_KEY) {
-    return res.status(500).json({ error: "VITE_SUPABASE_URL o VITE_SUPABASE_KEY no configuradas" });
+    return res.status(500).json({
+      error:
+        "Faltan variables de Supabase: VITE_SUPABASE_URL y una clave (SUPABASE_SERVICE_ROLE_KEY o VITE_SUPABASE_KEY).",
+    });
   }
 
   if (req.method === "GET") {

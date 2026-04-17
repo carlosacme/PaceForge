@@ -432,13 +432,17 @@ const computeAthleteAchievementVisualProgress = (allWorkouts, evaluations) => {
 async function loadAthleteAchievementSnapshot(athleteId) {
   if (!athleteId) return { achievements: [], earned: [] };
   try {
-    const res = await fetch(`/api/achievements?athlete_id=${encodeURIComponent(athleteId)}`);
+    const res = await fetch(`/api/achievements?athlete_id=${encodeURIComponent(String(athleteId))}`);
     const json = await res.json();
     if (!res.ok) {
       console.warn("loadAthleteAchievementSnapshot", json);
       return { achievements: [], earned: [] };
     }
-    return { achievements: json.all || [], earned: json.earned || [] };
+    const catalogRaw = json.all;
+    const earnedRaw = json.earned;
+    const achievements = Array.isArray(catalogRaw) ? catalogRaw.filter((row) => row && typeof row.code === "string") : [];
+    const earned = Array.isArray(earnedRaw) ? earnedRaw.filter((row) => row && typeof row.achievement_code === "string") : [];
+    return { achievements, earned };
   } catch (e) {
     console.warn("loadAthleteAchievementSnapshot", e);
     return { achievements: [], earned: [] };
@@ -2174,6 +2178,13 @@ export default function App() {
 
   const coachCodeFromId = useCallback((userId) => String(userId || "").replace(/-/g, "").slice(0, 8).toUpperCase(), []);
 
+  /** Código que el atleta puede ingresar al registrarse (coincide con `profiles.coach_id` o derivado del user_id). */
+  const inviteCoachPublicCode = useMemo(() => {
+    const raw = String(profile?.coach_id || "").trim();
+    if (raw && !raw.includes("-")) return raw.toUpperCase();
+    return coachCodeFromId(session?.user?.id);
+  }, [profile?.coach_id, session?.user?.id, coachCodeFromId]);
+
   const resolveCoachIdByCode = useCallback(async (codeInput) => {
     const codigoIngresado = String(codeInput || "").trim();
     if (!codigoIngresado) return null;
@@ -2212,13 +2223,14 @@ export default function App() {
         notify(insError.message || "No se pudo guardar la invitación.");
         return;
       }
+      const codeHtml = `<p style="margin:12px 0"><strong>Tu código de coach</strong> (si te registras sin abrir el enlace): <code style="background:#f1f5f9;padding:4px 8px;border-radius:6px">${inviteCoachPublicCode}</code></p><p style="font-size:14px;color:#64748b">El atleta usará este código al registrarse.</p>`;
       await fetch("/api/send-email", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           to: email,
           subject: "Invitación para entrenar en RunningApexFlow",
-          html: `<div style="font-family:Arial,sans-serif"><h2>¡Tu coach te invitó! 🏃</h2><p>Haz clic aquí para registrarte y vincularte automáticamente:</p><p><a href="${inviteLink}">${inviteLink}</a></p></div>`,
+          html: `<div style="font-family:Arial,sans-serif"><h2>¡Tu coach te invitó! 🏃</h2><p>Haz clic aquí para registrarte y vincularte automáticamente:</p><p><a href="${inviteLink}">${inviteLink}</a></p>${codeHtml}</div>`,
         }),
       });
       notify("Invitación enviada ✓");
@@ -2230,7 +2242,7 @@ export default function App() {
     } finally {
       setInviteSending(false);
     }
-  }, [inviteEmail, notify, session?.user?.id]);
+  }, [inviteEmail, inviteCoachPublicCode, notify, session?.user?.id]);
 
   useEffect(() => {
     let mounted = true;
@@ -3509,6 +3521,15 @@ export default function App() {
               placeholder="atleta@email.com"
               style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", color: "#0f172a", fontFamily: "inherit", fontSize: ".85em", boxSizing: "border-box" }}
             />
+            <div style={{ fontSize: ".8em", color: "#64748b", marginTop: 14, marginBottom: 4 }}>Código coach</div>
+            <input
+              type="text"
+              readOnly
+              value={inviteCoachPublicCode}
+              aria-readonly="true"
+              style={{ width: "100%", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", color: "#0f172a", fontFamily: "ui-monospace,monospace", fontSize: ".9em", fontWeight: 700, boxSizing: "border-box" }}
+            />
+            <div style={{ fontSize: ".72em", color: "#94a3b8", marginTop: 6, lineHeight: 1.45 }}>El atleta usará este código al registrarse.</div>
             <div style={{ marginTop: 12, display: "flex", justifyContent: "flex-end", gap: 8 }}>
               <button type="button" onClick={() => setInviteModalOpen(false)} style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 12px", color: "#64748b", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: ".8em" }}>Cancelar</button>
               <button
@@ -5597,7 +5618,11 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
                           <div style={{ fontSize: earned ? "1.75em" : "1.35em", marginBottom: 4 }}>{earned ? a.icon : "🔒"}</div>
                           <div style={{ fontSize: ".7em", color: "#0f172a", fontWeight: 700, lineHeight: 1.2 }}>{a.name}</div>
                           <div style={{ fontSize: ".63em", color: "#64748b", marginTop: 4 }}>
-                            {earned ? (earned.earned_at ? new Date(earned.earned_at).toLocaleDateString("es-CO") : "") : "Bloqueada"}
+                            {earned
+                              ? (earned.awarded_at || earned.earned_at
+                                  ? new Date(earned.awarded_at || earned.earned_at).toLocaleDateString("es-CO")
+                                  : "")
+                              : "Bloqueada"}
                           </div>
                         </div>
                       );
@@ -9634,6 +9659,8 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, profileRole, onG
 
   const plan2UserPrompt = useMemo(() => {
     const vdot = Number(nextBlockParams.vdot) || 40;
+    const levelKey = String(levelId || "intermedio").toLowerCase();
+    const pr = MARKETPLACE_AI_PACE_RANGES_BY_LEVEL[levelKey] || MARKETPLACE_AI_PACE_RANGES_BY_LEVEL.intermedio;
     const blockNumber = Number(currentBlock) || 1;
     const blockStartDate = startDate;
     // Obtener resumen del bloque anterior del historial
@@ -9647,12 +9674,12 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, profileRole, onG
         })()
       : "This is the first block - start conservative";
 
-    // Calcular ritmos Jack Daniels según VDOT
+    // Ritmos por nivel del atleta (obligatorio; el VDOT solo guía volumen/intensidad relativa, no sustituye estos rangos).
     const paces = {
-      easy: vdot < 35 ? "7:30-8:00 min/km" : vdot < 40 ? "6:45-7:15 min/km" : vdot < 45 ? "6:10-6:40 min/km" : vdot < 50 ? "5:45-6:10 min/km" : vdot < 55 ? "5:20-5:45 min/km" : "5:00-5:20 min/km",
-      tempo: vdot < 35 ? "6:30 min/km" : vdot < 40 ? "5:55 min/km" : vdot < 45 ? "5:20 min/km" : vdot < 50 ? "4:55 min/km" : vdot < 55 ? "4:35 min/km" : "4:15 min/km",
-      interval: vdot < 35 ? "6:00 min/km" : vdot < 40 ? "5:25 min/km" : vdot < 45 ? "4:55 min/km" : vdot < 50 ? "4:30 min/km" : vdot < 55 ? "4:10 min/km" : "3:50 min/km",
-      recovery: vdot < 35 ? "8:30 min/km" : vdot < 40 ? "7:45 min/km" : vdot < 45 ? "7:00 min/km" : vdot < 50 ? "6:30 min/km" : vdot < 55 ? "6:00 min/km" : "5:40 min/km",
+      easy: pr.easy.desc,
+      tempo: pr.tempo.desc,
+      interval: pr.interval.desc,
+      recovery: `recuperación activa, ~30–60 s/km más lento que el ritmo fácil del nivel (${pr.easy.desc})`,
     };
 
     // Volumen base según distancia objetivo
@@ -9680,7 +9707,7 @@ ATHLETE PROFILE:
 - Goal race: ${competition}
 - Target time: ${targetTime}
 - Current VDOT: ${vdot}
-- Level: ${levelLabel}
+- Level: ${levelLabel} (id: ${levelKey})
 - Training days per week: ${daysPerWeek}
 - Block start date: ${blockStartDate}. Week 1 starts on this date, week 2 starts 7 days later.
 - Previous block summary: ${prevBlockSummary}
@@ -9706,11 +9733,12 @@ VOLUME CAP by level and distance:
 - Intermediate 10K: max 30km/week block 1, +3km per block
 - Advanced 10K: max 40km/week block 1, +3km per block
 
-TRAINING PACES (use these EXACTLY in descriptions):
-- Easy/Recovery pace: ${paces.easy}
-- Tempo/Threshold pace: ${paces.tempo}
-- Interval pace: ${paces.interval}
-- Recovery run pace: ${paces.recovery}
+TRAINING PACES for this athlete level ONLY (use these EXACT ranges in every description; do NOT derive paces from VDOT):
+- Easy / long / warmup-cooldown easy segments: ${paces.easy}
+- Tempo / threshold: ${paces.tempo}
+- Intervals / reps: ${paces.interval}
+- Recovery runs (between hard days): ${paces.recovery}
+Reference pace_range strings for JSON descriptions when helpful: easy=${pr.easy.pace_range}, tempo=${pr.tempo.pace_range}, interval=${pr.interval.pace_range} (min/km, ASCII hyphen).
 
 PERIODIZATION:
 - Block number: ${blockNumber} of ~10 total blocks
@@ -9739,7 +9767,7 @@ OUTPUT JSON SCHEMA:
 {"plan_title":"string","weeks":[{"week_number":1,"focus":"string","workouts":[{"weekday":2,"title":"string","type":"long|tempo|recovery|interval","total_km":0,"duration_min":0,"description":"Include specific pace, sets/reps for intervals, warmup/cooldown"}]}]}
 
 Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays both weeks, all numeric fields must be numbers, description must include specific paces from above.`;
-  }, [competition, targetTime, levelLabel, daysPerWeek, startDate, currentBlock, nextBlockParams, selectedTrainingDaysText, blockHistory]);
+  }, [competition, targetTime, levelId, levelLabel, daysPerWeek, startDate, currentBlock, nextBlockParams, selectedTrainingDaysText, blockHistory]);
 
   const generatePlan2 = async () => {
     const timeOk = /^\d{1,2}:\d{2}:\d{2}$/.test(String(targetTime || "").trim());
