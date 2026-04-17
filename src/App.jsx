@@ -100,6 +100,16 @@ const applyMarketplaceAiPaceDefaultsToPreviewRows = (rows, levelRaw) => {
   });
 };
 
+/** Sesiones para "Ver plan": plan completo en `plan_sessions` (o alias) si hay más filas que en `preview_workouts`. */
+const getMarketplacePlanWorkoutRows = (plan) => {
+  if (!plan || typeof plan !== "object") return [];
+  const prev = Array.isArray(plan.preview_workouts) ? plan.preview_workouts : [];
+  const sess = Array.isArray(plan.plan_sessions) ? plan.plan_sessions : [];
+  const full = Array.isArray(plan.full_workouts) ? plan.full_workouts : [];
+  const longest = (a, b) => (b.length > a.length ? b : a);
+  return [prev, sess, full].reduce(longest, []);
+};
+
 const DAYS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
 
 const MONTH_INDEX = {
@@ -1631,18 +1641,24 @@ function ChallengesHub({ profileRole, currentUserId, athleteId = null, workouts 
   const createChallenge = async () => {
     if (!isAdmin) return;
     const title = form.title.trim();
+    const isDist = form.challenge_type === "distancia";
     const target = Number(form.target_value);
-    if (!title || !Number.isFinite(target) || target <= 0 || !form.start_date || !form.end_date) {
-      notify?.("Completa título, meta y rango de fechas válidos.");
+    if (!title || !form.start_date || !form.end_date) {
+      notify?.("Completa título y rango de fechas.");
+      return;
+    }
+    if (!Number.isFinite(target) || target <= 0) {
+      notify?.(isDist ? "Indica la meta en km." : "Indica una meta numérica válida.");
       return;
     }
     setSavingCreate(true);
+    const unitOut = isDist ? "km" : String(form.unit || "").trim() || null;
     const { error } = await supabase.from("challenges").insert({
       title,
       description: form.description.trim() || null,
       challenge_type: form.challenge_type,
       target_value: target,
-      unit: form.unit.trim() || null,
+      unit: unitOut,
       start_date: form.start_date,
       end_date: form.end_date,
       emoji: form.emoji.trim() || "🏁",
@@ -1822,12 +1838,30 @@ Responde SOLO con un JSON con esta estructura exacta, sin texto adicional:
                 <option key={o.id} value={o.id}>{o.label}</option>
               ))}
             </select>
-            <input type="number" min="1" value={form.target_value} onChange={(e) => setForm((f) => ({ ...f, target_value: e.target.value }))} placeholder="Meta" style={{ border: "1px solid #dbe2ea", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit" }} />
-            <input value={form.unit} onChange={(e) => setForm((f) => ({ ...f, unit: e.target.value }))} placeholder="Unidad" style={{ border: "1px solid #dbe2ea", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit" }} />
+            {form.challenge_type === "distancia" ? (
+              <input
+                type="number"
+                min="0.1"
+                step="0.1"
+                value={form.target_value}
+                onChange={(e) => setForm((f) => ({ ...f, target_value: e.target.value, unit: "km" }))}
+                placeholder="Meta (km)"
+                style={{ gridColumn: "1 / -1", border: "1px solid #dbe2ea", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit" }}
+              />
+            ) : (
+              <>
+                <input type="number" min="1" value={form.target_value} onChange={(e) => setForm((f) => ({ ...f, target_value: e.target.value }))} placeholder="Meta" style={{ border: "1px solid #dbe2ea", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit" }} />
+                <input value={form.unit} onChange={(e) => setForm((f) => ({ ...f, unit: e.target.value }))} placeholder="Unidad" style={{ border: "1px solid #dbe2ea", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit" }} />
+              </>
+            )}
             <input type="date" value={form.start_date} onChange={(e) => setForm((f) => ({ ...f, start_date: e.target.value }))} style={{ border: "1px solid #dbe2ea", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit" }} />
             <input type="date" value={form.end_date} onChange={(e) => setForm((f) => ({ ...f, end_date: e.target.value }))} style={{ border: "1px solid #dbe2ea", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit" }} />
-            <input value={form.emoji} onChange={(e) => setForm((f) => ({ ...f, emoji: e.target.value }))} placeholder="Emoji" style={{ border: "1px solid #dbe2ea", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit" }} />
-            <input type="color" value={form.color} onChange={(e) => setForm((f) => ({ ...f, color: e.target.value }))} style={{ border: "1px solid #dbe2ea", borderRadius: 8, padding: "4px", background: "#fff", height: 36 }} />
+            {form.challenge_type === "distancia" ? null : (
+              <>
+                <input value={form.emoji} onChange={(e) => setForm((f) => ({ ...f, emoji: e.target.value }))} placeholder="Emoji" style={{ border: "1px solid #dbe2ea", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit" }} />
+                <input type="color" value={form.color} onChange={(e) => setForm((f) => ({ ...f, color: e.target.value }))} style={{ border: "1px solid #dbe2ea", borderRadius: 8, padding: "4px", background: "#fff", height: 36 }} />
+              </>
+            )}
           </div>
           <textarea value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} placeholder="Descripción" rows={3} style={{ marginTop: 10, width: "100%", border: "1px solid #dbe2ea", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", boxSizing: "border-box" }} />
           <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
@@ -1984,17 +2018,36 @@ Responde SOLO con un JSON con esta estructura exacta, sin texto adicional:
                     participant.athlete_id != null
                       ? computeChallengeProgressForAthlete(participantsModalChallenge, participantWorkouts)
                       : null;
+                  const isDistanceChallenge = normalizeChallengeType(participantsModalChallenge.challenge_type) === "distancia";
+                  const targetKm = Math.max(0, Number(participantsModalChallenge?.target_value) || 0);
                   return (
                     <div key={participant.id} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: "9px 10px", background: "#fff", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
                         <div style={{ width: 34, height: 34, borderRadius: "50%", background: "#e2e8f0", color: "#334155", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, fontSize: ".75em" }}>
                           {participant.initials}
                         </div>
                         <div style={{ fontSize: ".82em", color: "#0f172a", fontWeight: 700 }}>{participant.displayName}</div>
                       </div>
-                      <div style={{ fontSize: ".75em", color: "#64748b", fontWeight: 700 }}>
-                        {participantProgress ? `${participantProgress.value.toFixed(1)} / ${participantProgress.target || 0}` : "Sin progreso"}
-                      </div>
+                      {isDistanceChallenge && participantProgress ? (
+                        <div style={{ flex: 1, maxWidth: 220, minWidth: 120 }}>
+                          <div style={{ fontSize: ".72em", color: "#64748b", fontWeight: 700, marginBottom: 4, textAlign: "right" }}>
+                            {participantProgress.value.toFixed(1)} km / {targetKm > 0 ? `${targetKm} km` : "—"}
+                          </div>
+                          <div style={{ height: 8, borderRadius: 999, background: "#e2e8f0", overflow: "hidden" }}>
+                            <div
+                              style={{
+                                width: `${targetKm > 0 ? Math.min(100, (participantProgress.value / targetKm) * 100) : 0}%`,
+                                height: "100%",
+                                background: participantsModalChallenge.color || "#a855f7",
+                              }}
+                            />
+                          </div>
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: ".75em", color: "#64748b", fontWeight: 700 }}>
+                          {participantProgress ? `${participantProgress.value.toFixed(1)} / ${participantProgress.target || 0}` : "Sin progreso"}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -10852,6 +10905,7 @@ function WorkoutLibrary({
     if (!adminLibraryOwnerId || !onOpenAdminMarketplaceDraft) return;
     setAdminMarketplaceCopyingId(plan.id);
     const preview = Array.isArray(plan.preview_workouts) ? plan.preview_workouts : [];
+    const sessionRows = getMarketplacePlanWorkoutRows(plan);
     const { data: created, error } = await supabase
       .from("plan_marketplace")
       .insert({
@@ -10869,6 +10923,7 @@ function WorkoutLibrary({
         sessions_per_week: plan.sessions_per_week ?? 4,
         price_cop: plan.price_cop ?? 0,
         preview_workouts: preview,
+        plan_sessions: sessionRows.length ? sessionRows : preview,
       })
       .select("id")
       .single();
@@ -11389,7 +11444,7 @@ function WorkoutLibrary({
             </div>
             <div style={{ color: "#475569", fontSize: ".86em", marginBottom: 10 }}>{libraryMarketplacePlanDetail.description || "Sin descripción."}</div>
             <div style={{ fontSize: ".78em", fontWeight: 800, color: "#334155", marginBottom: 8 }}>Workouts de muestra</div>
-            <MarketplacePlanWorkoutsAccordion previewWorkouts={libraryMarketplacePlanDetail.preview_workouts} resetKey={libraryMarketplacePlanDetail.id} />
+            <MarketplacePlanWorkoutsAccordion previewWorkouts={getMarketplacePlanWorkoutRows(libraryMarketplacePlanDetail)} resetKey={libraryMarketplacePlanDetail.id} />
             <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
               <button type="button" onClick={() => setLibraryMarketplacePlanDetail(null)} style={{ border: "1px solid #e2e8f0", background: "#fff", borderRadius: 8, padding: "8px 12px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
                 Cerrar
@@ -13378,6 +13433,7 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
   const S = styles;
   const isCoach = profileRole === "coach";
   const isAthlete = profileRole === "athlete";
+  const isAdmin = profileRole === "admin";
   const [plans, setPlans] = useState([]);
   const [loadingPlans, setLoadingPlans] = useState(true);
   const [selectedPlan, setSelectedPlan] = useState(null);
@@ -13385,6 +13441,10 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
   const [savingPlan, setSavingPlan] = useState(false);
   const [coachLibraryRows, setCoachLibraryRows] = useState([]);
   const [loadingLibrary, setLoadingLibrary] = useState(false);
+  const [pendingPurchasesList, setPendingPurchasesList] = useState([]);
+  const [loadingPendingPurchases, setLoadingPendingPurchases] = useState(false);
+  const [editingMarketplacePlanId, setEditingMarketplacePlanId] = useState(null);
+  const [editingPlanSnapshot, setEditingPlanSnapshot] = useState(null);
   const [planForm, setPlanForm] = useState({
     title: "",
     description: "",
@@ -13467,6 +13527,32 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
     loadSales();
   }, [loadMarketplace, loadSales]);
 
+  const loadPendingPurchases = useCallback(async () => {
+    if (!isCoach || !coachUserId) {
+      setPendingPurchasesList([]);
+      setLoadingPendingPurchases(false);
+      return;
+    }
+    setLoadingPendingPurchases(true);
+    const { data, error } = await supabase.from("plan_purchases").select("*").order("created_at", { ascending: false });
+    setLoadingPendingPurchases(false);
+    if (error) {
+      console.error("plan_purchases pending (coach marketplace):", error);
+      setPendingPurchasesList([]);
+      return;
+    }
+    const pendingRows = (data || []).filter((row) => String(row.payment_status || "").toLowerCase() === "pending");
+    const uid = coachUserId || currentUserId;
+    const myPlanIds = new Set(
+      (plans || []).filter((p) => String(p.coach_user_id || "") === String(uid || "")).map((p) => String(p.id)),
+    );
+    setPendingPurchasesList(pendingRows.filter((row) => myPlanIds.has(String(row.plan_id || ""))));
+  }, [isCoach, coachUserId, currentUserId, plans]);
+
+  useEffect(() => {
+    loadPendingPurchases();
+  }, [loadPendingPurchases]);
+
   useEffect(() => {
     if (!showPublishModal || !isCoach) return;
     loadCoachLibrary();
@@ -13476,11 +13562,12 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
     const all = plans || [];
     return all.filter((p) => {
       const active = Boolean(p.is_active);
-      const approved = Boolean(p.is_approved);
-      if (isCoach && String(p.coach_user_id || "") === String(coachUserId || "")) return active;
+      const own = String(p.coach_user_id || "") === String(coachUserId || "");
+      if (isAdmin) return active;
+      if (isCoach && own) return active;
       return active && approved;
     });
-  }, [plans, isCoach, coachUserId]);
+  }, [plans, isCoach, coachUserId, isAdmin]);
 
   const coachOwnPlans = useMemo(
     () => (plans || []).filter((p) => String(p.coach_user_id || "") === String(coachUserId || "")),
@@ -13502,7 +13589,7 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
   /** Vista atleta: hay semanas distintas de la 1 (o sin numerar) → CTA de desbloqueo bajo el acordeón. */
   const planPreviewHasLockedWeeks = useMemo(() => {
     if (!selectedPlan || !isAthlete) return false;
-    const arr = Array.isArray(selectedPlan.preview_workouts) ? selectedPlan.preview_workouts : [];
+    const arr = getMarketplacePlanWorkoutRows(selectedPlan);
     for (let j = 0; j < arr.length; j++) {
       const w = arr[j];
       const wn = w?.week != null && w.week !== "" ? Number(w.week) : NaN;
@@ -13512,8 +13599,87 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
     return false;
   }, [selectedPlan, isAthlete]);
 
+  const hidePurchaseCta = useMemo(
+    () => Boolean(isAdmin || (selectedPlan && String(selectedPlan.coach_user_id || "") === String(currentUserId || ""))),
+    [isAdmin, selectedPlan, currentUserId],
+  );
+
+  const approveMarketplaceRow = async (planId) => {
+    const { error } = await supabase.from("plan_marketplace").update({ is_approved: true, is_active: true }).eq("id", planId);
+    if (error) {
+      notify?.(error.message || "No se pudo aprobar");
+      return;
+    }
+    notify?.("Plan aprobado");
+    loadMarketplace();
+  };
+
+  const rejectMarketplaceRow = async (planId) => {
+    if (typeof window !== "undefined" && !window.confirm("¿Rechazar este plan?")) return;
+    const { error } = await supabase.from("plan_marketplace").update({ is_approved: false, is_active: false }).eq("id", planId);
+    if (error) {
+      notify?.(error.message || "No se pudo rechazar");
+      return;
+    }
+    notify?.("Plan rechazado");
+    loadMarketplace();
+  };
+
+  const deleteMarketplacePlanCoach = async (plan) => {
+    if (!plan?.id) return;
+    const uid = coachUserId || currentUserId;
+    const own = String(plan.coach_user_id || "") === String(uid || "");
+    if (!own && !isAdmin) return;
+    if (typeof window !== "undefined" && !window.confirm("¿Eliminar este plan del marketplace?")) return;
+    const { error } = await supabase.from("plan_marketplace").delete().eq("id", plan.id);
+    if (error) {
+      notify?.(error.message || "No se pudo eliminar");
+      return;
+    }
+    if (String(selectedPlan?.id) === String(plan.id)) setSelectedPlan(null);
+    notify?.("Plan eliminado");
+    loadMarketplace();
+    loadSales();
+    loadPendingPurchases();
+  };
+
+  const openEditMarketplacePlan = (plan) => {
+    if (!plan) return;
+    const uid = coachUserId || currentUserId;
+    if (!uid && !isAdmin) return;
+    const own = String(plan.coach_user_id || "") === String(uid || "");
+    if (!own && !isAdmin) return;
+    const libIds = (Array.isArray(plan.preview_workouts) ? plan.preview_workouts : [])
+      .map((w) => (w?.id != null ? String(w.id) : ""))
+      .filter(Boolean);
+    setEditingMarketplacePlanId(plan.id);
+    setEditingPlanSnapshot(plan);
+    setPlanForm({
+      title: String(plan.title || ""),
+      description: String(plan.description || ""),
+      level: String(plan.level || "intermedio"),
+      duration_weeks: String(plan.duration_weeks ?? 8),
+      sessions_per_week: String(plan.sessions_per_week ?? 4),
+      price_cop: String(plan.price_cop ?? 0),
+      preview_workouts: libIds,
+    });
+    setShowPublishModal(true);
+  };
+
+  const confirmCoachPendingPurchase = async (purchaseId) => {
+    const { error } = await supabase.from("plan_purchases").update({ payment_status: "confirmed" }).eq("id", purchaseId);
+    if (error) {
+      notify?.(error.message || "No se pudo confirmar");
+      return;
+    }
+    notify?.("Pago confirmado");
+    loadPendingPurchases();
+    loadSales();
+  };
+
   const submitCoachPlan = async () => {
-    if (!coachUserId) return;
+    const uid = coachUserId || currentUserId;
+    if (!uid) return;
     const title = String(planForm.title || "").trim();
     if (!title) {
       notify?.("Ingresa un título");
@@ -13533,28 +13699,58 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
       description: w.description || "",
       workout_structure: Array.isArray(w.workout_structure) ? w.workout_structure : Array.isArray(w.structure) ? w.structure : [],
     }));
+    const fallbackPreview =
+      editingPlanSnapshot && Array.isArray(editingPlanSnapshot.preview_workouts) ? editingPlanSnapshot.preview_workouts : [];
+    const fallbackSessions = editingPlanSnapshot ? getMarketplacePlanWorkoutRows(editingPlanSnapshot) : [];
+    const outPreview = previewWorkouts.length > 0 ? previewWorkouts : fallbackPreview;
+    const outSessions = previewWorkouts.length > 0 ? previewWorkouts : fallbackSessions.length > 0 ? fallbackSessions : outPreview;
     setSavingPlan(true);
-    const { error } = await supabase.from("plan_marketplace").insert({
-      coach_user_id: coachUserId,
-      coach_name: "",
-      title,
-      description,
-      level: String(planForm.level || "intermedio"),
-      duration_weeks: durationWeeks,
-      sessions_per_week: sessionsPerWeek,
-      price_cop: priceCop,
-      preview_workouts: previewWorkouts,
-      is_active: true,
-      is_approved: false,
-    });
+    let error = null;
+    if (editingMarketplacePlanId) {
+      let upd = supabase
+        .from("plan_marketplace")
+        .update({
+          title,
+          description,
+          level: String(planForm.level || "intermedio"),
+          duration_weeks: durationWeeks,
+          sessions_per_week: sessionsPerWeek,
+          price_cop: priceCop,
+          preview_workouts: outPreview,
+          plan_sessions: outSessions,
+        })
+        .eq("id", editingMarketplacePlanId);
+      if (!isAdmin) upd = upd.eq("coach_user_id", uid);
+      const res = await upd;
+      error = res.error;
+    } else {
+      const res = await supabase.from("plan_marketplace").insert({
+        coach_user_id: uid,
+        coach_id: uid,
+        coach_name: "",
+        title,
+        description,
+        level: String(planForm.level || "intermedio"),
+        duration_weeks: durationWeeks,
+        sessions_per_week: sessionsPerWeek,
+        price_cop: priceCop,
+        preview_workouts: outPreview,
+        plan_sessions: outSessions,
+        is_active: true,
+        is_approved: false,
+      });
+      error = res.error;
+    }
     setSavingPlan(false);
     if (error) {
-      console.error("plan_marketplace insert:", error);
-      notify?.(error.message || "No se pudo publicar el plan");
+      console.error("plan_marketplace coach save:", error);
+      notify?.(error.message || "No se pudo guardar el plan");
       return;
     }
-    notify?.("Plan enviado. Quedó pendiente de aprobación.");
+    notify?.(editingMarketplacePlanId ? "Plan actualizado." : "Plan enviado. Quedó pendiente de aprobación.");
     setShowPublishModal(false);
+    setEditingMarketplacePlanId(null);
+    setEditingPlanSnapshot(null);
     setPlanForm({
       title: "",
       description: "",
@@ -13566,6 +13762,7 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
     });
     loadMarketplace();
     loadSales();
+    loadPendingPurchases();
   };
 
   const cardStyle = {
@@ -13581,7 +13778,24 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
         <h1 style={{ ...S.pageTitle, marginBottom: 0 }}>🛒 Marketplace</h1>
         {isCoach ? (
-          <button type="button" onClick={() => setShowPublishModal(true)} style={{ background: "linear-gradient(135deg,#0ea5e9,#0284c7)", border: "none", borderRadius: 9, padding: "8px 12px", color: "#fff", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".8em" }}>
+          <button
+            type="button"
+            onClick={() => {
+              setEditingMarketplacePlanId(null);
+              setEditingPlanSnapshot(null);
+              setPlanForm({
+                title: "",
+                description: "",
+                level: "intermedio",
+                duration_weeks: "8",
+                sessions_per_week: "4",
+                price_cop: "120000",
+                preview_workouts: [],
+              });
+              setShowPublishModal(true);
+            }}
+            style={{ background: "linear-gradient(135deg,#0ea5e9,#0284c7)", border: "none", borderRadius: 9, padding: "8px 12px", color: "#fff", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".8em" }}
+          >
             ➕ Publicar plan
           </button>
         ) : null}
@@ -13600,18 +13814,36 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
                 const sales = Number(salesByPlanId[String(p.id)] || 0);
                 const price = Number(p.price_cop || 0);
                 const coachEarnings = Math.round(price * sales * 0.8);
+                const approved = p.is_approved === true || p.is_approved === "true";
                 return (
                   <div key={p.id} style={{ ...cardStyle, background: "#f8fafc" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                      <div>
-                        <div style={{ fontWeight: 800 }}>{p.title}</div>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "flex-start" }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                          <div style={{ fontWeight: 800 }}>{p.title}</div>
+                          <span
+                            style={{
+                              fontSize: ".62em",
+                              fontWeight: 900,
+                              letterSpacing: ".04em",
+                              textTransform: "uppercase",
+                              borderRadius: 999,
+                              padding: "4px 10px",
+                              border: approved ? "1px solid #86efac" : "1px solid #fdba74",
+                              background: approved ? "#dcfce7" : "#ffedd5",
+                              color: approved ? "#166534" : "#9a3412",
+                            }}
+                          >
+                            {approved ? "Aprobado" : "Pendiente"}
+                          </span>
+                        </div>
                         <div style={{ fontSize: ".8em", color: "#64748b", marginTop: 4 }}>
                           {p.duration_weeks} semanas · {p.sessions_per_week} sesiones/sem
                         </div>
                       </div>
                       <div style={{ textAlign: "right" }}>
-                        <div style={{ fontWeight: 800, color: p.is_approved ? "#16a34a" : "#b45309" }}>
-                          {p.is_approved ? "Aprobado" : "Pendiente de aprobación"}
+                        <div style={{ fontWeight: 800, color: approved ? "#16a34a" : "#b45309" }}>
+                          {approved ? "Visible en tienda" : "En revisión"}
                         </div>
                         <div style={{ fontSize: ".78em", color: "#64748b", marginTop: 4 }}>Ventas: {sales}</div>
                       </div>
@@ -13622,9 +13854,98 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
                     <div style={{ marginTop: 4, fontSize: ".75em", color: "#64748b" }}>
                       Tu ganancia: ${formatCopInt(Math.round(price * 0.8))} COP (80% del precio)
                     </div>
+                    <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      <button
+                        type="button"
+                        onClick={() => openEditMarketplacePlan(p)}
+                        style={{
+                          border: "1px solid #bae6fd",
+                          background: "#f0f9ff",
+                          color: "#0369a1",
+                          borderRadius: 8,
+                          padding: "6px 10px",
+                          fontWeight: 800,
+                          cursor: "pointer",
+                          fontFamily: "inherit",
+                          fontSize: ".74em",
+                        }}
+                      >
+                        ✏️ Editar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => deleteMarketplacePlanCoach(p)}
+                        style={{
+                          border: "1px solid #fecaca",
+                          background: "#fef2f2",
+                          color: "#b91c1c",
+                          borderRadius: 8,
+                          padding: "6px 10px",
+                          fontWeight: 800,
+                          cursor: "pointer",
+                          fontFamily: "inherit",
+                          fontSize: ".74em",
+                        }}
+                      >
+                        🗑️ Eliminar
+                      </button>
+                    </div>
                   </div>
                 );
               })}
+            </div>
+          )}
+        </div>
+      ) : null}
+
+      {isCoach ? (
+        <div style={{ ...S.card, marginBottom: 14 }}>
+          <div style={{ fontSize: ".72em", letterSpacing: ".12em", textTransform: "uppercase", color: "#64748b", marginBottom: 8 }}>
+            Compras pendientes de confirmar
+          </div>
+          {loadingPendingPurchases ? (
+            <div style={{ color: "#64748b", fontSize: ".84em" }}>Cargando compras…</div>
+          ) : pendingPurchasesList.length === 0 ? (
+            <div style={{ color: "#94a3b8", fontSize: ".84em" }}>No hay compras pendientes.</div>
+          ) : (
+            <div style={{ display: "grid", gap: 8 }}>
+              {pendingPurchasesList.map((row) => (
+                <div
+                  key={row.id}
+                  style={{
+                    border: "1px solid #e2e8f0",
+                    borderRadius: 10,
+                    padding: "10px 12px",
+                    background: "#f8fafc",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: 10,
+                    flexWrap: "wrap",
+                    alignItems: "center",
+                  }}
+                >
+                  <div style={{ fontSize: ".82em", color: "#334155" }}>
+                    Plan: <strong>{row.plan_title || row.plan_id}</strong> · ${formatCopInt(row.amount_cop || 0)} COP · {row.buyer_name || row.buyer_user_id || "Comprador"}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => confirmCoachPendingPurchase(row.id)}
+                    style={{
+                      border: "1px solid #bbf7d0",
+                      background: "#f0fdf4",
+                      color: "#166534",
+                      borderRadius: 8,
+                      padding: "7px 10px",
+                      fontWeight: 800,
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                      fontSize: ".76em",
+                    }}
+                  >
+                    ✅ Confirmar pago
+                  </button>
+                </div>
+              ))}
             </div>
           )}
         </div>
@@ -13639,13 +13960,33 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
           {plansVisible.map((p) => {
             const rating = Number(ratingsByPlanId[String(p.id)] || 0);
             const ratingStars = "★".repeat(Math.round(Math.min(5, Math.max(0, rating)))) + "☆".repeat(5 - Math.round(Math.min(5, Math.max(0, rating))));
+            const coachUid = coachUserId || currentUserId;
+            const approved = p.is_approved === true || p.is_approved === "true";
+            const canManage = isAdmin || String(p.coach_user_id || "") === String(coachUid || "");
             return (
               <div key={p.id} style={cardStyle}>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                  <div style={{ fontWeight: 800, color: "#0f172a" }}>{p.title}</div>
-                  <span style={{ fontSize: ".7em", borderRadius: 999, padding: "3px 8px", background: "rgba(14,165,233,.12)", color: "#0369a1", fontWeight: 800 }}>
-                    {String(p.level || "intermedio")}
-                  </span>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "flex-start" }}>
+                  <div style={{ fontWeight: 800, color: "#0f172a", flex: 1, minWidth: 0 }}>{p.title}</div>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+                    <span style={{ fontSize: ".7em", borderRadius: 999, padding: "3px 8px", background: "rgba(14,165,233,.12)", color: "#0369a1", fontWeight: 800 }}>
+                      {String(p.level || "intermedio")}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: ".58em",
+                        fontWeight: 900,
+                        letterSpacing: ".06em",
+                        textTransform: "uppercase",
+                        borderRadius: 999,
+                        padding: "3px 7px",
+                        border: approved ? "1px solid #86efac" : "1px solid #fdba74",
+                        background: approved ? "#dcfce7" : "#ffedd5",
+                        color: approved ? "#166534" : "#9a3412",
+                      }}
+                    >
+                      {approved ? "Aprobado" : "Pendiente"}
+                    </span>
+                  </div>
                 </div>
                 <div style={{ fontSize: ".78em", color: "#64748b", marginTop: 4 }}>Coach: {p.coach_name || "Coach"}</div>
                 <div style={{ fontSize: ".78em", color: "#64748b", marginTop: 2 }}>{p.duration_weeks} semanas · {p.sessions_per_week} sesiones/semana</div>
@@ -13654,6 +13995,90 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
                 <button type="button" onClick={() => setSelectedPlan(p)} style={{ marginTop: 10, width: "100%", background: "linear-gradient(135deg,#0d9488,#14b8a6)", border: "none", borderRadius: 8, padding: "8px 10px", color: "#fff", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".78em" }}>
                   Ver plan
                 </button>
+                {isAdmin ? (
+                  <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+                    <button
+                      type="button"
+                      onClick={() => approveMarketplaceRow(p.id)}
+                      style={{
+                        flex: 1,
+                        minWidth: 100,
+                        border: "1px solid #bbf7d0",
+                        background: "#f0fdf4",
+                        color: "#166534",
+                        borderRadius: 8,
+                        padding: "6px 8px",
+                        fontWeight: 800,
+                        cursor: "pointer",
+                        fontFamily: "inherit",
+                        fontSize: ".72em",
+                      }}
+                    >
+                      ✅ Aprobar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => rejectMarketplaceRow(p.id)}
+                      style={{
+                        flex: 1,
+                        minWidth: 100,
+                        border: "1px solid #fecaca",
+                        background: "#fef2f2",
+                        color: "#b91c1c",
+                        borderRadius: 8,
+                        padding: "6px 8px",
+                        fontWeight: 800,
+                        cursor: "pointer",
+                        fontFamily: "inherit",
+                        fontSize: ".72em",
+                      }}
+                    >
+                      ❌ Rechazar
+                    </button>
+                  </div>
+                ) : null}
+                {canManage && (isCoach || isAdmin) ? (
+                  <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+                    <button
+                      type="button"
+                      onClick={() => openEditMarketplacePlan(p)}
+                      style={{
+                        flex: 1,
+                        minWidth: 100,
+                        border: "1px solid #bae6fd",
+                        background: "#f0f9ff",
+                        color: "#0369a1",
+                        borderRadius: 8,
+                        padding: "6px 8px",
+                        fontWeight: 800,
+                        cursor: "pointer",
+                        fontFamily: "inherit",
+                        fontSize: ".72em",
+                      }}
+                    >
+                      ✏️ Editar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => deleteMarketplacePlanCoach(p)}
+                      style={{
+                        flex: 1,
+                        minWidth: 100,
+                        border: "1px solid #fecaca",
+                        background: "#fef2f2",
+                        color: "#b91c1c",
+                        borderRadius: 8,
+                        padding: "6px 8px",
+                        fontWeight: 800,
+                        cursor: "pointer",
+                        fontFamily: "inherit",
+                        fontSize: ".72em",
+                      }}
+                    >
+                      🗑️ Eliminar
+                    </button>
+                  </div>
+                ) : null}
               </div>
             );
           })}
@@ -13668,9 +14093,9 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
               <button type="button" onClick={() => setSelectedPlan(null)} style={{ border: "1px solid #e2e8f0", background: "#fff", borderRadius: 8, padding: "6px 10px", cursor: "pointer", fontFamily: "inherit" }}>✕</button>
             </div>
             <div style={{ color: "#475569", fontSize: ".86em", marginBottom: 10 }}>{selectedPlan.description || "Sin descripción."}</div>
-            <div style={{ fontSize: ".78em", fontWeight: 800, color: "#334155", marginBottom: 8 }}>Workouts de muestra</div>
-            <MarketplacePlanWorkoutsAccordion previewWorkouts={selectedPlan.preview_workouts} resetKey={selectedPlan.id} lockAfterWeek1={isAthlete} />
-            {isAthlete && planPreviewHasLockedWeeks ? (
+            <div style={{ fontSize: ".78em", fontWeight: 800, color: "#334155", marginBottom: 8 }}>Contenido del plan</div>
+            <MarketplacePlanWorkoutsAccordion previewWorkouts={getMarketplacePlanWorkoutRows(selectedPlan)} resetKey={selectedPlan.id} lockAfterWeek1={isAthlete} />
+            {!hidePurchaseCta && isAthlete && planPreviewHasLockedWeeks ? (
               <div style={{ marginTop: 14, marginBottom: 12, padding: "14px 16px", borderRadius: 12, background: "linear-gradient(180deg,#f1f5f9,#fff)", border: "1px solid #e2e8f0", textAlign: "center" }}>
                 <div style={{ fontSize: ".9em", fontWeight: 800, color: "#0f172a", marginBottom: 12, lineHeight: 1.45 }}>
                   Adquiere este plan para desbloquear todas las semanas
@@ -13679,11 +14104,11 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
                   Comprar - ${formatCopInt(selectedPlan.price_cop)} COP
                 </button>
               </div>
-            ) : (
+            ) : !hidePurchaseCta ? (
               <button type="button" onClick={() => openPurchaseInstructions(selectedPlan)} style={{ width: "100%", background: "linear-gradient(135deg,#ea580c,#f97316)", border: "none", borderRadius: 10, padding: "10px 14px", color: "#fff", fontWeight: 900, cursor: "pointer", fontFamily: "inherit", fontSize: ".85em", marginTop: 10 }}>
                 Comprar - ${formatCopInt(selectedPlan.price_cop)} COP
               </button>
-            )}
+            ) : null}
             <div style={{ marginTop: 12, border: "1px solid #e2e8f0", borderRadius: 10, padding: 12, background: "#fff7ed" }}>
               <div style={{ fontWeight: 800, marginBottom: 6 }}>Realiza tu pago a:</div>
               <div style={{ fontSize: ".84em", lineHeight: 1.5 }}>
@@ -13704,7 +14129,7 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
       {showPublishModal ? (
         <div style={{ position: "fixed", inset: 0, zIndex: 10031, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
           <div style={{ ...S.card, width: "100%", maxWidth: 760, margin: 0, maxHeight: "90vh", overflowY: "auto" }}>
-            <div style={{ fontSize: "1.02em", fontWeight: 900, marginBottom: 10 }}>➕ Publicar plan</div>
+            <div style={{ fontSize: "1.02em", fontWeight: 900, marginBottom: 10 }}>{editingMarketplacePlanId ? "✏️ Editar plan" : "➕ Publicar plan"}</div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 10 }}>
               <input value={planForm.title} onChange={(e) => setPlanForm((f) => ({ ...f, title: e.target.value }))} placeholder="Título" style={{ gridColumn: "1 / -1", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit" }} />
               <textarea value={planForm.description} onChange={(e) => setPlanForm((f) => ({ ...f, description: e.target.value }))} rows={3} placeholder="Descripción" style={{ gridColumn: "1 / -1", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit", boxSizing: "border-box" }} />
@@ -13752,8 +14177,20 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
               Tu ganancia: ${formatCopInt(Math.round((Number(planForm.price_cop || 0) || 0) * 0.8))} COP (80% del precio)
             </div>
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
-              <button type="button" onClick={() => setShowPublishModal(false)} style={{ border: "1px solid #e2e8f0", borderRadius: 8, background: "#fff", padding: "8px 12px", cursor: "pointer", fontFamily: "inherit" }}>Cancelar</button>
-              <button type="button" onClick={submitCoachPlan} disabled={savingPlan} style={{ border: "none", borderRadius: 8, background: savingPlan ? "#cbd5e1" : "linear-gradient(135deg,#0ea5e9,#0284c7)", padding: "8px 12px", color: "#fff", fontWeight: 800, cursor: savingPlan ? "not-allowed" : "pointer", fontFamily: "inherit" }}>{savingPlan ? "Guardando…" : "Publicar plan"}</button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowPublishModal(false);
+                  setEditingMarketplacePlanId(null);
+                  setEditingPlanSnapshot(null);
+                }}
+                style={{ border: "1px solid #e2e8f0", borderRadius: 8, background: "#fff", padding: "8px 12px", cursor: "pointer", fontFamily: "inherit" }}
+              >
+                Cancelar
+              </button>
+              <button type="button" onClick={submitCoachPlan} disabled={savingPlan} style={{ border: "none", borderRadius: 8, background: savingPlan ? "#cbd5e1" : "linear-gradient(135deg,#0ea5e9,#0284c7)", padding: "8px 12px", color: "#fff", fontWeight: 800, cursor: savingPlan ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+                {savingPlan ? "Guardando…" : editingMarketplacePlanId ? "Guardar cambios" : "Publicar plan"}
+              </button>
             </div>
           </div>
         </div>
@@ -13876,7 +14313,7 @@ function AdminMarketplacePanel({ notify }) {
     loadAll();
   };
   const rejectPlan = async (planId) => {
-    const { error } = await supabase.from("plan_marketplace").update({ is_active: false }).eq("id", planId);
+    const { error } = await supabase.from("plan_marketplace").update({ is_approved: false, is_active: false }).eq("id", planId);
     if (error) {
       notify?.(error.message || "No se pudo rechazar");
       return;
@@ -13903,7 +14340,7 @@ function AdminMarketplacePanel({ notify }) {
     loadAll();
   };
 
-  const pendingPurchases = (purchases || []).filter((p) => String(p.payment_status || "").toLowerCase() !== "confirmed");
+  const pendingPurchases = (purchases || []).filter((p) => String(p.payment_status || "").toLowerCase() === "pending");
   const hasUnsavedDraft = useMemo(() => {
     return Boolean(
       createForm.editing_plan_id ||
@@ -14098,6 +14535,7 @@ function AdminMarketplacePanel({ notify }) {
           sessions_per_week,
           price_cop,
           preview_workouts,
+          plan_sessions: preview_workouts,
           is_active: true,
           is_approved: true,
         })
@@ -14116,6 +14554,7 @@ function AdminMarketplacePanel({ notify }) {
         sessions_per_week,
         price_cop,
         preview_workouts,
+        plan_sessions: preview_workouts,
         is_active: true,
         is_approved: true,
       });
