@@ -1905,9 +1905,9 @@ Responde SOLO con un JSON con esta estructura exacta, sin texto adicional:
                         <div style={{ marginTop: 8 }}>
                           <button
                             type="button"
-                            onClick={async () => {
-                              await loadChallenges();
+                            onClick={() => {
                               setParticipantsModalChallenge(challenge);
+                              loadChallenges();
                             }}
                             style={{ background: "none", border: "none", color: "#2563eb", cursor: "pointer", fontWeight: 700, fontFamily: "inherit", fontSize: ".75em", padding: 0, textDecoration: "underline" }}
                           >
@@ -2286,6 +2286,10 @@ export default function App() {
         .select("*")
         .eq("user_id", session.user.id)
         .maybeSingle();
+      console.log("SESSION USER ID:", session.user.id);
+      console.log("PROFILE DATA:", data);
+      console.log("PROFILE ERROR:", error);
+      console.log("PROFILE ROLE:", data?.role);
       if (error) {
         console.error("Error cargando perfil:", error);
         setProfile(null);
