@@ -2020,28 +2020,48 @@ Responde SOLO con un JSON con esta estructura exacta, sin texto adicional:
                       : null;
                   const isDistanceChallenge = normalizeChallengeType(participantsModalChallenge.challenge_type) === "distancia";
                   const targetKm = Math.max(0, Number(participantsModalChallenge?.target_value) || 0);
+                  const kmDone = isDistanceChallenge && participantProgress ? Number(participantProgress.value) || 0 : 0;
+                  const pctRounded =
+                    isDistanceChallenge && targetKm > 0 ? Math.min(100, Math.round((kmDone / targetKm) * 100)) : 0;
+                  const barSlots = 8;
+                  const filledSlots =
+                    isDistanceChallenge && targetKm > 0 ? Math.round((pctRounded / 100) * barSlots) : 0;
+                  const asciiBar = `[${"█".repeat(Math.min(barSlots, Math.max(0, filledSlots)))}${"░".repeat(Math.max(0, barSlots - Math.min(barSlots, Math.max(0, filledSlots))))}]`;
                   return (
-                    <div key={participant.id} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: "9px 10px", background: "#fff", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+                    <div key={participant.id} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: "9px 10px", background: "#fff", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
                         <div style={{ width: 34, height: 34, borderRadius: "50%", background: "#e2e8f0", color: "#334155", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, fontSize: ".75em" }}>
                           {participant.initials}
                         </div>
                         <div style={{ fontSize: ".82em", color: "#0f172a", fontWeight: 700 }}>{participant.displayName}</div>
                       </div>
-                      {isDistanceChallenge && participantProgress ? (
-                        <div style={{ flex: 1, maxWidth: 220, minWidth: 120 }}>
-                          <div style={{ fontSize: ".72em", color: "#64748b", fontWeight: 700, marginBottom: 4, textAlign: "right" }}>
-                            {participantProgress.value.toFixed(1)} km / {targetKm > 0 ? `${targetKm} km` : "—"}
+                      {isDistanceChallenge ? (
+                        <div style={{ flex: 1, minWidth: 200, maxWidth: "100%", textAlign: "right" }}>
+                          <div
+                            style={{
+                              fontFamily: "ui-monospace, Consolas, monospace",
+                              fontSize: ".72em",
+                              color: "#334155",
+                              fontWeight: 700,
+                              lineHeight: 1.35,
+                              wordBreak: "break-all",
+                            }}
+                          >
+                            {asciiBar}{" "}
+                            {kmDone.toFixed(0)}km / {targetKm > 0 ? `${targetKm}km` : "—"}
+                            {targetKm > 0 ? ` (${pctRounded}%)` : ""}
                           </div>
-                          <div style={{ height: 8, borderRadius: 999, background: "#e2e8f0", overflow: "hidden" }}>
-                            <div
-                              style={{
-                                width: `${targetKm > 0 ? Math.min(100, (participantProgress.value / targetKm) * 100) : 0}%`,
-                                height: "100%",
-                                background: participantsModalChallenge.color || "#a855f7",
-                              }}
-                            />
-                          </div>
+                          {targetKm > 0 ? (
+                            <div style={{ height: 6, borderRadius: 999, background: "#e2e8f0", overflow: "hidden", marginTop: 6, maxWidth: 280, marginLeft: "auto" }}>
+                              <div
+                                style={{
+                                  width: `${pctRounded}%`,
+                                  height: "100%",
+                                  background: participantsModalChallenge.color || "#a855f7",
+                                }}
+                              />
+                            </div>
+                          ) : null}
                         </div>
                       ) : (
                         <div style={{ fontSize: ".75em", color: "#64748b", fontWeight: 700 }}>
@@ -13528,7 +13548,8 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
   }, [loadMarketplace, loadSales]);
 
   const loadPendingPurchases = useCallback(async () => {
-    if (!isCoach || !coachUserId) {
+    const canSeePending = isCoach || isAdmin;
+    if (!canSeePending) {
       setPendingPurchasesList([]);
       setLoadingPendingPurchases(false);
       return;
@@ -13537,17 +13558,25 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
     const { data, error } = await supabase.from("plan_purchases").select("*").order("created_at", { ascending: false });
     setLoadingPendingPurchases(false);
     if (error) {
-      console.error("plan_purchases pending (coach marketplace):", error);
+      console.error("plan_purchases pending (marketplace hub):", error);
       setPendingPurchasesList([]);
       return;
     }
     const pendingRows = (data || []).filter((row) => String(row.payment_status || "").toLowerCase() === "pending");
-    const uid = coachUserId || currentUserId;
-    const myPlanIds = new Set(
-      (plans || []).filter((p) => String(p.coach_user_id || "") === String(uid || "")).map((p) => String(p.id)),
-    );
-    setPendingPurchasesList(pendingRows.filter((row) => myPlanIds.has(String(row.plan_id || ""))));
-  }, [isCoach, coachUserId, currentUserId, plans]);
+    if (isAdmin) {
+      setPendingPurchasesList(pendingRows);
+    } else {
+      const uid = coachUserId || currentUserId;
+      if (!uid) {
+        setPendingPurchasesList([]);
+        return;
+      }
+      const myPlanIds = new Set(
+        (plans || []).filter((p) => String(p.coach_user_id || "") === String(uid)).map((p) => String(p.id)),
+      );
+      setPendingPurchasesList(pendingRows.filter((row) => myPlanIds.has(String(row.plan_id || ""))));
+    }
+  }, [isCoach, isAdmin, coachUserId, currentUserId, plans]);
 
   useEffect(() => {
     loadPendingPurchases();
@@ -13565,7 +13594,7 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
       const own = String(p.coach_user_id || "") === String(coachUserId || "");
       if (isAdmin) return active;
       if (isCoach && own) return active;
-      return active && approved;
+      return active && Boolean(p.is_approved);
     });
   }, [plans, isCoach, coachUserId, isAdmin]);
 
@@ -13898,7 +13927,7 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
         </div>
       ) : null}
 
-      {isCoach ? (
+      {isCoach || isAdmin ? (
         <div style={{ ...S.card, marginBottom: 14 }}>
           <div style={{ fontSize: ".72em", letterSpacing: ".12em", textTransform: "uppercase", color: "#64748b", marginBottom: 8 }}>
             Compras pendientes de confirmar
