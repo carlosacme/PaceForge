@@ -6923,16 +6923,22 @@ function AthleteHome({ profile }) {
         }
       }
 
-      const { data: workoutsRows, error: workoutsErr } = await supabase
-        .from("workouts")
-        .select("*")
-        .eq("athlete_id", athleteRow.id)
-        .order("scheduled_date", { ascending: true });
-      const { data: evalRows } = await supabase
-        .from("athlete_evaluations")
-        .select("vdot, created_at")
-        .eq("athlete_id", athleteRow.id)
-        .order("created_at", { ascending: true });
+      const [wRes, eRes] = await Promise.all([
+        supabase
+          .from("workouts")
+          .select("*")
+          .eq("athlete_id", athleteRow.id)
+          .order("scheduled_date", { ascending: true }),
+        supabase
+          .from("athlete_evaluations")
+          .select("vdot, created_at")
+          .eq("athlete_id", athleteRow.id)
+          .order("created_at", { ascending: true }),
+      ]);
+      const workoutsRows = wRes.data;
+      const workoutsErr = wRes.error;
+      const evalRows = eRes.data;
+      if (eRes.error) console.warn("[AthleteHome] athlete_evaluations:", eRes.error);
 
       console.log("[AthleteHome] consulta workouts (athlete_id)", {
         athlete_id: athleteRow.id,
@@ -6951,12 +6957,20 @@ function AthleteHome({ profile }) {
         setWorkouts(normalizedWorkouts);
         setAthleteEvaluations(evalRows || []);
         if ((normalizedWorkouts || []).some((w) => w.done)) {
-          const { snapshot, progress } = await evaluateAndAwardAthleteAchievements(athleteRow.id);
-          if (!cancelled) {
-            setAchievementsCatalog(snapshot.achievements || []);
-            setEarnedAchievements(snapshot.earned || []);
-            setAchProgress(progress || computeAchievementProgress(normalizedWorkouts.filter((w) => w.done)));
-          }
+          setTimeout(() => {
+            if (cancelled) return;
+            (async () => {
+              try {
+                const { snapshot, progress } = await evaluateAndAwardAthleteAchievements(athleteRow.id);
+                if (cancelled) return;
+                setAchievementsCatalog(snapshot.achievements || []);
+                setEarnedAchievements(snapshot.earned || []);
+                setAchProgress(progress || computeAchievementProgress(normalizedWorkouts.filter((w) => w.done)));
+              } catch (e) {
+                console.warn("[AthleteHome] evaluateAndAwardAthleteAchievements (fondo):", e);
+              }
+            })();
+          }, 0);
         }
       }
 
@@ -7207,12 +7221,43 @@ function AthleteHome({ profile }) {
     [workouts],
   );
 
-  const openWorkoutSummaryModal = async (workoutRow) => {
+  const openWorkoutSummaryModal = (workoutRow) => {
     if (!workoutRow?.scheduled_date) return;
     const isStravaConnected = Boolean(stravaConnection?.access_token);
+    const baseManual = {
+      distanceKm: workoutRow.total_km ? String(workoutRow.total_km) : "",
+      durationMin: workoutRow.duration_min ? String(workoutRow.duration_min) : "",
+      rpe: workoutRow.rpe != null ? String(workoutRow.rpe) : "",
+      avgHr: workoutRow.manual_avg_hr != null ? String(workoutRow.manual_avg_hr) : "",
+      maxHr: workoutRow.manual_max_hr != null ? String(workoutRow.manual_max_hr) : "",
+      calories: workoutRow.manual_calories != null ? String(workoutRow.manual_calories) : "",
+      feeling: "😐 Normal",
+      notes: workoutRow.athlete_notes || "",
+    };
+    setManualSummaryForm(baseManual);
     if (isStravaConnected && athleteInfo?.id) {
-      const dayStart = `${workoutRow.scheduled_date}T00:00:00`;
-      const dayEnd = `${formatLocalYMD(addDays(new Date(`${workoutRow.scheduled_date}T12:00:00`), 1))}T00:00:00`;
+      setWorkoutSummaryModal({
+        workout: workoutRow,
+        stravaConnected: true,
+        activity: null,
+        stravaActivityPending: true,
+      });
+      return;
+    }
+    setWorkoutSummaryModal({ workout: workoutRow, stravaConnected: false, activity: null, stravaActivityPending: false });
+  };
+
+  useEffect(() => {
+    const modal = workoutSummaryModal;
+    if (!modal?.stravaActivityPending || !modal.stravaConnected || !athleteInfo?.id || !stravaConnection?.access_token) {
+      return undefined;
+    }
+    const workoutRow = modal.workout;
+    if (!workoutRow?.scheduled_date) return undefined;
+    let cancelled = false;
+    const dayStart = `${workoutRow.scheduled_date}T00:00:00`;
+    const dayEnd = `${formatLocalYMD(addDays(new Date(`${workoutRow.scheduled_date}T12:00:00`), 1))}T00:00:00`;
+    (async () => {
       const { data, error } = await supabase
         .from("strava_activities")
         .select("*")
@@ -7222,34 +7267,41 @@ function AthleteHome({ profile }) {
         .order("start_date_local", { ascending: false })
         .limit(1)
         .maybeSingle();
-      if (error) {
-        console.warn("No se pudo cargar actividad strava_activities:", error);
-      }
-      setManualSummaryForm({
-        distanceKm: data?.distance != null ? (Number(data.distance) / 1000).toFixed(2) : (workoutRow.total_km ? String(workoutRow.total_km) : ""),
-        durationMin: data?.moving_time != null ? String(Math.max(0, Math.round(Number(data.moving_time) / 60))) : (workoutRow.duration_min ? String(workoutRow.duration_min) : ""),
-        rpe: workoutRow.rpe != null ? String(workoutRow.rpe) : "",
-        avgHr: data?.average_heartrate != null ? String(Math.round(Number(data.average_heartrate))) : "",
-        maxHr: data?.max_heartrate != null ? String(Math.round(Number(data.max_heartrate))) : "",
-        calories: data?.calories != null ? String(Math.round(Number(data.calories))) : data?.kilojoules != null ? String(Math.round(Number(data.kilojoules))) : "",
-        feeling: "😐 Normal",
-        notes: workoutRow.athlete_notes || "",
+      if (cancelled) return;
+      if (error) console.warn("No se pudo cargar actividad strava_activities:", error);
+      const activity = data || null;
+      setWorkoutSummaryModal((prev) => {
+        if (!prev || String(prev.workout?.id) !== String(workoutRow.id)) return prev;
+        if (!prev.stravaActivityPending) return prev;
+        return { ...prev, stravaActivityPending: false, activity };
       });
-      setWorkoutSummaryModal({ workout: workoutRow, stravaConnected: true, activity: data || null });
-      return;
-    }
-    setManualSummaryForm({
-      distanceKm: workoutRow.total_km ? String(workoutRow.total_km) : "",
-      durationMin: workoutRow.duration_min ? String(workoutRow.duration_min) : "",
-      rpe: workoutRow.rpe != null ? String(workoutRow.rpe) : "",
-      avgHr: workoutRow.manual_avg_hr != null ? String(workoutRow.manual_avg_hr) : "",
-      maxHr: workoutRow.manual_max_hr != null ? String(workoutRow.manual_max_hr) : "",
-      calories: workoutRow.manual_calories != null ? String(workoutRow.manual_calories) : "",
-      feeling: "😐 Normal",
-      notes: workoutRow.athlete_notes || "",
-    });
-    setWorkoutSummaryModal({ workout: workoutRow, stravaConnected: false, activity: null });
-  };
+      if (activity) {
+        setManualSummaryForm((f) => ({
+          ...f,
+          distanceKm: activity.distance != null ? (Number(activity.distance) / 1000).toFixed(2) : f.distanceKm,
+          durationMin: activity.moving_time != null ? String(Math.max(0, Math.round(Number(activity.moving_time) / 60))) : f.durationMin,
+          avgHr: activity.average_heartrate != null ? String(Math.round(Number(activity.average_heartrate))) : f.avgHr,
+          maxHr: activity.max_heartrate != null ? String(Math.round(Number(activity.max_heartrate))) : f.maxHr,
+          calories:
+            activity.calories != null
+              ? String(Math.round(Number(activity.calories)))
+              : activity.kilojoules != null
+                ? String(Math.round(Number(activity.kilojoules)))
+                : f.calories,
+        }));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    workoutSummaryModal?.workout?.id,
+    workoutSummaryModal?.workout?.scheduled_date,
+    workoutSummaryModal?.stravaActivityPending,
+    workoutSummaryModal?.stravaConnected,
+    athleteInfo?.id,
+    stravaConnection?.access_token,
+  ]);
 
   const saveManualWorkoutSummary = async () => {
     const workoutRow = workoutSummaryModal?.workout;
@@ -7341,7 +7393,7 @@ function AthleteHome({ profile }) {
         setMedalToast(`¡Nueva medalla desbloqueada! 🎉 ${first?.icon || ""} ${first?.name || ""}`.trim());
         setTimeout(() => setMedalToast(""), 4200);
       }
-      await openWorkoutSummaryModal({ ...w, done: true, rpe: next ? w.rpe : null });
+      openWorkoutSummaryModal({ ...w, done: true, rpe: next ? w.rpe : null });
     }
   };
 
@@ -8045,7 +8097,9 @@ function AthleteHome({ profile }) {
             </div>
             <WorkoutStructureTable structure={workoutSummaryModal.workout?.workout_structure || workoutSummaryModal.workout?.structure || []} />
             {workoutSummaryModal.stravaConnected ? (
-              workoutSummaryModal.activity ? (
+              workoutSummaryModal.stravaActivityPending ? (
+                <div style={{ color: "#64748b", fontSize: ".86em", marginBottom: 14 }}>Cargando datos de Strava…</div>
+              ) : workoutSummaryModal.activity ? (
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 10, marginBottom: 14 }}>
                   <div style={{ ...S.card, margin: 0, padding: 12 }}><div style={{ fontSize: ".72em", color: "#64748b" }}>Distancia</div><div style={{ fontWeight: 800 }}>{((Number(workoutSummaryModal.activity.distance) || 0) / 1000).toFixed(2)} km</div></div>
                   <div style={{ ...S.card, margin: 0, padding: 12 }}><div style={{ fontSize: ".72em", color: "#64748b" }}>Tiempo total</div><div style={{ fontWeight: 800 }}>{formatDurationClock(Number(workoutSummaryModal.activity.elapsed_time || workoutSummaryModal.activity.moving_time || 0))}</div></div>
@@ -8054,7 +8108,9 @@ function AthleteHome({ profile }) {
                   <div style={{ ...S.card, margin: 0, padding: 12 }}><div style={{ fontSize: ".72em", color: "#64748b" }}>Elevación</div><div style={{ fontWeight: 800 }}>{Math.round(Number(workoutSummaryModal.activity.total_elevation_gain || 0))} m</div></div>
                   <div style={{ ...S.card, margin: 0, padding: 12 }}><div style={{ fontSize: ".72em", color: "#64748b" }}>Calorías</div><div style={{ fontWeight: 800 }}>{Math.round(Number(workoutSummaryModal.activity.calories || workoutSummaryModal.activity.kilojoules || 0))}</div></div>
                 </div>
-              ) : <div style={{ color: "#64748b", fontSize: ".86em", marginBottom: 14 }}>No encontramos una actividad de Strava para ese día.</div>
+              ) : (
+                <div style={{ color: "#64748b", fontSize: ".86em", marginBottom: 14 }}>No encontramos una actividad de Strava para ese día.</div>
+              )
             ) : (
               <></>
             )}
@@ -9079,7 +9135,9 @@ function AthleteHome({ profile }) {
               {(workoutSummaryModal.workout?.title || "Workout")} · {workoutSummaryModal.workout?.scheduled_date || "—"}
             </div>
             {workoutSummaryModal.stravaConnected ? (
-              workoutSummaryModal.activity ? (
+              workoutSummaryModal.stravaActivityPending ? (
+                <div style={{ color: "#64748b", fontSize: ".86em", marginBottom: 14 }}>Cargando datos de Strava…</div>
+              ) : workoutSummaryModal.activity ? (
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 10, marginBottom: 14 }}>
                   <div style={{ ...S.card, margin: 0, padding: 12 }}><div style={{ fontSize: ".72em", color: "#64748b" }}>Distancia</div><div style={{ fontWeight: 800 }}>{((Number(workoutSummaryModal.activity.distance) || 0) / 1000).toFixed(2)} km</div></div>
                   <div style={{ ...S.card, margin: 0, padding: 12 }}><div style={{ fontSize: ".72em", color: "#64748b" }}>Tiempo total</div><div style={{ fontWeight: 800 }}>{formatDurationClock(Number(workoutSummaryModal.activity.elapsed_time || workoutSummaryModal.activity.moving_time || 0))}</div></div>
