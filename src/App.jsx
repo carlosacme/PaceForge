@@ -1410,19 +1410,21 @@ const CHALLENGE_TYPE_OPTIONS = [
   { id: "racha", label: "Racha (días)" },
 ];
 
-const challengeValueLabel = (challenge) => {
-  const unit = String(challenge?.unit || "").trim();
-  const target = Number(challenge?.target_value || 0);
-  if (!Number.isFinite(target) || target <= 0) return "Meta pendiente";
-  if (unit) return `${target} ${unit}`;
-  return String(target);
-};
-
 const normalizeChallengeType = (raw) => {
   const type = String(raw || "").trim().toLowerCase();
   if (type === "distance") return "distancia";
   if (type === "time") return "tiempo";
   return type;
+};
+
+const challengeValueLabel = (challenge) => {
+  const unit = String(challenge?.unit || "").trim();
+  const target = Number(challenge?.target_value || 0);
+  const type = normalizeChallengeType(challenge?.challenge_type);
+  if (type === "distancia" && (!Number.isFinite(target) || target <= 0)) return "Ranking por km (sin meta fija)";
+  if (!Number.isFinite(target) || target <= 0) return "Meta pendiente";
+  if (unit) return `${target} ${unit}`;
+  return String(target);
 };
 
 const computeWorkoutDayStreak = (workouts, startYmd, endYmd) => {
@@ -1666,14 +1668,28 @@ function ChallengesHub({ profileRole, currentUserId, athleteId = null, workouts 
     if (!isAdmin) return;
     const title = form.title.trim();
     const isDist = form.challenge_type === "distancia";
-    const target = Number(form.target_value);
+    const targetRaw = String(form.target_value ?? "").trim();
+    const targetParsed = targetRaw === "" ? NaN : Number(targetRaw);
     if (!title || !form.start_date || !form.end_date) {
       notify?.("Completa título y rango de fechas.");
       return;
     }
-    if (!Number.isFinite(target) || target <= 0) {
-      notify?.(isDist ? "Indica la meta en km." : "Indica una meta numérica válida.");
-      return;
+    let target = 0;
+    if (isDist) {
+      if (targetRaw === "") {
+        target = 0;
+      } else if (!Number.isFinite(targetParsed) || targetParsed < 0) {
+        notify?.("Indica la meta en km (≥ 0) o déjala vacía para ranking sin meta fija.");
+        return;
+      } else {
+        target = targetParsed;
+      }
+    } else {
+      target = Number(form.target_value);
+      if (!Number.isFinite(target) || target <= 0) {
+        notify?.("Indica una meta numérica válida.");
+        return;
+      }
     }
     setSavingCreate(true);
     const unitOut = isDist ? "km" : String(form.unit || "").trim() || null;
@@ -1719,12 +1735,17 @@ function ChallengesHub({ profileRole, currentUserId, athleteId = null, workouts 
     const durationDays = Math.max(7, Math.min(30, Math.round(Number(draft?.duration_days) || 14)));
     const start = new Date();
     const end = addDays(start, durationDays);
+    const goalNum = Number(draft?.goal_value);
+    const distOpen =
+      mappedType === "distancia" && (!Number.isFinite(goalNum) || goalNum <= 0);
+    const targetValueStr =
+      mappedType === "distancia" ? (distOpen ? "0" : String(Math.max(0, goalNum))) : String(Number.isFinite(goalNum) && goalNum > 0 ? goalNum : "");
     setForm((prev) => ({
       ...prev,
       title: String(draft?.title || "").trim(),
       description: String(draft?.description || "").trim(),
       challenge_type: mappedType,
-      target_value: String(Number(draft?.goal_value) || ""),
+      target_value: targetValueStr,
       unit: mappedUnit,
       start_date: formatLocalYMD(start),
       end_date: formatLocalYMD(end),
@@ -1753,7 +1774,9 @@ Responde SOLO con un JSON con esta estructura exacta, sin texto adicional:
   "duration_days": número de días que dura el reto (entre 7 y 30),
   "badge_emoji": un emoji representativo,
   "badge_color": color hex motivador
-}`;
+}
+Reglas adicionales:
+- Si el reto es de distancia (type "distance") SIN meta fija (el usuario pide competir por km acumulados, ranking, "quien más corre", sin número objetivo), entonces usa goal_value: 0, goal_unit: "km", y en description aclara que gana quien acumule más kilómetros en el periodo del reto (ranking por km).`;
       const res = await fetch("/api/generate-workout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1865,11 +1888,11 @@ Responde SOLO con un JSON con esta estructura exacta, sin texto adicional:
             {form.challenge_type === "distancia" ? (
               <input
                 type="number"
-                min="0.1"
+                min="0"
                 step="0.1"
                 value={form.target_value}
                 onChange={(e) => setForm((f) => ({ ...f, target_value: e.target.value, unit: "km" }))}
-                placeholder="Meta (km)"
+                placeholder="Meta en km (opcional: vacío = ranking sin meta fija)"
                 style={{ gridColumn: "1 / -1", border: "1px solid #dbe2ea", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit" }}
               />
             ) : (
@@ -1911,6 +1934,9 @@ Responde SOLO con un JSON con esta estructura exacta, sin texto adicional:
             const participants = participantsByChallenge[challenge.id] || [];
             const isMine = myChallengeIds.has(String(challenge.id));
             const progress = computeChallengeProgressForAthlete(challenge, workouts);
+            const openDistanceChallenge =
+              normalizeChallengeType(challenge.challenge_type) === "distancia" &&
+              (!Number.isFinite(Number(challenge.target_value)) || Number(challenge.target_value) <= 0);
             return (
               <div key={challenge.id} style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: "12px 14px", background: "#fff" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
@@ -2003,14 +2029,20 @@ Responde SOLO con un JSON con esta estructura exacta, sin texto adicional:
                   </div>
                 </div>
                 {isAthlete ? (
-                  <>
+                  openDistanceChallenge ? (
                     <div style={{ marginTop: 10, fontSize: ".76em", color: "#475569", fontWeight: 700 }}>
-                      Progreso: {progress.value.toFixed(1)} / {progress.target || 0}
+                      Km acumulados en el periodo: {progress.value.toFixed(1)} km · ranking sin meta fija
                     </div>
-                    <div style={{ height: 8, borderRadius: 999, background: "#e2e8f0", overflow: "hidden", marginTop: 6 }}>
-                      <div style={{ width: `${progress.pct}%`, height: "100%", background: challenge.color || "#a855f7" }} />
-                    </div>
-                  </>
+                  ) : (
+                    <>
+                      <div style={{ marginTop: 10, fontSize: ".76em", color: "#475569", fontWeight: 700 }}>
+                        Progreso: {progress.value.toFixed(1)} / {progress.target || 0}
+                      </div>
+                      <div style={{ height: 8, borderRadius: 999, background: "#e2e8f0", overflow: "hidden", marginTop: 6 }}>
+                        <div style={{ width: `${progress.pct}%`, height: "100%", background: challenge.color || "#a855f7" }} />
+                      </div>
+                    </>
+                  )
                 ) : null}
                 <div style={{ marginTop: 10, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                   {isAthlete ? (
@@ -2056,69 +2088,104 @@ Responde SOLO con un JSON con esta estructura exacta, sin texto adicional:
             </div>
             {(participantsByChallenge[participantsModalChallenge.id] || []).length === 0 ? (
               <div style={{ color: "#94a3b8", fontSize: ".82em" }}>Sin participantes</div>
-            ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {(participantsByChallenge[participantsModalChallenge.id] || []).map((participant) => {
-                  const participantWorkouts = getWorkoutsForChallengeParticipant(participant);
-                  const participantProgress =
-                    participant.athlete_id != null
-                      ? computeChallengeProgressForAthlete(participantsModalChallenge, participantWorkouts)
-                      : null;
-                  const isDistanceChallenge = normalizeChallengeType(participantsModalChallenge.challenge_type) === "distancia";
-                  const targetKm = Math.max(0, Number(participantsModalChallenge?.target_value) || 0);
-                  const kmDone = isDistanceChallenge && participantProgress ? Number(participantProgress.value) || 0 : 0;
-                  const pctRounded =
-                    isDistanceChallenge && targetKm > 0 ? Math.min(100, Math.round((kmDone / targetKm) * 100)) : 0;
-                  const barSlots = 8;
-                  const filledSlots =
-                    isDistanceChallenge && targetKm > 0 ? Math.round((pctRounded / 100) * barSlots) : 0;
-                  const asciiBar = `[${"█".repeat(Math.min(barSlots, Math.max(0, filledSlots)))}${"░".repeat(Math.max(0, barSlots - Math.min(barSlots, Math.max(0, filledSlots))))}]`;
+            ) : (() => {
+                const modalList = participantsByChallenge[participantsModalChallenge.id] || [];
+                const isDistanceChallenge = normalizeChallengeType(participantsModalChallenge.challenge_type) === "distancia";
+                const modalTargetRaw = Number(participantsModalChallenge?.target_value);
+                const modalOpenRanking =
+                  isDistanceChallenge && (!Number.isFinite(modalTargetRaw) || modalTargetRaw <= 0);
+                if (modalOpenRanking) {
+                  const ranked = [...modalList]
+                    .map((participant) => {
+                      const w = getWorkoutsForChallengeParticipant(participant);
+                      const pr = computeChallengeProgressForAthlete(participantsModalChallenge, w);
+                      return { participant, km: Number(pr.value) || 0 };
+                    })
+                    .sort((a, b) => b.km - a.km);
                   return (
-                    <div key={participant.id} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: "9px 10px", background: "#fff", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-                        <div style={{ width: 34, height: 34, borderRadius: "50%", background: "#e2e8f0", color: "#334155", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, fontSize: ".75em" }}>
-                          {participant.initials}
-                        </div>
-                        <div style={{ fontSize: ".82em", color: "#0f172a", fontWeight: 700 }}>{participant.displayName}</div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      <div style={{ fontSize: ".78em", color: "#64748b", fontWeight: 700 }}>
+                        Ranking por km acumulados (sin meta fija)
                       </div>
-                      {isDistanceChallenge ? (
-                        <div style={{ flex: 1, minWidth: 200, maxWidth: "100%", textAlign: "right" }}>
-                          <div
-                            style={{
-                              fontFamily: "ui-monospace, Consolas, monospace",
-                              fontSize: ".72em",
-                              color: "#334155",
-                              fontWeight: 700,
-                              lineHeight: 1.35,
-                              wordBreak: "break-all",
-                            }}
-                          >
-                            {asciiBar}{" "}
-                            {kmDone.toFixed(0)}km / {targetKm > 0 ? `${targetKm}km` : "—"}
-                            {targetKm > 0 ? ` (${pctRounded}%)` : ""}
-                          </div>
-                          {targetKm > 0 ? (
-                            <div style={{ height: 6, borderRadius: 999, background: "#e2e8f0", overflow: "hidden", marginTop: 6, maxWidth: 280, marginLeft: "auto" }}>
-                              <div
-                                style={{
-                                  width: `${pctRounded}%`,
-                                  height: "100%",
-                                  background: participantsModalChallenge.color || "#a855f7",
-                                }}
-                              />
-                            </div>
-                          ) : null}
+                      {ranked.map((row, idx) => (
+                        <div
+                          key={row.participant.id}
+                          style={{
+                            border: "1px solid #e2e8f0",
+                            borderRadius: 10,
+                            padding: "10px 12px",
+                            background: "#fff",
+                            fontSize: ".88em",
+                            color: "#0f172a",
+                            fontWeight: 700,
+                          }}
+                        >
+                          {idx + 1}. {row.participant.displayName} — {row.km.toFixed(0)}km
                         </div>
-                      ) : (
-                        <div style={{ fontSize: ".75em", color: "#64748b", fontWeight: 700 }}>
-                          {participantProgress ? `${participantProgress.value.toFixed(1)} / ${participantProgress.target || 0}` : "Sin progreso"}
-                        </div>
-                      )}
+                      ))}
                     </div>
                   );
-                })}
-              </div>
-            )}
+                }
+                return (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {modalList.map((participant) => {
+                      const participantWorkouts = getWorkoutsForChallengeParticipant(participant);
+                      const participantProgress = computeChallengeProgressForAthlete(participantsModalChallenge, participantWorkouts);
+                      const targetKm = Math.max(0, Number(participantsModalChallenge?.target_value) || 0);
+                      const kmDone = isDistanceChallenge ? Number(participantProgress.value) || 0 : 0;
+                      const pctRounded =
+                        isDistanceChallenge && targetKm > 0 ? Math.min(100, Math.round((kmDone / targetKm) * 100)) : 0;
+                      const barSlots = 8;
+                      const filledSlots =
+                        isDistanceChallenge && targetKm > 0 ? Math.round((pctRounded / 100) * barSlots) : 0;
+                      const asciiBar = `[${"█".repeat(Math.min(barSlots, Math.max(0, filledSlots)))}${"░".repeat(Math.max(0, barSlots - Math.min(barSlots, Math.max(0, filledSlots))))}]`;
+                      return (
+                        <div key={participant.id} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: "9px 10px", background: "#fff", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                            <div style={{ width: 34, height: 34, borderRadius: "50%", background: "#e2e8f0", color: "#334155", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, fontSize: ".75em" }}>
+                              {participant.initials}
+                            </div>
+                            <div style={{ fontSize: ".82em", color: "#0f172a", fontWeight: 700 }}>{participant.displayName}</div>
+                          </div>
+                          {isDistanceChallenge ? (
+                            <div style={{ flex: 1, minWidth: 200, maxWidth: "100%", textAlign: "right" }}>
+                              <div
+                                style={{
+                                  fontFamily: "ui-monospace, Consolas, monospace",
+                                  fontSize: ".72em",
+                                  color: "#334155",
+                                  fontWeight: 700,
+                                  lineHeight: 1.35,
+                                  wordBreak: "break-all",
+                                }}
+                              >
+                                {asciiBar}{" "}
+                                {kmDone.toFixed(0)}km / {targetKm > 0 ? `${targetKm}km` : "—"}
+                                {targetKm > 0 ? ` (${pctRounded}%)` : ""}
+                              </div>
+                              {targetKm > 0 ? (
+                                <div style={{ height: 6, borderRadius: 999, background: "#e2e8f0", overflow: "hidden", marginTop: 6, maxWidth: 280, marginLeft: "auto" }}>
+                                  <div
+                                    style={{
+                                      width: `${pctRounded}%`,
+                                      height: "100%",
+                                      background: participantsModalChallenge.color || "#a855f7",
+                                    }}
+                                  />
+                                </div>
+                              ) : null}
+                            </div>
+                          ) : (
+                            <div style={{ fontSize: ".75em", color: "#64748b", fontWeight: 700 }}>
+                              {`${participantProgress.value.toFixed(1)} / ${participantProgress.target || 0}`}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
           </div>
         </div>
       ) : null}
@@ -15795,6 +15862,8 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
     e.preventDefault();
     if (!coachUserId) return;
     setSaving(true);
+    const language = form.language === "en" ? "en" : "es";
+    const currency = form.currency === "USD" ? "USD" : "COP";
     const payload = {
       user_id: coachUserId,
       avatar_url: form.avatar_url || null,
@@ -15804,8 +15873,8 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
       country: form.country.trim() || null,
       city: form.city.trim() || null,
       timezone: form.timezone || null,
-      language: form.language === "en" ? "en" : "es",
-      currency: form.currency === "USD" ? "USD" : "COP",
+      language,
+      currency,
       notify_new_workouts: form.notify_new_workouts,
       notify_reminders: form.notify_reminders,
       is_public: form.is_public === true,
@@ -15813,7 +15882,33 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
       subscription_renews_at: form.subscription_renews_at ? form.subscription_renews_at : null,
       updated_at: new Date().toISOString(),
     };
-    const { error } = await supabase.from("coach_profiles").upsert(payload, { onConflict: "user_id" });
+    console.log("[CoachSettings] coach_profiles guardar — objeto enviado:", JSON.stringify(payload, null, 2));
+    const { data: existingRow, error: loadErr } = await supabase.from("coach_profiles").select("user_id").eq("user_id", coachUserId).maybeSingle();
+    if (loadErr) {
+      console.error(loadErr);
+      setSaving(false);
+      notify(loadErr.message || "Error al comprobar el perfil");
+      return;
+    }
+    let error = null;
+    if (existingRow?.user_id) {
+      const updateFields = { ...payload };
+      delete updateFields.user_id;
+      const { error: upErr } = await supabase.from("coach_profiles").update(updateFields).eq("user_id", coachUserId);
+      error = upErr;
+    } else {
+      const insertPayload = {
+        ...payload,
+        trial_start: new Date().toISOString(),
+        trial_days: 10,
+        subscription_status: "trial",
+        approved_by_admin: false,
+        registered_at: new Date().toISOString(),
+      };
+      console.log("[CoachSettings] coach_profiles insert (sin fila previa):", JSON.stringify(insertPayload, null, 2));
+      const { error: insErr } = await supabase.from("coach_profiles").insert(insertPayload);
+      error = insErr;
+    }
     setSaving(false);
     if (error) {
       console.error(error);
@@ -15821,6 +15916,7 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
       return;
     }
     notify("Cambios guardados");
+    await loadProfile();
   };
 
   const field = (label, child) => (
