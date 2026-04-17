@@ -29,6 +29,77 @@ const PLAN_SESSION_TYPE_OPTIONS = [
   { id: "fartlek", label: "Fartlek", color: "#0d9488" },
 ];
 
+/** Ritmos (min/km) para generación IA de marketplace: pace_range = H:MM-H:MM con guión ASCII. */
+const MARKETPLACE_AI_PACE_RANGES_BY_LEVEL = {
+  principiante: {
+    easy: { desc: "7:00–8:00 min/km", pace_range: "7:00-8:00" },
+    tempo: { desc: "6:00–6:30 min/km", pace_range: "6:00-6:30" },
+    interval: { desc: "5:30–6:00 min/km", pace_range: "5:30-6:00" },
+  },
+  intermedio: {
+    easy: { desc: "6:00–6:45 min/km", pace_range: "6:00-6:45" },
+    tempo: { desc: "5:00–5:30 min/km", pace_range: "5:00-5:30" },
+    interval: { desc: "4:30–5:00 min/km", pace_range: "4:30-5:00" },
+  },
+  avanzado: {
+    easy: { desc: "5:00–5:45 min/km", pace_range: "5:00-5:45" },
+    tempo: { desc: "4:00–4:30 min/km", pace_range: "4:00-4:30" },
+    interval: { desc: "3:30–4:00 min/km", pace_range: "3:30-4:00" },
+  },
+};
+
+const marketplacePreviewSessionType = (w) => {
+  const id = w?.type;
+  if (id && PLAN_SESSION_TYPE_OPTIONS.some((t) => t.id === id)) return id;
+  return "easy";
+};
+
+/** easy/long/recovery/fartlek → banda "fácil"; tempo / interval según tipo. */
+const marketplaceAiPaceBandKey = (typeId) => {
+  const t = String(typeId || "easy").toLowerCase();
+  if (t === "tempo") return "tempo";
+  if (t === "interval") return "interval";
+  return "easy";
+};
+
+const buildMarketplaceAiPacePromptSection = () => {
+  const L = (lvl) => MARKETPLACE_AI_PACE_RANGES_BY_LEVEL[lvl] || MARKETPLACE_AI_PACE_RANGES_BY_LEVEL.intermedio;
+  const line = (name, lvl) => {
+    const p = L(lvl);
+    return `- ${name}: Fácil ${p.easy.desc} · Tempo ${p.tempo.desc} · Intervalos ${p.interval.desc} → pace_range easy/long/recovery/fartlek="${p.easy.pace_range}", tempo="${p.tempo.pace_range}", interval="${p.interval.pace_range}"`;
+  };
+  return [
+    "Ritmos por nivel del plan (min/km) — referencia obligatoria; cada sesión debe alinearse al nivel del plan (campo level):",
+    line("Principiante", "principiante"),
+    line("Intermedio", "intermedio"),
+    line("Avanzado", "avanzado"),
+    'Para type "easy", "long", "recovery" o "fartlek" usa el ritmo Fácil del nivel. Para "tempo" usa Tempo. Para "interval" usa Intervalos.',
+    "Cada elemento de preview_workouts DEBE incluir el campo \"type\" (easy|long|recovery|tempo|interval|fartlek).",
+    "Cada elemento de preview_workouts DEBE incluir \"pace_range\" como string en formato H:MM-H:MM con guión ASCII (ej. 6:00-6:45), exactamente el valor de la tabla para ese type y el level del plan.",
+    "Cada \"description\" DEBE incluir el rango numérico explícito en min/km según type y level, p. ej. \"Rodaje suave a 6:00–6:45 min/km\" o \"Series a 4:30–5:00 min/km\".",
+    "PROHIBIDO usar descripciones vagas como \"ritmo cómodo\", \"ritmo moderado\", \"ritmo suave\" o similares sin cifras; siempre incluye valores min/km concretos de la tabla.",
+  ].join("\n");
+};
+
+const applyMarketplaceAiPaceDefaultsToPreviewRows = (rows, levelRaw) => {
+  const level = String(levelRaw || "intermedio").toLowerCase();
+  const table = MARKETPLACE_AI_PACE_RANGES_BY_LEVEL[level] || MARKETPLACE_AI_PACE_RANGES_BY_LEVEL.intermedio;
+  return (Array.isArray(rows) ? rows : []).map((row) => {
+    if (!row || typeof row !== "object") return row;
+    const type = marketplacePreviewSessionType(row);
+    const band = marketplaceAiPaceBandKey(type);
+    const pr = table[band];
+    const pace_range = pr.pace_range;
+    let description = String(row.description || "").trim();
+    const hasNumericPace = /\d{1,2}:\d{2}\s*[–-]\s*\d{1,2}:\d{2}/.test(description);
+    if (!hasNumericPace) {
+      const title = String(row.title || "Sesión").trim();
+      description = description ? `${description} · Objetivo ${pr.desc}` : `${title} a ${pr.desc}`;
+    }
+    return { ...row, type, pace_range, description };
+  });
+};
+
 const DAYS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
 
 const MONTH_INDEX = {
@@ -512,6 +583,17 @@ const addDays = (d, n) => {
   return x;
 };
 
+/** Suma de minutos → texto legible (horas y minutos). */
+const formatDurationMinutesTotal = (mins) => {
+  const m = Math.max(0, Math.round(Number(mins) || 0));
+  const h = Math.floor(m / 60);
+  const r = m % 60;
+  if (m === 0) return "0 min";
+  if (h === 0) return `${r} min`;
+  if (r === 0) return `${h} h`;
+  return `${h} h ${r} min`;
+};
+
 /** Lunes de la semana que contiene el primer día del mes */
 const startOfMonthWeekMonday = (year, monthIndex) => startOfWeekMonday(new Date(year, monthIndex, 1));
 
@@ -800,6 +882,11 @@ const normalizeWorkoutRow = (row) => {
     type,
     title: row.title || WORKOUT_TYPES.find(t => t.id === type)?.label || "Entrenamiento",
     total_km: Number.isFinite(Number(row.total_km)) ? Number(row.total_km) : 0,
+    distance_km: Number.isFinite(Number(row.distance_km))
+      ? Number(row.distance_km)
+      : Number.isFinite(Number(row.total_km))
+        ? Number(row.total_km)
+        : 0,
     duration_min: Number.isFinite(Number(row.duration_min)) ? Number(row.duration_min) : 0,
     description: row.description || "",
     structure: Array.isArray(structure) ? structure : [],
@@ -1402,12 +1489,11 @@ function ChallengesHub({ profileRole, currentUserId, athleteId = null, workouts 
   const loadChallenges = useCallback(async () => {
     setLoading(true);
     const today = formatLocalYMD(new Date());
-    const { data, error } = await supabase
-      .from("challenges")
-      .select("*")
-      .eq("is_active", true)
-      .gte("end_date", today)
-      .order("end_date", { ascending: true });
+    const [challengesRes, participantsRes] = await Promise.all([
+      supabase.from("challenges").select("*").eq("is_active", true).gte("end_date", today).order("end_date", { ascending: true }),
+      supabase.from("challenge_participants").select("*"),
+    ]);
+    const { data, error } = challengesRes;
     if (error) {
       console.error("load challenges:", error);
       notify?.(error.message || "No se pudieron cargar los retos");
@@ -1421,76 +1507,75 @@ function ChallengesHub({ profileRole, currentUserId, athleteId = null, workouts 
     if (ids.length === 0) {
       setParticipantsByChallenge({});
       setMyChallengeIds(new Set());
+      setWorkoutsByAthlete({});
       setLoading(false);
       return;
     }
-    const { data: participants, error: pErr } = await supabase
-      .from("challenge_participants")
-      .select("id,challenge_id,user_id,athlete_id")
-      .in("challenge_id", ids);
-    if (pErr) {
-      console.error("load challenge_participants:", pErr);
+    if (participantsRes.error) {
+      console.error("load challenge_participants:", participantsRes.error);
     }
-    const userIds = [...new Set((participants || []).map((p) => p.user_id).filter(Boolean))];
-    const athleteIds = [...new Set((participants || []).map((p) => p.athlete_id).filter(Boolean))];
+    const idSet = new Set(ids.map((id) => String(id)));
+    const allParticipants = Array.isArray(participantsRes.data) ? participantsRes.data : [];
+    const participants = allParticipants.filter((p) => idSet.has(String(p.challenge_id)));
+    const userIds = [...new Set(participants.map((p) => p.user_id).filter(Boolean))];
+    const athleteIds = [...new Set(participants.map((p) => p.athlete_id).filter(Boolean))];
     const profileNameByUserId = {};
     const athleteNameById = {};
-    if (userIds.length > 0) {
-      const { data: profileRows, error: profileErr } = await supabase
-        .from("profiles")
-        .select("user_id,name")
-        .in("user_id", userIds);
-      if (profileErr) {
-        console.error("load participant profiles:", profileErr);
-      } else {
-        for (const row of profileRows || []) {
-          profileNameByUserId[String(row.user_id)] = String(row.name || "").trim();
-        }
+    const dateRangeStart = list
+      .map((c) => String(c.start_date || ""))
+      .filter(Boolean)
+      .sort()[0];
+    const dateRangeEnd = [...list.map((c) => String(c.end_date || "")).filter(Boolean)].sort().slice(-1)[0];
+    const workoutsQueryBase =
+      athleteIds.length > 0
+        ? supabase
+            .from("workouts")
+            .select("id,athlete_id,scheduled_date,total_km,duration_min,done")
+            .eq("done", true)
+            .in("athlete_id", athleteIds)
+        : null;
+    const workoutsPromise =
+      workoutsQueryBase == null
+        ? Promise.resolve({ data: [], error: null })
+        : dateRangeStart && dateRangeEnd
+          ? workoutsQueryBase.gte("scheduled_date", dateRangeStart).lte("scheduled_date", dateRangeEnd)
+          : workoutsQueryBase;
+    const profilesPromise =
+      userIds.length > 0
+        ? supabase.from("profiles").select("user_id,name").in("user_id", userIds)
+        : Promise.resolve({ data: [], error: null });
+    const athletesPromise =
+      athleteIds.length > 0
+        ? supabase.from("athletes").select("id,name").in("id", athleteIds)
+        : Promise.resolve({ data: [], error: null });
+    const [profilesRes, athletesRes, workoutsRes] = await Promise.all([profilesPromise, athletesPromise, workoutsPromise]);
+    if (profilesRes.error) {
+      console.error("load participant profiles:", profilesRes.error);
+    } else {
+      for (const row of profilesRes.data || []) {
+        profileNameByUserId[String(row.user_id)] = String(row.name || "").trim();
       }
     }
-    if (athleteIds.length > 0) {
-      const { data: athleteRows, error: athleteErr } = await supabase
-        .from("athletes")
-        .select("id,name")
-        .in("id", athleteIds);
-      if (athleteErr) {
-        console.error("load participant athletes:", athleteErr);
-      } else {
-        for (const row of athleteRows || []) {
-          athleteNameById[String(row.id)] = String(row.name || "").trim();
-        }
+    if (athletesRes.error) {
+      console.error("load participant athletes:", athletesRes.error);
+    } else {
+      for (const row of athletesRes.data || []) {
+        athleteNameById[String(row.id)] = String(row.name || "").trim();
       }
     }
     let workoutsMap = {};
-    if (athleteIds.length > 0) {
-      const dateRangeStart = list
-        .map((c) => String(c.start_date || ""))
-        .filter(Boolean)
-        .sort()[0];
-      const dateRangeEnd = [...list.map((c) => String(c.end_date || "")).filter(Boolean)].sort().slice(-1)[0];
-      const workoutsQuery = supabase
-        .from("workouts")
-        .select("id,athlete_id,scheduled_date,total_km,duration_min,done")
-        .eq("done", true)
-        .in("athlete_id", athleteIds);
-      const boundedQuery =
-        dateRangeStart && dateRangeEnd
-          ? workoutsQuery.gte("scheduled_date", dateRangeStart).lte("scheduled_date", dateRangeEnd)
-          : workoutsQuery;
-      const { data: doneWorkouts, error: workoutsErr } = await boundedQuery;
-      if (workoutsErr) {
-        console.error("load challenge workouts:", workoutsErr);
-      } else {
-        for (const row of doneWorkouts || []) {
-          const aid = String(row.athlete_id);
-          if (!workoutsMap[aid]) workoutsMap[aid] = [];
-          workoutsMap[aid].push(normalizeWorkoutRow(row));
-        }
+    if (workoutsRes.error) {
+      console.error("load challenge workouts:", workoutsRes.error);
+    } else {
+      for (const row of workoutsRes.data || []) {
+        const aid = String(row.athlete_id);
+        if (!workoutsMap[aid]) workoutsMap[aid] = [];
+        workoutsMap[aid].push(normalizeWorkoutRow(row));
       }
     }
     const grouped = {};
     const mine = new Set();
-    for (const p of participants || []) {
+    for (const p of participants) {
       const cid = p.challenge_id;
       if (!grouped[cid]) grouped[cid] = [];
       const profileName = profileNameByUserId[String(p.user_id)] || "";
@@ -1820,7 +1905,10 @@ Responde SOLO con un JSON con esta estructura exacta, sin texto adicional:
                         <div style={{ marginTop: 8 }}>
                           <button
                             type="button"
-                            onClick={() => setParticipantsModalChallenge(challenge)}
+                            onClick={async () => {
+                              await loadChallenges();
+                              setParticipantsModalChallenge(challenge);
+                            }}
                             style={{ background: "none", border: "none", color: "#2563eb", cursor: "pointer", fontWeight: 700, fontFamily: "inherit", fontSize: ".75em", padding: 0, textDecoration: "underline" }}
                           >
                             Ver todos
@@ -6683,6 +6771,7 @@ function AthleteHome({ profile }) {
     notes: "",
   });
   const [manualSummarySaving, setManualSummarySaving] = useState(false);
+  const [athleteProgressTab, setAthleteProgressTab] = useState("week");
 
   const profileUserId = profile?.user_id ?? null;
 
@@ -7023,30 +7112,39 @@ function AthleteHome({ profile }) {
     };
   }, [ctxMenuListenerKey]);
 
-  const { thisWeekStartYmd, thisWeekEndYmd } = useMemo(() => {
-    const start = startOfWeekMonday(new Date());
-    const end = addDays(start, 6);
+  const athleteProgressRangeYmd = useMemo(() => {
+    const now = new Date();
+    if (athleteProgressTab === "week") {
+      const start = startOfWeekMonday(now);
+      return { startYmd: formatLocalYMD(start), endYmd: formatLocalYMD(addDays(start, 6)) };
+    }
+    if (athleteProgressTab === "month") {
+      const start = new Date(now.getFullYear(), now.getMonth(), 1);
+      const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+      return { startYmd: formatLocalYMD(start), endYmd: formatLocalYMD(end) };
+    }
     return {
-      thisWeekStartYmd: formatLocalYMD(start),
-      thisWeekEndYmd: formatLocalYMD(end),
+      startYmd: formatLocalYMD(new Date(now.getFullYear(), 0, 1)),
+      endYmd: formatLocalYMD(new Date(now.getFullYear(), 11, 31)),
     };
-  }, [athleteTodayYmd]);
+  }, [athleteProgressTab, athleteTodayYmd]);
 
-  const weeklyWorkouts = useMemo(
-    () =>
-      workouts.filter((w) => {
-        const ymd = normalizeScheduledDateYmd(w.scheduled_date);
-        return ymd && ymd >= thisWeekStartYmd && ymd <= thisWeekEndYmd;
-      }),
-    [workouts, thisWeekStartYmd, thisWeekEndYmd],
-  );
+  const athleteProgressStats = useMemo(() => {
+    const { startYmd, endYmd } = athleteProgressRangeYmd;
+    const doneInRange = workouts.filter((w) => {
+      const ymd = normalizeScheduledDateYmd(w.scheduled_date);
+      return ymd && ymd >= startYmd && ymd <= endYmd && w.done;
+    });
+    const totalKm = doneInRange.reduce((s, w) => s + (Number(w.distance_km) || 0), 0);
+    const totalMin = doneInRange.reduce((s, w) => s + (Number(w.duration_min) || 0), 0);
+    return {
+      sessions: doneInRange.length,
+      totalKm,
+      totalMin,
+      rangeLabel: `${startYmd} → ${endYmd}`,
+    };
+  }, [workouts, athleteProgressRangeYmd]);
 
-  const weeklyTotalKm = useMemo(() => weeklyWorkouts.reduce((s, w) => s + (Number(w.total_km) || 0), 0), [weeklyWorkouts]);
-  const weeklyDoneKm = useMemo(() => weeklyWorkouts.filter(w => w.done).reduce((s, w) => s + (Number(w.total_km) || 0), 0), [weeklyWorkouts]);
-  const weeklyProgressPct = useMemo(() => {
-    if (!weeklyTotalKm || weeklyTotalKm <= 0) return 0;
-    return Math.max(0, Math.min(100, (weeklyDoneKm / weeklyTotalKm) * 100));
-  }, [weeklyDoneKm, weeklyTotalKm]);
   const last4WeeksSummary = useMemo(() => {
     const rows = [];
     const currentStart = startOfWeekMonday(new Date());
@@ -7547,6 +7645,54 @@ function AthleteHome({ profile }) {
     }
   };
 
+  const renderAthleteProgressCard = (marginBottom) => (
+    <div style={{ ...S.card, marginBottom, overflow: "visible" }}>
+      <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
+        {[
+          { id: "week", label: "Semana" },
+          { id: "month", label: "Mes" },
+          { id: "year", label: "Año" },
+        ].map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => setAthleteProgressTab(t.id)}
+            style={{
+              border: "1px solid #e2e8f0",
+              borderRadius: 8,
+              padding: "8px 12px",
+              background: athleteProgressTab === t.id ? "rgba(245,158,11,.14)" : "#fff",
+              fontWeight: athleteProgressTab === t.id ? 800 : 600,
+              cursor: "pointer",
+              fontFamily: "inherit",
+              fontSize: ".78em",
+              color: athleteProgressTab === t.id ? "#c2410c" : "#64748b",
+            }}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+      <div style={{ color: "#64748b", fontSize: ".8em", marginBottom: 12 }}>{athleteProgressStats.rangeLabel}</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
+          <span style={{ color: "#64748b", fontSize: ".85em" }}>🏃 Kilometraje total</span>
+          <span style={{ fontSize: "1.35em", fontWeight: 900, color: "#22c55e", fontFamily: "monospace" }}>{athleteProgressStats.totalKm.toFixed(1)} km</span>
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
+          <span style={{ color: "#64748b", fontSize: ".85em" }}>⏱️ Tiempo total</span>
+          <span style={{ fontSize: "1.35em", fontWeight: 900, color: "#22c55e", fontFamily: "monospace" }}>
+            {formatDurationMinutesTotal(athleteProgressStats.totalMin)}
+          </span>
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
+          <span style={{ color: "#64748b", fontSize: ".85em" }}>🗓️ Sesiones completadas</span>
+          <span style={{ fontSize: "1.35em", fontWeight: 900, color: "#22c55e", fontFamily: "monospace" }}>{athleteProgressStats.sessions}</span>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div style={{ ...S.page, paddingBottom: 96, overflow: "visible", position: "relative" }}>
       {message ? (
@@ -7558,18 +7704,7 @@ function AthleteHome({ profile }) {
         <h1 style={{ ...S.pageTitle, marginBottom: 4 }}>Hola, {athleteName}</h1>
       </div>
 
-      <div style={{ ...S.card, marginBottom: 14, overflow: "visible" }}>
-        <div style={{ fontSize: ".72em", letterSpacing: ".13em", color: "#475569", textTransform: "uppercase", marginBottom: 8 }}>PROGRESO SEMANAL</div>
-        <div style={{ fontSize: "1.6em", fontWeight: 900, color: "#22c55e", fontFamily: "monospace" }}>
-          {weeklyDoneKm.toFixed(1)} / {weeklyTotalKm.toFixed(1)} km
-        </div>
-        <div style={{ color: "#64748b", fontSize: ".8em", marginTop: 6 }}>
-          Semana {thisWeekStartYmd} → {thisWeekEndYmd}
-        </div>
-        <div style={{ marginTop: 10, height: 10, borderRadius: 999, background: "#e2e8f0", overflow: "hidden" }}>
-          <div style={{ width: `${weeklyProgressPct}%`, height: "100%", background: "linear-gradient(90deg,#22c55e,#16a34a)" }} />
-        </div>
-      </div>
+      {renderAthleteProgressCard(14)}
 
       <div style={{ ...S.card, marginBottom: 14 }}>
         <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 10 }}>
@@ -8124,15 +8259,7 @@ function AthleteHome({ profile }) {
         </div>
       </div>
 
-      <div style={{ ...S.card, marginBottom: 18, order: 2 }}>
-        <div style={{ fontSize: ".72em", letterSpacing: ".13em", color: "#475569", textTransform: "uppercase", marginBottom: 8 }}>PROGRESO SEMANAL</div>
-        <div style={{ fontSize: "1.6em", fontWeight: 900, color: "#22c55e", fontFamily: "monospace" }}>
-          {weeklyDoneKm} / {weeklyTotalKm} km
-        </div>
-        <div style={{ color: "#64748b", fontSize: ".8em", marginTop: 6 }}>
-          Semana {thisWeekStartYmd} → {thisWeekEndYmd}
-        </div>
-      </div>
+      <div style={{ order: 2 }}>{renderAthleteProgressCard(18)}</div>
 
       {!athleteNotRegistered && null}
       {athleteNeedsCoachLink ? (
@@ -13008,6 +13135,7 @@ function MarketplacePlanWorkoutsAccordion({ previewWorkouts, resetKey, lockAfter
           : null;
     const mins = w.duration_min != null && w.duration_min !== "" ? Number(w.duration_min) : null;
     const metaParts = [];
+    if (w.pace_range != null && String(w.pace_range).trim() !== "") metaParts.push(`${String(w.pace_range).trim()} min/km`);
     if (km != null && Number.isFinite(km)) metaParts.push(`${km} km`);
     if (mins != null && Number.isFinite(mins)) metaParts.push(`${mins} min`);
     return (
@@ -13731,6 +13859,7 @@ function AdminMarketplacePanel({ notify }) {
     title: "",
     type: "easy",
     description: "",
+    pace_range: "",
     duration_min: null,
     distance_km: null,
   });
@@ -13918,6 +14047,7 @@ function AdminMarketplacePanel({ notify }) {
     const sessionsFixed = [3, 4, 5].includes(Number(aiSessionsPerWeek)) ? Number(aiSessionsPerWeek) : 4;
     const duracionSemanas = Math.max(1, Math.round(Number(aiDurationWeeks) || 12));
     const totalPreviewEntries = duracionSemanas * sessionsFixed;
+    const pacePromptBlock = buildMarketplaceAiPacePromptSection();
     const systemPrompt = `Eres un experto en coaching de running. Genera un plan de entrenamiento completo para vender en un marketplace. Responde SOLO con JSON sin texto adicional ni markdown:
 {
   "title": "título comercial atractivo",
@@ -13927,21 +14057,23 @@ function AdminMarketplacePanel({ notify }) {
   "sessions_per_week": ${sessionsFixed},
   "price_cop": precio sugerido entre 50000 y 300000,
   "preview_workouts": [
-    {"week": 1, "day": "Martes", "title": "título sesión", "description": "descripción", "duration_min": número, "distance_km": número}
+    {"week": 1, "day": "Martes", "type": "easy", "title": "título sesión", "description": "Rodaje suave a 6:00–6:45 min/km (texto con rango numérico obligatorio)", "pace_range": "6:00-6:45", "duration_min": número, "distance_km": número}
   ]
 }
+${pacePromptBlock}
 Reglas obligatorias:
 - El campo "duration_weeks" en tu respuesta JSON debe ser exactamente ${duracionSemanas}.
 - El campo "sessions_per_week" en tu respuesta JSON debe ser exactamente el número ${sessionsFixed} (valor fijo; no uses otro número).
 - En preview_workouts incluye TODAS las sesiones de TODAS las semanas: ${duracionSemanas} semanas × ${sessionsFixed} sesiones = ${totalPreviewEntries} entradas en total. Cada semana debe tener exactamente ${sessionsFixed} sesiones en días no consecutivos.
-- Cada elemento de preview_workouts debe incluir: week (del 1 al ${duracionSemanas}), day, title, description, duration_min, distance_km.
+- Cada elemento de preview_workouts debe incluir: week (del 1 al ${duracionSemanas}), day, type, title, description (con min/km numéricos según nivel y type), pace_range (formato H:MM-H:MM con guión ASCII, coherente con type y level), duration_min, distance_km.
 - preview_workouts debe tener exactamente ${totalPreviewEntries} objetos: ordena por semana creciente (1…${duracionSemanas}); dentro de cada semana, ${sessionsFixed} filas con el mismo "week" y días no consecutivos.`;
     const userPrompt = [
       `Describe el plan: ${aiContext || "Plan de running para marketplace"}`,
-      `Nivel: ${aiLevel}`,
+      `Nivel del plan (aplica la tabla de ritmos de este nivel en cada sesión): ${aiLevel}`,
       `Objetivo: ${aiGoal}`,
       `Duración: ${duracionSemanas} semanas`,
       `El plan debe tener exactamente ${sessionsFixed} sesiones por semana, distribuidas en días no consecutivos.`,
+      "Cada sesión: incluye type, pace_range (H:MM-H:MM) y description con el mismo rango en min/km explícito; sin lenguaje vago de ritmo.",
     ].join("\n");
     setAiGenerating(true);
     try {
@@ -13966,24 +14098,23 @@ Reglas obligatorias:
         notify?.("La IA no devolvió un JSON válido.");
         return;
       }
+      const resolvedLevel = String(parsed.level || aiLevel || "intermedio");
+      const rawPreview = Array.isArray(parsed.preview_workouts)
+        ? parsed.preview_workouts
+        : isPreviewWorkoutRowShape(parsed.preview_workouts)
+          ? [parsed.preview_workouts]
+          : [];
+      const normalizedPreview = applyMarketplaceAiPaceDefaultsToPreviewRows(rawPreview, resolvedLevel);
       setCreateForm((prev) => ({
         ...prev,
         editing_plan_id: null,
         title: String(parsed.title || prev.title || ""),
         description: String(parsed.description || prev.description || ""),
-        level: String(parsed.level || aiLevel || "intermedio"),
+        level: resolvedLevel,
         duration_weeks: String(parsed.duration_weeks || aiDurationWeeks || "12"),
         sessions_per_week: String(sessionsFixed),
         price_cop: String(parsed.price_cop || prev.price_cop || "120000"),
-        preview_workouts_text: JSON.stringify(
-          Array.isArray(parsed.preview_workouts)
-            ? parsed.preview_workouts
-            : isPreviewWorkoutRowShape(parsed.preview_workouts)
-              ? [parsed.preview_workouts]
-              : [],
-          null,
-          2,
-        ),
+        preview_workouts_text: JSON.stringify(normalizedPreview, null, 2),
       }));
       notify?.("Plan generado con IA y formulario prellenado.");
       closePlanSessionModal();
@@ -14068,7 +14199,7 @@ Reglas obligatorias:
             <div style={{ fontSize: ".7em", color: "#64748b", marginBottom: 6 }}>
               {'Formato: [{"week":1,"day":"Martes","title":"Rodaje suave","description":"...","duration_min":45,"distance_km":8}]'}
             </div>
-            <textarea value={createForm.preview_workouts_text} onChange={(e) => setCreateForm((f) => ({ ...f, preview_workouts_text: e.target.value }))} rows={8} placeholder='[{"week":1,"day":"Martes","title":"Rodaje suave","description":"...","duration_min":45,"distance_km":8}]' style={{ width: "100%", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "monospace", fontSize: ".78em", boxSizing: "border-box" }} />
+            <textarea value={createForm.preview_workouts_text} onChange={(e) => setCreateForm((f) => ({ ...f, preview_workouts_text: e.target.value }))} rows={8} placeholder='[{"week":1,"day":"Martes","type":"easy","title":"Rodaje suave","description":"Rodaje a 6:00–6:45 min/km","pace_range":"6:00-6:45","duration_min":45,"distance_km":8}]' style={{ width: "100%", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "monospace", fontSize: ".78em", boxSizing: "border-box" }} />
           </div>
           <div style={{ gridColumn: "1 / -1" }}>
             <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 8, fontWeight: 800 }}>Plan completo</div>
