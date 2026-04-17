@@ -1471,7 +1471,7 @@ const computeChallengeProgressForAthlete = (challenge, workouts) => {
   return { value, target, pct };
 };
 
-function ChallengesHub({ profileRole, currentUserId, athleteId = null, workouts = [], notify }) {
+function ChallengesHub({ profileRole, currentUserId, athleteId = null, workouts = [], coachAthletes = [], notify }) {
   const S = styles;
   const isAdmin = profileRole === "admin" || String(currentUserId || "") === PLATFORM_ADMIN_USER_ID;
   const isAthlete = profileRole === "athlete";
@@ -1499,6 +1499,21 @@ function ChallengesHub({ profileRole, currentUserId, athleteId = null, workouts 
     emoji: "🏁",
     color: "#a855f7",
   });
+
+  const getWorkoutsForChallengeParticipant = useCallback(
+    (participant) => {
+      if (participant?.athlete_id != null && String(participant.athlete_id).trim() !== "") {
+        return workoutsByAthlete[String(participant.athlete_id)] || [];
+      }
+      const uid = String(participant?.user_id || "").trim();
+      if (uid) {
+        const row = (coachAthletes || []).find((a) => String(a.user_id || "") === uid);
+        if (row?.id != null) return workoutsByAthlete[String(row.id)] || [];
+      }
+      return [];
+    },
+    [workoutsByAthlete, coachAthletes],
+  );
 
   const loadChallenges = useCallback(async () => {
     setLoading(true);
@@ -1532,7 +1547,15 @@ function ChallengesHub({ profileRole, currentUserId, athleteId = null, workouts 
     const allParticipants = Array.isArray(participantsRes.data) ? participantsRes.data : [];
     const participants = allParticipants.filter((p) => idSet.has(String(p.challenge_id)));
     const userIds = [...new Set(participants.map((p) => p.user_id).filter(Boolean))];
-    const athleteIds = [...new Set(participants.map((p) => p.athlete_id).filter(Boolean))];
+    const coachAthleteRows = Array.isArray(coachAthletes) ? coachAthletes : [];
+    const resolveParticipantAthleteIdForLoad = (p) => {
+      if (p?.athlete_id != null && String(p.athlete_id).trim() !== "") return String(p.athlete_id);
+      const uid = String(p?.user_id || "").trim();
+      if (!uid) return null;
+      const row = coachAthleteRows.find((a) => String(a.user_id || "") === uid);
+      return row?.id != null ? String(row.id) : null;
+    };
+    const athleteIds = [...new Set(participants.map((p) => resolveParticipantAthleteIdForLoad(p)).filter(Boolean))];
     const profileNameByUserId = {};
     const athleteNameById = {};
     const dateRangeStart = list
@@ -1593,7 +1616,8 @@ function ChallengesHub({ profileRole, currentUserId, athleteId = null, workouts 
       const cid = p.challenge_id;
       if (!grouped[cid]) grouped[cid] = [];
       const profileName = profileNameByUserId[String(p.user_id)] || "";
-      const athleteName = athleteNameById[String(p.athlete_id)] || "";
+      const resolvedAid = resolveParticipantAthleteIdForLoad(p);
+      const athleteName = resolvedAid ? athleteNameById[resolvedAid] || "" : "";
       const displayName = profileName || athleteName || "Participante";
       const initials =
         displayName
@@ -1615,7 +1639,7 @@ function ChallengesHub({ profileRole, currentUserId, athleteId = null, workouts 
     setWorkoutsByAthlete(workoutsMap);
     setMyChallengeIds(mine);
     setLoading(false);
-  }, [notify, currentUserId, athleteId]);
+  }, [notify, currentUserId, athleteId, coachAthletes]);
 
   useEffect(() => {
     loadChallenges();
@@ -2013,7 +2037,7 @@ Responde SOLO con un JSON con esta estructura exacta, sin texto adicional:
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 {(participantsByChallenge[participantsModalChallenge.id] || []).map((participant) => {
-                  const participantWorkouts = workoutsByAthlete[String(participant.athlete_id)] || [];
+                  const participantWorkouts = getWorkoutsForChallengeParticipant(participant);
                   const participantProgress =
                     participant.athlete_id != null
                       ? computeChallengeProgressForAthlete(participantsModalChallenge, participantWorkouts)
@@ -3915,6 +3939,7 @@ export default function App() {
             currentUserId={sessionUserId || null}
             athleteId={null}
             workouts={[]}
+            coachAthletes={athletes}
             notify={notify}
           />
         )}
