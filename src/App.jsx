@@ -1374,6 +1374,7 @@ const COACH_SUBSCRIPTION_WA_E164 = "573233675434";
 const TAB_KEY_ATHLETES = "raf_tab_atletas";
 const TAB_KEY_TRAINING = "raf_tab_entrenamientos";
 const TAB_KEY_LIBRARY = "raf_tab_biblioteca";
+const TAB_KEY_CREATE_WORKOUT = "raf_tab_crear_workout";
 
 const formatCopInt = (n) =>
   Number.isFinite(Number(n)) ? Number(n).toLocaleString("es-CO", { maximumFractionDigits: 0 }) : "—";
@@ -11735,7 +11736,11 @@ function WorkoutLibrary({
 
 function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiLoading, setAiLoading, notify, coachUserId, coachPlan, profileRole, onGoToPlans, onWorkoutAssigned, onSavedToLibrary }) {
   const S = styles;
-  const [builderTab, setBuilderTab] = useState("ai");
+  const [builderTab, setBuilderTab] = useState(() => {
+    if (typeof window === "undefined") return "ai";
+    const saved = localStorage.getItem(TAB_KEY_CREATE_WORKOUT);
+    return saved === "manual" ? "manual" : "ai";
+  });
   const [manualForm, setManualForm] = useState({
     title: "",
     type: "easy",
@@ -11809,6 +11814,11 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
   useEffect(() => {
     loadGenerationCounter();
   }, [loadGenerationCounter]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    localStorage.setItem(TAB_KEY_CREATE_WORKOUT, builderTab === "manual" ? "manual" : "ia");
+  }, [builderTab]);
 
   const previewWorkout = useMemo(() => {
     if (builderTab === "manual") {
