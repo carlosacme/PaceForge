@@ -2656,6 +2656,15 @@ export default function App() {
   }, [session?.user?.id, profile?.role, allowedCoachViews]);
 
   useEffect(() => {
+    if (view === "athletes" || view === "evaluation" || view === "challenges") {
+      writeStoredTab(TAB_KEY_ATHLETES, getAthletesTabFromView(view));
+    }
+    if (view === "plan12" || view === "builder" || view === "training") {
+      writeStoredTab(TAB_KEY_TRAINING, getTrainingTabFromView(view));
+    }
+  }, [view, writeStoredTab, getAthletesTabFromView, getTrainingTabFromView]);
+
+  useEffect(() => {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
     const code = params.get("strava_code");
@@ -3725,24 +3734,15 @@ export default function App() {
     setShowAddAthleteForm(false);
   };
 
-  const selectAthletesTab = useCallback((tab) => {
+  const selectAthletesTab = (tab) => {
     writeStoredTab(TAB_KEY_ATHLETES, tab);
     setView(getAthletesViewFromTab(tab));
-  }, [writeStoredTab, getAthletesViewFromTab]);
+  };
 
-  const selectTrainingTab = useCallback((tab) => {
+  const selectTrainingTab = (tab) => {
     writeStoredTab(TAB_KEY_TRAINING, tab);
     setView(getTrainingViewFromTab(tab));
-  }, [writeStoredTab, getTrainingViewFromTab]);
-
-  useEffect(() => {
-    if (view === "athletes" || view === "evaluation" || view === "challenges") {
-      writeStoredTab(TAB_KEY_ATHLETES, getAthletesTabFromView(view));
-    }
-    if (view === "plan12" || view === "builder" || view === "training") {
-      writeStoredTab(TAB_KEY_TRAINING, getTrainingTabFromView(view));
-    }
-  }, [view, writeStoredTab, getAthletesTabFromView, getTrainingTabFromView]);
+  };
 
   return (
     <div style={S.root}>
