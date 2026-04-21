@@ -1364,13 +1364,9 @@ function coachDirectorySpecialtyLabel(row) {
 const COACH_NAV_BASE_ITEMS = [
   { id: "dashboard", icon: "▤", label: "Dashboard", shortLabel: "Inicio", color: "#f59e0b" },
   { id: "athletes", icon: "◉", label: "Atletas", shortLabel: "Atletas", color: "#3b82f6" },
-  { id: "evaluation", icon: "📊", label: "Evaluación", shortLabel: "Eval", color: "#0ea5e9" },
-  { id: "plan12", icon: "◇", label: "Plan 2 Semanas", shortLabel: "2 sem.", color: "#8b5cf6" },
-  { id: "plans", icon: "◆", label: "Planes", shortLabel: "Planes", color: "#0d9488" },
-  { id: "builder", icon: "◎", label: "Crear Workout", shortLabel: "IA", color: "#ea580c" },
+  { id: "training", icon: "💪", label: "Entrenamientos", shortLabel: "Entreno", color: "#ea580c" },
   { id: "library", icon: "◈", label: "Biblioteca", shortLabel: "Biblio", color: "#6366f1" },
   { id: "marketplace", icon: "🛒", label: "Marketplace", shortLabel: "Market", color: "#0ea5e9" },
-  { id: "challenges", icon: "🏆", label: "Retos", shortLabel: "Retos", color: "#a855f7" },
 ];
 
 const COACH_SUBSCRIPTION_NEQUI = "3233675434";
@@ -2291,18 +2287,18 @@ export default function App() {
 
   const coachNavItems = useMemo(() => {
     const role = profile?.role;
-    const items = [...COACH_NAV_BASE_ITEMS].filter((item) => item.id !== "plans" || role === "coach");
-    if (role === "admin") {
-      items.push({ id: "admin-coaches", icon: "👥", label: "Coaches", shortLabel: "Coaches", color: "#6366f1" });
-    }
+    const items = [...COACH_NAV_BASE_ITEMS];
     items.push({ id: "settings", icon: "⚙", label: "Configuración", shortLabel: "Ajustes", color: "#64748b" });
     const em = session?.user?.email?.toLowerCase();
     if (role === "admin" || em === ADMIN_EMAIL) {
-      items.push({ id: "admin", icon: "⚙️", label: "Admin", shortLabel: "Admin", color: "#7c3aed" });
+      items.push({ id: "admin", icon: "🔐", label: "Admin", shortLabel: "Admin", color: "#7c3aed" });
     }
     return items;
   }, [profile?.role, session?.user?.email]);
-  const allowedCoachViews = useMemo(() => new Set(coachNavItems.map((item) => item.id)), [coachNavItems]);
+  const allowedCoachViews = useMemo(() => {
+    const hiddenViews = ["evaluation", "plan12", "builder", "challenges", "plans"];
+    return new Set([...coachNavItems.map((item) => item.id), ...hiddenViews]);
+  }, [coachNavItems]);
 
   const persistCoachSubscriptionSelection = useCallback(
     async (planKey, periodId) => {
@@ -2609,7 +2605,7 @@ export default function App() {
     if (view === "admin" && role !== "admin" && em !== ADMIN_EMAIL) {
       setView("dashboard");
     }
-    if (view === "admin-coaches" && role !== "admin") {
+    if (view === "admin-coaches") {
       setView("dashboard");
     }
   }, [view, session?.user?.email, profile?.role]);
@@ -3688,6 +3684,16 @@ export default function App() {
     !coachPlanBlockedUi;
 
   const goCoachView = (id) => {
+    if (id === "athletes") {
+      setView((prev) => (prev === "evaluation" || prev === "challenges" ? prev : "athletes"));
+      setShowAddAthleteForm(false);
+      return;
+    }
+    if (id === "training") {
+      setView((prev) => (prev === "builder" ? "builder" : "plan12"));
+      setShowAddAthleteForm(false);
+      return;
+    }
     setView(id);
     setShowAddAthleteForm(false);
   };
@@ -3742,17 +3748,23 @@ export default function App() {
           </div>
         </div>
         <nav style={{ flex: 1, paddingTop: 8 }}>
-          {coachNavItems.map((item) => (
+          {coachNavItems.map((item) => {
+            const active =
+              view === item.id ||
+              (item.id === "athletes" && (view === "evaluation" || view === "challenges")) ||
+              (item.id === "training" && (view === "plan12" || view === "builder"));
+            return (
             <button
               key={item.id}
               type="button"
               onClick={() => goCoachView(item.id)}
-              style={{ ...S.navBtn, ...(view === item.id ? S.navBtnActive : {}) }}
+              style={{ ...S.navBtn, ...(active ? S.navBtnActive : {}) }}
             >
               <span style={{ fontSize: "1.15em", color: item.color, width: 22, textAlign: "center" }}>{item.icon}</span>
               <span>{item.label}</span>
             </button>
-          ))}
+            );
+          })}
         </nav>
         <div style={S.sidebarFooter}>
           <div style={{ fontSize: ".82em", color: "#64748b", fontWeight: 600 }}>
@@ -3921,41 +3933,60 @@ export default function App() {
             onCancelAddAthlete={cancelAddAthleteForm}
           />
         )}
-        {view === "athletes" && (
-          <Athletes
-            athletes={athletes}
-            selected={selectedAthlete}
-            onSelect={setSelectedAthlete}
-            workoutsRefresh={workoutsRefresh}
-            onAthleteWorkoutsDoneSync={(athleteId, workoutsDone) => {
-              setAthletes(prev => prev.map(a => (String(a.id) === String(athleteId) ? { ...a, workouts_done: workoutsDone } : a)));
-              setSelectedAthlete(prev => (prev && String(prev.id) === String(athleteId) ? { ...prev, workouts_done: workoutsDone } : prev));
-            }}
-            onAthleteFcSync={(athleteId, fc_max, fc_reposo) => {
-              setAthletes((prev) =>
-                prev.map((a) => (String(a.id) === String(athleteId) ? normalizeAthlete({ ...a, fc_max, fc_reposo }) : a)),
-              );
-              setSelectedAthlete((prev) =>
-                prev && String(prev.id) === String(athleteId) ? normalizeAthlete({ ...prev, fc_max, fc_reposo }) : prev,
-              );
-            }}
-            coachDisplayName={
-              profile?.name ||
-              session?.user?.user_metadata?.full_name ||
-              (session?.user?.email ? session.user.email.split("@")[0] : null) ||
-              "Coach"
-            }
-            onDeleteAthlete={handleDeleteAthlete}
-            notify={notify}
-            onOpenInviteModal={() => setInviteModalOpen(true)}
-          />
-        )}
-        {view === "evaluation" && (
-          <EvaluationView
-            athletes={athletes}
-            currentUserId={session?.user?.id ?? null}
-            notify={notify}
-          />
+        {(view === "athletes" || view === "evaluation" || view === "challenges") && (
+          <>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "0 16px 10px" }}>
+              <button type="button" onClick={() => setView("athletes")} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", background: view === "athletes" ? "rgba(59,130,246,.12)" : "#fff", color: view === "athletes" ? "#1d4ed8" : "#334155", fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>👥 Lista atletas</button>
+              <button type="button" onClick={() => setView("evaluation")} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", background: view === "evaluation" ? "rgba(14,165,233,.12)" : "#fff", color: view === "evaluation" ? "#0369a1" : "#334155", fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>📊 Evaluación</button>
+              <button type="button" onClick={() => setView("challenges")} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", background: view === "challenges" ? "rgba(168,85,247,.12)" : "#fff", color: view === "challenges" ? "#7e22ce" : "#334155", fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>🏆 Retos</button>
+            </div>
+            {view === "athletes" && (
+              <Athletes
+                athletes={athletes}
+                selected={selectedAthlete}
+                onSelect={setSelectedAthlete}
+                workoutsRefresh={workoutsRefresh}
+                onAthleteWorkoutsDoneSync={(athleteId, workoutsDone) => {
+                  setAthletes(prev => prev.map(a => (String(a.id) === String(athleteId) ? { ...a, workouts_done: workoutsDone } : a)));
+                  setSelectedAthlete(prev => (prev && String(prev.id) === String(athleteId) ? { ...prev, workouts_done: workoutsDone } : prev));
+                }}
+                onAthleteFcSync={(athleteId, fc_max, fc_reposo) => {
+                  setAthletes((prev) =>
+                    prev.map((a) => (String(a.id) === String(athleteId) ? normalizeAthlete({ ...a, fc_max, fc_reposo }) : a)),
+                  );
+                  setSelectedAthlete((prev) =>
+                    prev && String(prev.id) === String(athleteId) ? normalizeAthlete({ ...prev, fc_max, fc_reposo }) : prev,
+                  );
+                }}
+                coachDisplayName={
+                  profile?.name ||
+                  session?.user?.user_metadata?.full_name ||
+                  (session?.user?.email ? session.user.email.split("@")[0] : null) ||
+                  "Coach"
+                }
+                onDeleteAthlete={handleDeleteAthlete}
+                notify={notify}
+                onOpenInviteModal={() => setInviteModalOpen(true)}
+              />
+            )}
+            {view === "evaluation" && (
+              <EvaluationView
+                athletes={athletes}
+                currentUserId={session?.user?.id ?? null}
+                notify={notify}
+              />
+            )}
+            {view === "challenges" && (
+              <ChallengesHub
+                profileRole={profile?.role ?? ""}
+                currentUserId={sessionUserId || null}
+                athleteId={null}
+                workouts={[]}
+                coachAthletes={athletes}
+                notify={notify}
+              />
+            )}
+          </>
         )}
         {view === "plans" && <Plans athletes={athletes} notify={notify} />}
         {view === "settings" && (
@@ -3970,40 +4001,45 @@ export default function App() {
             onSignOut={handleSignOut}
           />
         )}
-        {view === "admin-coaches" && profile?.role === "admin" && (
-          <AdminCoachesProfilesPanel notify={notify} adminUserId={PLATFORM_ADMIN_USER_ID} />
-        )}
         {view === "admin" && (profile?.role === "admin" || sessionEmailLower === ADMIN_EMAIL) && (
-          <AdminPanel notify={notify} />
+          <AdminPanel notify={notify} adminUserId={PLATFORM_ADMIN_USER_ID} />
         )}
-        {view === "plan12" && (
-          <Plan2Weeks
-            athletes={athletes}
-            notify={notify}
-            coachUserId={session?.user?.id ?? null}
-            coachPlan={String(profile?.subscription_plan || athletes?.find((a) => a.plan)?.plan || "Basico")}
-            profileRole={profile?.role ?? ""}
-            onGoToPlans={() => setView("plans")}
-            onPlanAssigned={() => setWorkoutsRefresh((r) => r + 1)}
-          />
-        )}
-        {view === "builder" && (
-          <Builder
-            athletes={athletes}
-            aiPrompt={aiPrompt}
-            setAiPrompt={setAiPrompt}
-            aiWorkout={aiWorkout}
-            setAiWorkout={setAiWorkout}
-            aiLoading={aiLoading}
-            setAiLoading={setAiLoading}
-            notify={notify}
-            coachUserId={session?.user?.id ?? null}
-            coachPlan={String(profile?.subscription_plan || athletes?.find((a) => a.plan)?.plan || "Basico")}
-            profileRole={profile?.role ?? ""}
-            onGoToPlans={() => setView("plans")}
-            onWorkoutAssigned={() => setWorkoutsRefresh(r => r + 1)}
-            onSavedToLibrary={() => setLibraryRefresh((r) => r + 1)}
-          />
+        {(view === "plan12" || view === "builder" || view === "training") && (
+          <>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "0 16px 10px" }}>
+              <button type="button" onClick={() => setView("plan12")} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", background: (view === "plan12" || view === "training") ? "rgba(139,92,246,.12)" : "#fff", color: (view === "plan12" || view === "training") ? "#6d28d9" : "#334155", fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>◇ Plan 2 Semanas</button>
+              <button type="button" onClick={() => setView("builder")} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", background: view === "builder" ? "rgba(234,88,12,.12)" : "#fff", color: view === "builder" ? "#c2410c" : "#334155", fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>◎ Crear Workout con IA</button>
+            </div>
+            {(view === "plan12" || view === "training") && (
+              <Plan2Weeks
+                athletes={athletes}
+                notify={notify}
+                coachUserId={session?.user?.id ?? null}
+                coachPlan={String(profile?.subscription_plan || athletes?.find((a) => a.plan)?.plan || "Basico")}
+                profileRole={profile?.role ?? ""}
+                onGoToPlans={() => setView("plans")}
+                onPlanAssigned={() => setWorkoutsRefresh((r) => r + 1)}
+              />
+            )}
+            {view === "builder" && (
+              <Builder
+                athletes={athletes}
+                aiPrompt={aiPrompt}
+                setAiPrompt={setAiPrompt}
+                aiWorkout={aiWorkout}
+                setAiWorkout={setAiWorkout}
+                aiLoading={aiLoading}
+                setAiLoading={setAiLoading}
+                notify={notify}
+                coachUserId={session?.user?.id ?? null}
+                coachPlan={String(profile?.subscription_plan || athletes?.find((a) => a.plan)?.plan || "Basico")}
+                profileRole={profile?.role ?? ""}
+                onGoToPlans={() => setView("plans")}
+                onWorkoutAssigned={() => setWorkoutsRefresh(r => r + 1)}
+                onSavedToLibrary={() => setLibraryRefresh((r) => r + 1)}
+              />
+            )}
+          </>
         )}
         {view === "library" && (
           <WorkoutLibrary
@@ -4022,16 +4058,6 @@ export default function App() {
             notify={notify}
           />
         )}
-        {view === "challenges" && (
-          <ChallengesHub
-            profileRole={profile?.role ?? ""}
-            currentUserId={sessionUserId || null}
-            athleteId={null}
-            workouts={[]}
-            coachAthletes={athletes}
-            notify={notify}
-          />
-        )}
         {view === "marketplace" && (
           <MarketplaceHub
             profileRole={profile?.role ?? ""}
@@ -4046,7 +4072,10 @@ export default function App() {
 
       <nav className="pf-bottom-nav" aria-label="Navegación principal">
         {coachNavItems.map((item) => {
-          const active = view === item.id;
+          const active =
+            view === item.id ||
+            (item.id === "athletes" && (view === "evaluation" || view === "challenges")) ||
+            (item.id === "training" && (view === "plan12" || view === "builder"));
           return (
             <button
               key={`m-${item.id}`}
@@ -15376,7 +15405,7 @@ Reglas obligatorias:
   );
 }
 
-function AdminPanel({ notify }) {
+function AdminPanel({ notify, adminUserId }) {
   const [adminTab, setAdminTab] = useState(() => {
     if (typeof localStorage === "undefined") return "promo";
     const saved = localStorage.getItem("raf_admin_tab");
@@ -15391,8 +15420,15 @@ function AdminPanel({ notify }) {
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "0 0 10px 0", padding: "0 16px" }}>
         <button type="button" onClick={() => setAdminTab("promo")} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", background: adminTab === "promo" ? "rgba(124,58,237,.12)" : "#fff", color: adminTab === "promo" ? "#6d28d9" : "#334155", fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>🎟️ Promo</button>
         <button type="button" onClick={() => setAdminTab("marketplace")} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", background: adminTab === "marketplace" ? "rgba(14,165,233,.12)" : "#fff", color: adminTab === "marketplace" ? "#0369a1" : "#334155", fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>🛒 Marketplace</button>
+        <button type="button" onClick={() => setAdminTab("coaches")} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", background: adminTab === "coaches" ? "rgba(99,102,241,.12)" : "#fff", color: adminTab === "coaches" ? "#4338ca" : "#334155", fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>👥 Coaches</button>
       </div>
-      {adminTab === "promo" ? <AdminPromoCodes notify={notify} /> : <AdminMarketplacePanel notify={notify} />}
+      {adminTab === "promo" ? (
+        <AdminPromoCodes notify={notify} />
+      ) : adminTab === "marketplace" ? (
+        <AdminMarketplacePanel notify={notify} />
+      ) : (
+        <AdminCoachesProfilesPanel notify={notify} adminUserId={adminUserId} />
+      )}
     </div>
   );
 }
