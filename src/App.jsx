@@ -1371,6 +1371,9 @@ const COACH_NAV_BASE_ITEMS = [
 
 const COACH_SUBSCRIPTION_NEQUI = "3233675434";
 const COACH_SUBSCRIPTION_WA_E164 = "573233675434";
+const TAB_KEY_ATHLETES = "raf_tab_atletas";
+const TAB_KEY_TRAINING = "raf_tab_entrenamientos";
+const TAB_KEY_LIBRARY = "raf_tab_biblioteca";
 
 const formatCopInt = (n) =>
   Number.isFinite(Number(n)) ? Number(n).toLocaleString("es-CO", { maximumFractionDigits: 0 }) : "—";
@@ -2234,6 +2237,28 @@ export default function App() {
   const [coachPickerPeriod, setCoachPickerPeriod] = useState(null);
   const [coachPaymentModalOpen, setCoachPaymentModalOpen] = useState(false);
   const [coachSubscriptionSaving, setCoachSubscriptionSaving] = useState(false);
+
+  const readStoredTab = useCallback((key, allowed, fallback) => {
+    if (typeof window === "undefined") return fallback;
+    const saved = localStorage.getItem(key);
+    return saved && allowed.has(saved) ? saved : fallback;
+  }, []);
+  const writeStoredTab = useCallback((key, value) => {
+    if (typeof window === "undefined") return;
+    localStorage.setItem(key, value);
+  }, []);
+  const getAthletesViewFromTab = useCallback((tab) => {
+    if (tab === "evaluacion") return "evaluation";
+    if (tab === "retos") return "challenges";
+    return "athletes";
+  }, []);
+  const getAthletesTabFromView = useCallback((v) => {
+    if (v === "evaluation") return "evaluacion";
+    if (v === "challenges") return "retos";
+    return "lista";
+  }, []);
+  const getTrainingViewFromTab = useCallback((tab) => (tab === "crear_workout" ? "builder" : "plan12"), []);
+  const getTrainingTabFromView = useCallback((v) => (v === "builder" ? "crear_workout" : "plan_2_semanas"), []);
 
   const notify = useCallback((msg) => {
     setNotification(msg);
@@ -3685,18 +3710,39 @@ export default function App() {
 
   const goCoachView = (id) => {
     if (id === "athletes") {
-      setView((prev) => (prev === "evaluation" || prev === "challenges" ? prev : "athletes"));
+      const athletesTab = readStoredTab(TAB_KEY_ATHLETES, new Set(["lista", "evaluacion", "retos"]), "lista");
+      setView(getAthletesViewFromTab(athletesTab));
       setShowAddAthleteForm(false);
       return;
     }
     if (id === "training") {
-      setView((prev) => (prev === "builder" ? "builder" : "plan12"));
+      const trainingTab = readStoredTab(TAB_KEY_TRAINING, new Set(["plan_2_semanas", "crear_workout"]), "plan_2_semanas");
+      setView(getTrainingViewFromTab(trainingTab));
       setShowAddAthleteForm(false);
       return;
     }
     setView(id);
     setShowAddAthleteForm(false);
   };
+
+  const selectAthletesTab = useCallback((tab) => {
+    writeStoredTab(TAB_KEY_ATHLETES, tab);
+    setView(getAthletesViewFromTab(tab));
+  }, [writeStoredTab, getAthletesViewFromTab]);
+
+  const selectTrainingTab = useCallback((tab) => {
+    writeStoredTab(TAB_KEY_TRAINING, tab);
+    setView(getTrainingViewFromTab(tab));
+  }, [writeStoredTab, getTrainingViewFromTab]);
+
+  useEffect(() => {
+    if (view === "athletes" || view === "evaluation" || view === "challenges") {
+      writeStoredTab(TAB_KEY_ATHLETES, getAthletesTabFromView(view));
+    }
+    if (view === "plan12" || view === "builder" || view === "training") {
+      writeStoredTab(TAB_KEY_TRAINING, getTrainingTabFromView(view));
+    }
+  }, [view, writeStoredTab, getAthletesTabFromView, getTrainingTabFromView]);
 
   return (
     <div style={S.root}>
@@ -3936,9 +3982,9 @@ export default function App() {
         {(view === "athletes" || view === "evaluation" || view === "challenges") && (
           <>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "0 16px 10px" }}>
-              <button type="button" onClick={() => setView("athletes")} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", background: view === "athletes" ? "rgba(59,130,246,.12)" : "#fff", color: view === "athletes" ? "#1d4ed8" : "#334155", fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>👥 Lista atletas</button>
-              <button type="button" onClick={() => setView("evaluation")} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", background: view === "evaluation" ? "rgba(14,165,233,.12)" : "#fff", color: view === "evaluation" ? "#0369a1" : "#334155", fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>📊 Evaluación</button>
-              <button type="button" onClick={() => setView("challenges")} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", background: view === "challenges" ? "rgba(168,85,247,.12)" : "#fff", color: view === "challenges" ? "#7e22ce" : "#334155", fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>🏆 Retos</button>
+              <button type="button" onClick={() => selectAthletesTab("lista")} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", background: view === "athletes" ? "rgba(59,130,246,.12)" : "#fff", color: view === "athletes" ? "#1d4ed8" : "#334155", fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>👥 Lista atletas</button>
+              <button type="button" onClick={() => selectAthletesTab("evaluacion")} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", background: view === "evaluation" ? "rgba(14,165,233,.12)" : "#fff", color: view === "evaluation" ? "#0369a1" : "#334155", fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>📊 Evaluación</button>
+              <button type="button" onClick={() => selectAthletesTab("retos")} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", background: view === "challenges" ? "rgba(168,85,247,.12)" : "#fff", color: view === "challenges" ? "#7e22ce" : "#334155", fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>🏆 Retos</button>
             </div>
             {view === "athletes" && (
               <Athletes
@@ -4007,8 +4053,8 @@ export default function App() {
         {(view === "plan12" || view === "builder" || view === "training") && (
           <>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "0 16px 10px" }}>
-              <button type="button" onClick={() => setView("plan12")} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", background: (view === "plan12" || view === "training") ? "rgba(139,92,246,.12)" : "#fff", color: (view === "plan12" || view === "training") ? "#6d28d9" : "#334155", fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>◇ Plan 2 Semanas</button>
-              <button type="button" onClick={() => setView("builder")} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", background: view === "builder" ? "rgba(234,88,12,.12)" : "#fff", color: view === "builder" ? "#c2410c" : "#334155", fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>◎ Crear Workout con IA</button>
+              <button type="button" onClick={() => selectTrainingTab("plan_2_semanas")} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", background: (view === "plan12" || view === "training") ? "rgba(139,92,246,.12)" : "#fff", color: (view === "plan12" || view === "training") ? "#6d28d9" : "#334155", fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>◇ Plan 2 Semanas</button>
+              <button type="button" onClick={() => selectTrainingTab("crear_workout")} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", background: view === "builder" ? "rgba(234,88,12,.12)" : "#fff", color: view === "builder" ? "#c2410c" : "#334155", fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>◎ Crear Workout con IA</button>
             </div>
             {(view === "plan12" || view === "training") && (
               <Plan2Weeks
@@ -10941,7 +10987,12 @@ function WorkoutLibrary({
   onOpenAdminMarketplaceDraft,
 }) {
   const S = styles;
-  const [libraryTab, setLibraryTab] = useState("mine");
+  const [libraryTab, setLibraryTab] = useState(() => {
+    if (typeof window === "undefined") return "mine";
+    const saved = localStorage.getItem(TAB_KEY_LIBRARY);
+    if (saved === "mine" || saved === "global" || saved === "marketplace_plans") return saved;
+    return "mine";
+  });
   const [items, setItems] = useState([]);
   const [globalRows, setGlobalRows] = useState([]);
   const [globalNameByCoach, setGlobalNameByCoach] = useState({});
@@ -10983,6 +11034,16 @@ function WorkoutLibrary({
   }, [coachUserId, notify]);
 
   const isLibraryAdmin = profileRole === "admin";
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    localStorage.setItem(TAB_KEY_LIBRARY, libraryTab);
+  }, [libraryTab]);
+
+  useEffect(() => {
+    if (isLibraryAdmin) return;
+    if (libraryTab !== "mine") setLibraryTab("mine");
+  }, [isLibraryAdmin, libraryTab]);
 
   const loadGlobalAll = useCallback(async () => {
     if (!isLibraryAdmin || !coachUserId) {
