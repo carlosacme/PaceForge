@@ -1440,17 +1440,55 @@ const normalizeChallengeType = (raw) => {
   const type = String(raw || "").trim().toLowerCase();
   if (type === "distance") return "distancia";
   if (type === "time") return "tiempo";
+  if (type === "streak") return "racha";
   return type;
 };
 
+const challengeUnitByType = (rawType) => {
+  const type = normalizeChallengeType(rawType);
+  if (type === "distancia") return "km";
+  if (type === "workouts") return "sesiones";
+  if (type === "tiempo") return "min";
+  if (type === "racha") return "dias";
+  return "km";
+};
+
+const formatChallengeMetricValue = (value, rawType) => {
+  const n = Number(value) || 0;
+  const type = normalizeChallengeType(rawType);
+  if (type === "distancia") return n.toFixed(1);
+  return String(Math.max(0, Math.round(n)));
+};
+
 const challengeValueLabel = (challenge) => {
-  const unit = String(challenge?.unit || "").trim();
-  const target = Number(challenge?.target_value || 0);
+  const target = Number(challenge?.target_value);
+  if (!Number.isFinite(target) || target <= 0) return "Sin meta fija · Ranking por km";
+  const unit = challengeUnitByType(challenge?.challenge_type);
   const type = normalizeChallengeType(challenge?.challenge_type);
-  if (type === "distancia" && (!Number.isFinite(target) || target <= 0)) return "Ranking por km (sin meta fija)";
-  if (!Number.isFinite(target) || target <= 0) return "Meta pendiente";
-  if (unit) return `${target} ${unit}`;
-  return String(target);
+  if (type === "distancia") return `${Number(target).toFixed(1)} ${unit}`;
+  return `${Math.round(target)} ${unit}`;
+};
+
+const challengeProgressLabel = (challenge, progress) => {
+  if (!Number.isFinite(progress?.target) || Number(progress.target) <= 0) return "Sin meta fija · Ranking por km";
+  const unit = challengeUnitByType(challenge?.challenge_type);
+  const done = formatChallengeMetricValue(progress?.value, challenge?.challenge_type);
+  const target = formatChallengeMetricValue(progress?.target, challenge?.challenge_type);
+  return `${done} / ${target} ${unit}`;
+};
+
+const challengeProgressOpenText = (challenge, progress) => {
+  const done = formatChallengeMetricValue(progress?.value, challenge?.challenge_type);
+  const unit = challengeUnitByType(challenge?.challenge_type);
+  if (normalizeChallengeType(challenge?.challenge_type) === "distancia") {
+    return `Km acumulados en el periodo: ${done} ${unit} · ranking sin meta fija`;
+  }
+  return `Avance actual: ${done} ${unit} · Sin meta fija · Ranking por km`;
+};
+
+const challengeHasOpenTarget = (challenge) => {
+  const target = Number(challenge?.target_value);
+  return !Number.isFinite(target) || target <= 0;
 };
 
 const computeWorkoutDayStreak = (workouts, startYmd, endYmd) => {
@@ -2075,9 +2113,7 @@ Reglas adicionales:
             const participants = participantsByChallenge[challenge.id] || [];
             const isMine = myChallengeIds.has(String(challenge.id));
             const progress = computeChallengeProgressForAthlete(challenge, workouts);
-            const openDistanceChallenge =
-              normalizeChallengeType(challenge.challenge_type) === "distancia" &&
-              (!Number.isFinite(Number(challenge.target_value)) || Number(challenge.target_value) <= 0);
+            const openDistanceChallenge = challengeHasOpenTarget(challenge);
             return (
               <div key={challenge.id} style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: "12px 14px", background: "#fff" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
@@ -2172,12 +2208,12 @@ Reglas adicionales:
                 {isAthlete ? (
                   openDistanceChallenge ? (
                     <div style={{ marginTop: 10, fontSize: ".76em", color: "#475569", fontWeight: 700 }}>
-                      Km acumulados en el periodo: {progress.value.toFixed(1)} km · ranking sin meta fija
+                      {challengeProgressOpenText(challenge, progress)}
                     </div>
                   ) : (
                     <>
                       <div style={{ marginTop: 10, fontSize: ".76em", color: "#475569", fontWeight: 700 }}>
-                        Progreso: {progress.value.toFixed(1)} / {progress.target || 0}
+                        Progreso: {challengeProgressLabel(challenge, progress)}
                       </div>
                       <div style={{ height: 8, borderRadius: 999, background: "#e2e8f0", overflow: "hidden", marginTop: 6 }}>
                         <div style={{ width: `${progress.pct}%`, height: "100%", background: challenge.color || "#a855f7" }} />
@@ -2255,8 +2291,7 @@ Reglas adicionales:
                 const modalList = participantsByChallenge[participantsModalChallenge.id] || [];
                 const isDistanceChallenge = normalizeChallengeType(participantsModalChallenge.challenge_type) === "distancia";
                 const modalTargetRaw = Number(participantsModalChallenge?.target_value);
-                const modalOpenRanking =
-                  isDistanceChallenge && (!Number.isFinite(modalTargetRaw) || modalTargetRaw <= 0);
+                const modalOpenRanking = !Number.isFinite(modalTargetRaw) || modalTargetRaw <= 0;
                 if (modalOpenRanking) {
                   const ranked = [...modalList]
                     .map((participant) => {
@@ -2268,7 +2303,7 @@ Reglas adicionales:
                   return (
                     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                       <div style={{ fontSize: ".78em", color: "#64748b", fontWeight: 700 }}>
-                        Ranking por km acumulados (sin meta fija)
+                        Sin meta fija · Ranking por km
                       </div>
                       {ranked.map((row, idx) => (
                         <div
@@ -2323,7 +2358,7 @@ Reglas adicionales:
                                 }}
                               >
                                 {asciiBar}{" "}
-                                {kmDone.toFixed(0)}km / {targetKm > 0 ? `${targetKm}km` : "—"}
+                                {kmDone.toFixed(1)} km / {targetKm > 0 ? `${targetKm.toFixed(1)} km` : "—"}
                                 {targetKm > 0 ? ` (${pctRounded}%)` : ""}
                               </div>
                               {targetKm > 0 ? (
@@ -2340,7 +2375,7 @@ Reglas adicionales:
                             </div>
                           ) : (
                             <div style={{ fontSize: ".75em", color: "#64748b", fontWeight: 700 }}>
-                              {`${participantProgress.value.toFixed(1)} / ${participantProgress.target || 0}`}
+                              {challengeProgressLabel(participantsModalChallenge, participantProgress)}
                             </div>
                           )}
                         </div>
