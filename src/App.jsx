@@ -597,6 +597,32 @@ const addDays = (d, n) => {
   return x;
 };
 
+/** Primer día del mes siguiente (YYYY-MM-DD, calendario local). */
+const firstDayOfNextMonthYmd = () => {
+  const n = new Date();
+  return formatLocalYMD(new Date(n.getFullYear(), n.getMonth() + 1, 1));
+};
+
+/** Último día del mes siguiente (YYYY-MM-DD, calendario local). */
+const lastDayOfNextMonthYmd = () => {
+  const n = new Date();
+  return formatLocalYMD(new Date(n.getFullYear(), n.getMonth() + 2, 0));
+};
+
+/** Lunes a domingo de la próxima semana (respecto a hoy), calendario local. */
+const nextWeekMondayToSundayYmd = () => {
+  const today = new Date();
+  const d = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const dow = d.getDay();
+  let daysToNextMonday;
+  if (dow === 0) daysToNextMonday = 1;
+  else if (dow === 1) daysToNextMonday = 7;
+  else daysToNextMonday = 8 - dow;
+  const monday = addDays(d, daysToNextMonday);
+  const sunday = addDays(monday, 6);
+  return { start: formatLocalYMD(monday), end: formatLocalYMD(sunday) };
+};
+
 /** Suma de minutos → texto legible (horas y minutos). */
 const formatDurationMinutesTotal = (mins) => {
   const m = Math.max(0, Math.round(Number(mins) || 0));
@@ -1488,6 +1514,7 @@ function ChallengesHub({ profileRole, currentUserId, athleteId = null, workouts 
   const [aiGenerating, setAiGenerating] = useState(false);
   const [savingCreate, setSavingCreate] = useState(false);
   const [deletingId, setDeletingId] = useState("");
+  const [renewingId, setRenewingId] = useState("");
   const [workoutsByAthlete, setWorkoutsByAthlete] = useState({});
   const [participantsModalChallenge, setParticipantsModalChallenge] = useState(null);
   const [form, setForm] = useState({
@@ -1500,6 +1527,8 @@ function ChallengesHub({ profileRole, currentUserId, athleteId = null, workouts 
     end_date: formatLocalYMD(addDays(new Date(), 30)),
     emoji: "🏁",
     color: "#a855f7",
+    is_recurring: false,
+    recurrence: "monthly",
   });
 
   const getWorkoutsForChallengeParticipant = useCallback(
@@ -1520,10 +1549,11 @@ function ChallengesHub({ profileRole, currentUserId, athleteId = null, workouts 
   const loadChallenges = useCallback(async () => {
     setLoading(true);
     const today = formatLocalYMD(new Date());
-    const [challengesRes, participantsRes] = await Promise.all([
-      supabase.from("challenges").select("*").eq("is_active", true).gte("end_date", today).order("end_date", { ascending: true }),
-      supabase.from("challenge_participants").select("*"),
-    ]);
+    const challengesQuery = supabase.from("challenges").select("*").eq("is_active", true);
+    const challengesReq = isAdmin
+      ? challengesQuery.order("end_date", { ascending: true })
+      : challengesQuery.gte("end_date", today).order("end_date", { ascending: true });
+    const [challengesRes, participantsRes] = await Promise.all([challengesReq, supabase.from("challenge_participants").select("*")]);
     const { data, error } = challengesRes;
     if (error) {
       console.error("load challenges:", error);
@@ -1641,7 +1671,7 @@ function ChallengesHub({ profileRole, currentUserId, athleteId = null, workouts 
     setWorkoutsByAthlete(workoutsMap);
     setMyChallengeIds(mine);
     setLoading(false);
-  }, [notify, currentUserId, athleteId, coachAthletes]);
+  }, [notify, currentUserId, athleteId, coachAthletes, isAdmin]);
 
   useEffect(() => {
     loadChallenges();
@@ -1705,6 +1735,8 @@ function ChallengesHub({ profileRole, currentUserId, athleteId = null, workouts 
       color: form.color || "#a855f7",
       created_by: PLATFORM_ADMIN_USER_ID,
       is_active: true,
+      is_recurring: Boolean(form.is_recurring),
+      recurrence: form.is_recurring ? (form.recurrence === "weekly" ? "weekly" : "monthly") : null,
     });
     setSavingCreate(false);
     if (error) {
@@ -1712,8 +1744,79 @@ function ChallengesHub({ profileRole, currentUserId, athleteId = null, workouts 
       return;
     }
     setShowCreate(false);
-    setForm((prev) => ({ ...prev, title: "", description: "", target_value: "" }));
+    setForm((prev) => ({
+      ...prev,
+      title: "",
+      description: "",
+      target_value: "",
+      is_recurring: false,
+      recurrence: "monthly",
+    }));
     notify?.("Reto creado ✅");
+    loadChallenges();
+  };
+
+  const renewChallengeForNextPeriod = async (c) => {
+    if (!isAdmin) return;
+    const today = formatLocalYMD(new Date());
+    const endYmd = String(c.end_date || "").slice(0, 10);
+    if (!endYmd || endYmd >= today) return;
+    setRenewingId(String(c.id));
+    const recurrence = String(c.recurrence || "monthly").toLowerCase() === "weekly" ? "weekly" : "monthly";
+    const nextIsRecurring = Boolean(c.is_recurring);
+    let start_date;
+    let end_date;
+    let periodNotifySuffix;
+    if (recurrence === "weekly") {
+      const w = nextWeekMondayToSundayYmd();
+      start_date = w.start;
+      end_date = w.end;
+      periodNotifySuffix = "la próxima semana";
+    } else {
+      start_date = firstDayOfNextMonthYmd();
+      end_date = lastDayOfNextMonthYmd();
+      const d0 = new Date(`${start_date}T12:00:00`);
+      periodNotifySuffix = Number.isNaN(d0.getTime())
+        ? "el próximo mes"
+        : d0.toLocaleDateString("es-CO", { month: "long", year: "numeric" });
+    }
+    const { data: created, error: insErr } = await supabase
+      .from("challenges")
+      .insert({
+        title: c.title,
+        description: c.description ?? null,
+        challenge_type: c.challenge_type,
+        target_value: c.target_value,
+        unit: c.unit ?? null,
+        start_date,
+        end_date,
+        emoji: c.emoji ?? "🏁",
+        color: c.color ?? "#a855f7",
+        created_by: PLATFORM_ADMIN_USER_ID,
+        is_active: true,
+        is_recurring: nextIsRecurring,
+        recurrence: nextIsRecurring ? recurrence : null,
+      })
+      .select("id")
+      .maybeSingle();
+    if (insErr) {
+      setRenewingId("");
+      notify?.(insErr.message || "No se pudo renovar el reto.");
+      return;
+    }
+    if (!created?.id) {
+      setRenewingId("");
+      notify?.("No se pudo crear el reto renovado.");
+      return;
+    }
+    const { error: deactErr } = await supabase.from("challenges").update({ is_active: false }).eq("id", c.id);
+    setRenewingId("");
+    if (deactErr) {
+      notify?.("Reto nuevo creado, pero no se pudo archivar el anterior: " + (deactErr.message || ""));
+      loadChallenges();
+      return;
+    }
+    notify?.(`Reto renovado para ${periodNotifySuffix} ✅`);
     loadChallenges();
   };
 
@@ -1751,6 +1854,8 @@ function ChallengesHub({ profileRole, currentUserId, athleteId = null, workouts 
       end_date: formatLocalYMD(end),
       emoji: String(draft?.badge_emoji || "🏁").trim() || "🏁",
       color: String(draft?.badge_color || "#a855f7").trim() || "#a855f7",
+      is_recurring: prev.is_recurring,
+      recurrence: prev.recurrence,
     }));
     setShowCreate(true);
   };
@@ -1901,6 +2006,39 @@ Reglas adicionales:
                 <input value={form.unit} onChange={(e) => setForm((f) => ({ ...f, unit: e.target.value }))} placeholder="Unidad" style={{ border: "1px solid #dbe2ea", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit" }} />
               </>
             )}
+            <div style={{ gridColumn: "1 / -1", display: "flex", flexDirection: "column", gap: 8 }}>
+              <button
+                type="button"
+                onClick={() => setForm((f) => ({ ...f, is_recurring: !f.is_recurring }))}
+                style={{
+                  alignSelf: "flex-start",
+                  padding: "10px 14px",
+                  borderRadius: 10,
+                  border: form.is_recurring ? "2px solid #f59e0b" : "1px solid #e2e8f0",
+                  background: form.is_recurring ? "rgba(245,158,11,.14)" : "#fff",
+                  color: "#0f172a",
+                  fontWeight: 800,
+                  fontFamily: "inherit",
+                  fontSize: ".82em",
+                  cursor: "pointer",
+                }}
+              >
+                🔄 Reto recurrente{form.is_recurring ? " (activo)" : ""}
+              </button>
+              {form.is_recurring ? (
+                <div>
+                  <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Cada cuánto se renueva</div>
+                  <select
+                    value={form.recurrence === "weekly" ? "weekly" : "monthly"}
+                    onChange={(e) => setForm((f) => ({ ...f, recurrence: e.target.value }))}
+                    style={{ width: "100%", maxWidth: 280, border: "1px solid #dbe2ea", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit" }}
+                  >
+                    <option value="monthly">Mensual</option>
+                    <option value="weekly">Semanal</option>
+                  </select>
+                </div>
+              ) : null}
+            </div>
             <input type="date" value={form.start_date} onChange={(e) => setForm((f) => ({ ...f, start_date: e.target.value }))} style={{ border: "1px solid #dbe2ea", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit" }} />
             <input type="date" value={form.end_date} onChange={(e) => setForm((f) => ({ ...f, end_date: e.target.value }))} style={{ border: "1px solid #dbe2ea", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit" }} />
             {form.challenge_type === "distancia" ? null : (
@@ -1931,6 +2069,9 @@ Reglas adicionales:
       ) : (
         <div style={{ display: "grid", gap: 12 }}>
           {rows.map((challenge) => {
+            const todayYmd = formatLocalYMD(new Date());
+            const challengeEndYmd = String(challenge.end_date || "").slice(0, 10);
+            const challengeExpired = Boolean(challengeEndYmd && challengeEndYmd < todayYmd);
             const participants = participantsByChallenge[challenge.id] || [];
             const isMine = myChallengeIds.has(String(challenge.id));
             const progress = computeChallengeProgressForAthlete(challenge, workouts);
@@ -2053,23 +2194,45 @@ Reglas adicionales:
                     ) : (
                       <button
                         type="button"
-                        disabled={joiningChallengeId === String(challenge.id) || !athleteId}
+                        disabled={joiningChallengeId === String(challenge.id) || !athleteId || challengeExpired}
                         onClick={() => joinChallenge(challenge.id)}
-                        style={{ background: joiningChallengeId === String(challenge.id) ? "#cbd5e1" : "linear-gradient(135deg,#2563eb,#3b82f6)", border: "none", borderRadius: 8, padding: "8px 12px", color: "#fff", fontWeight: 800, fontFamily: "inherit", cursor: joiningChallengeId === String(challenge.id) ? "not-allowed" : "pointer", fontSize: ".75em" }}
+                        style={{ background: joiningChallengeId === String(challenge.id) ? "#cbd5e1" : "linear-gradient(135deg,#2563eb,#3b82f6)", border: "none", borderRadius: 8, padding: "8px 12px", color: "#fff", fontWeight: 800, fontFamily: "inherit", cursor: joiningChallengeId === String(challenge.id) || challengeExpired ? "not-allowed" : "pointer", fontSize: ".75em" }}
                       >
-                        {joiningChallengeId === String(challenge.id) ? "Uniendo…" : "Unirse"}
+                        {joiningChallengeId === String(challenge.id) ? "Uniendo…" : challengeExpired ? "Reto finalizado" : "Unirse"}
                       </button>
                     )
                   ) : <span />}
                   {isAdmin ? (
-                    <button
-                      type="button"
-                      disabled={deletingId === String(challenge.id)}
-                      onClick={() => deleteChallenge(challenge.id)}
-                      style={{ background: deletingId === String(challenge.id) ? "#e2e8f0" : "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "7px 10px", color: "#b91c1c", fontWeight: 700, cursor: deletingId === String(challenge.id) ? "not-allowed" : "pointer", fontFamily: "inherit", fontSize: ".72em" }}
-                    >
-                      🗑️ Eliminar
-                    </button>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginLeft: "auto" }}>
+                      {challengeExpired ? (
+                        <button
+                          type="button"
+                          disabled={renewingId === String(challenge.id)}
+                          onClick={() => renewChallengeForNextPeriod(challenge)}
+                          style={{
+                            background: renewingId === String(challenge.id) ? "#e2e8f0" : "linear-gradient(135deg,#ea580c,#f97316)",
+                            border: "none",
+                            borderRadius: 8,
+                            padding: "7px 12px",
+                            color: renewingId === String(challenge.id) ? "#64748b" : "#fff",
+                            fontWeight: 800,
+                            cursor: renewingId === String(challenge.id) ? "not-allowed" : "pointer",
+                            fontFamily: "inherit",
+                            fontSize: ".72em",
+                          }}
+                        >
+                          {renewingId === String(challenge.id) ? "Renovando…" : "🔄 Renovar"}
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        disabled={deletingId === String(challenge.id)}
+                        onClick={() => deleteChallenge(challenge.id)}
+                        style={{ background: deletingId === String(challenge.id) ? "#e2e8f0" : "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "7px 10px", color: "#b91c1c", fontWeight: 700, cursor: deletingId === String(challenge.id) ? "not-allowed" : "pointer", fontFamily: "inherit", fontSize: ".72em" }}
+                      >
+                        🗑️ Eliminar
+                      </button>
+                    </div>
                   ) : null}
                 </div>
               </div>
