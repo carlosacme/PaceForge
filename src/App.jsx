@@ -194,9 +194,7 @@ const pushBodySnippet = (text, max = 400) => {
 
 async function sendChatPushNotification({ token, title, body, data = null, logLabel = "chat push" }) {
   const tokenOk = token != null && String(token).trim() !== "";
-  console.log(`[${logLabel}] Token FCM del destinatario:`, tokenOk ? token : "Token FCM no disponible");
   if (!tokenOk || typeof window === "undefined") return;
-  console.log(`[${logLabel}] Llamando POST /api/send-notification`, { title });
   try {
     const res = await fetch("/api/send-notification", {
       method: "POST",
@@ -209,7 +207,6 @@ async function sendChatPushNotification({ token, title, body, data = null, logLa
       }),
     });
     if (!res.ok) console.warn(`[${logLabel}] /api/send-notification respuesta no OK`, await res.text());
-    else console.log(`[${logLabel}] /api/send-notification OK`, res.status);
   } catch (e) {
     console.warn(`[${logLabel}] /api/send-notification error`, e);
   }
@@ -2468,15 +2465,12 @@ export default function App() {
     try {
       const uid = session?.user?.id;
       if (!uid) {
-        console.log("[FCM] syncFcmTokenToProfile: sin sesión (user_id)");
         return;
       }
       const token = await requestNotificationPermission();
       if (!token) {
-        console.log("[FCM] No se obtuvo token FCM (permiso denegado, cancelado o no soportado en este navegador)");
         return;
       }
-      console.log("[FCM] Token FCM obtenido:", token);
       const { data: updated, error } = await supabase
         .from("profiles")
         .update({ fcm_token: token })
@@ -2498,7 +2492,6 @@ export default function App() {
         console.warn("[FCM] UPDATE profiles no devolvió fila: ¿existe perfil para user_id?", uid);
         return;
       }
-      console.log("[FCM] fcm_token guardado en profiles para user_id:", updated.user_id);
     } catch (e) {
       console.warn("syncFcmTokenToProfile", e);
     }
@@ -2704,10 +2697,6 @@ export default function App() {
         .select("*")
         .eq("user_id", session.user.id)
         .maybeSingle();
-      console.log("SESSION USER ID:", session.user.id);
-      console.log("PROFILE DATA:", data);
-      console.log("PROFILE ERROR:", error);
-      console.log("PROFILE ROLE:", data?.role);
       if (error) {
         console.error("Error cargando perfil:", error);
         setProfile(null);
@@ -2771,11 +2760,9 @@ export default function App() {
           });
           setProfile(data ?? null);
         } else {
-          console.log("Perfil coach creado/actualizado (sin role previo):", saved?.user_id);
           setProfile(await syncCoachPlanIfNeeded(saved));
         }
       } else {
-        console.log("Perfil cargado, role:", data.role);
         setProfile(await syncCoachPlanIfNeeded(data));
       }
       setProfileLoading(false);
@@ -2868,11 +2855,6 @@ export default function App() {
     const params = new URLSearchParams(window.location.search);
     const code = params.get("strava_code");
     const athleteIdFromState = params.get("state");
-    console.log("[STRAVA CALLBACK][App] search params", {
-      search: window.location.search,
-      has_code: Boolean(code),
-      state: athleteIdFromState,
-    });
     if (!code) return;
     const currentAthlete =
       (athleteIdFromState
@@ -2882,27 +2864,13 @@ export default function App() {
       (athletes || [])[0] ||
       null;
     if (!currentAthlete?.id) {
-      console.log("[STRAVA CALLBACK][App] no athlete id found");
       return;
     }
-    console.log("[STRAVA CALLBACK][App] processing athlete", {
-      athlete_id: currentAthlete.id,
-      athlete_name: currentAthlete.name,
-      callback_url_expected: STRAVA_CALLBACK_URL,
-    });
     let cancelled = false;
     (async () => {
       try {
-        console.log("[STRAVA CALLBACK][App] requesting /api/strava token exchange");
         const r = await fetch(`/api/strava?code=${encodeURIComponent(code)}`);
         const data = await r.json();
-        console.log("[STRAVA CALLBACK][App] raw JSON", JSON.stringify(data));
-        console.log("[STRAVA CALLBACK][App] /api/strava response", {
-          status: r.status,
-          ok: r.ok,
-          data,
-          callback_url_expected: STRAVA_CALLBACK_URL,
-        });
         if (!r.ok || !data?.access_token) {
           notify("No se pudo conectar Strava.");
           return;
@@ -2924,7 +2892,6 @@ export default function App() {
           notify(error.message || "No se pudo guardar la conexión Strava.");
           return;
         }
-        console.log("[STRAVA CALLBACK][App] strava_connections upsert OK", payload);
         setStravaRefreshTick((n) => n + 1);
         notify("✅ Strava conectado exitosamente");
       } catch (e) {
@@ -3048,7 +3015,6 @@ export default function App() {
 
         const newUserId = data?.user?.id;
         if (!newUserId) {
-          console.log("signUp completado pero no devolvió user. data:", data);
           alert("Registro exitoso. Revisa tu correo si la verificación está habilitada.");
           setAuthMode("login");
           setAuthLandingStep("login");
@@ -3110,9 +3076,8 @@ export default function App() {
 
         const { error: profileError } = await supabase.from("profiles").insert(profilePayload);
         if (profileError) {
-          console.log("Error insertando en profiles:", profileError, { profilePayload });
+          console.error("Error insertando en profiles:", profileError, { profilePayload });
         } else {
-          console.log("Perfil creado en profiles:", { user_id: newUserId, role: authRole });
           if (authRole === "athlete") {
             setProfile({ user_id: newUserId, role: "athlete", name: authName.trim() });
           }
@@ -3894,7 +3859,6 @@ export default function App() {
   }
 
   if (profile && profile.role === "athlete") {
-    console.log("Renderizando vista AthleteHome para role=athlete");
     return <AthleteHome profile={profile} />;
   }
 
@@ -5774,20 +5738,15 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
         alert(`No se pudo enviar: ${error.message}`);
         return;
       }
-      console.log("Intentando enviar notificación a atleta");
       const athleteUserId = athlete.user_id;
       let recipientFcmToken = null;
       if (athleteUserId) {
         const { data: prow } = await supabase.from("profiles").select("fcm_token").eq("user_id", athleteUserId).maybeSingle();
         recipientFcmToken = prow?.fcm_token ?? null;
       } else {
-        console.log("[chat coach→atleta] Sin athletes.user_id vinculado; no se puede resolver token del atleta.");
       }
-      console.log("[chat coach→atleta] fcm_token atleta:", recipientFcmToken);
       if (recipientFcmToken == null || String(recipientFcmToken).trim() === "") {
-        console.log("Atleta no tiene token FCM");
       }
-      console.log("[chat coach→atleta] Verificando llamada a /api/send-notification");
       await sendChatPushNotification({
         token: recipientFcmToken,
         title: "Nuevo mensaje de tu coach",
@@ -7328,7 +7287,6 @@ function AthleteHome({ profile }) {
       if (cancelled) return;
 
       const userEmail = authData?.user?.email?.trim();
-      console.log("[AthleteHome] session.user.email", authData?.user?.email ?? null);
       if (authErr || !userEmail) {
         console.error("Error obteniendo sesión:", authErr);
         setAthleteInfo(null);
@@ -7344,12 +7302,6 @@ function AthleteHome({ profile }) {
         .select("*")
         .ilike("email", userEmail)
         .limit(1);
-
-      console.log("[AthleteHome] consulta athletes (ilike email)", {
-        emailFiltro: userEmail,
-        data: athleteRows,
-        error: athleteErr,
-      });
 
       if (cancelled) return;
 
@@ -7400,12 +7352,6 @@ function AthleteHome({ profile }) {
       const workoutsErr = wRes.error;
       const evalRows = eRes.data;
       if (eRes.error) console.warn("[AthleteHome] athlete_evaluations:", eRes.error);
-
-      console.log("[AthleteHome] consulta workouts (athlete_id)", {
-        athlete_id: athleteRow.id,
-        data: workoutsRows,
-        error: workoutsErr,
-      });
 
       if (cancelled) return;
 
@@ -7836,16 +7782,9 @@ function AthleteHome({ profile }) {
       const doneAfterToggle = nextWorkouts.filter((x) => x.done);
       const workoutsCompletadosTotales = doneAfterToggle.length;
       const kmTotalesAcumulados = doneAfterToggle.reduce((s, x) => s + (Number(x.total_km) || 0), 0);
-      console.log(`[AthleteHome] Verificando logros para atleta_id: ${athleteInfo.id}`);
-      console.log("[AthleteHome] Workouts completados totales:", workoutsCompletadosTotales);
-      console.log("[AthleteHome] Km totales acumulados:", kmTotalesAcumulados);
-      console.log("[AthleteHome] toggleDone: llamando evaluateAndAwardAthleteAchievements tras marcar como hecho");
       const { newAwards, snapshot, progress } = await evaluateAndAwardAthleteAchievements(athleteInfo.id);
       const hayLogroNuevo = newAwards.length > 0;
-      console.log("[AthleteHome] ¿Se detectó algún logro nuevo?:", hayLogroNuevo, hayLogroNuevo ? newAwards.map((row) => achievementJoinMeta(row)?.code).filter(Boolean) : []);
-      if (progress) {
-        console.log("[AthleteHome] Progreso tras evaluación (servidor): workouts hechos:", progress.doneCount, "km total:", progress.totalKm);
-      }
+      if (progress) void progress;
       setAchievementsCatalog(snapshot.achievements || []);
       setEarnedAchievements(snapshot.earned || []);
       setAchProgress(progress || computeAchievementProgress(nextWorkouts.filter((x) => x.done)));
@@ -9994,7 +9933,6 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, profileRole, onG
       if (!coachUserId || !athleteId) return;
       const athleteNumericId = Number(athleteId);
       if (!Number.isFinite(athleteNumericId)) return;
-      console.log("[plan_drafts] guardando draft:", { status, athleteId, coachUserId });
       const payload = {
         coach_id: coachUserId,
         athlete_id: athleteNumericId,
@@ -10011,7 +9949,6 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, profileRole, onG
         .from("plan_drafts")
         .upsert(payload, { onConflict: "coach_id,athlete_id,block_number" })
         .select("*");
-      console.log("[persistPlanDraft] resultado upsert:", { data: upsertData, error: upsertError });
       if (upsertError) {
         console.error("plan_drafts upsert:", upsertError);
       }
@@ -10023,8 +9960,6 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, profileRole, onG
     if (!coachUserId || !athleteId) return;
     const athleteNumericId = Number(athleteId);
     if (!Number.isFinite(athleteNumericId)) return;
-    console.log("[loadDraft DEBUG]", { coachUserId, athleteId, athleteNumericId });
-    console.log("[plan_drafts] cargando draft para:", { coachUserId, athleteId, athleteNumericId });
     setDraftLoading(true);
     const { data, error } = await supabase
       .from("plan_drafts")
@@ -10033,7 +9968,6 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, profileRole, onG
       .order("updated_at", { ascending: false })
       .limit(1)
       .maybeSingle();
-    console.log("[plan_drafts] resultado:", { data, error });
     setDraftLoading(false);
     if (error) {
       console.error("plan_drafts load:", error);
@@ -10312,8 +10246,6 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
     setPlanEditModal(null);
     setPlanLoading(true);
     try {
-      console.log("[PROMPT DEBUG] currentBlock:", currentBlock, "levelLabel:", levelLabel, "blockNumber en prompt:", Number(currentBlock) || 1);
-      console.log("[PROMPT DEBUG] userPrompt primeros 500 chars:", plan2UserPrompt.substring(0, 500));
       const res = await fetch("/api/generate-workout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -10943,7 +10875,6 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
                                       type="button"
                                       title="Editar sesión"
                                       onClick={() => {
-                                        console.log("Abriendo editor");
                                         setPlanEditModal({ weekNumber: n, workoutIdx: idx });
                                       }}
                                       style={{
@@ -11060,7 +10991,6 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
       {planEditModal && (
         <>
           {(() => {
-            console.log("planEditModal vale:", planEditModal);
             return null;
           })()}
           <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 220, padding: 16 }}>
@@ -12326,7 +12256,6 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
               <button
                 type="button"
                 onClick={() => {
-                  console.log("Botón clickeado, prompt:", aiPrompt);
                   generateWorkout();
                 }}
                 disabled={aiLoading || !aiPrompt.trim()}
@@ -16187,7 +16116,6 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
       subscription_renews_at: form.subscription_renews_at ? form.subscription_renews_at : null,
       updated_at: new Date().toISOString(),
     };
-    console.log("[CoachSettings] coach_profiles guardar — objeto enviado:", JSON.stringify(payload, null, 2));
     const { data: existingRow, error: loadErr } = await supabase.from("coach_profiles").select("user_id").eq("user_id", coachUserId).maybeSingle();
     if (loadErr) {
       console.error(loadErr);
@@ -16210,7 +16138,6 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
         approved_by_admin: false,
         registered_at: new Date().toISOString(),
       };
-      console.log("[CoachSettings] coach_profiles insert (sin fila previa):", JSON.stringify(insertPayload, null, 2));
       const { error: insErr } = await supabase.from("coach_profiles").insert(insertPayload);
       error = insErr;
     }
@@ -16506,11 +16433,6 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
                             <button
                               type="button"
                               onClick={() => {
-                                console.log("[STRAVA CONNECT][Settings] opening authorize URL", {
-                                  athlete_id: a.id,
-                                  athlete_name: a.name,
-                                  callback_url: STRAVA_CALLBACK_URL,
-                                });
                                 const authUrl = `https://www.strava.com/oauth/authorize?client_id=218467&redirect_uri=${encodeURIComponent(STRAVA_CALLBACK_URL)}&response_type=code&scope=activity:read_all&state=${encodeURIComponent(String(a.id))}`;
                                 window.location.href = authUrl;
                               }}
