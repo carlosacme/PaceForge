@@ -16153,6 +16153,8 @@ function AdminPromoCodes({ notify }) {
 function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAthletes, stravaRefreshTick, notify, onSignOut }) {
   const S = styles;
   const athletesRef = useRef(athletes);
+  const isDirtyRef = useRef(false);
+  const skipDirtyMarkRef = useRef(false);
   athletesRef.current = athletes;
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -16181,6 +16183,20 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
   const [coachRequests, setCoachRequests] = useState([]);
   const [requestsBusyId, setRequestsBusyId] = useState("");
 
+  const setFormFromProfile = useCallback((nextForm) => {
+    skipDirtyMarkRef.current = true;
+    setForm(nextForm);
+    isDirtyRef.current = false;
+  }, []);
+
+  useEffect(() => {
+    if (skipDirtyMarkRef.current) {
+      skipDirtyMarkRef.current = false;
+      return;
+    }
+    isDirtyRef.current = true;
+  }, [form]);
+
   const loadProfile = useCallback(async () => {
     if (!coachUserId) {
       setLoading(false);
@@ -16195,7 +16211,7 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
       return;
     }
     if (data) {
-      setForm({
+      setFormFromProfile({
         avatar_url: data.avatar_url || "",
         full_name: data.full_name || profileName || "",
         email: data.email || sessionEmail || "",
@@ -16212,7 +16228,7 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
         subscription_renews_at: data.subscription_renews_at || "",
       });
     } else {
-      setForm({
+      setFormFromProfile({
         avatar_url: "",
         full_name: profileName || "",
         email: sessionEmail || "",
@@ -16230,9 +16246,10 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
       });
     }
     setLoading(false);
-  }, [coachUserId, sessionEmail, profileName, notify]);
+  }, [coachUserId, sessionEmail, profileName, notify, setFormFromProfile]);
 
   useEffect(() => {
+    if (isDirtyRef.current) return;
     loadProfile();
   }, [loadProfile]);
 
@@ -16420,24 +16437,17 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
       notify(loadErr.message || "Error al comprobar el perfil");
       return;
     }
-    let error = null;
-    if (existingRow?.user_id) {
-      const updateFields = { ...payload };
-      delete updateFields.user_id;
-      const { error: upErr } = await supabase.from("coach_profiles").update(updateFields).eq("user_id", coachUserId);
-      error = upErr;
-    } else {
-      const insertPayload = {
-        ...payload,
-        trial_start: new Date().toISOString(),
-        trial_days: 10,
-        subscription_status: "trial",
-        approved_by_admin: false,
-        registered_at: new Date().toISOString(),
-      };
-      const { error: insErr } = await supabase.from("coach_profiles").insert(insertPayload);
-      error = insErr;
-    }
+    const upsertPayload = existingRow?.user_id
+      ? payload
+      : {
+          ...payload,
+          trial_start: new Date().toISOString(),
+          trial_days: 10,
+          subscription_status: "trial",
+          approved_by_admin: false,
+          registered_at: new Date().toISOString(),
+        };
+    const { error } = await supabase.from("coach_profiles").upsert(upsertPayload, { onConflict: "user_id" });
     setSaving(false);
     if (error) {
       console.error(error);
@@ -16445,6 +16455,7 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
       return;
     }
     notify("Cambios guardados");
+    isDirtyRef.current = false;
     await loadProfile();
   };
 
