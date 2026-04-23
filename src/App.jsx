@@ -16161,7 +16161,7 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
   const S = styles;
   const athletesRef = useRef(athletes);
   const isDirtyRef = useRef(false);
-  const skipDirtyMarkRef = useRef(false);
+  const skipDirtyMarkRef = useRef(true);
   athletesRef.current = athletes;
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -16222,6 +16222,7 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
         return;
       }
       if (data) {
+        skipDirtyMarkRef.current = true;
         setFormFromProfile({
           avatar_url: data.avatar_url || "",
           full_name: data.full_name || profileName || "",
@@ -16239,6 +16240,7 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
           subscription_renews_at: data.subscription_renews_at || "",
         });
       } else {
+        skipDirtyMarkRef.current = true;
         setFormFromProfile({
           avatar_url: "",
           full_name: profileName || "",
