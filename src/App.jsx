@@ -3029,7 +3029,7 @@ export default function App() {
           console.error("Error obteniendo usuario para filtrar atletas:", userError);
           notify("Error cargando atletas");
           setAthletes([]);
-          return;
+          throw new Error("No user");
         }
         const coachId = userData.user.id;
         const { data, error } = await supabase
