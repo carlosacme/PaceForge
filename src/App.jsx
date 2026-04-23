@@ -16157,7 +16157,6 @@ function AdminPromoCodes({ notify }) {
 }
 
 function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAthletes, stravaRefreshTick, notify, onSignOut }) {
-  console.log("CoachSettings MOUNT - coachUserId:", coachUserId, "sessionEmail:", sessionEmail);
   const S = styles;
   const athletesRef = useRef(athletes);
   const isDirtyRef = useRef(false);
@@ -16205,7 +16204,6 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
   }, [form]);
 
   const loadProfile = useCallback(async () => {
-    console.log("loadProfile called - coachUserId:", coachUserId);
     if (!coachUserId) {
       console.log("coachUserId is null/undefined - returning early");
       setLoading(false);
@@ -16213,9 +16211,7 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
     }
     setLoading(true);
     try {
-      console.log("Querying coach_profiles for:", coachUserId);
       const { data, error } = await supabase.from("coach_profiles").select("*").eq("user_id", coachUserId).maybeSingle();
-      console.log("coach_profiles result - data:", data, "error:", error);
       if (error) {
         console.error(error);
         notify("No se pudo cargar la configuración. ¿Existe la tabla coach_profiles?");
