@@ -1132,9 +1132,7 @@ const mapJsonWorkoutToLibraryDraft = (row, fileName, idx) => {
   const sport = String(row.sport ?? "running").trim().toLowerCase() || "running";
   const rawType = String(row.type ?? row.workout_type ?? "").trim().toLowerCase();
   const garminSegments = Array.isArray(row.workoutSegments) ? row.workoutSegments : [];
-  const firstSegmentSteps = Array.isArray(garminSegments[0]?.workoutSteps) ? garminSegments[0].workoutSteps : [];
-  const allSegmentSteps = garminSegments.flatMap((seg) => (Array.isArray(seg?.workoutSteps) ? seg.workoutSteps : []));
-  const garminSteps = allSegmentSteps.length ? allSegmentSteps : firstSegmentSteps;
+  const garminSteps = Array.isArray(garminSegments[0]?.workoutSteps) ? garminSegments[0].workoutSteps : [];
 
   const stepTypeKeyOf = (step) =>
     String(step?.stepType?.stepTypeKey || step?.stepTypeKey || step?.stepType || step?.type || "").trim().toLowerCase();
@@ -1171,32 +1169,70 @@ const mapJsonWorkoutToLibraryDraft = (row, fileName, idx) => {
     const totalMinPerKm = 1000 / speed / 60;
     const paceMin = Math.floor(totalMinPerKm);
     const paceSec = Math.round((totalMinPerKm - paceMin) * 60);
-    return `${paceMin}:${String(Math.min(59, paceSec)).padStart(2, "0")} min/km`;
+    const safeSec = paceSec >= 60 ? 59 : Math.max(0, paceSec);
+    return `${paceMin}:${String(safeSec).padStart(2, "0")}`;
   };
-  const garminDescription = garminSteps.length
-    ? garminSteps
-        .map((step) => {
-          const stepTypeKey = stepTypeKeyOf(step);
-          const sec = Number(step?.endConditionValue);
-          const secLabel = Number.isFinite(sec) && sec > 0 ? `${Math.round(sec)}s` : null;
-          const warmupMinLabel = Number.isFinite(sec) && sec > 0 ? `${Math.max(1, Math.round(sec / 60))} min` : null;
-          const iterations = Number(step?.numberOfIterations);
-          const paceMin = speedToPace(step?.targetValueOne);
-          const paceMax = speedToPace(step?.targetValueTwo);
-          const paceLabel = paceMin || paceMax ? ` (${paceMin || "?"}${paceMax ? ` - ${paceMax}` : ""})` : "";
+  const secToMinInt = (sec) => {
+    const n = Number(sec);
+    if (!Number.isFinite(n) || n <= 0) return 0;
+    return Math.max(1, Math.round(n / 60));
+  };
+  const numericTarget = (step, key) => Number(step?.[key] ?? step?.targetType?.[key]);
 
-          if (stepTypeKey === "warmup") return `Calentamiento ${warmupMinLabel || "0 min"}${paceLabel}`;
-          if (stepTypeKey === "interval")
-            return `${Number.isFinite(iterations) && iterations > 0 ? `${Math.round(iterations)}x ` : ""}intervalos de ${secLabel || "0s"}${paceLabel}`;
-          if (stepTypeKey === "recovery") return `Recuperación ${secLabel || "0s"}${paceLabel}`;
-          if (stepTypeKey === "cooldown") return `Vuelta a la calma ${secLabel || "0s"}${paceLabel}`;
-          if (hasRepeatGroup && stepTypeKey.includes("repeat")) {
-            return `${Number.isFinite(iterations) && iterations > 0 ? `${Math.round(iterations)}x ` : ""}intervalos de ${secLabel || "0s"}${paceLabel}`;
-          }
-          return `Paso ${stepTypeKey || "workout"} ${secLabel || ""}${paceLabel}`.trim();
-        })
-        .join("\n")
-    : "";
+  const descriptionLines = [];
+  const structureRows = [];
+  for (const step of garminSteps) {
+    const rawType = String(step?.type || "").toLowerCase();
+    const stepTypeKey = stepTypeKeyOf(step);
+
+    if (stepTypeKey === "warmup") {
+      const mins = secToMinInt(step?.endConditionValue);
+      descriptionLines.push(`${mins}' E calentamiento`);
+      structureRows.push({ block_type: "Calentamiento", duration_min: String(mins) });
+      continue;
+    }
+    if (stepTypeKey === "cooldown") {
+      const mins = secToMinInt(step?.endConditionValue);
+      descriptionLines.push(`${mins}' E enfriamiento`);
+      structureRows.push({ block_type: "Enfriamiento", duration_min: String(mins) });
+      continue;
+    }
+    if (rawType.includes("repeatgroupdto") || rawType.includes("repeat_group") || rawType.includes("repeatgroup")) {
+      const reps = Math.max(1, Number(step?.numberOfIterations) || 1);
+      const nested = Array.isArray(step?.workoutSteps) ? step.workoutSteps : [];
+      const intervalStep = nested.find((s) => stepTypeKeyOf(s) === "interval") || nested[0];
+      const recoveryStep = nested.find((s) => stepTypeKeyOf(s) === "recovery") || nested[1];
+      const intervalSec = Number(intervalStep?.endConditionValue);
+      const recoverySec = Number(recoveryStep?.endConditionValue);
+      const intervalMin = secToMinInt(intervalSec);
+      const recoveryMin = secToMinInt(recoverySec);
+      const pace = speedToPace(numericTarget(intervalStep, "targetValueOne"));
+      descriptionLines.push(
+        `${reps}x(${intervalMin}' @ ${pace || "?"}/km + ${recoveryMin}' jog E)`,
+      );
+      structureRows.push({
+        block_type: "Intervalos",
+        reps: String(reps),
+        duration_min: String(intervalMin),
+        recovery_min: String(recoveryMin),
+        pace: pace ? `${pace}/km` : "",
+      });
+      continue;
+    }
+    if (stepTypeKey === "interval") {
+      const mins = secToMinInt(step?.endConditionValue);
+      const pace = speedToPace(numericTarget(step, "targetValueOne"));
+      descriptionLines.push(`${mins}' @ ${pace || "?"} min/km`);
+      structureRows.push({ block_type: "Intervalo", duration_min: String(mins), pace: pace ? `${pace} min/km` : "" });
+      continue;
+    }
+    if (stepTypeKey === "recovery") {
+      const mins = secToMinInt(step?.endConditionValue);
+      descriptionLines.push(`${mins}' jog E`);
+      structureRows.push({ block_type: "Recuperación", duration_min: String(mins) });
+    }
+  }
+  const garminDescription = descriptionLines.join("\n");
 
   return {
     id: `json_${Date.now()}_${idx}_${Math.random().toString(36).slice(2, 8)}`,
@@ -1208,7 +1244,7 @@ const mapJsonWorkoutToLibraryDraft = (row, fileName, idx) => {
     total_km: distanceKm,
     distance_km: distanceKm,
     avg_hr: null,
-    structure: [],
+    structure: structureRows,
     speedChanges: 0,
     description: row.description != null ? String(row.description) : garminDescription,
   };
