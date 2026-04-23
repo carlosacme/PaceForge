@@ -14222,12 +14222,12 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
     const all = plans || [];
     return all.filter((p) => {
       const active = Boolean(p.is_active);
-      const own = String(p.coach_user_id || "") === String(coachUserId || "");
-      if (isAdmin) return active;
-      if (isCoach && own) return active;
+      const own = String(p.coach_user_id || "") === String((coachUserId || currentUserId) || "");
+      if (isAdmin) return true;
+      if (own) return true;
       return active && Boolean(p.is_approved);
     });
-  }, [plans, isCoach, coachUserId, isAdmin]);
+  }, [plans, coachUserId, currentUserId, isAdmin]);
 
   const coachOwnPlans = useMemo(
     () => (plans || []).filter((p) => String(p.coach_user_id || "") === String(coachUserId || "")),
@@ -14246,9 +14246,16 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
     return `https://wa.me/573233675434?text=${txt}`;
   }, [selectedPlan]);
 
-  /** Vista atleta: hay semanas distintas de la 1 (o sin numerar) → CTA de desbloqueo bajo el acordeón. */
+  const selectedPlanIsOwner = useMemo(
+    () => Boolean(selectedPlan && String(selectedPlan.coach_user_id || "") === String(currentUserId || "")),
+    [selectedPlan, currentUserId],
+  );
+
+  const lockAfterWeek1 = Boolean(selectedPlan && !isAdmin && !selectedPlanIsOwner);
+
+  /** Vista restringida: hay semanas distintas de la 1 (o sin numerar) → CTA de desbloqueo bajo el acordeón. */
   const planPreviewHasLockedWeeks = useMemo(() => {
-    if (!selectedPlan || !isAthlete) return false;
+    if (!selectedPlan || !lockAfterWeek1) return false;
     const arr = getMarketplacePlanWorkoutRows(selectedPlan);
     for (let j = 0; j < arr.length; j++) {
       const w = arr[j];
@@ -14257,11 +14264,11 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
       if (key !== 1) return true;
     }
     return false;
-  }, [selectedPlan, isAthlete]);
+  }, [selectedPlan, lockAfterWeek1]);
 
   const hidePurchaseCta = useMemo(
-    () => Boolean(isAdmin || (selectedPlan && String(selectedPlan.coach_user_id || "") === String(currentUserId || ""))),
-    [isAdmin, selectedPlan, currentUserId],
+    () => Boolean(isAdmin || selectedPlanIsOwner),
+    [isAdmin, selectedPlanIsOwner],
   );
 
   const approveMarketplaceRow = async (planId) => {
@@ -14754,8 +14761,8 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
             </div>
             <div style={{ color: "#475569", fontSize: ".86em", marginBottom: 10 }}>{selectedPlan.description || "Sin descripción."}</div>
             <div style={{ fontSize: ".78em", fontWeight: 800, color: "#334155", marginBottom: 8 }}>Contenido del plan</div>
-            <MarketplacePlanWorkoutsAccordion previewWorkouts={getMarketplacePlanWorkoutRows(selectedPlan)} resetKey={selectedPlan.id} lockAfterWeek1={isAthlete} />
-            {!hidePurchaseCta && isAthlete && planPreviewHasLockedWeeks ? (
+            <MarketplacePlanWorkoutsAccordion previewWorkouts={getMarketplacePlanWorkoutRows(selectedPlan)} resetKey={selectedPlan.id} lockAfterWeek1={lockAfterWeek1} />
+            {!hidePurchaseCta && planPreviewHasLockedWeeks ? (
               <div style={{ marginTop: 14, marginBottom: 12, padding: "14px 16px", borderRadius: 12, background: "linear-gradient(180deg,#f1f5f9,#fff)", border: "1px solid #e2e8f0", textAlign: "center" }}>
                 <div style={{ fontSize: ".9em", fontWeight: 800, color: "#0f172a", marginBottom: 12, lineHeight: 1.45 }}>
                   Adquiere este plan para desbloquear todas las semanas
