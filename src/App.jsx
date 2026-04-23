@@ -1119,6 +1119,50 @@ const parseFitFileToLibraryDraft = async (file) => {
   };
 };
 
+const INVALID_JSON_WORKOUT_FORMAT_MSG = "Formato JSON inválido. Debe ser un workout o array de workouts.";
+
+const mapJsonWorkoutToLibraryDraft = (row, fileName, idx) => {
+  if (!row || typeof row !== "object" || Array.isArray(row)) return null;
+  const rawType = String(row.type ?? row.workout_type ?? "").trim().toLowerCase();
+  const type = WORKOUT_TYPES.some((t) => t.id === rawType) ? rawType : "easy";
+  const durationRaw = Number(row.duration_min ?? row.duration);
+  const distanceRaw = Number(row.total_km ?? row.distance_km);
+  const durationMin = Number.isFinite(durationRaw) ? Math.max(0, Math.round(durationRaw)) : 0;
+  const distanceKm = Number.isFinite(distanceRaw) ? Math.max(0, Number(distanceRaw)) : 0;
+  return {
+    id: `json_${Date.now()}_${idx}_${Math.random().toString(36).slice(2, 8)}`,
+    sourceFileName: fileName || "",
+    title: String(row.title ?? row.name ?? "").trim() || `Workout JSON ${idx + 1}`,
+    sport: "running",
+    type,
+    duration_min: durationMin,
+    total_km: distanceKm,
+    distance_km: distanceKm,
+    avg_hr: null,
+    structure: [],
+    speedChanges: 0,
+    description: row.description != null ? String(row.description) : "",
+  };
+};
+
+const parseJsonFileToLibraryDrafts = async (file) => {
+  let payload;
+  try {
+    payload = JSON.parse(await file.text());
+  } catch {
+    throw new Error(INVALID_JSON_WORKOUT_FORMAT_MSG);
+  }
+  const list = Array.isArray(payload) ? payload : payload && typeof payload === "object" ? [payload] : null;
+  if (!list) {
+    throw new Error(INVALID_JSON_WORKOUT_FORMAT_MSG);
+  }
+  const drafts = list.map((row, idx) => mapJsonWorkoutToLibraryDraft(row, file?.name || "", idx)).filter(Boolean);
+  if (!drafts.length) {
+    throw new Error(INVALID_JSON_WORKOUT_FORMAT_MSG);
+  }
+  return drafts;
+};
+
 /** Carga sesión: RPE × km (solo sesiones con RPE válido). */
 const sessionRpeKmLoad = (w) => {
   const km = Number(w.total_km);
@@ -11465,21 +11509,32 @@ function WorkoutLibrary({
   };
 
   const onFitFilesSelected = async (ev) => {
-    const files = Array.from(ev?.target?.files || []).filter((f) => /\.fit$/i.test(String(f?.name || "")));
+    const files = Array.from(ev?.target?.files || []).filter((f) => /\.(fit|json)$/i.test(String(f?.name || "")));
     if (!files.length) return;
     setFitImporting(true);
     try {
       const parsed = [];
       for (const file of files) {
+        const fileName = String(file?.name || "");
+        const isFitFile = /\.fit$/i.test(fileName);
+        const isJsonFile = /\.json$/i.test(fileName);
         try {
-          const draft = await parseFitFileToLibraryDraft(file);
-          parsed.push(draft);
+          if (isFitFile) {
+            const draft = await parseFitFileToLibraryDraft(file);
+            parsed.push(draft);
+          } else if (isJsonFile) {
+            const draftsFromJson = await parseJsonFileToLibraryDrafts(file);
+            parsed.push(...draftsFromJson);
+          }
         } catch (err) {
-          console.error("FIT parse error:", err);
+          console.error("Workout import parse error:", err);
+          if (err?.message === INVALID_JSON_WORKOUT_FORMAT_MSG) {
+            notify(INVALID_JSON_WORKOUT_FORMAT_MSG);
+          }
         }
       }
       if (!parsed.length) {
-        notify("No se pudieron parsear archivos .fit válidos.");
+        notify("No se pudieron parsear archivos .fit/.json válidos.");
         return;
       }
       setFitDrafts(parsed);
@@ -11497,6 +11552,8 @@ function WorkoutLibrary({
     const rows = fitDrafts.map((w) => {
       const type = WORKOUT_TYPES.some((t) => t.id === w.type) ? w.type : "easy";
       const avgHrLabel = Number.isFinite(Number(w.avg_hr)) ? ` · FC prom ${Math.round(Number(w.avg_hr))} lpm` : "";
+      const baseDescription = String(w.description || "").trim();
+      const importSourceDescription = `Importado desde ${w.sourceFileName || ".fit/.json"}${avgHrLabel}`;
       return {
         coach_id: coachUserId,
         title: String(w.title || "Workout FIT").trim() || "Workout FIT",
@@ -11505,7 +11562,7 @@ function WorkoutLibrary({
         total_km: Number.isFinite(Number(w.total_km)) ? Number(w.total_km) : 0,
         distance_km: Number.isFinite(Number(w.distance_km)) ? Number(w.distance_km) : 0,
         duration_min: Number.isFinite(Number(w.duration_min)) ? Math.max(0, Math.round(Number(w.duration_min))) : 0,
-        description: `Importado desde ${w.sourceFileName || ".fit"}${avgHrLabel}`,
+        description: baseDescription || importSourceDescription,
         structure: Array.isArray(w.structure) ? w.structure : [],
         workout_structure: Array.isArray(w.structure) ? w.structure : [],
       };
@@ -11675,7 +11732,7 @@ function WorkoutLibrary({
         ) : null}
       </div>
       <div style={{ ...S.card, marginBottom: 18 }}>
-        <input ref={fitInputRef} type="file" accept=".fit" multiple onChange={onFitFilesSelected} style={{ display: "none" }} />
+        <input ref={fitInputRef} type="file" accept=".fit,.json" multiple onChange={onFitFilesSelected} style={{ display: "none" }} />
         <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 10 }}>
           <div style={{ fontSize: ".72em", color: "#64748b" }}>Buscar por nombre o tipo</div>
           <button
@@ -11694,7 +11751,7 @@ function WorkoutLibrary({
               fontSize: ".78em",
             }}
           >
-            {fitImporting ? "Importando…" : "📂 Importar .fit"}
+            {fitImporting ? "Importando…" : "📂 Importar .fit/.json"}
           </button>
         </div>
         <input
@@ -12075,7 +12132,7 @@ function WorkoutLibrary({
         <div style={{ position: "fixed", inset: 0, zIndex: 301, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
           <div style={{ ...S.card, width: "100%", maxWidth: 760, margin: 0, maxHeight: "90vh", overflowY: "auto" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 10 }}>
-              <div style={{ fontWeight: 900, fontSize: ".96em", color: "#0f172a" }}>Vista previa de workouts detectados (.fit)</div>
+              <div style={{ fontWeight: 900, fontSize: ".96em", color: "#0f172a" }}>Vista previa de workouts detectados (.fit/.json)</div>
               <button
                 type="button"
                 onClick={() => setFitDrafts([])}
