@@ -1211,11 +1211,10 @@ const mapJsonWorkoutToLibraryDraft = (row, fileName, idx) => {
         `${reps}x(${intervalMin}' @ ${pace || "?"}/km + ${recoveryMin}' jog E)`,
       );
       structureRows.push({
-        block_type: "Intervalos",
-        reps: String(reps),
+        block_type: "Intervalo",
         duration_min: String(intervalMin),
-        recovery_min: String(recoveryMin),
-        pace: pace ? `${pace}/km` : "",
+        target_pace: pace ? `${pace}/km` : "",
+        description: `${reps}x · recuperación ${recoveryMin} min`,
       });
       continue;
     }
@@ -1223,7 +1222,11 @@ const mapJsonWorkoutToLibraryDraft = (row, fileName, idx) => {
       const mins = secToMinInt(step?.endConditionValue);
       const pace = speedToPace(numericTarget(step, "targetValueOne"));
       descriptionLines.push(`${mins}' @ ${pace || "?"} min/km`);
-      structureRows.push({ block_type: "Intervalo", duration_min: String(mins), pace: pace ? `${pace} min/km` : "" });
+      structureRows.push({
+        block_type: "Intervalo",
+        duration_min: String(mins),
+        target_pace: pace ? `${pace} min/km` : "",
+      });
       continue;
     }
     if (stepTypeKey === "recovery") {
@@ -1246,7 +1249,8 @@ const mapJsonWorkoutToLibraryDraft = (row, fileName, idx) => {
     avg_hr: null,
     structure: structureRows,
     speedChanges: 0,
-    description: row.description != null ? String(row.description) : garminDescription,
+    // Garmin: la nota en row.description no sustituye la estructura desde workoutSteps
+    description: isGarminLike ? garminDescription : row.description != null ? String(row.description) : garminDescription,
   };
 };
 
@@ -4536,6 +4540,15 @@ export default function App() {
             }}
             onCopiedGlobalToLibrary={() => setLibraryRefresh((r) => r + 1)}
             onOpenAdminMarketplaceDraft={() => setView("admin")}
+            onAfterLibraryImportSuccess={() => {
+              setView("library");
+              try {
+                if (typeof window !== "undefined") localStorage.setItem("raf_lastView", "library");
+              } catch {
+                /* ignore */
+              }
+              setLibraryRefresh((r) => r + 1);
+            }}
             notify={notify}
           />
         )}
@@ -11386,6 +11399,7 @@ function WorkoutLibrary({
   adminLibraryOwnerId,
   onCopiedGlobalToLibrary,
   onOpenAdminMarketplaceDraft,
+  onAfterLibraryImportSuccess,
 }) {
   const S = styles;
   const [libraryTab, setLibraryTab] = useState(() => {
@@ -11681,6 +11695,7 @@ function WorkoutLibrary({
         console.warn("Import insert completed without returned id in first row");
       }
       await load();
+      if (typeof onAfterLibraryImportSuccess === "function") onAfterLibraryImportSuccess();
       notify(`${payload.length} workouts importados exitosamente`);
     } finally {
       setFitImporting(false);
