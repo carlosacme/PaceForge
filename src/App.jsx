@@ -1238,6 +1238,32 @@ const mapJsonWorkoutToLibraryDraft = (row, fileName, idx) => {
   };
   const numericTarget = (step, key) => Number(step?.[key] ?? step?.targetType?.[key]);
 
+  const endConditionLooksLikeMeters = (st) => {
+    const ect = String(st?.endConditionType ?? st?.endConditionTypeKey ?? "").toLowerCase();
+    if (ect.includes("distance")) return true;
+    const v = Number(st?.endConditionValue);
+    return Number.isFinite(v) && v >= 400;
+  };
+
+  const intervalDistanceKmFromStep = (st) => {
+    if (!st) return null;
+    const ev = Number(st?.endConditionValue);
+    if (endConditionLooksLikeMeters(st) && Number.isFinite(ev) && ev > 0) {
+      return Number((ev / 1000).toFixed(2));
+    }
+    const dm = Number(st?.distance ?? st?.totalDistance);
+    if (Number.isFinite(dm) && dm > 400) return Number((dm / 1000).toFixed(2));
+    return null;
+  };
+
+  const stepDurationMinFromNestedStep = (st) => {
+    if (!st) return null;
+    const ev = Number(st?.endConditionValue);
+    if (!Number.isFinite(ev) || ev <= 0) return null;
+    if (endConditionLooksLikeMeters(st)) return null;
+    return secToMinInt(ev);
+  };
+
   const descriptionLines = [];
   const structureRows = [];
   for (const step of garminSteps) {
@@ -1257,24 +1283,61 @@ const mapJsonWorkoutToLibraryDraft = (row, fileName, idx) => {
       continue;
     }
     if (rawType.includes("repeatgroupdto") || rawType.includes("repeat_group") || rawType.includes("repeatgroup")) {
-      const reps = Math.max(1, Number(step?.numberOfIterations) || 1);
+      const reps = Math.max(1, Math.floor(Number(step?.numberOfIterations)) || 1);
       const nested = Array.isArray(step?.workoutSteps) ? step.workoutSteps : [];
       const intervalStep = nested.find((s) => stepTypeKeyOf(s) === "interval") || nested[0];
       const recoveryStep = nested.find((s) => stepTypeKeyOf(s) === "recovery") || nested[1];
-      const intervalSec = Number(intervalStep?.endConditionValue);
-      const recoverySec = Number(recoveryStep?.endConditionValue);
-      const intervalMin = secToMinInt(intervalSec);
-      const recoveryMin = secToMinInt(recoverySec);
-      const pace = speedToPace(numericTarget(intervalStep, "targetValueOne"));
-      descriptionLines.push(
-        `${reps}x(${intervalMin}' @ ${pace || "?"}/km + ${recoveryMin}' jog E)`,
-      );
-      structureRows.push({
-        block_type: "Intervalo",
-        duration_min: String(intervalMin),
-        target_pace: pace ? `${pace}/km` : "",
-        description: `${reps}x · recuperación ${recoveryMin} min`,
-      });
+
+      const summaryParts = [];
+      if (intervalStep) {
+        const kmI = intervalDistanceKmFromStep(intervalStep);
+        const paceI = speedToPace(numericTarget(intervalStep, "targetValueOne"));
+        const minI = stepDurationMinFromNestedStep(intervalStep);
+        if (kmI != null) summaryParts.push(`${kmI}km @ ${paceI || "?"}/km`);
+        else if (minI != null) summaryParts.push(`${minI}' @ ${paceI || "?"} min/km`);
+        else if (paceI) summaryParts.push(`@ ${paceI}/km`);
+      }
+      if (recoveryStep) {
+        const recMin = stepDurationMinFromNestedStep(recoveryStep) ?? secToMinInt(Number(recoveryStep?.endConditionValue));
+        if (recMin) summaryParts.push(`${recMin}' jog E`);
+      }
+      if (summaryParts.length) {
+        descriptionLines.push(`${reps}x(${summaryParts.join(" + ")})`);
+      } else {
+        descriptionLines.push(`${reps}x(bloque)`);
+      }
+
+      for (let r = 0; r < reps; r += 1) {
+        for (const ns of nested) {
+          const nk = stepTypeKeyOf(ns);
+          if (nk === "interval") {
+            const km = intervalDistanceKmFromStep(ns);
+            const pace = speedToPace(numericTarget(ns, "targetValueOne"));
+            const dm = stepDurationMinFromNestedStep(ns);
+            const paceKm = pace ? `${pace}/km` : "";
+            let desc = "Paso: Intervalo";
+            if (km != null && pace) desc = `Paso: Intervalo · ${km}km · ${paceKm}`;
+            else if (km != null) desc = `Paso: Intervalo · ${km}km`;
+            else if (pace) desc = `Paso: Intervalo · ${paceKm}`;
+            else if (dm != null) desc = `Paso: Intervalo · ${dm}min`;
+            structureRows.push({
+              block_type: "Intervalo",
+              ...(km != null ? { distance_km: String(km) } : {}),
+              ...(dm != null ? { duration_min: String(dm) } : {}),
+              target_pace: paceKm,
+              description: desc,
+            });
+          } else if (nk === "recovery") {
+            const rm = stepDurationMinFromNestedStep(ns) ?? secToMinInt(Number(ns?.endConditionValue));
+            const recDesc = rm ? `Paso: Recuperación · ${rm}min · ritmo E` : `Paso: Recuperación · ritmo E`;
+            structureRows.push({
+              block_type: "Recuperación",
+              duration_min: rm ? String(rm) : "",
+              description: recDesc,
+            });
+          }
+        }
+      }
       continue;
     }
     if (stepTypeKey === "interval") {
