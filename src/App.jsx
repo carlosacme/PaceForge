@@ -16151,6 +16151,7 @@ function AdminPromoCodes({ notify }) {
 }
 
 function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAthletes, stravaRefreshTick, notify, onSignOut }) {
+  console.log("CoachSettings MOUNT - coachUserId:", coachUserId, "sessionEmail:", sessionEmail);
   const S = styles;
   const athletesRef = useRef(athletes);
   const isDirtyRef = useRef(false);
@@ -16198,8 +16199,9 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
   }, [form]);
 
   const loadProfile = useCallback(async () => {
-    console.log("CoachSettings loadProfile START, coachUserId:", coachUserId);
+    console.log("loadProfile called - coachUserId:", coachUserId);
     if (!coachUserId) {
+      console.log("coachUserId is null/undefined - returning early");
       setLoading(false);
       return;
     }
