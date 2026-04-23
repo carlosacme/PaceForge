@@ -1,5 +1,6 @@
 import { Fragment, useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { jsPDF } from "jspdf";
+import FitParser from "fit-file-parser";
 import { supabase } from "./lib/supabase";
 import {
   initMessaging,
@@ -1011,6 +1012,112 @@ const libraryRowToBuilderWorkout = (row) => ({
   description: row.description || "",
   structure: Array.isArray(row.structure) ? row.structure : [],
 });
+
+const fitTitleKeywords = {
+  tempo: /\btempo\b/i,
+  interval: /\b(interval|intervalos|repeats?|series)\b/i,
+};
+
+const getFitAvgSpeedChanges = (records) => {
+  const speeds = (Array.isArray(records) ? records : [])
+    .map((r) => Number(r?.enhanced_speed ?? r?.speed))
+    .filter((s) => Number.isFinite(s) && s > 0);
+  if (speeds.length < 3) return 0;
+  let changes = 0;
+  for (let i = 1; i < speeds.length; i += 1) {
+    const prev = speeds[i - 1];
+    const curr = speeds[i];
+    if (prev <= 0 || curr <= 0) continue;
+    const delta = Math.abs(curr - prev) / prev;
+    if (delta >= 0.15) changes += 1;
+  }
+  return changes;
+};
+
+const mapFitWorkoutType = ({ sport, title, speedChanges, durationMin, distanceKm }) => {
+  const sportKey = String(sport || "").toLowerCase();
+  const safeTitle = String(title || "").trim();
+  const hasTempoWord = fitTitleKeywords.tempo.test(safeTitle);
+  const hasIntervalWord = fitTitleKeywords.interval.test(safeTitle);
+  const isIntervalBySpeed = Number(speedChanges) > 3;
+  const isLong = Number(durationMin) >= 80 || Number(distanceKm) >= 14;
+  if (sportKey === "running") {
+    if (hasTempoWord) return "tempo";
+    if (hasIntervalWord || isIntervalBySpeed) return "interval";
+    if (isLong) return "long";
+    return "easy";
+  }
+  if (sportKey === "walking") return "recovery";
+  return "easy";
+};
+
+const parseFitFileToLibraryDraft = async (file) => {
+  const parser = new FitParser({
+    force: true,
+    speedUnit: "km/h",
+    lengthUnit: "km",
+    mode: "cascade",
+  });
+  const data = await parser.parseAsync(await file.arrayBuffer());
+  const session = Array.isArray(data?.sessions) && data.sessions.length > 0 ? data.sessions[0] : null;
+  const records = Array.isArray(data?.records) ? data.records : [];
+  const laps = Array.isArray(data?.laps) ? data.laps : [];
+  const sessionTitle = String(session?.name || session?.sport || "").trim();
+  const title =
+    sessionTitle ||
+    String(file?.name || "Workout FIT")
+      .replace(/\.fit$/i, "")
+      .replace(/[_-]+/g, " ")
+      .trim();
+  const sport = String(session?.sport || data?.activity?.type || "running").toLowerCase();
+  const durationMinRaw = Number(session?.total_timer_time ?? session?.total_elapsed_time);
+  const distanceKmRaw = Number(session?.total_distance);
+  const duration_min = Number.isFinite(durationMinRaw) && durationMinRaw > 0 ? Math.round(durationMinRaw / 60) : 0;
+  const distance_km = Number.isFinite(distanceKmRaw) && distanceKmRaw > 0 ? Number((distanceKmRaw / 1000).toFixed(2)) : 0;
+  const avgHrSession = Number(session?.avg_heart_rate);
+  const avgHrRecords = records
+    .map((r) => Number(r?.heart_rate))
+    .filter((v) => Number.isFinite(v) && v > 0);
+  const avg_hr = Number.isFinite(avgHrSession) && avgHrSession > 0
+    ? Math.round(avgHrSession)
+    : avgHrRecords.length
+      ? Math.round(avgHrRecords.reduce((acc, v) => acc + v, 0) / avgHrRecords.length)
+      : null;
+  const speedChanges = getFitAvgSpeedChanges(records);
+  const type = mapFitWorkoutType({
+    sport,
+    title,
+    speedChanges,
+    durationMin: duration_min,
+    distanceKm: distance_km,
+  });
+  const structureFromLaps = laps
+    .slice(0, 10)
+    .map((lap, idx) => {
+      const lapDuration = Number(lap?.total_timer_time ?? lap?.total_elapsed_time);
+      const lapDistance = Number(lap?.total_distance);
+      const row = {
+        block_type: idx % 2 === 0 ? "Intervalo" : "Recuperación",
+      };
+      if (Number.isFinite(lapDuration) && lapDuration > 0) row.duration_min = String(Math.max(1, Math.round(lapDuration / 60)));
+      if (Number.isFinite(lapDistance) && lapDistance > 0) row.distance_km = String((lapDistance / 1000).toFixed(2));
+      return row;
+    })
+    .filter(Boolean);
+  return {
+    id: `fit_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    sourceFileName: file?.name || "",
+    title: title || "Workout FIT",
+    sport,
+    type,
+    duration_min,
+    total_km: distance_km,
+    distance_km,
+    avg_hr,
+    structure: structureFromLaps,
+    speedChanges,
+  };
+};
 
 /** Carga sesión: RPE × km (solo sesiones con RPE válido). */
 const sessionRpeKmLoad = (w) => {
@@ -11139,6 +11246,11 @@ function WorkoutLibrary({
   const [marketplaceCoachLabelById, setMarketplaceCoachLabelById] = useState({});
   const [libraryMarketplacePlanDetail, setLibraryMarketplacePlanDetail] = useState(null);
   const [adminMarketplaceCopyingId, setAdminMarketplaceCopyingId] = useState(null);
+  const [fitImporting, setFitImporting] = useState(false);
+  const [fitDrafts, setFitDrafts] = useState([]);
+  const [fitImportSaving, setFitImportSaving] = useState(false);
+  const [fitImportSuccessCount, setFitImportSuccessCount] = useState(0);
+  const fitInputRef = useRef(null);
 
   const load = useCallback(async () => {
     if (!coachUserId) {
@@ -11338,6 +11450,75 @@ function WorkoutLibrary({
     notify("Eliminado de la biblioteca");
   };
 
+  const openFitFilePicker = () => {
+    if (!coachUserId || fitImporting) return;
+    if (fitInputRef.current) {
+      fitInputRef.current.value = "";
+      fitInputRef.current.click();
+    }
+  };
+
+  const onFitFilesSelected = async (ev) => {
+    const files = Array.from(ev?.target?.files || []).filter((f) => /\.fit$/i.test(String(f?.name || "")));
+    if (!files.length) return;
+    setFitImporting(true);
+    try {
+      const parsed = [];
+      for (const file of files) {
+        try {
+          const draft = await parseFitFileToLibraryDraft(file);
+          parsed.push(draft);
+        } catch (err) {
+          console.error("FIT parse error:", err);
+        }
+      }
+      if (!parsed.length) {
+        notify("No se pudieron parsear archivos .fit válidos.");
+        return;
+      }
+      setFitDrafts(parsed);
+    } finally {
+      setFitImporting(false);
+    }
+  };
+
+  const updateFitDraft = (id, patch) => {
+    setFitDrafts((prev) => prev.map((row) => (row.id === id ? { ...row, ...patch } : row)));
+  };
+
+  const importAllFitDrafts = async () => {
+    if (!coachUserId || !fitDrafts.length) return;
+    const rows = fitDrafts.map((w) => {
+      const type = WORKOUT_TYPES.some((t) => t.id === w.type) ? w.type : "easy";
+      const avgHrLabel = Number.isFinite(Number(w.avg_hr)) ? ` · FC prom ${Math.round(Number(w.avg_hr))} lpm` : "";
+      return {
+        coach_id: coachUserId,
+        title: String(w.title || "Workout FIT").trim() || "Workout FIT",
+        type,
+        workout_type: type,
+        total_km: Number.isFinite(Number(w.total_km)) ? Number(w.total_km) : 0,
+        distance_km: Number.isFinite(Number(w.distance_km)) ? Number(w.distance_km) : 0,
+        duration_min: Number.isFinite(Number(w.duration_min)) ? Math.max(0, Math.round(Number(w.duration_min))) : 0,
+        description: `Importado desde ${w.sourceFileName || ".fit"}${avgHrLabel}`,
+        structure: Array.isArray(w.structure) ? w.structure : [],
+        workout_structure: Array.isArray(w.structure) ? w.structure : [],
+      };
+    });
+    setFitImportSaving(true);
+    const { error } = await supabase.from("workout_library").insert(rows);
+    setFitImportSaving(false);
+    if (error) {
+      console.error("fit import workout_library:", error);
+      notify(`Error al importar .fit: ${error.message}`);
+      return;
+    }
+    const count = rows.length;
+    setFitImportSuccessCount(count);
+    setFitDrafts([]);
+    setItems((prev) => [...rows.map(normalizeLibraryRow), ...prev]);
+    notify(`${count} workouts importados exitosamente`);
+  };
+
   const assignDirectly = async (row) => {
     if (!coachUserId) return;
     if (!Array.isArray(assignSelectedAthleteIds) || assignSelectedAthleteIds.length === 0) {
@@ -11488,7 +11669,28 @@ function WorkoutLibrary({
         ) : null}
       </div>
       <div style={{ ...S.card, marginBottom: 18 }}>
-        <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 8 }}>Buscar por nombre o tipo</div>
+        <input ref={fitInputRef} type="file" accept=".fit" multiple onChange={onFitFilesSelected} style={{ display: "none" }} />
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 10 }}>
+          <div style={{ fontSize: ".72em", color: "#64748b" }}>Buscar por nombre o tipo</div>
+          <button
+            type="button"
+            onClick={openFitFilePicker}
+            disabled={!coachUserId || fitImporting}
+            style={{
+              border: "1px solid #bfdbfe",
+              background: fitImporting ? "#e2e8f0" : "#eff6ff",
+              color: fitImporting ? "#64748b" : "#1d4ed8",
+              borderRadius: 8,
+              padding: "8px 12px",
+              fontWeight: 800,
+              cursor: !coachUserId || fitImporting ? "not-allowed" : "pointer",
+              fontFamily: "inherit",
+              fontSize: ".78em",
+            }}
+          >
+            {fitImporting ? "Importando…" : "📂 Importar .fit"}
+          </button>
+        </div>
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -11507,6 +11709,11 @@ function WorkoutLibrary({
             boxSizing: "border-box",
           }}
         />
+        {fitImportSuccessCount > 0 ? (
+          <div style={{ marginTop: 10, fontSize: ".78em", color: "#16a34a", fontWeight: 800 }}>
+            {fitImportSuccessCount} workouts importados exitosamente
+          </div>
+        ) : null}
       </div>
       {!coachUserId ? (
         <div style={{ color: "#64748b", fontSize: ".9em" }}>Inicia sesión para ver tu biblioteca.</div>
@@ -11853,6 +12060,89 @@ function WorkoutLibrary({
               </button>
               <button type="button" onClick={() => assignDirectly(assigningWorkoutRow)} disabled={assignSaving} style={{ border: "none", background: assignSaving ? "#cbd5e1" : "linear-gradient(135deg,#b45309,#f59e0b)", borderRadius: 8, padding: "8px 12px", color: "#fff", cursor: assignSaving ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 800 }}>
                 {assignSaving ? "Asignando…" : "Asignar a seleccionados"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {fitDrafts.length ? (
+        <div style={{ position: "fixed", inset: 0, zIndex: 301, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ ...S.card, width: "100%", maxWidth: 760, margin: 0, maxHeight: "90vh", overflowY: "auto" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 10 }}>
+              <div style={{ fontWeight: 900, fontSize: ".96em", color: "#0f172a" }}>Vista previa de workouts detectados (.fit)</div>
+              <button
+                type="button"
+                onClick={() => setFitDrafts([])}
+                disabled={fitImportSaving}
+                style={{ border: "1px solid #e2e8f0", background: "#fff", borderRadius: 8, padding: "6px 10px", cursor: fitImportSaving ? "not-allowed" : "pointer", fontFamily: "inherit" }}
+              >
+                ✕
+              </button>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {fitDrafts.map((w, idx) => (
+                <div key={w.id} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: 10, background: "#fff" }}>
+                  <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 8 }}>
+                    Archivo: {w.sourceFileName || "—"} · Deporte: {w.sport || "running"} · FC prom: {w.avg_hr ?? "—"} lpm
+                  </div>
+                  <div style={{ display: "grid", gap: 8, gridTemplateColumns: "minmax(0,1.4fr) 130px 110px 110px" }}>
+                    <input
+                      value={w.title}
+                      onChange={(e) => updateFitDraft(w.id, { title: e.target.value })}
+                      placeholder={`Workout ${idx + 1}`}
+                      style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit", fontSize: ".82em" }}
+                    />
+                    <select
+                      value={w.type}
+                      onChange={(e) => updateFitDraft(w.id, { type: e.target.value })}
+                      style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit", fontSize: ".82em" }}
+                    >
+                      {WORKOUT_TYPES.filter((t) => ["easy", "tempo", "interval", "long", "recovery"].includes(t.id)).map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.id}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      type="number"
+                      min="0"
+                      value={w.duration_min}
+                      onChange={(e) => updateFitDraft(w.id, { duration_min: e.target.value })}
+                      placeholder="min"
+                      style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit", fontSize: ".82em" }}
+                    />
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.1"
+                      value={w.distance_km}
+                      onChange={(e) => updateFitDraft(w.id, { distance_km: e.target.value, total_km: e.target.value })}
+                      placeholder="km"
+                      style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit", fontSize: ".82em" }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 14, gap: 10, flexWrap: "wrap" }}>
+              <div style={{ fontSize: ".75em", color: "#64748b" }}>Edita título, tipo, duración y distancia antes de guardar.</div>
+              <button
+                type="button"
+                onClick={importAllFitDrafts}
+                disabled={fitImportSaving}
+                style={{
+                  border: "none",
+                  borderRadius: 8,
+                  padding: "9px 14px",
+                  background: fitImportSaving ? "#cbd5e1" : "linear-gradient(135deg,#16a34a,#22c55e)",
+                  color: "#fff",
+                  fontWeight: 900,
+                  cursor: fitImportSaving ? "not-allowed" : "pointer",
+                  fontFamily: "inherit",
+                  fontSize: ".8em",
+                }}
+              >
+                {fitImportSaving ? "Importando…" : "✅ Importar todos"}
               </button>
             </div>
           </div>
