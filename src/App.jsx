@@ -1180,12 +1180,17 @@ const mapJsonWorkoutToLibraryDraft = (row, fileName, idx) => {
 };
 
 const parseJsonFileToLibraryDrafts = async (file) => {
-  let payload;
+  const jsonContent = await file.text();
+  console.log("JSON raw content:", jsonContent);
+  let parsed;
   try {
-    payload = JSON.parse(await file.text());
+    parsed = JSON.parse(jsonContent);
   } catch {
     throw new Error(INVALID_JSON_WORKOUT_FORMAT_MSG);
   }
+  console.log("Parsed JSON:", parsed);
+  console.log("estimatedDuration:", parsed.estimatedDuration, "estimatedDistance:", parsed.estimatedDistance);
+  const payload = parsed;
   const list = Array.isArray(payload) ? payload : payload && typeof payload === "object" ? [payload] : null;
   if (!list) {
     throw new Error(INVALID_JSON_WORKOUT_FORMAT_MSG);
