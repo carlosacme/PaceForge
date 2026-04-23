@@ -236,13 +236,72 @@ const STRAVA_ACTIVITY_ICONS = {
   Hike: "🥾",
   Workout: "🏋️",
 };
-const WORKOUT_BLOCK_TYPES = ["Calentamiento", "Intervalo", "Recuperación", "Enfriamiento"];
+const WORKOUT_BLOCK_TYPES = ["Calentamiento", "Intervalo", "Recuperación", "Enfriamiento", "Rodaje"];
 const WORKOUT_BLOCK_COLORS = {
   Calentamiento: { bg: "rgba(245,158,11,.14)", border: "rgba(245,158,11,.45)", text: "#b45309" },
   Intervalo: { bg: "rgba(239,68,68,.12)", border: "rgba(239,68,68,.4)", text: "#b91c1c" },
   Recuperación: { bg: "rgba(34,197,94,.12)", border: "rgba(34,197,94,.38)", text: "#166534" },
   Enfriamiento: { bg: "rgba(59,130,246,.12)", border: "rgba(59,130,246,.38)", text: "#1d4ed8" },
+  Rodaje: { bg: "rgba(148,163,184,.16)", border: "rgba(100,116,139,.45)", text: "#475569" },
 };
+
+const FIT_IMPORT_STEP_TYPES = ["Calentamiento", "Intervalo", "Recuperación", "Enfriamiento", "Rodaje"];
+
+const newFitImportStepKey = () => `fitst_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+
+const emptyFitImportStructureRow = () => ({
+  block_type: "Rodaje",
+  duration_min: "",
+  distance_km: "",
+  target_pace: "",
+  target_hr: "",
+  description: "",
+  __key: newFitImportStepKey(),
+});
+
+const normalizeStructureForFitImportModal = (structure) => {
+  const arr = Array.isArray(structure) ? structure : [];
+  return arr.map((s, idx) => {
+    const raw = String(s?.block_type || s?.phase || "").trim();
+    let block_type = "Rodaje";
+    if (FIT_IMPORT_STEP_TYPES.includes(raw)) block_type = raw;
+    else if (raw === "Intervalos") block_type = "Intervalo";
+    const duration_min =
+      s?.duration_min != null && String(s.duration_min).trim() !== ""
+        ? String(s.duration_min).trim()
+        : String(s?.duration ?? "").trim();
+    const distance_km =
+      s?.distance_km != null && String(s.distance_km).trim() !== "" ? String(s.distance_km).trim() : "";
+    const target_pace =
+      s?.target_pace != null && String(s.target_pace).trim() !== ""
+        ? String(s.target_pace).trim()
+        : String(s?.pace || "").trim();
+    const target_hr =
+      s?.target_hr != null && String(s.target_hr).trim() !== ""
+        ? String(s.target_hr).trim()
+        : String(s?.intensity || "").trim();
+    const description = s?.description != null ? String(s.description).trim() : "";
+    return {
+      block_type,
+      duration_min,
+      distance_km,
+      target_pace,
+      target_hr,
+      description,
+      __key: s?.__key || newFitImportStepKey(),
+    };
+  });
+};
+
+const structureRowsForFitImportInsert = (rows) =>
+  (Array.isArray(rows) ? rows : []).map((s) => ({
+    block_type: String(s.block_type || "Rodaje").trim(),
+    duration_min: String(s.duration_min ?? "").trim(),
+    distance_km: String(s.distance_km ?? "").trim(),
+    target_pace: String(s.target_pace ?? "").trim(),
+    target_hr: String(s.target_hr ?? "").trim(),
+    description: String(s.description ?? "").trim(),
+  }));
 
 const paymentStatusLabel = (status) =>
   status === "confirmed" ? "Confirmado" : status === "rejected" ? "Rechazado" : "Pendiente";
@@ -11665,7 +11724,12 @@ function WorkoutLibrary({
         notify("No se pudieron parsear archivos .fit/.json válidos.");
         return;
       }
-      setFitDrafts(parsedDrafts);
+      setFitDrafts(
+        parsedDrafts.map((d) => ({
+          ...d,
+          structure: normalizeStructureForFitImportModal(d.structure),
+        })),
+      );
     } finally {
       setFitImporting(false);
     }
@@ -11673,6 +11737,38 @@ function WorkoutLibrary({
 
   const updateFitDraft = (id, patch) => {
     setFitDrafts((prev) => prev.map((row) => (row.id === id ? { ...row, ...patch } : row)));
+  };
+
+  const updateFitDraftStep = (draftId, stepIdx, patch) => {
+    setFitDrafts((prev) =>
+      prev.map((w) => {
+        if (w.id !== draftId) return w;
+        const structure = [...(Array.isArray(w.structure) ? w.structure : [])];
+        if (!structure[stepIdx]) return w;
+        structure[stepIdx] = { ...structure[stepIdx], ...patch };
+        return { ...w, structure };
+      }),
+    );
+  };
+
+  const removeFitDraftStep = (draftId, stepIdx) => {
+    setFitDrafts((prev) =>
+      prev.map((w) => {
+        if (w.id !== draftId) return w;
+        const structure = (Array.isArray(w.structure) ? w.structure : []).filter((_, i) => i !== stepIdx);
+        return { ...w, structure };
+      }),
+    );
+  };
+
+  const addFitDraftStep = (draftId) => {
+    setFitDrafts((prev) =>
+      prev.map((w) => {
+        if (w.id !== draftId) return w;
+        const structure = [...(Array.isArray(w.structure) ? w.structure : []), emptyFitImportStructureRow()];
+        return { ...w, structure };
+      }),
+    );
   };
 
   const importAllFitDrafts = async () => {
@@ -11691,8 +11787,8 @@ function WorkoutLibrary({
         distance_km: Number.isFinite(Number(w.distance_km)) ? Number(w.distance_km) : 0,
         duration_min: Number.isFinite(Number(w.duration_min)) ? Math.max(0, Math.round(Number(w.duration_min))) : 0,
         description: baseDescription || importSourceDescription,
-        structure: Array.isArray(w.structure) ? w.structure : [],
-        workout_structure: Array.isArray(w.structure) ? w.structure : [],
+        structure: structureRowsForFitImportInsert(w.structure),
+        workout_structure: structureRowsForFitImportInsert(w.structure),
       };
     });
     setFitImportSaving(true);
@@ -12320,11 +12416,135 @@ function WorkoutLibrary({
                   </div>
                   <div style={{ marginTop: 10 }}>
                     <div style={{ fontSize: ".72em", fontWeight: 800, color: "#475569", marginBottom: 6 }}>ESTRUCTURA</div>
-                    {Array.isArray(w.structure) && w.structure.length ? (
-                      <WorkoutStructureTable structure={w.structure} />
-                    ) : (
-                      <div style={{ fontSize: ".78em", color: "#94a3b8" }}>Sin bloques de estructura.</div>
-                    )}
+                    <div style={{ overflowX: "auto", border: "1px solid #e2e8f0", borderRadius: 8 }}>
+                      <table style={{ width: "100%", minWidth: 720, borderCollapse: "collapse", fontSize: ".74em" }}>
+                        <thead>
+                          <tr style={{ background: "#f8fafc" }}>
+                            <th style={{ padding: "8px 6px", textAlign: "left", borderBottom: "1px solid #e2e8f0", width: 36 }}>#</th>
+                            <th style={{ padding: "8px 6px", textAlign: "left", borderBottom: "1px solid #e2e8f0", minWidth: 120 }}>Tipo</th>
+                            <th style={{ padding: "8px 6px", textAlign: "left", borderBottom: "1px solid #e2e8f0", minWidth: 88 }}>Duración (min)</th>
+                            <th style={{ padding: "8px 6px", textAlign: "left", borderBottom: "1px solid #e2e8f0", minWidth: 88 }}>Distancia (km)</th>
+                            <th style={{ padding: "8px 6px", textAlign: "left", borderBottom: "1px solid #e2e8f0", minWidth: 100 }}>Ritmo</th>
+                            <th style={{ padding: "8px 6px", textAlign: "left", borderBottom: "1px solid #e2e8f0", minWidth: 100 }}>FC objetivo</th>
+                            <th style={{ padding: "8px 6px", textAlign: "left", borderBottom: "1px solid #e2e8f0", minWidth: 120 }}>Descripción</th>
+                            <th style={{ padding: "8px 6px", textAlign: "center", borderBottom: "1px solid #e2e8f0", width: 52 }} />
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(Array.isArray(w.structure) ? w.structure : []).map((st, si) => (
+                            <tr key={st.__key || `${w.id}-st-${si}`}>
+                              <td style={{ padding: "6px", borderBottom: "1px solid #f1f5f9", color: "#64748b", fontWeight: 700 }}>{si + 1}</td>
+                              <td style={{ padding: "6px", borderBottom: "1px solid #f1f5f9" }}>
+                                <select
+                                  value={FIT_IMPORT_STEP_TYPES.includes(String(st.block_type)) ? st.block_type : "Rodaje"}
+                                  onChange={(e) => updateFitDraftStep(w.id, si, { block_type: e.target.value })}
+                                  disabled={fitImportSaving}
+                                  style={{ width: "100%", maxWidth: 130, border: "1px solid #e2e8f0", borderRadius: 6, padding: "6px 4px", fontFamily: "inherit", fontSize: ".9em" }}
+                                >
+                                  {FIT_IMPORT_STEP_TYPES.map((bt) => (
+                                    <option key={bt} value={bt}>
+                                      {bt}
+                                    </option>
+                                  ))}
+                                </select>
+                              </td>
+                              <td style={{ padding: "6px", borderBottom: "1px solid #f1f5f9" }}>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="1"
+                                  value={st.duration_min}
+                                  onChange={(e) => updateFitDraftStep(w.id, si, { duration_min: e.target.value })}
+                                  disabled={fitImportSaving}
+                                  style={{ width: "100%", maxWidth: 88, border: "1px solid #e2e8f0", borderRadius: 6, padding: "6px 4px", fontFamily: "inherit" }}
+                                />
+                              </td>
+                              <td style={{ padding: "6px", borderBottom: "1px solid #f1f5f9" }}>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="0.1"
+                                  value={st.distance_km}
+                                  onChange={(e) => updateFitDraftStep(w.id, si, { distance_km: e.target.value })}
+                                  disabled={fitImportSaving}
+                                  style={{ width: "100%", maxWidth: 88, border: "1px solid #e2e8f0", borderRadius: 6, padding: "6px 4px", fontFamily: "inherit" }}
+                                />
+                              </td>
+                              <td style={{ padding: "6px", borderBottom: "1px solid #f1f5f9" }}>
+                                <input
+                                  type="text"
+                                  value={st.target_pace}
+                                  onChange={(e) => updateFitDraftStep(w.id, si, { target_pace: e.target.value })}
+                                  placeholder="4:30/km"
+                                  disabled={fitImportSaving}
+                                  style={{ width: "100%", minWidth: 90, border: "1px solid #e2e8f0", borderRadius: 6, padding: "6px 4px", fontFamily: "inherit" }}
+                                />
+                              </td>
+                              <td style={{ padding: "6px", borderBottom: "1px solid #f1f5f9" }}>
+                                <input
+                                  type="text"
+                                  value={st.target_hr}
+                                  onChange={(e) => updateFitDraftStep(w.id, si, { target_hr: e.target.value })}
+                                  placeholder="140-160"
+                                  disabled={fitImportSaving}
+                                  style={{ width: "100%", minWidth: 90, border: "1px solid #e2e8f0", borderRadius: 6, padding: "6px 4px", fontFamily: "inherit" }}
+                                />
+                              </td>
+                              <td style={{ padding: "6px", borderBottom: "1px solid #f1f5f9" }}>
+                                <input
+                                  type="text"
+                                  value={st.description}
+                                  onChange={(e) => updateFitDraftStep(w.id, si, { description: e.target.value })}
+                                  disabled={fitImportSaving}
+                                  style={{ width: "100%", minWidth: 100, border: "1px solid #e2e8f0", borderRadius: 6, padding: "6px 4px", fontFamily: "inherit" }}
+                                />
+                              </td>
+                              <td style={{ padding: "6px", borderBottom: "1px solid #f1f5f9", textAlign: "center" }}>
+                                <button
+                                  type="button"
+                                  onClick={() => removeFitDraftStep(w.id, si)}
+                                  disabled={fitImportSaving}
+                                  title="Eliminar paso"
+                                  style={{
+                                    border: "1px solid #fecaca",
+                                    background: "#fff",
+                                    borderRadius: 6,
+                                    padding: "4px 8px",
+                                    cursor: fitImportSaving ? "not-allowed" : "pointer",
+                                    fontFamily: "inherit",
+                                    fontSize: ".9em",
+                                  }}
+                                >
+                                  🗑️
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => addFitDraftStep(w.id)}
+                      disabled={fitImportSaving}
+                      style={{
+                        marginTop: 8,
+                        border: "1px solid #bae6fd",
+                        background: "#f0f9ff",
+                        color: "#0369a1",
+                        borderRadius: 8,
+                        padding: "6px 12px",
+                        fontWeight: 800,
+                        fontSize: ".78em",
+                        cursor: fitImportSaving ? "not-allowed" : "pointer",
+                        fontFamily: "inherit",
+                      }}
+                    >
+                      + Agregar paso
+                    </button>
+                    {!(Array.isArray(w.structure) && w.structure.length) ? (
+                      <div style={{ fontSize: ".76em", color: "#94a3b8", marginTop: 6 }}>Sin pasos aún; puedes agregar filas manualmente.</div>
+                    ) : null}
                   </div>
                 </div>
               ))}
