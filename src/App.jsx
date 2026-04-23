@@ -1123,25 +1123,59 @@ const INVALID_JSON_WORKOUT_FORMAT_MSG = "Formato JSON inválido. Debe ser un wor
 
 const mapJsonWorkoutToLibraryDraft = (row, fileName, idx) => {
   if (!row || typeof row !== "object" || Array.isArray(row)) return null;
+  const isGarminLike = row.workoutName != null || row.estimatedDuration != null || row.estimatedDistance != null || Array.isArray(row.workoutSegments);
+  const titleValue = row.title ?? row.name ?? (isGarminLike ? row.workoutName : "");
+  const sport = String(row.sport ?? "running").trim().toLowerCase() || "running";
   const rawType = String(row.type ?? row.workout_type ?? "").trim().toLowerCase();
-  const type = WORKOUT_TYPES.some((t) => t.id === rawType) ? rawType : "easy";
-  const durationRaw = Number(row.duration_min ?? row.duration);
-  const distanceRaw = Number(row.total_km ?? row.distance_km);
+  const garminSegments = Array.isArray(row.workoutSegments) ? row.workoutSegments : [];
+  const distinctGarminSteps = new Set(
+    garminSegments.map((seg) => {
+      const segmentType = String(seg?.segmentType || "").trim().toLowerCase();
+      const targetType = String(seg?.targetType || "").trim().toLowerCase();
+      const duration = Number(seg?.duration);
+      const distance = Number(seg?.distance);
+      const durationKey = Number.isFinite(duration) ? Math.round(duration) : "";
+      const distanceKey = Number.isFinite(distance) ? Math.round(distance) : "";
+      return `${segmentType}|${targetType}|${durationKey}|${distanceKey}`;
+    }),
+  );
+  const hasGarminIntervalPattern = distinctGarminSteps.size > 3;
+  const hasIntervalWord = /\b(interval|intervalos|repeats?|series)\b/i.test(String(titleValue || ""));
+  const fallbackTypeFromSport = sport === "running" ? "easy" : "easy";
+  const inferredType = hasGarminIntervalPattern || hasIntervalWord ? "interval" : fallbackTypeFromSport;
+  const safeMappedType = WORKOUT_TYPES.some((t) => t.id === rawType) ? rawType : inferredType;
+  const durationRaw = Number(row.duration_min ?? row.duration ?? (isGarminLike ? Number(row.estimatedDuration) / 60 : NaN));
+  const distanceRaw = Number(row.total_km ?? row.distance_km ?? (isGarminLike ? Number(row.estimatedDistance) / 1000 : NaN));
   const durationMin = Number.isFinite(durationRaw) ? Math.max(0, Math.round(durationRaw)) : 0;
   const distanceKm = Number.isFinite(distanceRaw) ? Math.max(0, Number(distanceRaw)) : 0;
+  const garminDescription = garminSegments.length
+    ? garminSegments
+        .map((seg, stepIdx) => {
+          const segmentType = String(seg?.segmentType || "Step").trim() || "Step";
+          const targetType = String(seg?.targetType || "").trim();
+          const sec = Number(seg?.duration);
+          const meters = Number(seg?.distance);
+          const minLabel = Number.isFinite(sec) && sec > 0 ? `${Math.round(sec / 60)} min` : null;
+          const kmLabel = Number.isFinite(meters) && meters > 0 ? `${(meters / 1000).toFixed(2)} km` : null;
+          const amount = [minLabel, kmLabel].filter(Boolean).join(" / ");
+          const target = targetType ? ` · objetivo ${targetType}` : "";
+          return `${stepIdx + 1}) ${segmentType}${target}${amount ? ` · ${amount}` : ""}`;
+        })
+        .join("\n")
+    : "";
   return {
     id: `json_${Date.now()}_${idx}_${Math.random().toString(36).slice(2, 8)}`,
     sourceFileName: fileName || "",
-    title: String(row.title ?? row.name ?? "").trim() || `Workout JSON ${idx + 1}`,
-    sport: "running",
-    type,
+    title: String(titleValue ?? "").trim() || `Workout JSON ${idx + 1}`,
+    sport,
+    type: safeMappedType,
     duration_min: durationMin,
     total_km: distanceKm,
     distance_km: distanceKm,
     avg_hr: null,
     structure: [],
     speedChanges: 0,
-    description: row.description != null ? String(row.description) : "",
+    description: row.description != null ? String(row.description) : garminDescription,
   };
 };
 
