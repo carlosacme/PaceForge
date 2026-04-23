@@ -1123,46 +1123,81 @@ const INVALID_JSON_WORKOUT_FORMAT_MSG = "Formato JSON inválido. Debe ser un wor
 
 const mapJsonWorkoutToLibraryDraft = (row, fileName, idx) => {
   if (!row || typeof row !== "object" || Array.isArray(row)) return null;
-  const isGarminLike = row.workoutName != null || row.estimatedDuration != null || row.estimatedDistance != null || Array.isArray(row.workoutSegments);
+  const isGarminLike =
+    row.workoutName != null ||
+    row.estimatedDurationInSecs != null ||
+    row.estimatedDistanceInMeters != null ||
+    Array.isArray(row.workoutSegments);
   const titleValue = row.title ?? row.name ?? (isGarminLike ? row.workoutName : "");
   const sport = String(row.sport ?? "running").trim().toLowerCase() || "running";
   const rawType = String(row.type ?? row.workout_type ?? "").trim().toLowerCase();
   const garminSegments = Array.isArray(row.workoutSegments) ? row.workoutSegments : [];
-  const distinctGarminSteps = new Set(
-    garminSegments.map((seg) => {
-      const segmentType = String(seg?.segmentType || "").trim().toLowerCase();
-      const targetType = String(seg?.targetType || "").trim().toLowerCase();
-      const duration = Number(seg?.duration);
-      const distance = Number(seg?.distance);
-      const durationKey = Number.isFinite(duration) ? Math.round(duration) : "";
-      const distanceKey = Number.isFinite(distance) ? Math.round(distance) : "";
-      return `${segmentType}|${targetType}|${durationKey}|${distanceKey}`;
-    }),
-  );
-  const hasGarminIntervalPattern = distinctGarminSteps.size > 3;
-  const hasIntervalWord = /\b(interval|intervalos|repeats?|series)\b/i.test(String(titleValue || ""));
-  const fallbackTypeFromSport = sport === "running" ? "easy" : "easy";
-  const inferredType = hasGarminIntervalPattern || hasIntervalWord ? "interval" : fallbackTypeFromSport;
+  const firstSegmentSteps = Array.isArray(garminSegments[0]?.workoutSteps) ? garminSegments[0].workoutSteps : [];
+  const allSegmentSteps = garminSegments.flatMap((seg) => (Array.isArray(seg?.workoutSteps) ? seg.workoutSteps : []));
+  const garminSteps = allSegmentSteps.length ? allSegmentSteps : firstSegmentSteps;
+
+  const stepTypeKeyOf = (step) =>
+    String(step?.stepType?.stepTypeKey || step?.stepTypeKey || step?.stepType || step?.type || "").trim().toLowerCase();
+  const hasRepeatGroup = garminSteps.some((step) => {
+    const t = String(step?.type || step?.stepType?.stepTypeKey || "").toLowerCase();
+    return t.includes("repeatgroupdto") || t.includes("repeat_group") || t.includes("repeatgroup");
+  });
+  const hasIntervalStep = garminSteps.some((step) => stepTypeKeyOf(step) === "interval");
+
+  const hasTempoWord = /\b(tempo|cruise)\b/i.test(String(titleValue || ""));
+  const hasLongWord = /\b(long|largo)\b/i.test(String(titleValue || ""));
+  let inferredType = sport === "running" ? "easy" : "easy";
+  if (hasIntervalStep || hasRepeatGroup) inferredType = "interval";
+  else if (hasTempoWord) inferredType = "tempo";
+  else if (hasLongWord) inferredType = "long";
   const safeMappedType = WORKOUT_TYPES.some((t) => t.id === rawType) ? rawType : inferredType;
-  const durationRaw = Number(row.duration_min ?? row.duration ?? (isGarminLike ? Number(row.estimatedDuration) / 60 : NaN));
-  const distanceRaw = Number(row.total_km ?? row.distance_km ?? (isGarminLike ? Number(row.estimatedDistance) / 1000 : NaN));
+
+  const durationRaw = Number(
+    row.duration_min ??
+      row.duration ??
+      (isGarminLike ? Number(row.estimatedDurationInSecs) / 60 : NaN),
+  );
+  const distanceRaw = Number(
+    row.total_km ??
+      row.distance_km ??
+      (isGarminLike && row.estimatedDistanceInMeters != null ? Number(row.estimatedDistanceInMeters) / 1000 : NaN),
+  );
   const durationMin = Number.isFinite(durationRaw) ? Math.max(0, Math.round(durationRaw)) : 0;
   const distanceKm = Number.isFinite(distanceRaw) ? Math.max(0, Number(distanceRaw)) : 0;
-  const garminDescription = garminSegments.length
-    ? garminSegments
-        .map((seg, stepIdx) => {
-          const segmentType = String(seg?.segmentType || "Step").trim() || "Step";
-          const targetType = String(seg?.targetType || "").trim();
-          const sec = Number(seg?.duration);
-          const meters = Number(seg?.distance);
-          const minLabel = Number.isFinite(sec) && sec > 0 ? `${Math.round(sec / 60)} min` : null;
-          const kmLabel = Number.isFinite(meters) && meters > 0 ? `${(meters / 1000).toFixed(2)} km` : null;
-          const amount = [minLabel, kmLabel].filter(Boolean).join(" / ");
-          const target = targetType ? ` · objetivo ${targetType}` : "";
-          return `${stepIdx + 1}) ${segmentType}${target}${amount ? ` · ${amount}` : ""}`;
+
+  const speedToPace = (mps) => {
+    const speed = Number(mps);
+    if (!Number.isFinite(speed) || speed <= 0) return null;
+    const totalMinPerKm = 1000 / speed / 60;
+    const paceMin = Math.floor(totalMinPerKm);
+    const paceSec = Math.round((totalMinPerKm - paceMin) * 60);
+    return `${paceMin}:${String(Math.min(59, paceSec)).padStart(2, "0")} min/km`;
+  };
+  const garminDescription = garminSteps.length
+    ? garminSteps
+        .map((step) => {
+          const stepTypeKey = stepTypeKeyOf(step);
+          const sec = Number(step?.endConditionValue);
+          const secLabel = Number.isFinite(sec) && sec > 0 ? `${Math.round(sec)}s` : null;
+          const warmupMinLabel = Number.isFinite(sec) && sec > 0 ? `${Math.max(1, Math.round(sec / 60))} min` : null;
+          const iterations = Number(step?.numberOfIterations);
+          const paceMin = speedToPace(step?.targetValueOne);
+          const paceMax = speedToPace(step?.targetValueTwo);
+          const paceLabel = paceMin || paceMax ? ` (${paceMin || "?"}${paceMax ? ` - ${paceMax}` : ""})` : "";
+
+          if (stepTypeKey === "warmup") return `Calentamiento ${warmupMinLabel || "0 min"}${paceLabel}`;
+          if (stepTypeKey === "interval")
+            return `${Number.isFinite(iterations) && iterations > 0 ? `${Math.round(iterations)}x ` : ""}intervalos de ${secLabel || "0s"}${paceLabel}`;
+          if (stepTypeKey === "recovery") return `Recuperación ${secLabel || "0s"}${paceLabel}`;
+          if (stepTypeKey === "cooldown") return `Vuelta a la calma ${secLabel || "0s"}${paceLabel}`;
+          if (hasRepeatGroup && stepTypeKey.includes("repeat")) {
+            return `${Number.isFinite(iterations) && iterations > 0 ? `${Math.round(iterations)}x ` : ""}intervalos de ${secLabel || "0s"}${paceLabel}`;
+          }
+          return `Paso ${stepTypeKey || "workout"} ${secLabel || ""}${paceLabel}`.trim();
         })
         .join("\n")
     : "";
+
   return {
     id: `json_${Date.now()}_${idx}_${Math.random().toString(36).slice(2, 8)}`,
     sourceFileName: fileName || "",
@@ -1189,7 +1224,12 @@ const parseJsonFileToLibraryDrafts = async (file) => {
     throw new Error(INVALID_JSON_WORKOUT_FORMAT_MSG);
   }
   console.log("Parsed JSON:", parsed);
-  console.log("estimatedDuration:", parsed.estimatedDuration, "estimatedDistance:", parsed.estimatedDistance);
+  console.log(
+    "estimatedDurationInSecs:",
+    parsed.estimatedDurationInSecs,
+    "estimatedDistanceInMeters:",
+    parsed.estimatedDistanceInMeters,
+  );
   const payload = parsed;
   const list = Array.isArray(payload) ? payload : payload && typeof payload === "object" ? [payload] : null;
   if (!list) {
