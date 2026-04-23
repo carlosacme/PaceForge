@@ -3023,27 +3023,33 @@ export default function App() {
         return;
       }
       setLoadingAthletes(true);
-      const { data: userData, error: userError } = await supabase.auth.getUser();
-      if (userError || !userData?.user) {
-        console.error("Error obteniendo usuario para filtrar atletas:", userError);
+      try {
+        const { data: userData, error: userError } = await supabase.auth.getUser();
+        if (userError || !userData?.user) {
+          console.error("Error obteniendo usuario para filtrar atletas:", userError);
+          notify("Error cargando atletas");
+          setAthletes([]);
+          return;
+        }
+        const coachId = userData.user.id;
+        const { data, error } = await supabase
+          .from("athletes")
+          .select("*")
+          .eq("coach_id", coachId)
+          .order("id", { ascending: true });
+        if (error) {
+          notify("Error cargando atletas");
+          setAthletes([]);
+        } else {
+          setAthletes((data || []).map(normalizeAthlete));
+        }
+      } catch (error) {
+        console.error("Error inesperado cargando atletas:", error);
         notify("Error cargando atletas");
         setAthletes([]);
+      } finally {
         setLoadingAthletes(false);
-        return;
       }
-      const coachId = userData.user.id;
-      const { data, error } = await supabase
-        .from("athletes")
-        .select("*")
-        .eq("coach_id", coachId)
-        .order("id", { ascending: true });
-      if (error) {
-        notify("Error cargando atletas");
-        setAthletes([]);
-      } else {
-        setAthletes((data || []).map(normalizeAthlete));
-      }
-      setLoadingAthletes(false);
     };
 
     loadAthletes();
