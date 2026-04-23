@@ -16203,49 +16203,54 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
       return;
     }
     setLoading(true);
-    const { data, error } = await supabase.from("coach_profiles").select("*").eq("user_id", coachUserId).maybeSingle();
-    if (error) {
-      console.error(error);
+    try {
+      const { data, error } = await supabase.from("coach_profiles").select("*").eq("user_id", coachUserId).maybeSingle();
+      if (error) {
+        console.error(error);
+        notify("No se pudo cargar la configuración. ¿Existe la tabla coach_profiles?");
+        return;
+      }
+      if (data) {
+        setFormFromProfile({
+          avatar_url: data.avatar_url || "",
+          full_name: data.full_name || profileName || "",
+          email: data.email || sessionEmail || "",
+          phone: data.phone || "",
+          country: data.country || "",
+          city: data.city || "",
+          timezone: data.timezone || "America/Bogota",
+          language: data.language === "en" ? "en" : "es",
+          currency: data.currency === "USD" ? "USD" : "COP",
+          notify_new_workouts: data.notify_new_workouts !== false,
+          notify_reminders: data.notify_reminders !== false,
+          is_public: data.is_public === true,
+          subscription_plan: data.subscription_plan || "",
+          subscription_renews_at: data.subscription_renews_at || "",
+        });
+      } else {
+        setFormFromProfile({
+          avatar_url: "",
+          full_name: profileName || "",
+          email: sessionEmail || "",
+          phone: "",
+          country: "",
+          city: "",
+          timezone: "America/Bogota",
+          language: "es",
+          currency: "COP",
+          notify_new_workouts: true,
+          notify_reminders: true,
+          is_public: false,
+          subscription_plan: athletesRef.current?.find((a) => a.plan)?.plan || "",
+          subscription_renews_at: "",
+        });
+      }
+    } catch (err) {
+      console.error(err);
       notify("No se pudo cargar la configuración. ¿Existe la tabla coach_profiles?");
+    } finally {
       setLoading(false);
-      return;
     }
-    if (data) {
-      setFormFromProfile({
-        avatar_url: data.avatar_url || "",
-        full_name: data.full_name || profileName || "",
-        email: data.email || sessionEmail || "",
-        phone: data.phone || "",
-        country: data.country || "",
-        city: data.city || "",
-        timezone: data.timezone || "America/Bogota",
-        language: data.language === "en" ? "en" : "es",
-        currency: data.currency === "USD" ? "USD" : "COP",
-        notify_new_workouts: data.notify_new_workouts !== false,
-        notify_reminders: data.notify_reminders !== false,
-        is_public: data.is_public === true,
-        subscription_plan: data.subscription_plan || "",
-        subscription_renews_at: data.subscription_renews_at || "",
-      });
-    } else {
-      setFormFromProfile({
-        avatar_url: "",
-        full_name: profileName || "",
-        email: sessionEmail || "",
-        phone: "",
-        country: "",
-        city: "",
-        timezone: "America/Bogota",
-        language: "es",
-        currency: "COP",
-        notify_new_workouts: true,
-        notify_reminders: true,
-        is_public: false,
-        subscription_plan: athletesRef.current?.find((a) => a.plan)?.plan || "",
-        subscription_renews_at: "",
-      });
-    }
-    setLoading(false);
   }, [coachUserId, sessionEmail, profileName, notify, setFormFromProfile]);
 
   useEffect(() => {
