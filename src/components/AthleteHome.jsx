@@ -73,6 +73,78 @@ function readStoredAthleteNavTab() {
   return "home";
 }
 
+const RAF_ATHLETE_PROFILE_TAB_KEY = "raf_athlete_profile_tab";
+const ATHLETE_PROFILE_TAB_IDS = ["logros", "forma", "config", "pagos"];
+function readStoredAthleteProfileTab() {
+  if (typeof localStorage === "undefined") return "logros";
+  const raw = localStorage.getItem(RAF_ATHLETE_PROFILE_TAB_KEY);
+  if (raw && ATHLETE_PROFILE_TAB_IDS.includes(raw)) return raw;
+  return "logros";
+}
+
+const RAF_ATHLETE_PROGRESS_TAB_KEY = "raf_athlete_progress_tab";
+const ATHLETE_PROGRESS_TAB_IDS = ["week", "month", "year"];
+function readStoredAthleteProgressTab() {
+  if (typeof localStorage === "undefined") return "week";
+  const raw = localStorage.getItem(RAF_ATHLETE_PROGRESS_TAB_KEY);
+  if (raw && ATHLETE_PROGRESS_TAB_IDS.includes(raw)) return raw;
+  return "week";
+}
+
+/** Mismo gráfico que en App.jsx (RPE×km aguda/crónica/forma). */
+function FormaFatigaLineChart({ chronological }) {
+  const n = chronological.length;
+  const W = 360;
+  const H = 160;
+  const padL = 36;
+  const padR = 12;
+  const padT = 14;
+  const padB = 28;
+  const innerW = W - padL - padR;
+  const innerH = H - padT - padB;
+  const xs = n <= 1 ? [padL + innerW / 2] : chronological.map((_, idx) => padL + (innerW * idx) / (n - 1));
+  const vals = [];
+  chronological.forEach((p) => {
+    vals.push(p.acute ?? 0, p.chronic ?? 0, p.forma ?? 0);
+  });
+  const minV = Math.min(0, ...vals);
+  const maxV = Math.max(1e-6, ...vals);
+  const span = maxV - minV || 1;
+  const toY = (v) => padT + innerH - ((v - minV) / span) * innerH;
+  const linePoints = (key) =>
+    chronological
+      .map((p, idx) => {
+        const v = p[key] ?? 0;
+        return `${xs[idx]},${toY(v)}`;
+      })
+      .join(" ");
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Carga aguda, crónica y forma en las últimas 8 semanas" style={{ width: "100%", maxWidth: 520, height: "auto", display: "block" }}>
+      <rect x={0} y={0} width={W} height={H} fill="#f8fafc" rx={8} />
+      {[0, 0.25, 0.5, 0.75, 1].map((t) => {
+        const y = padT + innerH * (1 - t);
+        const gv = minV + span * t;
+        return (
+          <g key={t}>
+            <line x1={padL} y1={y} x2={W - padR} y2={y} stroke="rgba(148,163,184,.15)" strokeWidth={1} />
+            <text x={4} y={y + 4} fill="#64748b" fontSize={9} fontFamily="system-ui,sans-serif">
+              {gv.toFixed(0)}
+            </text>
+          </g>
+        );
+      })}
+      <polyline fill="none" stroke="#ef4444" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" points={linePoints("acute")} />
+      <polyline fill="none" stroke="#3b82f6" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" points={linePoints("chronic")} />
+      <polyline fill="none" stroke="#22c55e" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" points={linePoints("forma")} />
+      {chronological.map((p, idx) => (
+        <text key={p.i} x={xs[idx]} y={H - 6} fill="#64748b" fontSize={8} fontFamily="system-ui,sans-serif" textAnchor="middle">
+          {p.label}
+        </text>
+      ))}
+    </svg>
+  );
+}
+
 const styles = {
   page: { padding: "28px 32px", maxWidth: 1120, width: "100%" },
   pageTitle: { fontSize: "1.65em", fontWeight: 800, color: "#0f172a", margin: 0, letterSpacing: "-0.02em" },
@@ -103,7 +175,7 @@ export default function AthleteHome({ profile }) {
   const [athleteNotRegistered, setAthleteNotRegistered] = useState(false);
   const [showEvaluation, setShowEvaluation] = useState(false);
   const [athleteActiveTab, setAthleteActiveTab] = useState(() => readStoredAthleteNavTab());
-  const [athleteProfileTab, setAthleteProfileTab] = useState("logros");
+  const [athleteProfileTab, setAthleteProfileTab] = useState(() => readStoredAthleteProfileTab());
   const [athleteChatOpen, setAthleteChatOpen] = useState(false);
   const [athleteTabRestored, setAthleteTabRestored] = useState(false);
   const [achievementsCatalog, setAchievementsCatalog] = useState([]);
@@ -143,7 +215,7 @@ export default function AthleteHome({ profile }) {
     notes: "",
   });
   const [manualSummarySaving, setManualSummarySaving] = useState(false);
-  const [athleteProgressTab, setAthleteProgressTab] = useState("week");
+  const [athleteProgressTab, setAthleteProgressTab] = useState(() => readStoredAthleteProgressTab());
 
   const profileUserId = profile?.user_id ?? null;
 
@@ -185,6 +257,16 @@ export default function AthleteHome({ profile }) {
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, [showEvaluation, athleteTabRestored]);
+
+  useEffect(() => {
+    if (typeof localStorage === "undefined") return;
+    localStorage.setItem(RAF_ATHLETE_PROFILE_TAB_KEY, athleteProfileTab);
+  }, [athleteProfileTab]);
+
+  useEffect(() => {
+    if (typeof localStorage === "undefined") return;
+    localStorage.setItem(RAF_ATHLETE_PROGRESS_TAB_KEY, athleteProgressTab);
+  }, [athleteProgressTab]);
 
   /** Último `profileUserId` para el que ya se completó la carga inicial (evita loop si `profile` del padre se recrea). */
   const prevProfileUserIdRef = useRef(null);
@@ -769,6 +851,95 @@ export default function AthleteHome({ profile }) {
   const athleteFormaFatigaChronological = useMemo(() => [...athleteFormaFatigaPoints].reverse(), [athleteFormaFatigaPoints]);
   const athleteFormaFatigaStatus = useMemo(() => formaFatigaStatusFromPoint(athleteFormaFatigaPoints[0]), [athleteFormaFatigaPoints]);
   const athleteFormaFatigaTableRows = useMemo(() => athleteFormaFatigaPoints.slice(0, 4), [athleteFormaFatigaPoints]);
+
+  const athleteLoadGarminMetrics = useMemo(() => {
+    const COLOR_GREEN = "#16a34a";
+    const COLOR_RED = "#dc2626";
+    const COLOR_ORANGE = "#f97316";
+    const today = new Date();
+    const todayYmd = formatLocalYMD(today);
+    const doneWorkouts = (workouts || []).filter((w) => w.done);
+
+    const acuteStartYmd = formatLocalYMD(addDays(today, -6));
+    let acuteKm = 0;
+    for (const w of doneWorkouts) {
+      const ymd = normalizeScheduledDateYmd(w.scheduled_date);
+      if (!ymd || ymd < acuteStartYmd || ymd > todayYmd) continue;
+      acuteKm += Number(w.total_km) || 0;
+    }
+
+    const currentMonday = startOfWeekMonday(today);
+    const weekBars = [];
+    let totalKm4w = 0;
+    let totalSessions4w = 0;
+    let totalMin4w = 0;
+    for (let i = 0; i < 4; i += 1) {
+      const start = addDays(currentMonday, -(i * 7));
+      const end = addDays(start, 6);
+      const startYmd = formatLocalYMD(start);
+      const endYmd = formatLocalYMD(end);
+      let weekKm = 0;
+      let weekSessions = 0;
+      let weekMin = 0;
+      for (const w of doneWorkouts) {
+        const ymd = normalizeScheduledDateYmd(w.scheduled_date);
+        if (!ymd || ymd < startYmd || ymd > endYmd) continue;
+        weekKm += Number(w.total_km) || 0;
+        weekSessions += 1;
+        weekMin += Number(w.duration_min) || 0;
+      }
+      totalKm4w += weekKm;
+      totalSessions4w += weekSessions;
+      totalMin4w += weekMin;
+      const weekLabel = i === 0 ? "Esta semana" : i === 1 ? "Hace 1 sem" : i === 2 ? "Hace 2 sem" : "Hace 3 sem";
+      weekBars.push({
+        key: startYmd,
+        label: weekLabel,
+        rangeLabel: `${startYmd} → ${endYmd}`,
+        km: weekKm,
+        sessions: weekSessions,
+      });
+    }
+
+    const chronicWeeklyAvgKm = totalKm4w / 4;
+    const ratio = chronicWeeklyAvgKm > 1e-6 ? acuteKm / chronicWeeklyAvgKm : null;
+    const avgSessionsPerWeek = totalSessions4w / 4;
+
+    let statusLabel = "Sin datos suficientes";
+    let statusColor = "#64748b";
+    if (ratio != null && Number.isFinite(ratio)) {
+      if (ratio < 0.8) {
+        statusLabel = "Desentrenado";
+        statusColor = COLOR_RED;
+      } else if (ratio > 1.3) {
+        statusLabel = "Sobreentrenado";
+        statusColor = COLOR_RED;
+      } else {
+        statusLabel = "Óptimo";
+        statusColor = COLOR_GREEN;
+      }
+    }
+
+    const maxBarKm = Math.max(1, ...weekBars.map((b) => b.km));
+    const weekBarsOldestFirst = [...weekBars].reverse();
+
+    return {
+      acuteKm,
+      chronicWeeklyAvgKm,
+      ratio,
+      statusLabel,
+      statusColor,
+      ratioIndicatorColor: ratio == null || !Number.isFinite(ratio) ? COLOR_ORANGE : ratio < 0.8 || ratio > 1.3 ? COLOR_RED : COLOR_GREEN,
+      weekBarsOldestFirst,
+      maxBarKm,
+      avgSessionsPerWeek,
+      totalMin4w,
+      hasRatio: ratio != null && Number.isFinite(ratio),
+      COLOR_ORANGE,
+      COLOR_GREEN,
+      COLOR_RED,
+    };
+  }, [workouts, athleteTodayYmd]);
 
   const openAthletePremiumWa = (periodLabel, amountCopText) => {
     const text = `Hola, quiero activar el plan Premium Atleta ${periodLabel} por ${amountCopText} COP`;
@@ -1366,14 +1537,105 @@ export default function AthleteHome({ profile }) {
                 ) : null}
                 {athleteProfileTab === "forma" ? (
                   hasPremiumAccess ? (
-                    <div style={{ ...S.card }}>
-                      <div style={{ fontSize: ".78em", color: "#64748b", marginBottom: 12, lineHeight: 1.45 }}>
-                        Basado en sesiones completadas con RPE: carga aguda = promedio (RPE × km) últimos 7 días; carga crónica = promedio (RPE × km) últimos 28 días; forma = crónica − aguda.
+                    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                      <div style={{ ...S.card }}>
+                        <div style={{ fontSize: ".72em", marginBottom: 12, color: "#475569", textTransform: "uppercase", letterSpacing: ".13em" }}>
+                          Carga por volumen (completados · 4 semanas)
+                        </div>
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(168px, 1fr))", gap: 12 }}>
+                          <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: "14px 12px", background: "#fafafa" }}>
+                            <div style={{ fontSize: ".72em", color: "#64748b", fontWeight: 700, marginBottom: 6 }}>Estado de entrenamiento</div>
+                            <div style={{ fontSize: "1.2em", fontWeight: 900, color: athleteLoadGarminMetrics.statusColor }}>{athleteLoadGarminMetrics.statusLabel}</div>
+                            <div style={{ fontSize: ".7em", color: "#64748b", marginTop: 8, lineHeight: 1.45 }}>
+                              Ratio 7 días / promedio semanal (4 sem): &lt; 0.8 desentrenado · 0.8–1.3 óptimo · &gt; 1.3 sobreentrenado
+                            </div>
+                          </div>
+                          <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: "14px 12px", background: "#fafafa" }}>
+                            <div style={{ fontSize: ".72em", color: "#64748b", fontWeight: 700, marginBottom: 6 }}>Carga aguda (7 días)</div>
+                            <div style={{ fontSize: "1.35em", fontWeight: 900, color: athleteLoadGarminMetrics.COLOR_ORANGE, fontFamily: "monospace" }}>{athleteLoadGarminMetrics.acuteKm.toFixed(1)} km</div>
+                          </div>
+                          <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: "14px 12px", background: "#fafafa" }}>
+                            <div style={{ fontSize: ".72em", color: "#64748b", fontWeight: 700, marginBottom: 6 }}>Carga crónica (prom. semanal)</div>
+                            <div style={{ fontSize: "1.35em", fontWeight: 900, color: athleteLoadGarminMetrics.COLOR_ORANGE, fontFamily: "monospace" }}>{athleteLoadGarminMetrics.chronicWeeklyAvgKm.toFixed(1)} km/sem</div>
+                          </div>
+                          <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: "14px 12px", background: "#fafafa", gridColumn: "1 / -1", minWidth: 0 }}>
+                            <div style={{ fontSize: ".72em", color: "#64748b", fontWeight: 700, marginBottom: 6 }}>Ratio carga aguda / crónica</div>
+                            <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+                              <span style={{ fontSize: "1.35em", fontWeight: 900, fontFamily: "monospace", color: athleteLoadGarminMetrics.ratioIndicatorColor }}>
+                                {athleteLoadGarminMetrics.hasRatio ? athleteLoadGarminMetrics.ratio.toFixed(2) : "—"}
+                              </span>
+                              <span style={{ fontSize: ".72em", color: "#64748b" }}>verde = óptimo · rojo = extremos</span>
+                            </div>
+                            <div style={{ position: "relative", marginTop: 10, height: 14, borderRadius: 7, background: "linear-gradient(90deg, #dc2626 0%, #dc2626 40%, #16a34a 40%, #16a34a 65%, #dc2626 65%, #dc2626 100%)" }}>
+                              {athleteLoadGarminMetrics.hasRatio ? (
+                                <div
+                                  style={{
+                                    position: "absolute",
+                                    top: -2,
+                                    width: 4,
+                                    height: 18,
+                                    marginLeft: -2,
+                                    left: `${Math.min(100, Math.max(0, (athleteLoadGarminMetrics.ratio / 2) * 100))}%`,
+                                    background: "#0f172a",
+                                    borderRadius: 2,
+                                    boxShadow: "0 0 0 2px #fff",
+                                  }}
+                                />
+                              ) : null}
+                            </div>
+                            <div style={{ display: "flex", justifyContent: "space-between", fontSize: ".65em", color: "#94a3b8", marginTop: 4 }}>
+                              <span>0</span>
+                              <span>Óptimo 0.8–1.3</span>
+                              <span>2+</span>
+                            </div>
+                          </div>
+                          <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: "14px 12px", background: "#fafafa" }}>
+                            <div style={{ fontSize: ".72em", color: "#64748b", fontWeight: 700, marginBottom: 6 }}>Sesiones / semana (prom.)</div>
+                            <div style={{ fontSize: "1.35em", fontWeight: 900, color: "#0f172a", fontFamily: "monospace" }}>{athleteLoadGarminMetrics.avgSessionsPerWeek.toFixed(1)}</div>
+                          </div>
+                          <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: "14px 12px", background: "#fafafa" }}>
+                            <div style={{ fontSize: ".72em", color: "#64748b", fontWeight: 700, marginBottom: 6 }}>Tiempo total (4 sem)</div>
+                            <div style={{ fontSize: "1.15em", fontWeight: 900, color: "#0f172a", fontFamily: "monospace" }}>{formatDurationMinutesTotal(athleteLoadGarminMetrics.totalMin4w)}</div>
+                          </div>
+                          <div style={{ gridColumn: "1 / -1", border: "1px solid #e2e8f0", borderRadius: 12, padding: "14px 12px", background: "#fafafa" }}>
+                            <div style={{ fontSize: ".72em", color: "#64748b", fontWeight: 700, marginBottom: 10 }}>Km por semana (lun–dom, más antigua → actual)</div>
+                            <div style={{ display: "flex", alignItems: "flex-end", gap: 10, minHeight: 120, paddingTop: 4 }}>
+                              {athleteLoadGarminMetrics.weekBarsOldestFirst.map((b) => {
+                                const hPct = Math.max(6, (b.km / athleteLoadGarminMetrics.maxBarKm) * 100);
+                                return (
+                                  <div key={b.key} style={{ flex: "1 1 0", minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+                                    <div style={{ width: "100%", height: 100, display: "flex", alignItems: "flex-end", justifyContent: "center", background: "#f1f5f9", borderRadius: 8, padding: "0 6px", boxSizing: "border-box" }}>
+                                      <div
+                                        style={{
+                                          width: "72%",
+                                          height: `${hPct}%`,
+                                          maxHeight: "100%",
+                                          background: athleteLoadGarminMetrics.COLOR_ORANGE,
+                                          borderRadius: "6px 6px 2px 2px",
+                                          boxShadow: "0 0 10px rgba(249,115,22,.35)",
+                                        }}
+                                      />
+                                    </div>
+                                    <div style={{ fontSize: ".62em", color: "#64748b", textAlign: "center", lineHeight: 1.2 }}>{b.label}</div>
+                                    <div style={{ fontSize: ".68em", fontWeight: 800, color: "#0f172a", fontFamily: "monospace" }}>{b.km.toFixed(1)} km</div>
+                                    <div style={{ fontSize: ".58em", color: "#94a3b8", textAlign: "center" }}>{b.rangeLabel}</div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </div>
                       </div>
-                      <div style={{ marginBottom: 12, fontWeight: 800, color: athleteFormaFatigaStatus.kind === "forma" ? "#22c55e" : athleteFormaFatigaStatus.kind === "fatiga" ? "#f87171" : "#94a3b8" }}>
-                        Estado actual: {athleteFormaFatigaStatus.label}
+                      <div style={{ ...S.card }}>
+                        <div style={{ fontSize: ".72em", marginBottom: 8, color: "#475569", textTransform: "uppercase", letterSpacing: ".13em" }}>RPE × km (tendencia)</div>
+                        <div style={{ fontSize: ".78em", color: "#64748b", marginBottom: 12, lineHeight: 1.45 }}>
+                          Carga aguda = promedio (RPE × km) últimos 7 días; carga crónica = promedio (RPE × km) últimos 28 días; forma = crónica − aguda.
+                        </div>
+                        <div style={{ marginBottom: 12, fontWeight: 800, color: athleteFormaFatigaStatus.kind === "forma" ? "#22c55e" : athleteFormaFatigaStatus.kind === "fatiga" ? "#f87171" : "#94a3b8" }}>
+                          Estado (RPE): {athleteFormaFatigaStatus.label}
+                        </div>
+                        <FormaFatigaLineChart chronological={athleteFormaFatigaChronological} />
                       </div>
-                      <FormaFatigaLineChart chronological={athleteFormaFatigaChronological} />
                     </div>
                   ) : (
                     <div style={{ ...S.card, textAlign: "center" }}>
