@@ -2626,7 +2626,11 @@ export default function App() {
   }
 
   if (profile && profile.role === "athlete") {
-    return <AthleteHome profile={profile} />;
+    return (
+      <Suspense fallback={<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh"}}><p>Cargando...</p></div>}>
+        <AthleteHome profile={profile} />
+      </Suspense>
+    );
   }
 
   const isCoachUi = Boolean(profile && profile.role !== "athlete");
