@@ -185,8 +185,8 @@ export default function AthleteHome({ profile }) {
   const [athleteChatSending, setAthleteChatSending] = useState(false);
   const [corosModalOpen, setCorosModalOpen] = useState(false);
   const [garminModalOpen, setGarminModalOpen] = useState(false);
-  /** Modal Plan Premium Atleta (Mensual/Semestral/Anual): solo se abre desde Perfil → Pagos → Suscribirme. */
-  const [showPlanPremiumModal, setShowPlanPremiumModal] = useState(false);
+  /** Modal Plan Premium Atleta (Mensual/Semestral/Anual): solo desde Perfil → Pagos → Suscribirme; no cambia de pestaña. */
+  const [showPlanModal, setShowPlanModal] = useState(false);
   /** Instrucciones pago manual atleta independiente: "monthly" | "annual" */
   const [soloPayInstructions, setSoloPayInstructions] = useState(null);
   const [athleteNotRegistered, setAthleteNotRegistered] = useState(false);
@@ -1804,7 +1804,11 @@ export default function AthleteHome({ profile }) {
                             </p>
                             <button
                               type="button"
-                              onClick={() => setShowPlanPremiumModal(true)}
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setShowPlanModal(true);
+                              }}
                               style={{
                                 padding: "10px 18px",
                                 borderRadius: 10,
@@ -1958,20 +1962,21 @@ export default function AthleteHome({ profile }) {
         </div>
       )}
 
-      {showPlanPremiumModal && (
+      {showPlanModal && (
         <div
           style={{
             position: "fixed",
             inset: 0,
             background: "rgba(15,23,42,0.55)",
-            zIndex: 9986,
+            zIndex: 10020,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
             padding: 20,
           }}
-          onClick={() => setShowPlanPremiumModal(false)}
-          onKeyDown={(e) => e.key === "Escape" && setShowPlanPremiumModal(false)}
+          onClick={() => setShowPlanModal(false)}
+          onMouseDown={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.key === "Escape" && setShowPlanModal(false)}
           role="presentation"
         >
           <div
@@ -1984,6 +1989,7 @@ export default function AthleteHome({ profile }) {
               boxShadow: "0 20px 60px rgba(15,23,42,.25)",
             }}
             onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
             role="dialog"
             aria-modal="true"
             aria-labelledby="athlete-premium-modal-title"
@@ -2040,7 +2046,7 @@ export default function AthleteHome({ profile }) {
             </div>
             <button
               type="button"
-              onClick={() => setShowPlanPremiumModal(false)}
+              onClick={() => setShowPlanModal(false)}
               style={{
                 marginTop: 18,
                 width: "100%",
