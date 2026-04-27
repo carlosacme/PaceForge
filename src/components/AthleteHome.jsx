@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import React, { lazy, Suspense, useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { supabase } from "../lib/supabase";
 import {
   STRAVA_CALLBACK_URL,
@@ -57,6 +57,8 @@ import {
 import { refreshFcmTokenIfGranted } from "../firebase.js";
 
 const MarketplacePlanWorkoutsAccordion = () => null;
+const ChallengesHub = lazy(() => import("./ChallengesHub"));
+const MarketplaceHub = lazy(() => import("./MarketplaceHub"));
 
 const styles = {
   page: { padding: "28px 32px", maxWidth: 1120, width: "100%" },
@@ -1233,18 +1235,22 @@ function AthleteHome({ profile }) {
             </div>
 
             {athleteActiveTab === "marketplace" ? (
-              <MarketplaceHub
-                profileRole="athlete"
-                currentUserId={profile?.user_id ?? null}
-                coachUserId={null}
-                notify={(msg) => setMessage(msg)}
-                styles={styles}
-                MarketplacePlanWorkoutsAccordion={MarketplacePlanWorkoutsAccordion}
-              />
+              <Suspense fallback={<div>Cargando...</div>}>
+                <MarketplaceHub
+                  profileRole="athlete"
+                  currentUserId={profile?.user_id ?? null}
+                  coachUserId={null}
+                  notify={(msg) => setMessage(msg)}
+                  styles={styles}
+                  MarketplacePlanWorkoutsAccordion={MarketplacePlanWorkoutsAccordion}
+                />
+              </Suspense>
             ) : null}
 
             {athleteActiveTab === "challenges" ? (
-              <ChallengesHub profileRole="athlete" currentUserId={profile?.user_id ?? null} athleteId={athleteInfo?.id ?? null} workouts={workouts} notify={(msg) => setMessage(msg)} styles={styles} normalizeWorkoutRow={normalizeWorkoutRow} />
+              <Suspense fallback={<div>Cargando...</div>}>
+                <ChallengesHub profileRole="athlete" currentUserId={profile?.user_id ?? null} athleteId={athleteInfo?.id ?? null} workouts={workouts} notify={(msg) => setMessage(msg)} styles={styles} normalizeWorkoutRow={normalizeWorkoutRow} />
+              </Suspense>
             ) : null}
 
             {athleteActiveTab === "eval" ? (

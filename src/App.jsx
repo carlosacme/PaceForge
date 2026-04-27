@@ -2639,7 +2639,6 @@ export default function App() {
     );
   }
 
-  console.log("ATHLETE CHECK - profile:", profile?.role, "user:", session?.user?.email);
   if (profile && profile.role === "athlete") {
     return (
       <Suspense fallback={<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh"}}><p>Cargando...</p></div>}>
