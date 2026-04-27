@@ -1563,10 +1563,6 @@ export default function App() {
         alert("Selecciona si eres coach o atleta.");
         return;
       }
-      if (authRole === "athlete" && !authCoachCode.trim()) {
-        setAuthError("Debes ingresar el código de tu coach para registrarte como atleta");
-        return;
-      }
       if (!authName.trim()) {
         alert("Completa tu nombre.");
         return;
@@ -1647,7 +1643,8 @@ export default function App() {
           linkedCoachId = coachIdFromCode;
         }
 
-        const roleForProfile = linkedCoachId ? "athlete" : "coach";
+        /** El rol del perfil sigue SIEMPRE el selector del formulario, no si hay código de coach. */
+        const roleForProfile = authRole === "coach" ? "coach" : "athlete";
         const nowIso = new Date().toISOString();
         const profilePayload =
           roleForProfile === "coach"
@@ -1662,7 +1659,7 @@ export default function App() {
             : {
                 user_id: newUserId,
                 role: "athlete",
-                coach_id: linkedCoachId,
+                coach_id: linkedCoachId ?? null,
                 name: authName.trim(),
               };
 
@@ -1671,7 +1668,7 @@ export default function App() {
           console.error("Error insertando en profiles:", profileError, { profilePayload });
         } else {
           if (roleForProfile === "athlete") {
-            setProfile({ user_id: newUserId, role: "athlete", name: authName.trim() });
+            setProfile({ user_id: newUserId, role: "athlete", name: authName.trim(), coach_id: linkedCoachId ?? null });
           }
           await syncFcmTokenToProfile();
         }
@@ -2087,7 +2084,7 @@ export default function App() {
                   </div>
                   {authRole === "athlete" && (
                     <div style={{ marginBottom: 12 }}>
-                      <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6, fontWeight: 600 }}>Código de coach</div>
+                      <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6, fontWeight: 600 }}>Código de coach (Opcional)</div>
                       <input
                         type="text"
                         value={authCoachCode}
