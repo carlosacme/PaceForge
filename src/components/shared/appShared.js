@@ -132,6 +132,31 @@ export const PAYMENT_METHOD_OPTIONS = ["Nequi", "Bancolombia", "Efectivo", "Tran
 
 export const PAYMENT_PLAN_OPTIONS = ["Basico", "Pro"];
 
+/** COP mensual para UI atleta / monto por defecto al registrar pago (coach). */
+export const PAYMENT_PLAN_AMOUNT_COP = Object.freeze({ Basico: 129000, Pro: 199000 });
+
+export function defaultPaymentAmountStringForPlan(plan) {
+  const p = String(plan || "").trim();
+  const n = PAYMENT_PLAN_AMOUNT_COP[p];
+  return String(Number.isFinite(n) ? n : PAYMENT_PLAN_AMOUNT_COP.Basico);
+}
+
+/** Catálogo mostrado en Perfil → Pagos (atleta). `id` coincide con PAYMENT_PLAN_OPTIONS. */
+export const ATHLETE_SUBSCRIPTION_PLAN_CATALOG = [
+  {
+    id: "Basico",
+    label: "Básico",
+    priceCOP: PAYMENT_PLAN_AMOUNT_COP.Basico,
+    description: "Acceso a calendario y chat con coach",
+  },
+  {
+    id: "Pro",
+    label: "Pro",
+    priceCOP: PAYMENT_PLAN_AMOUNT_COP.Pro,
+    description: "Básico + marketplace + retos + evaluaciones",
+  },
+];
+
 export const STRAVA_ACTIVITY_ICONS = {
   Run: "🏃",
   Ride: "🚴",

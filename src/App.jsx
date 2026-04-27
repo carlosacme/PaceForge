@@ -18,6 +18,7 @@ import {
   normalizeAthlete,
   PAYMENT_METHOD_OPTIONS,
   PAYMENT_PLAN_OPTIONS,
+  defaultPaymentAmountStringForPlan,
   STRAVA_ACTIVITY_ICONS,
   WORKOUT_BLOCK_TYPES,
   WORKOUT_BLOCK_COLORS,
@@ -4294,10 +4295,11 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
   };
 
   const openPaymentModal = () => {
+    const plan = "Basico";
     setPaymentForm({
-      amount: "",
+      amount: defaultPaymentAmountStringForPlan(plan),
       payment_method: "Nequi",
-      plan: "Basico",
+      plan,
       payment_date: formatLocalYMD(new Date()),
       notes: "",
     });
@@ -5852,7 +5854,14 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
                 <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Plan</div>
                 <select
                   value={paymentForm.plan}
-                  onChange={(e) => setPaymentForm((f) => ({ ...f, plan: e.target.value }))}
+                  onChange={(e) => {
+                    const plan = e.target.value;
+                    setPaymentForm((f) => ({
+                      ...f,
+                      plan,
+                      amount: defaultPaymentAmountStringForPlan(plan),
+                    }));
+                  }}
                   style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", color: "#0f172a", fontFamily: "inherit", fontSize: ".84em", boxSizing: "border-box" }}
                 >
                   {PAYMENT_PLAN_OPTIONS.map((p) => <option key={p} value={p}>{p}</option>)}

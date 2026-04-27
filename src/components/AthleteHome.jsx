@@ -54,6 +54,7 @@ import {
   CHALLENGE_TYPE_OPTIONS,
   normalizeChallengeType,
   computeGarminLoadMetricsFromWorkouts,
+  ATHLETE_SUBSCRIPTION_PLAN_CATALOG,
 } from "./shared/appShared";
 import { refreshFcmTokenIfGranted } from "../firebase.js";
 
@@ -174,6 +175,8 @@ export default function AthleteHome({ profile }) {
   const [corosModalOpen, setCorosModalOpen] = useState(false);
   const [garminModalOpen, setGarminModalOpen] = useState(false);
   const [athletePremiumModalOpen, setAthletePremiumModalOpen] = useState(false);
+  const [athletePlansBrowseOpen, setAthletePlansBrowseOpen] = useState(false);
+  const [athletePlansNequiInfo, setAthletePlansNequiInfo] = useState(null);
   const [athleteNotRegistered, setAthleteNotRegistered] = useState(false);
   const [showEvaluation, setShowEvaluation] = useState(false);
   const [athleteActiveTab, setAthleteActiveTab] = useState(() => readStoredAthleteNavTab());
@@ -861,7 +864,29 @@ export default function AthleteHome({ profile }) {
     window.open(`https://wa.me/573233675434?text=${encodeURIComponent(text)}`, "_blank", "noopener,noreferrer");
   };
 
+  const openAthletePlansModal = () => {
+    setAthletePlansBrowseOpen(true);
+    setAthletePlansNequiInfo(null);
+  };
+  const closeAthletePlansModal = () => {
+    setAthletePlansBrowseOpen(false);
+    setAthletePlansNequiInfo(null);
+  };
+  const pickAthleteSubscriptionPlan = (planId) => {
+    const url = typeof import.meta !== "undefined" ? String(import.meta.env?.VITE_MERCADOPAGO_CHECKOUT_URL || "").trim() : "";
+    if (url) {
+      const sep = url.includes("?") ? "&" : "?";
+      window.open(`${url}${sep}plan=${encodeURIComponent(planId)}`, "_blank", "noopener,noreferrer");
+      closeAthletePlansModal();
+      return;
+    }
+    setAthletePlansNequiInfo(planId);
+  };
+
   const athleteName = profile?.name || athleteInfo?.name || "Atleta";
+  const currentAthletePlanLabel = [profile?.athlete_plan, profile?.plan_status, athleteInfo?.athlete_plan].find(
+    (v) => v != null && String(v).trim() !== "",
+  );
   const handleAthleteNavTabChange = (tabId) => {
     setAthleteChatOpen(false);
     setAthleteActiveTab(tabId);
@@ -1562,7 +1587,57 @@ export default function AthleteHome({ profile }) {
                   )
                 ) : null}
                 {athleteProfileTab === "config" ? <div style={{ ...S.card }}>{/* Config existente simplificada */}<div style={{ fontSize: ".72em", marginBottom: 10, color: "#475569", textTransform: "uppercase", letterSpacing: ".13em" }}>MI CONFIGURACIÓN</div><div style={{ color: "#64748b", fontSize: ".84em", marginBottom: 8 }}>Gestiona conexiones y preferencias.</div><button type="button" onClick={openAthleteStravaOAuth} style={{ background: "linear-gradient(135deg,#ea580c,#f97316)", border: "none", borderRadius: 8, padding: "8px 12px", color: "#fff", fontWeight: 800, fontFamily: "inherit", cursor: "pointer" }}>Conectar Strava</button></div> : null}
-                {athleteProfileTab === "pagos" ? <div style={{ ...S.card }}><div style={{ fontSize: ".72em", marginBottom: 10, color: "#475569", textTransform: "uppercase", letterSpacing: ".13em" }}>Mis Pagos</div>{loadingAthletePayments ? <div style={{ color: "#64748b", fontSize: ".84em" }}>Cargando pagos…</div> : athletePayments.length === 0 ? <div style={{ color: "#64748b", fontSize: ".84em" }}>Tu coach aún no ha registrado pagos.</div> : <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{athletePayments.map((p) => <div key={p.id} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: "10px 12px", background: "#f8fafc" }}><div style={{ fontWeight: 700, fontSize: ".84em" }}>${Number(p.amount || 0).toLocaleString("es-CO")} {p.currency || "COP"} · {p.plan}</div><div style={{ marginTop: 4, color: "#64748b", fontSize: ".74em" }}>{new Date(p.payment_date).toLocaleDateString("es-CO")} · {p.payment_method}</div></div>)}</div>}</div> : null}
+                {athleteProfileTab === "pagos" ? (
+                  <>
+                    <div style={{ ...S.card, marginBottom: 14 }}>
+                      <div style={{ fontSize: ".72em", marginBottom: 10, color: "#475569", textTransform: "uppercase", letterSpacing: ".13em" }}>Mi plan</div>
+                      <div style={{ fontWeight: 800, fontSize: ".95em", color: "#0f172a", marginBottom: 6 }}>
+                        {currentAthletePlanLabel != null ? String(currentAthletePlanLabel) : "Sin plan registrado"}
+                      </div>
+                      <div style={{ color: "#64748b", fontSize: ".82em", marginBottom: 14, lineHeight: 1.45 }}>
+                        Tu plan actual según tu perfil. Si necesitas cambiar o renovar, revisa las opciones disponibles.
+                      </div>
+                      <button
+                        type="button"
+                        onClick={openAthletePlansModal}
+                        style={{
+                          background: "linear-gradient(135deg,#b45309,#f59e0b)",
+                          border: "none",
+                          borderRadius: 10,
+                          padding: "10px 18px",
+                          color: "#fff",
+                          fontWeight: 800,
+                          cursor: "pointer",
+                          fontFamily: "inherit",
+                          fontSize: ".84em",
+                        }}
+                      >
+                        Ver planes disponibles
+                      </button>
+                    </div>
+                    <div style={{ ...S.card }}>
+                      <div style={{ fontSize: ".72em", marginBottom: 10, color: "#475569", textTransform: "uppercase", letterSpacing: ".13em" }}>Mis Pagos</div>
+                      {loadingAthletePayments ? (
+                        <div style={{ color: "#64748b", fontSize: ".84em" }}>Cargando pagos…</div>
+                      ) : athletePayments.length === 0 ? (
+                        <div style={{ color: "#64748b", fontSize: ".84em" }}>Tu coach aún no ha registrado pagos.</div>
+                      ) : (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                          {athletePayments.map((p) => (
+                            <div key={p.id} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: "10px 12px", background: "#f8fafc" }}>
+                              <div style={{ fontWeight: 700, fontSize: ".84em" }}>
+                                ${Number(p.amount || 0).toLocaleString("es-CO")} {p.currency || "COP"} · {p.plan}
+                              </div>
+                              <div style={{ marginTop: 4, color: "#64748b", fontSize: ".74em" }}>
+                                {new Date(p.payment_date).toLocaleDateString("es-CO")} · {p.payment_method}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </>
+                ) : null}
                 <button
                   type="button"
                   onClick={async () => {
@@ -1777,6 +1852,157 @@ export default function AthleteHome({ profile }) {
           </div>
         </div>
       )}
+
+      {athletePlansBrowseOpen ? (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(15,23,42,0.55)",
+            zIndex: 9987,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 20,
+          }}
+          onClick={closeAthletePlansModal}
+          onKeyDown={(e) => e.key === "Escape" && closeAthletePlansModal()}
+          role="presentation"
+        >
+          <div
+            style={{
+              background: "#fff",
+              borderRadius: 16,
+              padding: 24,
+              maxWidth: 480,
+              width: "100%",
+              boxShadow: "0 20px 60px rgba(15,23,42,.25)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="athlete-plans-modal-title"
+          >
+            <h3 id="athlete-plans-modal-title" style={{ margin: "0 0 14px", fontSize: "1.15em", fontWeight: 800, color: "#0f172a" }}>
+              {athletePlansNequiInfo ? "Cómo pagar" : "Planes disponibles"}
+            </h3>
+            {athletePlansNequiInfo ? (
+              <>
+                <p style={{ margin: "0 0 12px", color: "#334155", fontSize: ".9em", lineHeight: 1.55 }}>
+                  Realiza el pago a Nequi o por transferencia y envía el comprobante a tu coach.
+                </p>
+                <p style={{ margin: "0 0 18px", color: "#64748b", fontSize: ".84em", lineHeight: 1.5 }}>
+                  Plan elegido:{" "}
+                  <strong style={{ color: "#0f172a" }}>
+                    {ATHLETE_SUBSCRIPTION_PLAN_CATALOG.find((x) => x.id === athletePlansNequiInfo)?.label || athletePlansNequiInfo}
+                  </strong>
+                  {" · "}
+                  $
+                  {Number(ATHLETE_SUBSCRIPTION_PLAN_CATALOG.find((x) => x.id === athletePlansNequiInfo)?.priceCOP || 0).toLocaleString("es-CO")}{" "}
+                  COP/mes
+                </p>
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  <button
+                    type="button"
+                    onClick={() => setAthletePlansNequiInfo(null)}
+                    style={{
+                      padding: "9px 14px",
+                      borderRadius: 8,
+                      border: "1px solid #e2e8f0",
+                      background: "#f8fafc",
+                      color: "#475569",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                      fontSize: ".85em",
+                    }}
+                  >
+                    Volver a planes
+                  </button>
+                  <button
+                    type="button"
+                    onClick={closeAthletePlansModal}
+                    style={{
+                      padding: "9px 14px",
+                      borderRadius: 8,
+                      border: "none",
+                      background: "linear-gradient(135deg,#b45309,#f59e0b)",
+                      color: "#fff",
+                      fontWeight: 800,
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                      fontSize: ".85em",
+                    }}
+                  >
+                    Entendido
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 16 }}>
+                  {ATHLETE_SUBSCRIPTION_PLAN_CATALOG.map((row) => (
+                    <div
+                      key={row.id}
+                      style={{
+                        border: "1px solid #e2e8f0",
+                        borderRadius: 12,
+                        padding: "14px 16px",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 8,
+                      }}
+                    >
+                      <div style={{ fontWeight: 800, color: "#0f172a", fontSize: "1em" }}>{row.label}</div>
+                      <div style={{ fontSize: ".86em", color: "#475569", lineHeight: 1.45 }}>{row.description}</div>
+                      <div style={{ fontWeight: 800, color: "#b45309", fontSize: ".92em" }}>
+                        ${Number(row.priceCOP).toLocaleString("es-CO")} COP/mes
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => pickAthleteSubscriptionPlan(row.id)}
+                        style={{
+                          alignSelf: "flex-start",
+                          marginTop: 4,
+                          padding: "8px 14px",
+                          borderRadius: 8,
+                          border: "none",
+                          background: "linear-gradient(135deg,#0d9488,#14b8a6)",
+                          color: "#fff",
+                          fontWeight: 800,
+                          fontSize: ".82em",
+                          cursor: "pointer",
+                          fontFamily: "inherit",
+                        }}
+                      >
+                        Elegir plan
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={closeAthletePlansModal}
+                  style={{
+                    width: "100%",
+                    padding: "10px 14px",
+                    borderRadius: 8,
+                    border: "1px solid #e2e8f0",
+                    background: "#f8fafc",
+                    color: "#64748b",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                    fontSize: ".85em",
+                  }}
+                >
+                  Cerrar
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 
