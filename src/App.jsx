@@ -1590,24 +1590,6 @@ export default function App() {
         }
         await syncFcmTokenToProfile();
       } else {
-        const { data, error } = await supabase.auth.signUp({
-          email: authEmail.trim(),
-          password: authPassword,
-        });
-        if (error) {
-          console.error("Error en registro:", error);
-          alert(`Error en registro: ${error.message}`);
-          return;
-        }
-
-        const newUserId = data?.user?.id;
-        if (!newUserId) {
-          alert("Registro exitoso. Revisa tu correo si la verificación está habilitada.");
-          setAuthMode("login");
-          setAuthLandingStep("login");
-          return;
-        }
-
         let linkedCoachId = null;
         let inviteRow = null;
         const hasInviteCode = Boolean(inviteCodeFromUrl);
@@ -1643,6 +1625,34 @@ export default function App() {
           linkedCoachId = coachIdFromCode;
         }
 
+        const selectedRole = authRole === "coach" ? "coach" : "athlete";
+        const resolvedCoachId = selectedRole === "athlete" ? linkedCoachId ?? null : null;
+
+        const { data, error } = await supabase.auth.signUp({
+          email: authEmail.trim(),
+          password: authPassword,
+          options: {
+            data: {
+              full_name: authName.trim(),
+              role: selectedRole,
+              coach_id: resolvedCoachId,
+            },
+          },
+        });
+        if (error) {
+          console.error("Error en registro:", error);
+          alert(`Error en registro: ${error.message}`);
+          return;
+        }
+
+        const newUserId = data?.user?.id;
+        if (!newUserId) {
+          alert("Registro exitoso. Revisa tu correo si la verificación está habilitada.");
+          setAuthMode("login");
+          setAuthLandingStep("login");
+          return;
+        }
+
         /** El rol del perfil sigue SIEMPRE el selector del formulario, no si hay código de coach. */
         const roleForProfile = authRole === "coach" ? "coach" : "athlete";
         const nowIso = new Date().toISOString();
@@ -1665,13 +1675,14 @@ export default function App() {
 
         const { error: profileError } = await supabase.from("profiles").insert(profilePayload);
         if (profileError) {
-          console.error("Error insertando en profiles:", profileError, { profilePayload });
-        } else {
-          if (roleForProfile === "athlete") {
-            setProfile({ user_id: newUserId, role: "athlete", name: authName.trim(), coach_id: linkedCoachId ?? null });
-          }
-          await syncFcmTokenToProfile();
+          console.warn("Perfil no insertado manualmente (RLS o el trigger ya creó la fila):", profileError.message || profileError, {
+            profilePayload,
+          });
         }
+        if (roleForProfile === "athlete") {
+          setProfile({ user_id: newUserId, role: "athlete", name: authName.trim(), coach_id: linkedCoachId ?? null });
+        }
+        await syncFcmTokenToProfile();
 
         if (roleForProfile === "coach" || authRole === "admin") {
           const cpPayload = {
@@ -1695,7 +1706,7 @@ export default function App() {
             goal: "Objetivo pendiente",
             pace: "Pendiente",
             weekly_km: 0,
-            coach_id: linkedCoachId,
+            coach_id: linkedCoachId ?? null,
             user_id: newUserId,
           };
           const { data: athleteRow, error: athleteErr } = await supabase.from("athletes").insert(athletePayload).select().maybeSingle();
