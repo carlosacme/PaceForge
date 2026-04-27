@@ -185,7 +185,8 @@ export default function AthleteHome({ profile }) {
   const [athleteChatSending, setAthleteChatSending] = useState(false);
   const [corosModalOpen, setCorosModalOpen] = useState(false);
   const [garminModalOpen, setGarminModalOpen] = useState(false);
-  const [athletePremiumModalOpen, setAthletePremiumModalOpen] = useState(false);
+  /** Modal Plan Premium Atleta (Mensual/Semestral/Anual): solo se abre desde Perfil → Pagos → Suscribirme. */
+  const [showPlanPremiumModal, setShowPlanPremiumModal] = useState(false);
   /** Instrucciones pago manual atleta independiente: "monthly" | "annual" */
   const [soloPayInstructions, setSoloPayInstructions] = useState(null);
   const [athleteNotRegistered, setAthleteNotRegistered] = useState(false);
@@ -1433,7 +1434,16 @@ export default function AthleteHome({ profile }) {
               ) : (
                 <div style={{ ...S.card, textAlign: "center" }}>
                   <p style={{ color: "#64748b" }}>La evaluación VDOT requiere Plan Premium Atleta.</p>
-                  <button type="button" onClick={() => setAthletePremiumModalOpen(true)} style={{ background: "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 10, padding: "10px 20px", color: "#fff", fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>Actualizar plan</button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAthleteProfileTab("pagos");
+                      handleAthleteNavTabChange("profile");
+                    }}
+                    style={{ background: "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 10, padding: "10px 20px", color: "#fff", fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}
+                  >
+                    Ir a Pagos para suscribirme
+                  </button>
                 </div>
               )
             ) : null}
@@ -1605,7 +1615,16 @@ export default function AthleteHome({ profile }) {
                   ) : (
                     <div style={{ ...S.card, textAlign: "center" }}>
                       <p style={{ color: "#64748b" }}>Esta sección requiere Plan Premium Atleta.</p>
-                      <button type="button" onClick={() => setAthletePremiumModalOpen(true)} style={{ background: "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 10, padding: "10px 20px", color: "#fff", fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>Actualizar plan</button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAthleteProfileTab("pagos");
+                          handleAthleteNavTabChange("profile");
+                        }}
+                        style={{ background: "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 10, padding: "10px 20px", color: "#fff", fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}
+                      >
+                        Ir a Pagos para suscribirme
+                      </button>
                     </div>
                   )
                 ) : null}
@@ -1777,6 +1796,31 @@ export default function AthleteHome({ profile }) {
                             </button>
                           </div>
                         )}
+                        {!hasPremiumAccess ? (
+                          <div style={{ marginTop: 18, paddingTop: 16, borderTop: "1px solid #e2e8f0" }}>
+                            <div style={{ fontSize: ".72em", color: "#475569", textTransform: "uppercase", letterSpacing: ".13em", marginBottom: 8 }}>Plan Premium Atleta</div>
+                            <p style={{ margin: "0 0 12px", color: "#64748b", fontSize: ".82em", lineHeight: 1.45 }}>
+                              Evaluación VDOT, logros y funciones avanzadas. Elige Mensual, Semestral o Anual en el siguiente paso.
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => setShowPlanPremiumModal(true)}
+                              style={{
+                                padding: "10px 18px",
+                                borderRadius: 10,
+                                border: "none",
+                                background: "linear-gradient(135deg,#b45309,#f59e0b)",
+                                color: "#fff",
+                                fontWeight: 800,
+                                fontSize: ".84em",
+                                cursor: "pointer",
+                                fontFamily: "inherit",
+                              }}
+                            >
+                              Suscribirme
+                            </button>
+                          </div>
+                        ) : null}
                       </div>
                     )}
                     <div style={{ ...S.card }}>
@@ -1914,7 +1958,7 @@ export default function AthleteHome({ profile }) {
         </div>
       )}
 
-      {athletePremiumModalOpen && (
+      {showPlanPremiumModal && (
         <div
           style={{
             position: "fixed",
@@ -1926,8 +1970,8 @@ export default function AthleteHome({ profile }) {
             justifyContent: "center",
             padding: 20,
           }}
-          onClick={() => setAthletePremiumModalOpen(false)}
-          onKeyDown={(e) => e.key === "Escape" && setAthletePremiumModalOpen(false)}
+          onClick={() => setShowPlanPremiumModal(false)}
+          onKeyDown={(e) => e.key === "Escape" && setShowPlanPremiumModal(false)}
           role="presentation"
         >
           <div
@@ -1996,7 +2040,7 @@ export default function AthleteHome({ profile }) {
             </div>
             <button
               type="button"
-              onClick={() => setAthletePremiumModalOpen(false)}
+              onClick={() => setShowPlanPremiumModal(false)}
               style={{
                 marginTop: 18,
                 width: "100%",
