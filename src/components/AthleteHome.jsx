@@ -1248,8 +1248,18 @@ function AthleteHome({ profile }) {
             ) : null}
 
             {athleteActiveTab === "challenges" ? (
-              <Suspense fallback={<div>Cargando...</div>}>
-                <ChallengesHub profileRole="athlete" currentUserId={profile?.user_id ?? null} athleteId={athleteInfo?.id ?? null} workouts={workouts} notify={(msg) => setMessage(msg)} styles={styles} normalizeWorkoutRow={normalizeWorkoutRow} />
+              <Suspense fallback={<div style={{ padding: 20 }}>Cargando retos...</div>}>
+                <ChallengesHub
+                  profileRole="athlete"
+                  currentUserId={profile?.user_id ?? null}
+                  athleteId={athleteInfo?.id ?? null}
+                  isAthlete
+                  coachAthletes={[]}
+                  workouts={workouts}
+                  notify={(msg) => setMessage(msg)}
+                  styles={styles}
+                  normalizeWorkoutRow={normalizeWorkoutRow}
+                />
               </Suspense>
             ) : null}
 

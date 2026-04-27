@@ -17,10 +17,20 @@ import {
   extractJsonFromAnthropicText,
 } from "./shared/appShared";
 
-function ChallengesHub({ profileRole, currentUserId, athleteId = null, workouts = [], coachAthletes = [], notify, styles, normalizeWorkoutRow }) {
+function ChallengesHub({
+  profileRole,
+  currentUserId,
+  athleteId = null,
+  workouts = [],
+  coachAthletes = [],
+  notify,
+  styles,
+  normalizeWorkoutRow,
+  isAthlete: isAthleteProp,
+}) {
   const S = styles;
   const isAdmin = profileRole === "admin" || String(currentUserId || "") === PLATFORM_ADMIN_USER_ID;
-  const isAthlete = profileRole === "athlete";
+  const isAthlete = Boolean(isAthleteProp) || profileRole === "athlete";
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [participantsByChallenge, setParticipantsByChallenge] = useState({});
