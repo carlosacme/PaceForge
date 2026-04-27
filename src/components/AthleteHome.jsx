@@ -74,6 +74,9 @@ const styles = {
 
 export default function AthleteHome({ profile }) {
   const S = styles;
+  const EMPTY_ARRAY = useMemo(() => [], []);
+  const notifyCallback = useCallback((msg) => setMessage(msg), []);
+  const normalizeWorkoutRowStable = useCallback(normalizeWorkoutRow, []);
   const ATHLETE_TAB_STORAGE_KEY = "raf_athlete_tab";
   const [athleteInfo, setAthleteInfo] = useState(null);
   const [workouts, setWorkouts] = useState([]);
@@ -1240,7 +1243,7 @@ export default function AthleteHome({ profile }) {
                   profileRole="athlete"
                   currentUserId={profile?.user_id ?? null}
                   coachUserId={null}
-                  notify={(msg) => setMessage(msg)}
+                  notify={notifyCallback}
                   styles={styles}
                   MarketplacePlanWorkoutsAccordion={MarketplacePlanWorkoutsAccordion}
                 />
@@ -1254,11 +1257,11 @@ export default function AthleteHome({ profile }) {
                   currentUserId={profile?.user_id ?? null}
                   athleteId={athleteInfo?.id ?? null}
                   isAthlete
-                  coachAthletes={[]}
+                  coachAthletes={EMPTY_ARRAY}
                   workouts={workouts}
-                  notify={(msg) => setMessage(msg)}
+                  notify={notifyCallback}
                   styles={styles}
-                  normalizeWorkoutRow={normalizeWorkoutRow}
+                  normalizeWorkoutRow={normalizeWorkoutRowStable}
                 />
               </Suspense>
             ) : null}
