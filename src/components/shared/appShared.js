@@ -897,6 +897,68 @@ export const getCurrentMonthKey = () => {
   return `${d.getFullYear()}-${m}`;
 };
 
+export const PLAN_12_LEVELS = [
+  { id: "principiante", label: "Principiante" },
+  { id: "intermedio", label: "Intermedio" },
+  { id: "avanzado", label: "Avanzado" },
+];
+
+export const PLAN2_NEXT_BLOCK_FOCUSES = ["Base", "Construcción", "Desarrollo", "Pico", "Descarga"];
+
+export const PLAN2_TRAINING_DAY_OPTIONS = [
+  { weekday: 2, label: "Mar" },
+  { weekday: 3, label: "Mié" },
+  { weekday: 4, label: "Jue" },
+  { weekday: 6, label: "Sáb" },
+  { weekday: 7, label: "Dom" },
+];
+
+export const PLAN2_ATHLETE_STORAGE_KEY = "raf_plan2_athlete";
+
+const PLAN2_FIXED_SLOTS = [
+  { weekday: 2, type: "long" },
+  { weekday: 3, type: "tempo" },
+  { weekday: 4, type: "recovery" },
+  { weekday: 6, type: "interval" },
+  { weekday: 7, type: "long" },
+];
+const PLAN2_OMIT_ORDER = [7, 4, 3];
+
+export const getPlan2ExpectedSlots = (sessionsPerWeek) => {
+  let slots = [...PLAN2_FIXED_SLOTS];
+  for (const wd of PLAN2_OMIT_ORDER) {
+    if (slots.length <= sessionsPerWeek) break;
+    slots = slots.filter((s) => s.weekday !== wd);
+  }
+  return slots;
+};
+
+export const validatePlan2Distribution = (weeks, sessionsPerWeek) => {
+  const expected = getPlan2ExpectedSlots(sessionsPerWeek);
+  if (expected.length !== sessionsPerWeek) return "template";
+  for (const week of weeks) {
+    const list = Array.isArray(week.workouts) ? week.workouts : [];
+    if (list.length !== sessionsPerWeek) return "count";
+    const byWd = new Map(list.map((w) => [Number(w.weekday), w]));
+    for (const slot of expected) {
+      const wo = byWd.get(slot.weekday);
+      if (!wo) return "missing";
+      if (wo.type !== slot.type) return "type";
+    }
+    if (byWd.size !== expected.length) return "extra";
+  }
+  return null;
+};
+
+export const getNextMonday = (dateStr) => {
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return formatLocalYMD(addDays(new Date(), 1));
+  const day = d.getDay();
+  const diff = day === 1 ? 0 : day === 0 ? 1 : 8 - day;
+  d.setDate(d.getDate() + diff);
+  return formatLocalYMD(d);
+};
+
 const HR_ZONE_DEFS = [
   { z: 1, lowPct: 0.5, highPct: 0.6, label: "Recuperación activa", color: "#22c55e" },
   { z: 2, lowPct: 0.6, highPct: 0.7, label: "Aeróbico base", color: "#3b82f6" },
