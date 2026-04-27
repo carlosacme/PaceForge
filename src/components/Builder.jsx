@@ -827,13 +827,6 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
   );
 }
 
-const EVAL_DISTANCES = [
-  { id: "5k", label: "5K", meters: 5000 },
-  { id: "10k", label: "10K", meters: 10000 },
-  { id: "21k", label: "21K", meters: 21097.5 },
-  { id: "42k", label: "42K", meters: 42195 },
-];
-
 const parseHmsToSeconds = (raw) => {
   const parts = String(raw || "").trim().split(":").map((x) => Number(x));
   if (parts.some((n) => !Number.isFinite(n) || n < 0)) return null;
