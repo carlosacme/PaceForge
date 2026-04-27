@@ -1,4 +1,5 @@
 import FitParser from "fit-file-parser";
+import { supabase } from "../../lib/supabase";
 
 export const BRAND_NAME = "RunningApexFlow";
 
@@ -806,6 +807,297 @@ export const parseJsonFileToLibraryDrafts = async (file) => {
 export const ADMIN_EMAIL = "acostamerlano87@gmail.com";
 
 export const PLATFORM_ADMIN_USER_ID = "b5c9e44a-6695-4800-99bd-f19b05d2f66f";
+
+export const DAYS = ["Lun", "Mar", "Mie", "Jue", "Vie", "Sab", "Dom"];
+
+const MONTH_INDEX = { Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5, Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11 };
+
+export const getRaceCountdownText = (nextRace) => {
+  if (!nextRace || typeof nextRace !== "string") return "🏁 Próxima carrera · fecha pendiente";
+  const [raceNameRaw, datePartRaw] = nextRace.split(" - ");
+  const raceName = (raceNameRaw || "Próxima carrera").trim();
+  const datePart = (datePartRaw || "").trim();
+  const [monthAbbr, dayRaw] = datePart.split(/\s+/);
+  const month = MONTH_INDEX[monthAbbr];
+  const day = Number(dayRaw);
+  if (month === undefined || !Number.isFinite(day)) return `🏁 ${raceName} · fecha pendiente`;
+  const today = new Date();
+  let raceDate = new Date(today.getFullYear(), month, day);
+  const todayLocal = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  if (raceDate < todayLocal) raceDate = new Date(todayLocal.getFullYear() + 1, month, day);
+  const daysLeft = Math.ceil((raceDate.getTime() - todayLocal.getTime()) / 86400000);
+  return `🏁 ${raceName} · faltan ${daysLeft} ${daysLeft === 1 ? "día" : "días"}`;
+};
+
+const pushBodySnippet = (text, max = 400) => {
+  const s = String(text || "").trim();
+  if (s.length <= max) return s;
+  return `${s.slice(0, max - 1)}…`;
+};
+
+export async function sendChatPushNotification({ token, title, body, data = null, logLabel = "chat push" }) {
+  const tokenOk = token != null && String(token).trim() !== "";
+  if (!tokenOk || typeof window === "undefined") return;
+  try {
+    const res = await fetch("/api/send-notification", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        token,
+        title,
+        body: pushBodySnippet(body),
+        data: data && typeof data === "object" ? data : undefined,
+      }),
+    });
+    if (!res.ok) console.warn(`[${logLabel}] /api/send-notification respuesta no OK`, await res.text());
+  } catch (e) {
+    console.warn(`[${logLabel}] /api/send-notification error`, e);
+  }
+}
+
+export const achievementJoinMeta = (row) => {
+  if (!row) return null;
+  const a = row.achievements;
+  if (a != null) return Array.isArray(a) ? a[0] : a;
+  if (row.achievement_code) return { code: row.achievement_code, name: row.achievement_code, icon: "", description: "" };
+  return null;
+};
+
+const getLongestConsecutiveDays = (ymdList) => {
+  if (!Array.isArray(ymdList) || ymdList.length === 0) return 0;
+  const uniq = [...new Set(ymdList)].sort();
+  let best = 1;
+  let current = 1;
+  for (let i = 1; i < uniq.length; i += 1) {
+    const prev = new Date(`${uniq[i - 1]}T12:00:00`);
+    const now = new Date(`${uniq[i]}T12:00:00`);
+    const diffDays = Math.round((now.getTime() - prev.getTime()) / 86400000);
+    current = diffDays === 1 ? current + 1 : 1;
+    if (current > best) best = current;
+  }
+  return best;
+};
+
+export const clampWorkoutRpe = (n) => {
+  const v = Number(n);
+  if (!Number.isFinite(v)) return null;
+  const i = Math.round(v);
+  if (i < 1 || i > 10) return null;
+  return i;
+};
+
+export const computeAchievementProgress = (doneWorkouts) => {
+  const done = doneWorkouts || [];
+  const totalKm = done.reduce((s, w) => s + (Number(w.total_km) || 0), 0);
+  const doneCount = done.length;
+  const rpeCount = done.filter((w) => clampWorkoutRpe(w.rpe) != null).length;
+  const longestStreak = getLongestConsecutiveDays(done.map((w) => w.scheduled_date).filter(Boolean));
+  const hasLong15 = done.some((w) => (Number(w.total_km) || 0) >= 15);
+  const hasHalf = done.some((w) => (Number(w.total_km) || 0) >= 21);
+  const has30 = done.some((w) => (Number(w.total_km) || 0) >= 30);
+  const hasInterval = done.some((w) => w.type === "interval");
+  const hasEarlyBird = done.some((w) => {
+    const raw = String(w.scheduled_date || "");
+    if (!raw.includes("T")) return false;
+    const d = new Date(raw);
+    if (Number.isNaN(d.getTime())) return false;
+    return d.getHours() < 7;
+  });
+  return {
+    unlockedByCode: {
+      FIRST_KM: doneCount >= 1, KM_10: totalKm >= 10, KM_50: totalKm >= 50, KM_100: totalKm >= 100, KM_500: totalKm >= 500, KM_1000: totalKm >= 1000,
+      FIRST_WORKOUT: doneCount >= 1, STREAK_7: longestStreak >= 7, STREAK_30: longestStreak >= 30, FIRST_LONG: hasLong15, SPEED_DEMON: hasInterval,
+      CONSISTENT: doneCount >= 10, HALF_WARRIOR: hasHalf, MARATHON_READY: has30, EARLY_BIRD: hasEarlyBird, RPE_MASTER: rpeCount >= 10,
+    },
+    totalKm, doneCount, longestStreak, rpeCount,
+  };
+};
+
+export const ATHLETE_ACHIEVEMENT_DISPLAY_LIST = [
+  { id: "first_race", icon: "🥇", name: "Primera Carrera", requirement: "Completa tu primer workout", metric: "doneCount", target: 1, codes: ["FIRST_WORKOUT", "FIRST_KM"] },
+  { id: "three_streak", icon: "🔥", name: "Tres en Raya", requirement: "Completa 3 días seguidos de entrenamiento", metric: "longestConsecutiveDays", target: 3, codes: ["STREAK_3", "STREAK_7"] },
+  { id: "first_10k", icon: "🏃", name: "Primeros 10K", requirement: "Acumula 10km completados en total", metric: "totalKm", target: 10, codes: ["KM_10"] },
+  { id: "weekly_streak", icon: "💪", name: "Racha Semanal", requirement: "Completa todos los workouts de una semana", metric: "fullWeeksCompleted", target: 1, codes: ["WEEK_COMPLETE_1"] },
+  { id: "speedster", icon: "⚡", name: "Velocista", requirement: "Completa un workout de intervalos", metric: "intervalCount", target: 1, codes: ["SPEED_DEMON"] },
+];
+
+const getWorkoutReferenceDate = (w) => {
+  const raw = w?.completed_at || w?.scheduled_date || w?.created_at;
+  if (!raw) return null;
+  const d = new Date(raw);
+  return Number.isNaN(d.getTime()) ? null : d;
+};
+const getWeekStartYmdFromDate = (d) => (d && !Number.isNaN(d.getTime()) ? formatLocalYMD(startOfWeekMonday(d)) : null);
+const getLongestConsecutiveWeeks = (weekKeys) => {
+  if (!Array.isArray(weekKeys) || weekKeys.length === 0) return 0;
+  const uniq = [...new Set(weekKeys)].sort();
+  let best = 1;
+  let current = 1;
+  for (let i = 1; i < uniq.length; i += 1) {
+    const prev = new Date(`${uniq[i - 1]}T12:00:00`);
+    const now = new Date(`${uniq[i]}T12:00:00`);
+    const diffDays = Math.round((now.getTime() - prev.getTime()) / 86400000);
+    current = diffDays === 7 ? current + 1 : 1;
+    if (current > best) best = current;
+  }
+  return best;
+};
+
+export const computeAthleteAchievementVisualProgress = (allWorkouts, evaluations) => {
+  const all = Array.isArray(allWorkouts) ? allWorkouts : [];
+  const done = all.filter((w) => w?.done);
+  const todayYmd = formatLocalYMD(new Date());
+  const totalKm = done.reduce((sum, w) => sum + (Number(w.total_km) || 0), 0);
+  const doneCount = done.length;
+  const longestConsecutiveDays = getLongestConsecutiveDays(done.map((w) => normalizeScheduledDateYmd(w.scheduled_date || w.completed_at)).filter(Boolean));
+  const intervalCount = done.filter((w) => String(w.type || "").toLowerCase() === "interval").length;
+  const hrLoggedCount = done.filter((w) => [w.manual_avg_hr, w.manual_max_hr, w.avg_hr, w.average_heartrate, w.strava_avg_hr].some((v) => Number(v) > 0)).length;
+  const earlyMorningDoneCount = done.filter((w) => { const d = getWorkoutReferenceDate(w); return d && d.getHours() < 8; }).length;
+  const sortedScheduled = [...all].filter((w) => normalizeScheduledDateYmd(w.scheduled_date || w.completed_at) && normalizeScheduledDateYmd(w.scheduled_date || w.completed_at) <= todayYmd).sort((a, b) => (getWorkoutReferenceDate(a)?.getTime() || 0) - (getWorkoutReferenceDate(b)?.getTime() || 0));
+  let streak = 0;
+  let longestDoneNoFailStreak = 0;
+  for (const w of sortedScheduled) { streak = w?.done ? streak + 1 : 0; if (streak > longestDoneNoFailStreak) longestDoneNoFailStreak = streak; }
+  const weekMap = {};
+  for (const w of sortedScheduled) {
+    const weekKey = getWeekStartYmdFromDate(getWorkoutReferenceDate(w));
+    if (!weekKey) continue;
+    if (!weekMap[weekKey]) weekMap[weekKey] = { total: 0, done: 0 };
+    weekMap[weekKey].total += 1;
+    if (w?.done) weekMap[weekKey].done += 1;
+  }
+  const fullWeeksCompleted = Object.values(weekMap).filter((x) => x.total > 0 && x.done >= x.total).length;
+  const doneWeekKeys = done.map((w) => getWeekStartYmdFromDate(getWorkoutReferenceDate(w))).filter(Boolean);
+  const consecutiveDoneWeeks = getLongestConsecutiveWeeks(doneWeekKeys);
+  const evalRows = Array.isArray(evaluations) ? evaluations : [];
+  const vdotValues = evalRows.map((r) => Number(r?.vdot)).filter((v) => Number.isFinite(v) && v > 0);
+  let vdotImprovementStreak = 0;
+  let vdotCurrent = 0;
+  for (let i = 1; i < vdotValues.length; i += 1) { vdotCurrent = vdotValues[i] > vdotValues[i - 1] ? vdotCurrent + 1 : 0; if (vdotCurrent > vdotImprovementStreak) vdotImprovementStreak = vdotCurrent; }
+  return { totalKm, doneCount, longestConsecutiveDays, fullWeeksCompleted, intervalCount, hrLoggedCount, earlyMorningDoneCount, consecutiveDoneWeeks, longestDoneNoFailStreak, vdotImprovementStreak };
+};
+
+export async function loadAthleteAchievementSnapshot(athleteId) {
+  if (!athleteId) return { achievements: [], earned: [] };
+  try {
+    const res = await fetch(`/api/achievements?athlete_id=${encodeURIComponent(String(athleteId))}`);
+    const json = await res.json();
+    if (!res.ok) return { achievements: [], earned: [] };
+    const achievements = Array.isArray(json.all) ? json.all.filter((row) => row && typeof row.code === "string") : [];
+    const earned = Array.isArray(json.earned) ? json.earned.filter((row) => row && typeof row.achievement_code === "string") : [];
+    return { achievements, earned };
+  } catch {
+    return { achievements: [], earned: [] };
+  }
+}
+
+export async function evaluateAndAwardAthleteAchievements(athleteId) {
+  if (!athleteId) return { newAwards: [], snapshot: { achievements: [], earned: [] }, progress: null };
+  try {
+    const [achRes, workRes] = await Promise.all([
+      fetch(`/api/achievements?athlete_id=${encodeURIComponent(athleteId)}`),
+      supabase.from("workouts").select("*").eq("athlete_id", athleteId).eq("done", true),
+    ]);
+    if (!achRes.ok) return { newAwards: [], snapshot: { achievements: [], earned: [] }, progress: null };
+    const { all: allAchievements, earned: earnedList } = await achRes.json();
+    const doneWorkouts = workRes.data || [];
+    const totalKm = doneWorkouts.reduce((s, w) => s + (Number(w.total_km) || 0), 0);
+    const earnedCodes = new Set((earnedList || []).map((e) => e.achievement_code));
+    const newAchievements = [];
+    for (const ach of allAchievements || []) {
+      if (earnedCodes.has(ach.code)) continue;
+      let earned = false;
+      if (ach.condition_type === "total_km" && totalKm >= Number(ach.condition_value)) earned = true;
+      if (ach.condition_type === "workout_count" && doneWorkouts.length >= Number(ach.condition_value)) earned = true;
+      if (ach.condition_type === "single_km" && doneWorkouts.some((w) => (Number(w.total_km) || 0) >= Number(ach.condition_value))) earned = true;
+      if (ach.condition_type === "interval" && doneWorkouts.some((w) => w.type === "interval")) earned = true;
+      if (earned) {
+        await fetch("/api/achievements", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ athlete_id: athleteId, achievement_code: ach.code, value: totalKm }) });
+        newAchievements.push(ach);
+      }
+    }
+    const snapshot = await loadAthleteAchievementSnapshot(athleteId);
+    const progress = computeAchievementProgress(doneWorkouts);
+    const newAwards = newAchievements.map((ach) => ({ achievement_code: ach.code, awarded_at: new Date().toISOString(), achievements: ach }));
+    return { newAwards, snapshot, progress };
+  } catch {
+    return { newAwards: [], snapshot: { achievements: [], earned: [] }, progress: null };
+  }
+}
+
+export const formatMessageTimestamp = (iso) => {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleString("es", { dateStyle: "short", timeStyle: "short" });
+};
+
+export const normalizeWorkoutRow = (row) => {
+  let structure = row.workout_structure ?? row.structure;
+  if (typeof structure === "string") { try { structure = JSON.parse(structure); } catch { structure = []; } }
+  structure = normalizeWorkoutStructure(structure);
+  const scheduled = normalizeScheduledDateYmd(row.scheduled_date);
+  const type = row.type && WORKOUT_TYPES.some((t) => t.id === row.type) ? row.type : "easy";
+  return {
+    id: row.id, athlete_id: row.athlete_id, coach_id: row.coach_id, scheduled_date: scheduled, type,
+    title: row.title || WORKOUT_TYPES.find((t) => t.id === type)?.label || "Entrenamiento",
+    total_km: Number.isFinite(Number(row.total_km)) ? Number(row.total_km) : 0,
+    distance_km: Number.isFinite(Number(row.distance_km)) ? Number(row.distance_km) : (Number.isFinite(Number(row.total_km)) ? Number(row.total_km) : 0),
+    duration_min: Number.isFinite(Number(row.duration_min)) ? Number(row.duration_min) : 0,
+    description: row.description || "", structure: Array.isArray(structure) ? structure : [], workout_structure: Array.isArray(structure) ? structure : [],
+    done: Boolean(row.done), rpe: clampWorkoutRpe(row.rpe),
+    manual_distance_km: Number.isFinite(Number(row.manual_distance_km)) ? Number(row.manual_distance_km) : null,
+    manual_duration_min: Number.isFinite(Number(row.manual_duration_min)) ? Number(row.manual_duration_min) : null,
+    manual_avg_hr: Number.isFinite(Number(row.manual_avg_hr)) ? Math.round(Number(row.manual_avg_hr)) : null,
+    manual_max_hr: Number.isFinite(Number(row.manual_max_hr)) ? Math.round(Number(row.manual_max_hr)) : null,
+    manual_calories: Number.isFinite(Number(row.manual_calories)) ? Math.round(Number(row.manual_calories)) : null,
+    athlete_notes: typeof row.athlete_notes === "string" ? row.athlete_notes : "", completed_at: row.completed_at || null,
+  };
+};
+
+const sessionRpeKmLoad = (w) => {
+  const km = Number(w.total_km);
+  const rpe = clampWorkoutRpe(w.rpe);
+  if (rpe == null || !Number.isFinite(km) || km < 0) return null;
+  return rpe * km;
+};
+const avgRpeKmInWindow = (eligibleWorkouts, startYmd, endYmd) => {
+  const loads = eligibleWorkouts.filter((w) => w.scheduled_date >= startYmd && w.scheduled_date <= endYmd).map(sessionRpeKmLoad).filter((v) => v != null);
+  if (!loads.length) return null;
+  return loads.reduce((a, b) => a + b, 0) / loads.length;
+};
+
+export const computeFormaFatigaWeeklyPoints = (workouts) => {
+  const eligible = workouts.filter((w) => w.done && clampWorkoutRpe(w.rpe) != null);
+  const today = new Date();
+  const points = [];
+  for (let i = 0; i < 8; i += 1) {
+    const endD = addDays(today, -i * 7);
+    const endYmd = formatLocalYMD(endD);
+    const acute = avgRpeKmInWindow(eligible, formatLocalYMD(addDays(endD, -6)), endYmd);
+    const chronic = avgRpeKmInWindow(eligible, formatLocalYMD(addDays(endD, -27)), endYmd);
+    points.push({ i, label: i === 0 ? "Actual" : `-${i} sem`, endYmd, acute, chronic, forma: acute != null || chronic != null ? (chronic ?? 0) - (acute ?? 0) : null });
+  }
+  return points;
+};
+
+export const formaFatigaStatusFromPoint = (p) => {
+  if (!p || (p.acute == null && p.chronic == null)) return { label: "Sin datos suficientes", kind: "none" };
+  const acute = p.acute ?? 0;
+  const chronic = p.chronic ?? 0;
+  const forma = p.forma != null ? p.forma : chronic - acute;
+  const r = forma / Math.max(Math.abs(acute), Math.abs(chronic), 1);
+  if (r > 0.12) return { label: "En forma 🟢", kind: "forma" };
+  if (r < -0.12) return { label: "Fatigado 🔴", kind: "fatiga" };
+  return { label: "Fresco 🟡", kind: "fresco" };
+};
+
+export async function resolveCoachUserIdFromPublicCode(codeInput) {
+  const codigoIngresado = String(codeInput || "").trim();
+  if (!codigoIngresado) return null;
+  const { data, error } = await supabase.from("profiles").select("user_id, role, name").eq("coach_id", codigoIngresado.trim().toUpperCase()).maybeSingle();
+  if (error) return null;
+  return data?.user_id ?? null;
+}
 
 export const TAB_KEY_LIBRARY = "raf_tab_biblioteca";
 
