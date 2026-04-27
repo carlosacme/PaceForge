@@ -53,12 +53,14 @@ import {
   TAB_KEY_LIBRARY,
   CHALLENGE_TYPE_OPTIONS,
   normalizeChallengeType,
+  computeGarminLoadMetricsFromWorkouts,
 } from "./shared/appShared";
 import { refreshFcmTokenIfGranted } from "../firebase.js";
 
 const MarketplacePlanWorkoutsAccordion = () => null;
 const ChallengesHub = lazy(() => import("./ChallengesHub"));
 const MarketplaceHub = lazy(() => import("./MarketplaceHub"));
+const EvaluationView = lazy(() => import("./EvaluationView"));
 
 /** Pestaña inferior del atleta (inicio, market, retos, eval VDOT, perfil). */
 const RAF_ATHLETE_NAV_TAB_KEY = "raf_athlete_tab";
@@ -852,94 +854,7 @@ export default function AthleteHome({ profile }) {
   const athleteFormaFatigaStatus = useMemo(() => formaFatigaStatusFromPoint(athleteFormaFatigaPoints[0]), [athleteFormaFatigaPoints]);
   const athleteFormaFatigaTableRows = useMemo(() => athleteFormaFatigaPoints.slice(0, 4), [athleteFormaFatigaPoints]);
 
-  const athleteLoadGarminMetrics = useMemo(() => {
-    const COLOR_GREEN = "#16a34a";
-    const COLOR_RED = "#dc2626";
-    const COLOR_ORANGE = "#f97316";
-    const today = new Date();
-    const todayYmd = formatLocalYMD(today);
-    const doneWorkouts = (workouts || []).filter((w) => w.done);
-
-    const acuteStartYmd = formatLocalYMD(addDays(today, -6));
-    let acuteKm = 0;
-    for (const w of doneWorkouts) {
-      const ymd = normalizeScheduledDateYmd(w.scheduled_date);
-      if (!ymd || ymd < acuteStartYmd || ymd > todayYmd) continue;
-      acuteKm += Number(w.total_km) || 0;
-    }
-
-    const currentMonday = startOfWeekMonday(today);
-    const weekBars = [];
-    let totalKm4w = 0;
-    let totalSessions4w = 0;
-    let totalMin4w = 0;
-    for (let i = 0; i < 4; i += 1) {
-      const start = addDays(currentMonday, -(i * 7));
-      const end = addDays(start, 6);
-      const startYmd = formatLocalYMD(start);
-      const endYmd = formatLocalYMD(end);
-      let weekKm = 0;
-      let weekSessions = 0;
-      let weekMin = 0;
-      for (const w of doneWorkouts) {
-        const ymd = normalizeScheduledDateYmd(w.scheduled_date);
-        if (!ymd || ymd < startYmd || ymd > endYmd) continue;
-        weekKm += Number(w.total_km) || 0;
-        weekSessions += 1;
-        weekMin += Number(w.duration_min) || 0;
-      }
-      totalKm4w += weekKm;
-      totalSessions4w += weekSessions;
-      totalMin4w += weekMin;
-      const weekLabel = i === 0 ? "Esta semana" : i === 1 ? "Hace 1 sem" : i === 2 ? "Hace 2 sem" : "Hace 3 sem";
-      weekBars.push({
-        key: startYmd,
-        label: weekLabel,
-        rangeLabel: `${startYmd} → ${endYmd}`,
-        km: weekKm,
-        sessions: weekSessions,
-      });
-    }
-
-    const chronicWeeklyAvgKm = totalKm4w / 4;
-    const ratio = chronicWeeklyAvgKm > 1e-6 ? acuteKm / chronicWeeklyAvgKm : null;
-    const avgSessionsPerWeek = totalSessions4w / 4;
-
-    let statusLabel = "Sin datos suficientes";
-    let statusColor = "#64748b";
-    if (ratio != null && Number.isFinite(ratio)) {
-      if (ratio < 0.8) {
-        statusLabel = "Desentrenado";
-        statusColor = COLOR_RED;
-      } else if (ratio > 1.3) {
-        statusLabel = "Sobreentrenado";
-        statusColor = COLOR_RED;
-      } else {
-        statusLabel = "Óptimo";
-        statusColor = COLOR_GREEN;
-      }
-    }
-
-    const maxBarKm = Math.max(1, ...weekBars.map((b) => b.km));
-    const weekBarsOldestFirst = [...weekBars].reverse();
-
-    return {
-      acuteKm,
-      chronicWeeklyAvgKm,
-      ratio,
-      statusLabel,
-      statusColor,
-      ratioIndicatorColor: ratio == null || !Number.isFinite(ratio) ? COLOR_ORANGE : ratio < 0.8 || ratio > 1.3 ? COLOR_RED : COLOR_GREEN,
-      weekBarsOldestFirst,
-      maxBarKm,
-      avgSessionsPerWeek,
-      totalMin4w,
-      hasRatio: ratio != null && Number.isFinite(ratio),
-      COLOR_ORANGE,
-      COLOR_GREEN,
-      COLOR_RED,
-    };
-  }, [workouts, athleteTodayYmd]);
+  const athleteLoadGarminMetrics = useMemo(() => computeGarminLoadMetricsFromWorkouts(workouts), [workouts]);
 
   const openAthletePremiumWa = (periodLabel, amountCopText) => {
     const text = `Hola, quiero activar el plan Premium Atleta ${periodLabel} por ${amountCopText} COP`;
@@ -1464,7 +1379,9 @@ export default function AthleteHome({ profile }) {
 
             {athleteActiveTab === "eval" ? (
               hasPremiumAccess ? (
-                <EvaluationView athletes={[normalizeAthlete(athleteInfo)]} currentUserId={profile?.user_id ?? null} notify={(msg) => setMessage(msg)} athleteOnlyId={athleteInfo?.id} />
+                <Suspense fallback={<div style={{ padding: 20, color: "#64748b" }}>Cargando evaluación…</div>}>
+                  <EvaluationView athletes={[normalizeAthlete(athleteInfo)]} currentUserId={profile?.user_id ?? null} notify={(msg) => setMessage(msg)} athleteOnlyId={athleteInfo?.id} />
+                </Suspense>
               ) : (
                 <div style={{ ...S.card, textAlign: "center" }}>
                   <p style={{ color: "#64748b" }}>La evaluación VDOT requiere Plan Premium Atleta.</p>

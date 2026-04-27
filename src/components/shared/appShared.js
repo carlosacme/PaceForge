@@ -256,6 +256,96 @@ export const addDays = (d, n) => {
   return x;
 };
 
+/** Km últimos 7d vs promedio semanal (4 semanas lun–dom), ratio aguda/crónica y barras (solo workouts completados). */
+export const computeGarminLoadMetricsFromWorkouts = (workouts) => {
+  const COLOR_GREEN = "#16a34a";
+  const COLOR_RED = "#dc2626";
+  const COLOR_ORANGE = "#f97316";
+  const today = new Date();
+  const todayYmd = formatLocalYMD(today);
+  const doneWorkouts = (workouts || []).filter((w) => w?.done);
+
+  const acuteStartYmd = formatLocalYMD(addDays(today, -6));
+  let acuteKm = 0;
+  for (const w of doneWorkouts) {
+    const ymd = normalizeScheduledDateYmd(w.scheduled_date);
+    if (!ymd || ymd < acuteStartYmd || ymd > todayYmd) continue;
+    acuteKm += Number(w.total_km) || 0;
+  }
+
+  const currentMonday = startOfWeekMonday(today);
+  const weekBars = [];
+  let totalKm4w = 0;
+  let totalSessions4w = 0;
+  let totalMin4w = 0;
+  for (let i = 0; i < 4; i += 1) {
+    const start = addDays(currentMonday, -(i * 7));
+    const end = addDays(start, 6);
+    const startYmd = formatLocalYMD(start);
+    const endYmd = formatLocalYMD(end);
+    let weekKm = 0;
+    let weekSessions = 0;
+    let weekMin = 0;
+    for (const w of doneWorkouts) {
+      const ymd = normalizeScheduledDateYmd(w.scheduled_date);
+      if (!ymd || ymd < startYmd || ymd > endYmd) continue;
+      weekKm += Number(w.total_km) || 0;
+      weekSessions += 1;
+      weekMin += Number(w.duration_min) || 0;
+    }
+    totalKm4w += weekKm;
+    totalSessions4w += weekSessions;
+    totalMin4w += weekMin;
+    const weekLabel = i === 0 ? "Esta semana" : i === 1 ? "Hace 1 sem" : i === 2 ? "Hace 2 sem" : "Hace 3 sem";
+    weekBars.push({
+      key: startYmd,
+      label: weekLabel,
+      rangeLabel: `${startYmd} → ${endYmd}`,
+      km: weekKm,
+      sessions: weekSessions,
+    });
+  }
+
+  const chronicWeeklyAvgKm = totalKm4w / 4;
+  const ratio = chronicWeeklyAvgKm > 1e-6 ? acuteKm / chronicWeeklyAvgKm : null;
+  const avgSessionsPerWeek = totalSessions4w / 4;
+
+  let statusLabel = "Sin datos suficientes";
+  let statusColor = "#64748b";
+  if (ratio != null && Number.isFinite(ratio)) {
+    if (ratio < 0.8) {
+      statusLabel = "Desentrenado";
+      statusColor = COLOR_RED;
+    } else if (ratio > 1.3) {
+      statusLabel = "Sobreentrenado";
+      statusColor = COLOR_RED;
+    } else {
+      statusLabel = "Óptimo";
+      statusColor = COLOR_GREEN;
+    }
+  }
+
+  const maxBarKm = Math.max(1, ...weekBars.map((b) => b.km));
+  const weekBarsOldestFirst = [...weekBars].reverse();
+
+  return {
+    acuteKm,
+    chronicWeeklyAvgKm,
+    ratio,
+    statusLabel,
+    statusColor,
+    ratioIndicatorColor: ratio == null || !Number.isFinite(ratio) ? COLOR_ORANGE : ratio < 0.8 || ratio > 1.3 ? COLOR_RED : COLOR_GREEN,
+    weekBarsOldestFirst,
+    maxBarKm,
+    avgSessionsPerWeek,
+    totalMin4w,
+    hasRatio: ratio != null && Number.isFinite(ratio),
+    COLOR_ORANGE,
+    COLOR_GREEN,
+    COLOR_RED,
+  };
+};
+
 export const firstDayOfNextMonthYmd = () => {
   const n = new Date();
   return formatLocalYMD(new Date(n.getFullYear(), n.getMonth() + 1, 1));
