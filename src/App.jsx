@@ -1653,6 +1653,26 @@ export default function App() {
           return;
         }
 
+        try {
+          const apiRes = await fetch("/api/create-profile", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              user_id: newUserId,
+              email: authEmail.trim(),
+              name: authName.trim(),
+              role: selectedRole,
+              coach_id: resolvedCoachId || null,
+            }),
+          });
+          if (!apiRes.ok) {
+            const j = await apiRes.json().catch(() => ({}));
+            console.warn("create-profile API:", apiRes.status, j);
+          }
+        } catch (e) {
+          console.warn("create-profile fetch failed:", e);
+        }
+
         /** El rol del perfil sigue SIEMPRE el selector del formulario, no si hay código de coach. */
         const roleForProfile = authRole === "coach" ? "coach" : "athlete";
         const nowIso = new Date().toISOString();
