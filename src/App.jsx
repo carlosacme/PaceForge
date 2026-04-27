@@ -1626,7 +1626,15 @@ export default function App() {
         }
 
         const selectedRole = authRole === "coach" ? "coach" : "athlete";
-        const resolvedCoachId = selectedRole === "athlete" ? linkedCoachId ?? null : null;
+        const resolvedCoachId =
+          selectedRole === "athlete"
+            ? (() => {
+                if (linkedCoachId == null) return null;
+                const c = String(linkedCoachId).trim();
+                if (c === "" || c === "undefined" || c === "null") return null;
+                return c;
+              })()
+            : null;
 
         const { data, error } = await supabase.auth.signUp({
           email: authEmail.trim(),
@@ -1653,6 +1661,13 @@ export default function App() {
           return;
         }
 
+        /**
+         * Atleta sin código de coach: null explícito.
+         * Nunca persistir el propio user_id como coach_id (resolvedCoachId || null no aplica aquí).
+         */
+        const athleteCoachIdNeverSelf =
+          selectedRole !== "athlete" || !resolvedCoachId || String(resolvedCoachId) === String(newUserId) ? null : resolvedCoachId;
+
         try {
           const apiRes = await fetch("/api/create-profile", {
             method: "POST",
@@ -1662,7 +1677,7 @@ export default function App() {
               email: authEmail.trim(),
               name: authName.trim(),
               role: selectedRole,
-              coach_id: resolvedCoachId || null,
+              coach_id: athleteCoachIdNeverSelf,
             }),
           });
           if (!apiRes.ok) {
@@ -1689,7 +1704,7 @@ export default function App() {
             : {
                 user_id: newUserId,
                 role: "athlete",
-                coach_id: linkedCoachId ?? null,
+                coach_id: athleteCoachIdNeverSelf,
                 name: authName.trim(),
               };
 
@@ -1700,7 +1715,7 @@ export default function App() {
           });
         }
         if (roleForProfile === "athlete") {
-          setProfile({ user_id: newUserId, role: "athlete", name: authName.trim(), coach_id: linkedCoachId ?? null });
+          setProfile({ user_id: newUserId, role: "athlete", name: authName.trim(), coach_id: athleteCoachIdNeverSelf });
         }
         await syncFcmTokenToProfile();
 
@@ -1726,7 +1741,7 @@ export default function App() {
             goal: "Objetivo pendiente",
             pace: "Pendiente",
             weekly_km: 0,
-            coach_id: linkedCoachId ?? null,
+            coach_id: athleteCoachIdNeverSelf,
             user_id: newUserId,
           };
           const { data: athleteRow, error: athleteErr } = await supabase.from("athletes").insert(athletePayload).select().maybeSingle();

@@ -1,5 +1,12 @@
 import { createClient } from "@supabase/supabase-js";
 
+function normalizeOptionalCoachId(val) {
+  if (val == null) return null;
+  const s = String(val).trim();
+  if (s === "" || s === "undefined" || s === "null") return null;
+  return s;
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
 
@@ -19,14 +26,22 @@ export default async function handler(req, res) {
   const supabase = createClient(supabaseUrl, serviceKey);
 
   const nowIso = new Date().toISOString();
-  const resolvedCoachId = role === "coach" ? user_id : coach_id || null;
+  const uid = String(user_id).trim();
+  /** Atleta: solo UUID de coach válido; nunca el propio user_id. Coach: coach_id = su user_id. */
+  let profileCoachId;
+  if (role === "coach") {
+    profileCoachId = uid;
+  } else {
+    const fromBody = normalizeOptionalCoachId(coach_id);
+    profileCoachId = fromBody && String(fromBody) === uid ? null : fromBody;
+  }
 
   const row = {
     user_id,
     email,
     name: typeof name === "string" ? name : "",
     role,
-    coach_id: resolvedCoachId,
+    coach_id: profileCoachId,
   };
   if (role === "coach") {
     row.plan_status = "trial";
