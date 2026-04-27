@@ -1,8 +1,11 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { supabase } from "../lib/supabase";
 import {
+  BRAND_NAME,
   WORKOUT_TYPES,
   WORKOUT_BLOCK_TYPES,
+  TAB_KEY_CREATE_WORKOUT,
+  getCurrentMonthKey,
   formatLocalYMD,
   addDays,
   normalizeWorkoutStructure,
@@ -12,6 +15,8 @@ import {
   extractJsonFromAnthropicText,
   formatDurationClock,
   STRAVA_CALLBACK_URL,
+  buildAthleteHrZonesPromptText,
+  sendWorkoutAssignmentPushToAthlete,
   normalizeAthlete,
   libraryRowToBuilderWorkout,
   normalizeLibraryRow,

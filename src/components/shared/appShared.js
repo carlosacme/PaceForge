@@ -889,6 +889,59 @@ export const styles = {
   },
 };
 
+export const TAB_KEY_CREATE_WORKOUT = "raf_tab_crear_workout";
+
+export const getCurrentMonthKey = () => {
+  const d = new Date();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  return `${d.getFullYear()}-${m}`;
+};
+
+const HR_ZONE_DEFS = [
+  { z: 1, lowPct: 0.5, highPct: 0.6, label: "Recuperación activa", color: "#22c55e" },
+  { z: 2, lowPct: 0.6, highPct: 0.7, label: "Aeróbico base", color: "#3b82f6" },
+  { z: 3, lowPct: 0.7, highPct: 0.8, label: "Aeróbico tempo", color: "#eab308" },
+  { z: 4, lowPct: 0.8, highPct: 0.9, label: "Umbral anaeróbico", color: "#f97316" },
+  { z: 5, lowPct: 0.9, highPct: 1.0, label: "VO2 max", color: "#ef4444" },
+];
+
+export const computeAthleteHrZones = (fcMax) => {
+  const max = Number(fcMax);
+  if (!Number.isFinite(max) || max <= 0) return null;
+  return HR_ZONE_DEFS.map((d) => ({
+    zone: d.z,
+    low: Math.round(max * d.lowPct),
+    high: Math.round(max * d.highPct),
+    label: d.label,
+    color: d.color,
+    pctLabel: `${d.lowPct * 100}-${d.highPct * 100}% FC máx`,
+  }));
+};
+
+export const buildAthleteHrZonesPromptText = (athlete) => {
+  if (!athlete || !athlete.fc_max || athlete.fc_max <= 0) return "";
+  const zones = computeAthleteHrZones(athlete.fc_max);
+  if (!zones) return "";
+  const lines = zones.map((z) => `Z${z.zone} (${z.pctLabel}): ${z.low}-${z.high} bpm — ${z.label}`);
+  let t = `Athlete heart rate zones (based on max HR ${athlete.fc_max} bpm):\n${lines.join("\n")}`;
+  if (athlete.fc_reposo && athlete.fc_reposo > 0) {
+    t += `\nResting HR (reference): ${athlete.fc_reposo} bpm.`;
+  }
+  return t;
+};
+
+export async function sendWorkoutAssignmentPushToAthlete({ athleteUserId, workoutTitle, scheduledDate }) {
+  if (!athleteUserId) return;
+  const { data: prof } = await supabase.from("profiles").select("fcm_token").eq("user_id", athleteUserId).maybeSingle();
+  const token = prof?.fcm_token ?? null;
+  await sendChatPushNotification({
+    token,
+    title: "🏃 Nuevo entrenamiento asignado",
+    body: `${workoutTitle || "Entrenamiento"} programado para el ${scheduledDate || "día asignado"}`,
+    logLabel: "workout coach→athlete",
+  });
+}
+
 export const DAYS = ["Lun", "Mar", "Mie", "Jue", "Vie", "Sab", "Dom"];
 
 const MONTH_INDEX = { Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5, Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11 };
