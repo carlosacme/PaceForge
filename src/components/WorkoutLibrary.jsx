@@ -8,6 +8,7 @@ import {
   WORKOUT_TYPES,
   parseFitFileToLibraryDraft,
   parseJsonFileToLibraryDrafts,
+  mapJsonWorkoutToLibraryDraft,
   INVALID_JSON_WORKOUT_FORMAT_MSG,
   normalizeStructureForFitImportModal,
   emptyFitImportStructureRow,
