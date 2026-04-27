@@ -72,7 +72,7 @@ const styles = {
   },
 };
 
-function AthleteHome({ profile }) {
+export default function AthleteHome({ profile }) {
   const S = styles;
   const ATHLETE_TAB_STORAGE_KEY = "raf_athlete_tab";
   const [athleteInfo, setAthleteInfo] = useState(null);
@@ -1574,6 +1574,3 @@ function AthleteHome({ profile }) {
   );
 
 }
-
-
-export default AthleteHome;
