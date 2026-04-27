@@ -15,6 +15,7 @@ import {
   STRAVA_CALLBACK_URL,
   MARKETPLACE_AI_PACE_RANGES_BY_LEVEL,
   buildMarketplaceAiPacePromptSection,
+  styles,
 } from "./shared/appShared";
 
 function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, profileRole, onGoToPlans, onPlanAssigned }) {

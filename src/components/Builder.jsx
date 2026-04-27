@@ -15,6 +15,7 @@ import {
   normalizeAthlete,
   libraryRowToBuilderWorkout,
   normalizeLibraryRow,
+  styles,
 } from "./shared/appShared";
 
 function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiLoading, setAiLoading, notify, coachUserId, coachPlan, profileRole, onGoToPlans, onWorkoutAssigned, onSavedToLibrary }) {
