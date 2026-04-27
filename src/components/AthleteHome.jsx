@@ -60,6 +60,19 @@ const MarketplacePlanWorkoutsAccordion = () => null;
 const ChallengesHub = lazy(() => import("./ChallengesHub"));
 const MarketplaceHub = lazy(() => import("./MarketplaceHub"));
 
+/** Pestaña inferior del atleta (inicio, market, retos, eval VDOT, perfil). */
+const RAF_ATHLETE_NAV_TAB_KEY = "raf_athlete_tab";
+/** Antes se reutilizaba `raf_athlete_tab` para el panel de evaluación legacy; ahora va aparte. */
+const RAF_ATHLETE_EVAL_OPEN_KEY = "raf_athlete_eval_open";
+const ATHLETE_NAV_TAB_IDS = ["home", "marketplace", "challenges", "eval", "profile"];
+
+function readStoredAthleteNavTab() {
+  if (typeof localStorage === "undefined") return "home";
+  const raw = localStorage.getItem(RAF_ATHLETE_NAV_TAB_KEY);
+  if (raw && ATHLETE_NAV_TAB_IDS.includes(raw)) return raw;
+  return "home";
+}
+
 const styles = {
   page: { padding: "28px 32px", maxWidth: 1120, width: "100%" },
   pageTitle: { fontSize: "1.65em", fontWeight: 800, color: "#0f172a", margin: 0, letterSpacing: "-0.02em" },
@@ -77,7 +90,6 @@ export default function AthleteHome({ profile }) {
   const EMPTY_ARRAY = useMemo(() => [], []);
   const notifyCallback = useCallback((msg) => setMessage(msg), []);
   const normalizeWorkoutRowStable = useCallback(normalizeWorkoutRow, []);
-  const ATHLETE_TAB_STORAGE_KEY = "raf_athlete_tab";
   const [athleteInfo, setAthleteInfo] = useState(null);
   const [workouts, setWorkouts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -90,7 +102,7 @@ export default function AthleteHome({ profile }) {
   const [athletePremiumModalOpen, setAthletePremiumModalOpen] = useState(false);
   const [athleteNotRegistered, setAthleteNotRegistered] = useState(false);
   const [showEvaluation, setShowEvaluation] = useState(false);
-  const [athleteActiveTab, setAthleteActiveTab] = useState("");
+  const [athleteActiveTab, setAthleteActiveTab] = useState(() => readStoredAthleteNavTab());
   const [athleteProfileTab, setAthleteProfileTab] = useState("logros");
   const [athleteChatOpen, setAthleteChatOpen] = useState(false);
   const [athleteTabRestored, setAthleteTabRestored] = useState(false);
@@ -140,15 +152,25 @@ export default function AthleteHome({ profile }) {
       setAthleteTabRestored(true);
       return;
     }
-    const savedTab = localStorage.getItem(ATHLETE_TAB_STORAGE_KEY);
-    if (savedTab === "evaluation") setShowEvaluation(true);
-    if (savedTab === "home") setShowEvaluation(false);
+    let evalOpen = localStorage.getItem(RAF_ATHLETE_EVAL_OPEN_KEY);
+    if (evalOpen == null) {
+      const legacy = localStorage.getItem(RAF_ATHLETE_NAV_TAB_KEY);
+      if (legacy === "evaluation" || legacy === "home") {
+        localStorage.setItem(RAF_ATHLETE_EVAL_OPEN_KEY, legacy);
+        evalOpen = legacy;
+        if (legacy === "evaluation") {
+          localStorage.setItem(RAF_ATHLETE_NAV_TAB_KEY, "home");
+        }
+      }
+    }
+    if (evalOpen === "evaluation") setShowEvaluation(true);
+    if (evalOpen === "home") setShowEvaluation(false);
     setAthleteTabRestored(true);
   }, []);
 
   useEffect(() => {
     if (!athleteTabRestored || typeof localStorage === "undefined") return;
-    localStorage.setItem(ATHLETE_TAB_STORAGE_KEY, showEvaluation ? "evaluation" : "home");
+    localStorage.setItem(RAF_ATHLETE_EVAL_OPEN_KEY, showEvaluation ? "evaluation" : "home");
   }, [showEvaluation, athleteTabRestored]);
 
   useEffect(() => {
@@ -156,7 +178,7 @@ export default function AthleteHome({ profile }) {
     if (typeof document === "undefined" || typeof localStorage === "undefined") return undefined;
     const onVisibilityChange = () => {
       if (document.visibilityState !== "hidden") return;
-      localStorage.setItem(ATHLETE_TAB_STORAGE_KEY, showEvaluation ? "evaluation" : "home");
+      localStorage.setItem(RAF_ATHLETE_EVAL_OPEN_KEY, showEvaluation ? "evaluation" : "home");
     };
     document.addEventListener("visibilitychange", onVisibilityChange);
     return () => {
@@ -757,6 +779,9 @@ export default function AthleteHome({ profile }) {
   const handleAthleteNavTabChange = (tabId) => {
     setAthleteChatOpen(false);
     setAthleteActiveTab(tabId);
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(RAF_ATHLETE_NAV_TAB_KEY, tabId);
+    }
   };
   const nextRaceText = athleteInfo?.next_race ? `🏁 ${getRaceCountdownText(athleteInfo.next_race)}` : "🏁 Próxima carrera · fecha pendiente";
 
@@ -1220,21 +1245,21 @@ export default function AthleteHome({ profile }) {
           height: "60px",
         }}
       >
-        <button type="button" style={{ minWidth: 60, color: athleteActiveTab === "" ? "#c2410c" : "#64748b", background: athleteActiveTab === "" ? "rgba(245,158,11,.14)" : "transparent", fontWeight: athleteActiveTab === "" ? 800 : 600 }} onClick={() => handleAthleteNavTabChange("")}><span className="pf-bnav-icon">🏠</span><span style={{ fontSize: "10px" }}>Inicio</span></button>
+        <button type="button" style={{ minWidth: 60, color: athleteActiveTab === "home" ? "#c2410c" : "#64748b", background: athleteActiveTab === "home" ? "rgba(245,158,11,.14)" : "transparent", fontWeight: athleteActiveTab === "home" ? 800 : 600 }} onClick={() => handleAthleteNavTabChange("home")}><span className="pf-bnav-icon">🏠</span><span style={{ fontSize: "10px" }}>Inicio</span></button>
         <button type="button" style={{ minWidth: 60, color: athleteActiveTab === "marketplace" ? "#c2410c" : "#64748b", background: athleteActiveTab === "marketplace" ? "rgba(245,158,11,.14)" : "transparent", fontWeight: athleteActiveTab === "marketplace" ? 800 : 600 }} onClick={() => handleAthleteNavTabChange("marketplace")}><span className="pf-bnav-icon">🛒</span><span style={{ fontSize: "10px" }}>Market</span></button>
         <button type="button" style={{ minWidth: 60, color: athleteActiveTab === "challenges" ? "#c2410c" : "#64748b", background: athleteActiveTab === "challenges" ? "rgba(245,158,11,.14)" : "transparent", fontWeight: athleteActiveTab === "challenges" ? 800 : 600 }} onClick={() => handleAthleteNavTabChange("challenges")}><span className="pf-bnav-icon">🏆</span><span style={{ fontSize: "10px" }}>Retos</span></button>
         <button type="button" style={{ minWidth: 60, color: athleteActiveTab === "eval" ? "#c2410c" : "#64748b", background: athleteActiveTab === "eval" ? "rgba(245,158,11,.14)" : "transparent", fontWeight: athleteActiveTab === "eval" ? 800 : 600 }} onClick={() => handleAthleteNavTabChange("eval")}><span className="pf-bnav-icon">⚡</span><span style={{ fontSize: "10px" }}>Eval</span></button>
         <button type="button" style={{ minWidth: 60, color: athleteActiveTab === "profile" ? "#c2410c" : "#64748b", background: athleteActiveTab === "profile" ? "rgba(245,158,11,.14)" : "transparent", fontWeight: athleteActiveTab === "profile" ? 800 : 600 }} onClick={() => handleAthleteNavTabChange("profile")}><span className="pf-bnav-icon">👤</span><span style={{ fontSize: "10px" }}>Perfil</span></button>
       </nav>
 
-      {athleteActiveTab ? (
+      {athleteActiveTab !== "home" ? (
         <div style={{ position: "fixed", inset: 0, zIndex: 9988, background: "rgba(15,23,42,.4)", display: "flex", alignItems: "flex-end" }}>
           <div style={{ width: "100%", height: "100%", background: "#fff", borderTopLeftRadius: 18, borderTopRightRadius: 18, overflowY: "auto", padding: 16, paddingBottom: 94 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
               <div style={{ fontSize: "1.05em", fontWeight: 900, color: "#0f172a" }}>
                 {athleteActiveTab === "marketplace" ? "🛒 Marketplace" : athleteActiveTab === "challenges" ? "🏆 Retos" : athleteActiveTab === "eval" ? "⚡ Evaluación VDOT" : "👤 Perfil"}
               </div>
-              <button type="button" onClick={() => setAthleteActiveTab("")} style={{ border: "1px solid #e2e8f0", background: "#fff", borderRadius: 8, padding: "6px 10px", color: "#475569", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>✕</button>
+              <button type="button" onClick={() => handleAthleteNavTabChange("home")} style={{ border: "1px solid #e2e8f0", background: "#fff", borderRadius: 8, padding: "6px 10px", color: "#475569", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>✕</button>
             </div>
 
             {athleteActiveTab === "marketplace" ? (
