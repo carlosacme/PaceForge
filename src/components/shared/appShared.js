@@ -14,6 +14,13 @@ export const WORKOUT_TYPES = [
   { id: "race", label: "Carrera", color: "#dc2626" },
 ];
 
+export const EVAL_DISTANCES = [
+  { id: "5k", label: "5K", meters: 5000 },
+  { id: "10k", label: "10K", meters: 10000 },
+  { id: "21k", label: "21K", meters: 21097.5 },
+  { id: "42k", label: "42K", meters: 42195 },
+];
+
 export const PLAN_PREVIEW_FULL_DAYS = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
 
 export const PLAN_SESSION_TYPE_OPTIONS = [

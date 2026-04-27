@@ -34,6 +34,8 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
   const [loadingActivitiesByAthlete, setLoadingActivitiesByAthlete] = useState({});
   const [coachRequests, setCoachRequests] = useState([]);
   const [requestsBusyId, setRequestsBusyId] = useState("");
+  const [COROS_MODAL_OPEN, setCorosModalOpen] = useState(false);
+  const [GARMIN_MODAL_OPEN, setGarminModalOpen] = useState(false);
 
   const setFormFromProfile = useCallback((nextForm) => {
     skipDirtyMarkRef.current = true;
