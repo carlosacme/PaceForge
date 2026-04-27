@@ -1743,6 +1743,10 @@ export default function App() {
         alert("Selecciona si eres coach o atleta.");
         return;
       }
+      if (authRole === "athlete" && !authCoachCode.trim()) {
+        setAuthError("Debes ingresar el código de tu coach para registrarte como atleta");
+        return;
+      }
       if (!authName.trim()) {
         alert("Completa tu nombre.");
         return;
@@ -1788,55 +1792,56 @@ export default function App() {
           return;
         }
 
-        let linkedCoachId = authRole === "coach" ? newUserId : null;
+        let linkedCoachId = null;
         let inviteRow = null;
-        if (authRole === "athlete") {
-          if (inviteCodeFromUrl) {
-            const { data: inv, error: invErr } = await supabase
-              .from("invitations")
-              .select("*")
-              .eq("code", inviteCodeFromUrl)
-              .eq("status", "pending")
-              .maybeSingle();
-            if (invErr) {
-              console.error("Error consultando invitación:", invErr);
-            }
-            if (inv) {
-              const inviteEmail = String(inv.email || "").trim().toLowerCase();
-              const regEmail = authEmail.trim().toLowerCase();
-              if (inviteEmail && inviteEmail !== regEmail) {
-                alert("Este link de invitación fue emitido para otro email.");
-                setAuthSubmitting(false);
-                return;
-              }
-              linkedCoachId = inv.coach_id || null;
-              inviteRow = inv;
-            }
-          } else if (authCoachCode.trim()) {
-            const coachIdFromCode = await resolveCoachIdByCode(authCoachCode);
-            if (!coachIdFromCode) {
-              alert("No encontramos un coach con ese código.");
+        const hasInviteCode = Boolean(inviteCodeFromUrl);
+        const hasManualCoachCode = Boolean(authCoachCode.trim());
+        if (hasInviteCode) {
+          const { data: inv, error: invErr } = await supabase
+            .from("invitations")
+            .select("*")
+            .eq("code", inviteCodeFromUrl)
+            .eq("status", "pending")
+            .maybeSingle();
+          if (invErr) {
+            console.error("Error consultando invitación:", invErr);
+          }
+          if (inv) {
+            const inviteEmail = String(inv.email || "").trim().toLowerCase();
+            const regEmail = authEmail.trim().toLowerCase();
+            if (inviteEmail && inviteEmail !== regEmail) {
+              alert("Este link de invitación fue emitido para otro email.");
               setAuthSubmitting(false);
               return;
             }
-            linkedCoachId = coachIdFromCode;
+            linkedCoachId = inv.coach_id || null;
+            inviteRow = inv;
           }
+        } else if (hasManualCoachCode) {
+          const coachIdFromCode = await resolveCoachIdByCode(authCoachCode);
+          if (!coachIdFromCode) {
+            alert("No encontramos un coach con ese código.");
+            setAuthSubmitting(false);
+            return;
+          }
+          linkedCoachId = coachIdFromCode;
         }
 
+        const roleForProfile = linkedCoachId ? "athlete" : "coach";
         const nowIso = new Date().toISOString();
         const profilePayload =
-          authRole === "coach"
+          roleForProfile === "coach"
             ? {
                 user_id: newUserId,
                 role: "coach",
-                coach_id: linkedCoachId,
+                coach_id: newUserId,
                 name: authName.trim(),
                 plan_status: "trial",
                 trial_started_at: nowIso,
               }
             : {
                 user_id: newUserId,
-                role: authRole,
+                role: "athlete",
                 coach_id: linkedCoachId,
                 name: authName.trim(),
               };
@@ -1845,13 +1850,13 @@ export default function App() {
         if (profileError) {
           console.error("Error insertando en profiles:", profileError, { profilePayload });
         } else {
-          if (authRole === "athlete") {
+          if (roleForProfile === "athlete") {
             setProfile({ user_id: newUserId, role: "athlete", name: authName.trim() });
           }
           await syncFcmTokenToProfile();
         }
 
-        if (authRole === "coach" || authRole === "admin") {
+        if (roleForProfile === "coach" || authRole === "admin") {
           const cpPayload = {
             user_id: newUserId,
             full_name: authName.trim(),
@@ -1866,7 +1871,7 @@ export default function App() {
           if (cpErr) console.error("Error creando coach_profiles en registro:", cpErr);
         }
 
-        if (authRole === "athlete") {
+        if (roleForProfile === "athlete") {
           const athletePayload = {
             name: authName.trim(),
             email: authEmail.trim().toLowerCase(),
@@ -2266,8 +2271,11 @@ export default function App() {
                       <input
                         type="text"
                         value={authCoachCode}
-                        onChange={(e) => setAuthCoachCode(e.target.value.toUpperCase())}
-                        placeholder="Ej: A1B2C3D4 (opcional si vienes por invitación)"
+                        onChange={(e) => {
+                          setAuthCoachCode(e.target.value.toUpperCase());
+                          if (authError) setAuthError("");
+                        }}
+                        placeholder="Ej: B5C9E44A"
                         style={inputBase}
                       />
                       {inviteCodeFromUrl ? (
@@ -2314,7 +2322,13 @@ export default function App() {
                       cursor: authSubmitting ? "not-allowed" : "pointer",
                     }}
                   >
-                    {authSubmitting ? "Procesando…" : "Crear cuenta"}
+                    {authSubmitting
+                      ? "Procesando…"
+                      : authRole === "athlete"
+                        ? "Crear cuenta como Atleta"
+                        : authRole === "coach"
+                          ? "Crear cuenta como Coach"
+                          : "Crear cuenta"}
                   </button>
                 </form>
                 <div style={{ display: "flex", flexDirection: "column", gap: 10, alignItems: "center", marginTop: 14 }}>
