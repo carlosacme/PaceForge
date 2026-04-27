@@ -32,6 +32,18 @@ import {
   normalizeChallengeType,
 } from "./shared/appShared";
 
+const styles = {
+  page: { padding: "28px 32px", maxWidth: 1120, width: "100%" },
+  pageTitle: { fontSize: "1.65em", fontWeight: 800, color: "#0f172a", margin: 0, letterSpacing: "-0.02em" },
+  card: {
+    background: "#ffffff",
+    border: "1px solid #f1f5f9",
+    borderRadius: 12,
+    padding: 22,
+    boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+  },
+};
+
 function AthleteHome({ profile }) {
   const S = styles;
   const ATHLETE_TAB_STORAGE_KEY = "raf_athlete_tab";
