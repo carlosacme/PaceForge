@@ -1796,35 +1796,6 @@ export default function AthleteHome({ profile }) {
                             </button>
                           </div>
                         )}
-                        {!hasPremiumAccess ? (
-                          <div style={{ marginTop: 18, paddingTop: 16, borderTop: "1px solid #e2e8f0" }}>
-                            <div style={{ fontSize: ".72em", color: "#475569", textTransform: "uppercase", letterSpacing: ".13em", marginBottom: 8 }}>Plan Premium Atleta</div>
-                            <p style={{ margin: "0 0 12px", color: "#64748b", fontSize: ".82em", lineHeight: 1.45 }}>
-                              Evaluación VDOT, logros y funciones avanzadas. Elige Mensual, Semestral o Anual en el siguiente paso.
-                            </p>
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                setShowPlanModal(true);
-                              }}
-                              style={{
-                                padding: "10px 18px",
-                                borderRadius: 10,
-                                border: "none",
-                                background: "linear-gradient(135deg,#b45309,#f59e0b)",
-                                color: "#fff",
-                                fontWeight: 800,
-                                fontSize: ".84em",
-                                cursor: "pointer",
-                                fontFamily: "inherit",
-                              }}
-                            >
-                              Suscribirme
-                            </button>
-                          </div>
-                        ) : null}
                       </div>
                     )}
                     <div style={{ ...S.card }}>
@@ -2073,13 +2044,14 @@ export default function AthleteHome({ profile }) {
             position: "fixed",
             inset: 0,
             background: "rgba(15,23,42,0.55)",
-            zIndex: 9987,
+            zIndex: 10021,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
             padding: 20,
           }}
           onClick={() => setSoloPayInstructions(null)}
+          onMouseDown={(e) => e.stopPropagation()}
           onKeyDown={(e) => e.key === "Escape" && setSoloPayInstructions(null)}
           role="presentation"
         >
@@ -2093,6 +2065,7 @@ export default function AthleteHome({ profile }) {
               boxShadow: "0 20px 60px rgba(15,23,42,.25)",
             }}
             onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
             role="dialog"
             aria-modal="true"
             aria-labelledby="solo-pay-instructions-title"
