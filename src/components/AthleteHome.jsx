@@ -899,15 +899,49 @@ export default function AthleteHome({ profile }) {
     window.open(`https://wa.me/573233675434?text=${encodeURIComponent(text)}`, "_blank", "noopener,noreferrer");
   };
 
-  const trySoloIndependentCheckout = (period) => {
-    const url = typeof import.meta !== "undefined" ? String(import.meta.env?.VITE_MERCADOPAGO_CHECKOUT_URL || "").trim() : "";
-    if (url) {
-      const sep = url.includes("?") ? "&" : "?";
-      window.open(`${url}${sep}solo_period=${encodeURIComponent(period)}`, "_blank", "noopener,noreferrer");
-      setSoloPayInstructions(null);
-      return;
+  const trySoloIndependentCheckout = async (period) => {
+    const amountCop = period === "annual" ? SOLO_PLAN_ANNUAL_COP : SOLO_PLAN_MONTHLY_COP;
+    try {
+      const { data: sessData } = await supabase.auth.getSession();
+      const accessToken = sessData?.session?.access_token;
+      if (!accessToken) {
+        setMessage("Tu sesión expiró. Vuelve a iniciar sesión.");
+        return;
+      }
+      const response = await fetch("/api/wompi-create-checkout", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          payer_type: "athlete_solo_subscription",
+          plan_key: "premium",
+          plan_period: period === "annual" ? "annual" : "monthly",
+          amount_cop: amountCop,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        console.error("create-checkout error:", data);
+        setMessage(data?.error || "No se pudo iniciar el pago.");
+        return;
+      }
+      const params = new URLSearchParams({
+        "public-key": data.public_key,
+        currency: data.currency,
+        "amount-in-cents": String(data.amount_in_cents),
+        reference: data.reference,
+        "signature:integrity": data.signature,
+        "redirect-url": data.redirect_url,
+      });
+      if (data.customer_email) params.set("customer-data:email", data.customer_email);
+      const checkoutUrl = `https://checkout.wompi.co/p/?${params.toString()}`;
+      window.location.href = checkoutUrl;
+    } catch (e) {
+      console.error("trySoloIndependentCheckout exception:", e);
+      setMessage("Error al iniciar el pago.");
     }
-    setSoloPayInstructions(period);
   };
 
   const athleteName = profile?.name || athleteInfo?.name || "Atleta";
