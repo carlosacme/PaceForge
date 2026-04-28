@@ -1655,6 +1655,11 @@ export default function App() {
 
         const newUserId = data?.user?.id;
         if (!newUserId) {
+          if (typeof localStorage !== "undefined") {
+            localStorage.removeItem("raf_athlete_profile_tab");
+            localStorage.removeItem("raf_athlete_nav_tab");
+            localStorage.removeItem("raf_athlete_progress_tab");
+          }
           alert("Registro exitoso. Revisa tu correo si la verificación está habilitada.");
           setAuthMode("login");
           setAuthLandingStep("login");
@@ -1729,6 +1734,11 @@ export default function App() {
           }
         }
 
+        if (typeof localStorage !== "undefined") {
+          localStorage.removeItem("raf_athlete_profile_tab");
+          localStorage.removeItem("raf_athlete_nav_tab");
+          localStorage.removeItem("raf_athlete_progress_tab");
+        }
         alert("Registro exitoso. Revisa tu correo si la verificación está habilitada.");
         setAuthMode("login");
         setAuthLandingStep("login");

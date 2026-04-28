@@ -48,7 +48,8 @@ export default async function handler(req, res) {
     row.trial_started_at = nowIso;
   }
 
-  const { error } = await supabase.from("profiles").upsert(row, { onConflict: "user_id" });
+  // Equivalente a INSERT ... ON CONFLICT (user_id) DO UPDATE
+  const { error } = await supabase.from("profiles").upsert(row, { onConflict: "user_id", ignoreDuplicates: false });
 
   if (error) return res.status(500).json({ error: error.message });
   if (role === "athlete") {
@@ -61,7 +62,8 @@ export default async function handler(req, res) {
       weekly_km: 0,
       coach_id: profileCoachId ?? null,
     };
-    const { error: athleteErr } = await supabase.from("athletes").upsert(athleteRow, { onConflict: "user_id" });
+    // Equivalente a INSERT ... ON CONFLICT (user_id) DO UPDATE
+    const { error: athleteErr } = await supabase.from("athletes").upsert(athleteRow, { onConflict: "user_id", ignoreDuplicates: false });
     if (athleteErr) return res.status(500).json({ error: athleteErr.message });
   }
   return res.status(200).json({ success: true });
