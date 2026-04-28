@@ -25,7 +25,6 @@ export default async function handler(req, res) {
 
   const supabase = createClient(supabaseUrl, serviceKey);
 
-  const nowIso = new Date().toISOString();
   const uid = String(user_id).trim();
   /** Atleta: solo UUID de coach válido; nunca el propio user_id. Coach: coach_id = su user_id. */
   let profileCoachId;
@@ -36,20 +35,13 @@ export default async function handler(req, res) {
     profileCoachId = fromBody && String(fromBody) === uid ? null : fromBody;
   }
 
-  const row = {
-    user_id,
-    email,
-    name: typeof name === "string" ? name : "",
-    role,
-    coach_id: profileCoachId,
-  };
-  if (role === "coach") {
-    row.plan_status = "trial";
-    row.trial_started_at = nowIso;
-  }
-
-  // Equivalente a INSERT ... ON CONFLICT (user_id) DO UPDATE
-  const { error } = await supabase.from("profiles").upsert(row, { onConflict: "user_id", ignoreDuplicates: false });
+  const { error } = await supabase.rpc("upsert_profile", {
+    p_user_id: uid,
+    p_email: typeof email === "string" ? email.trim().toLowerCase() : "",
+    p_name: typeof name === "string" ? name : "",
+    p_role: role,
+    p_coach_id: profileCoachId ?? null,
+  });
 
   if (error) return res.status(500).json({ error: error.message });
   if (role === "athlete") {
