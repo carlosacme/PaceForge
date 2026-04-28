@@ -179,19 +179,18 @@ export default async function handler(req, res) {
         console.error("[wompi-webhook] Coach profile update error:", profErr);
         return res.status(500).json({ error: "Coach activation failed" });
       }
-    } else if (paymentRow.payer_type === "athlete_solo_subscription") {
+   } else if (paymentRow.payer_type === "athlete_solo_subscription") {
       const months = monthsForPeriod(paymentRow.plan_period);
       const expiresAt = addCalendarMonths(new Date(), months);
-      const athletePlanDb = paymentRow.plan_period === "anual" || paymentRow.plan_period === "annual" 
-        ? "annual" 
-        : "monthly";
 
       const { error: profErr } = await supabase
         .from("profiles")
         .update({
-          athlete_plan: athletePlanDb,
+          athlete_plan: "premium",
           athlete_plan_expires_at: expiresAt.toISOString(),
           subscription_expires_at: expiresAt.toISOString(),
+          subscription_period: paymentRow.plan_period,
+          subscription_amount: paymentRow.amount_cop,
         })
         .eq("user_id", paymentRow.payer_user_id);
 
