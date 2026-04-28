@@ -1673,31 +1673,25 @@ export default function App() {
         const athleteCoachIdNeverSelf =
           selectedRole !== "athlete" || !resolvedCoachId || String(resolvedCoachId) === String(newUserId) ? null : resolvedCoachId;
 
-        /** El rol del perfil sigue SIEMPRE el selector del formulario, no si hay código de coach. */
         const roleForProfile = authRole === "coach" ? "coach" : "athlete";
-        const nowIso = new Date().toISOString();
-        const profilePayload =
-          roleForProfile === "coach"
-            ? {
-                user_id: newUserId,
-                role: "coach",
-                coach_id: newUserId,
-                name: authName.trim(),
-                plan_status: "trial",
-                trial_started_at: nowIso,
-              }
-            : {
-                user_id: newUserId,
-                role: "athlete",
-                coach_id: athleteCoachIdNeverSelf,
-                name: authName.trim(),
-              };
-
-        const { error: profileError } = await supabase.from("profiles").insert(profilePayload);
-        if (profileError) {
-          console.warn("Perfil no insertado manualmente (RLS o el trigger ya creó la fila):", profileError.message || profileError, {
-            profilePayload,
+        try {
+          const apiRes = await fetch("/api/create-profile", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              user_id: newUserId,
+              email: authEmail.trim(),
+              name: authName.trim(),
+              role: roleForProfile,
+              coach_id: athleteCoachIdNeverSelf,
+            }),
           });
+          if (!apiRes.ok) {
+            const j = await apiRes.json().catch(() => ({}));
+            console.warn("create-profile API:", apiRes.status, j);
+          }
+        } catch (e) {
+          console.warn("create-profile fetch failed:", e);
         }
         if (roleForProfile === "athlete") {
           setProfile({ user_id: newUserId, role: "athlete", name: authName.trim(), coach_id: athleteCoachIdNeverSelf });
