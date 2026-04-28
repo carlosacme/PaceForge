@@ -1755,7 +1755,7 @@ export default function App() {
     }
   };
 
- const handleSignOut = async () => {
+const handleSignOut = async () => {
     const { error } = await supabase.auth.signOut();
     if (error) {
       console.error("Error al cerrar sesión:", error);
@@ -1768,8 +1768,9 @@ export default function App() {
       localStorage.removeItem("raf_tab_entrenamientos");
       localStorage.removeItem("raf_tab_biblioteca");
       localStorage.removeItem("raf_tab_crear_workout");
+      localStorage.removeItem("raf_athlete_tab");          // ← ESTA ES LA CLAVE CORRECTA (era "raf_athlete_nav_tab")
+      localStorage.removeItem("raf_athlete_eval_open");    // ← agregar también
       localStorage.removeItem("raf_athlete_profile_tab");
-      localStorage.removeItem("raf_athlete_nav_tab");
       localStorage.removeItem("raf_athlete_progress_tab");
       localStorage.removeItem("raf_admin_tab");
       localStorage.removeItem("raf_plan2_athlete");
