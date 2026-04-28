@@ -51,7 +51,7 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
     isDirtyRef.current = true;
   }, [form]);
 
-  const loadProfile = useCallback(async () => {
+ const loadProfile = useCallback(async () => {
     if (!coachUserId) {
       console.log("coachUserId is null/undefined - returning early");
       setLoading(false);
@@ -59,12 +59,43 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
     }
     setLoading(true);
     try {
-      const { data, error } = await supabase.from("coach_profiles").select("*").eq("user_id", coachUserId).maybeSingle();
-      if (error) {
-        console.error(error);
+      // Leemos en paralelo coach_profiles (datos de perfil/preferencias) y profiles (estado de suscripción Wompi)
+      const [coachRes, profRes] = await Promise.all([
+        supabase.from("coach_profiles").select("*").eq("user_id", coachUserId).maybeSingle(),
+        supabase
+          .from("profiles")
+          .select("subscription_plan, subscription_period, subscription_expires_at, plan_status")
+          .eq("user_id", coachUserId)
+          .maybeSingle(),
+      ]);
+
+      const data = coachRes.data;
+      const profData = profRes.data;
+      const coachErr = coachRes.error;
+
+      if (coachErr) {
+        console.error(coachErr);
         notify("No se pudo cargar la configuración. ¿Existe la tabla coach_profiles?");
         return;
       }
+      if (profRes.error) {
+        console.warn("[CoachSettings] No se pudo leer profiles:", profRes.error);
+      }
+
+      // Convertir el plan canónico ("basico"/"Basico"/"Pro") a un label visible.
+      const planLabelFromProfiles = (() => {
+        const raw = String(profData?.subscription_plan || "").trim().toLowerCase();
+        if (raw === "basico") return "Básico";
+        if (raw === "pro") return "Pro";
+        return "";
+      })();
+
+      // Fecha de renovación: el webhook guarda subscription_expires_at en profiles (formato ISO);
+      // el input HTML <input type="date"> espera "YYYY-MM-DD".
+      const renewsFromProfiles = profData?.subscription_expires_at
+        ? String(profData.subscription_expires_at).slice(0, 10)
+        : "";
+
       if (data) {
         skipDirtyMarkRef.current = true;
         setFormFromProfile({
@@ -80,8 +111,9 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
           notify_new_workouts: data.notify_new_workouts !== false,
           notify_reminders: data.notify_reminders !== false,
           is_public: data.is_public === true,
-          subscription_plan: data.subscription_plan || "",
-          subscription_renews_at: data.subscription_renews_at || "",
+          // profiles (Wompi) gana sobre coach_profiles si tiene plan activo
+          subscription_plan: planLabelFromProfiles || data.subscription_plan || "",
+          subscription_renews_at: renewsFromProfiles || data.subscription_renews_at || "",
         });
       } else {
         skipDirtyMarkRef.current = true;
@@ -98,8 +130,8 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
           notify_new_workouts: true,
           notify_reminders: true,
           is_public: false,
-          subscription_plan: athletesRef.current?.find((a) => a.plan)?.plan || "",
-          subscription_renews_at: "",
+          subscription_plan: planLabelFromProfiles || athletesRef.current?.find((a) => a.plan)?.plan || "",
+          subscription_renews_at: renewsFromProfiles || "",
         });
       }
     } catch (err) {
