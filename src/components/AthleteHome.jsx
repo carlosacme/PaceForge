@@ -1824,6 +1824,13 @@ export default function AthleteHome({ profile }) {
                 <button
                   type="button"
                   onClick={async () => {
+                    if (typeof localStorage !== "undefined") {
+                      localStorage.removeItem("raf_athlete_tab");
+                      localStorage.removeItem("raf_athlete_eval_open");
+                      localStorage.removeItem("raf_athlete_profile_tab");
+                      localStorage.removeItem("raf_athlete_progress_tab");
+                      localStorage.removeItem("raf_lastView");
+                    }
                     const { error } = await supabase.auth.signOut();
                     if (error) {
                       console.error("Error al cerrar sesión:", error);
