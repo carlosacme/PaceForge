@@ -1755,7 +1755,7 @@ export default function App() {
     }
   };
 
-  const handleSignOut = async () => {
+ const handleSignOut = async () => {
     const { error } = await supabase.auth.signOut();
     if (error) {
       console.error("Error al cerrar sesión:", error);
@@ -1763,7 +1763,20 @@ export default function App() {
     }
     if (typeof localStorage !== "undefined") {
       localStorage.removeItem(RAF_SELECTED_ATHLETE_STORAGE_KEY);
+      localStorage.removeItem("raf_lastView");
+      localStorage.removeItem("raf_tab_atletas");
+      localStorage.removeItem("raf_tab_entrenamientos");
+      localStorage.removeItem("raf_tab_biblioteca");
+      localStorage.removeItem("raf_tab_crear_workout");
+      localStorage.removeItem("raf_athlete_profile_tab");
+      localStorage.removeItem("raf_athlete_nav_tab");
+      localStorage.removeItem("raf_athlete_progress_tab");
+      localStorage.removeItem("raf_admin_tab");
+      localStorage.removeItem("raf_plan2_athlete");
+      localStorage.removeItem("raf_admin_plan_draft");
+      localStorage.removeItem("raf_push_invite_dismissed");
     }
+    setView("dashboard");
     setSelectedAthlete(null);
     setLandingAuthOpen(false);
     setDemoModalOpen(false);
