@@ -1668,26 +1668,6 @@ export default function App() {
         const athleteCoachIdNeverSelf =
           selectedRole !== "athlete" || !resolvedCoachId || String(resolvedCoachId) === String(newUserId) ? null : resolvedCoachId;
 
-        try {
-          const apiRes = await fetch("/api/create-profile", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              user_id: newUserId,
-              email: authEmail.trim(),
-              name: authName.trim(),
-              role: selectedRole,
-              coach_id: athleteCoachIdNeverSelf,
-            }),
-          });
-          if (!apiRes.ok) {
-            const j = await apiRes.json().catch(() => ({}));
-            console.warn("create-profile API:", apiRes.status, j);
-          }
-        } catch (e) {
-          console.warn("create-profile fetch failed:", e);
-        }
-
         /** El rol del perfil sigue SIEMPRE el selector del formulario, no si hay código de coach. */
         const roleForProfile = authRole === "coach" ? "coach" : "athlete";
         const nowIso = new Date().toISOString();
@@ -1734,30 +1714,8 @@ export default function App() {
           if (cpErr) console.error("Error creando coach_profiles en registro:", cpErr);
         }
 
-        if (roleForProfile === "athlete") {
-          const athletePayload = {
-            name: authName.trim(),
-            email: authEmail.trim().toLowerCase(),
-            goal: "Objetivo pendiente",
-            pace: "Pendiente",
-            weekly_km: 0,
-            coach_id: athleteCoachIdNeverSelf,
-            user_id: newUserId,
-          };
-          const { data: athleteRow, error: athleteErr } = await supabase.from("athletes").insert(athletePayload).select().maybeSingle();
-          if (athleteErr) {
-            console.error("Error creando athlete al registrar:", athleteErr);
-          } else if (pendingCoachRequestId && athleteRow?.id) {
-            await supabase.from("coach_requests").upsert(
-              {
-                athlete_id: athleteRow.id,
-                coach_id: pendingCoachRequestId,
-                status: "pending",
-              },
-              { onConflict: "athlete_id,coach_id" },
-            );
-            setPendingCoachRequestId("");
-          }
+        if (roleForProfile === "athlete" && pendingCoachRequestId) {
+          setPendingCoachRequestId("");
         }
 
         if (inviteRow?.id) {

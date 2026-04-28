@@ -51,5 +51,18 @@ export default async function handler(req, res) {
   const { error } = await supabase.from("profiles").upsert(row, { onConflict: "user_id" });
 
   if (error) return res.status(500).json({ error: error.message });
+  if (role === "athlete") {
+    const athleteRow = {
+      user_id: uid,
+      name: typeof name === "string" && name.trim() ? name.trim() : "Atleta",
+      email: typeof email === "string" ? email.trim().toLowerCase() : "",
+      goal: "Objetivo pendiente",
+      pace: "Pendiente",
+      weekly_km: 0,
+      coach_id: profileCoachId ?? null,
+    };
+    const { error: athleteErr } = await supabase.from("athletes").upsert(athleteRow, { onConflict: "user_id" });
+    if (athleteErr) return res.status(500).json({ error: athleteErr.message });
+  }
   return res.status(200).json({ success: true });
 }
