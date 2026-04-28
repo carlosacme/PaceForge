@@ -67,7 +67,7 @@ export default async function handler(req, res) {
   const amountInCents = amountNum * 100;
 
   const VALID_COACH_PLANS = { basico: ["mensual", "semestral", "anual"], pro: ["mensual", "semestral", "anual"] };
-  const VALID_ATHLETE_PLANS = { monthly: ["monthly"], annual: ["annual"] };
+  const VALID_ATHLETE_PLANS = { premium: ["monthly", "annual"] };
 
   if (payer_type === "coach_subscription") {
     if (!VALID_COACH_PLANS[plan_key]?.includes(plan_period)) {
