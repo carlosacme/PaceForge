@@ -38,8 +38,8 @@ export default async function handler(req, res) {
   const { error } = await supabase.rpc("upsert_profile", {
     p_user_id: uid,
     p_email: typeof email === "string" ? email.trim().toLowerCase() : "",
-    p_name: typeof name === "string" ? name : "",
-    p_role: role,
+    p_name: typeof name === "string" && name.trim() ? name.trim() : "Usuario",
+    p_role: role || "coach",
     p_coach_id: profileCoachId ?? null,
   });
 
