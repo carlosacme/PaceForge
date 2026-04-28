@@ -1658,7 +1658,12 @@ export default function App() {
           if (typeof localStorage !== "undefined") {
             localStorage.removeItem("raf_athlete_profile_tab");
             localStorage.removeItem("raf_athlete_nav_tab");
+            localStorage.removeItem("raf_tab_atletas");
+            localStorage.removeItem("raf_tab_entrenamientos");
+            localStorage.removeItem("raf_tab_biblioteca");
+            localStorage.removeItem("raf_tab_crear_workout");
             localStorage.removeItem("raf_athlete_progress_tab");
+            localStorage.removeItem("raf_lastView");
           }
           alert("Registro exitoso. Revisa tu correo si la verificación está habilitada.");
           setAuthMode("login");
@@ -1731,7 +1736,12 @@ export default function App() {
         if (typeof localStorage !== "undefined") {
           localStorage.removeItem("raf_athlete_profile_tab");
           localStorage.removeItem("raf_athlete_nav_tab");
+          localStorage.removeItem("raf_tab_atletas");
+          localStorage.removeItem("raf_tab_entrenamientos");
+          localStorage.removeItem("raf_tab_biblioteca");
+          localStorage.removeItem("raf_tab_crear_workout");
           localStorage.removeItem("raf_athlete_progress_tab");
+          localStorage.removeItem("raf_lastView");
         }
         alert("Registro exitoso. Revisa tu correo si la verificación está habilitada.");
         setAuthMode("login");
