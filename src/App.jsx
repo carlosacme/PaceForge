@@ -1012,7 +1012,6 @@ export default function App() {
   const [coachPlanPickerVoluntary, setCoachPlanPickerVoluntary] = useState(false);
   const [coachPickerPlan, setCoachPickerPlan] = useState(null);
   const [coachPickerPeriod, setCoachPickerPeriod] = useState(null);
-  const [coachPaymentModalOpen, setCoachPaymentModalOpen] = useState(false);
   const [coachSubscriptionSaving, setCoachSubscriptionSaving] = useState(false);
 
   const readStoredTab = useCallback((key, allowed, fallback) => {
@@ -1098,48 +1097,65 @@ export default function App() {
     return new Set([...coachNavItems.map((item) => item.id), ...hiddenViews]);
   }, [coachNavItems]);
 
-  const persistCoachSubscriptionSelection = useCallback(
-    async (planKey, periodId) => {
-      const def = COACH_PLAN_PICKER_DEFS[planKey];
-      const amount = def?.prices?.[periodId];
-      const uid = session?.user?.id;
-      if (!def || amount == null || !uid) return false;
-      setCoachSubscriptionSaving(true);
-      const periodDb = periodId === "monthly" ? "mensual" : periodId;
-      const { error } = await supabase
-        .from("profiles")
-        .update({
-          subscription_plan: def.dbPlan,
-          subscription_period: periodDb,
-          subscription_amount: amount,
-        })
-        .eq("user_id", uid);
-      setCoachSubscriptionSaving(false);
-      if (error) {
-        console.error("persistCoachSubscriptionSelection", error);
-        notify(error.message || "No se pudo guardar tu selección de plan.");
-        return false;
-      }
-      setProfile((p) =>
-        p && String(p.user_id) === String(uid)
-          ? { ...p, subscription_plan: def.dbPlan, subscription_period: periodDb, subscription_amount: amount }
-          : p,
-      );
-      return true;
-    },
-    [session?.user?.id, notify],
-  );
-
-  const handleCoachPlanPagarAhora = useCallback(async () => {
+ const handleCoachPlanPagarAhora = useCallback(async () => {
     if (!coachPickerPlan || !coachPickerPeriod) {
       notify("Elige un plan y un período de pago.");
       return;
     }
-    const ok = await persistCoachSubscriptionSelection(coachPickerPlan, coachPickerPeriod);
-    if (ok) setCoachPaymentModalOpen(true);
-  }, [coachPickerPlan, coachPickerPeriod, persistCoachSubscriptionSelection, notify]);
+    const def = COACH_PLAN_PICKER_DEFS[coachPickerPlan];
+    const amountCop = def?.prices?.[coachPickerPeriod];
+    if (!def || amountCop == null) {
+      notify("Plan o período no válido.");
+      return;
+    }
+    setCoachSubscriptionSaving(true);
+    try {
+      const periodDb = coachPickerPeriod === "monthly" ? "mensual" : coachPickerPeriod;
+      const { data: sessData } = await supabase.auth.getSession();
+      const accessToken = sessData?.session?.access_token;
+      if (!accessToken) {
+        notify("Tu sesión expiró. Vuelve a iniciar sesión.");
+        return;
+      }
+      const response = await fetch("/api/wompi-create-checkout", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          payer_type: "coach_subscription",
+          plan_key: coachPickerPlan,
+          plan_period: periodDb,
+          amount_cop: amountCop,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        console.error("create-checkout error:", data);
+        notify(data?.error || "No se pudo iniciar el pago.");
+        return;
+      }
+      const params = new URLSearchParams({
+        "public-key": data.public_key,
+        currency: data.currency,
+        "amount-in-cents": String(data.amount_in_cents),
+        reference: data.reference,
+        "signature:integrity": data.signature,
+        "redirect-url": data.redirect_url,
+      });
+      if (data.customer_email) params.set("customer-data:email", data.customer_email);
+      const checkoutUrl = `https://checkout.wompi.co/p/?${params.toString()}`;
+      window.location.href = checkoutUrl;
+    } catch (e) {
+      console.error("handleCoachPlanPagarAhora exception:", e);
+      notify("Error al iniciar el pago.");
+    } finally {
+      setCoachSubscriptionSaving(false);
+    }
+  }, [coachPickerPlan, coachPickerPeriod, notify]);
 
-  const coachPlanPickerWhatsAppHref = useMemo(() => {
+ const coachPlanPickerWhatsAppHref = useMemo(() => {
     if (!coachPickerPlan || !coachPickerPeriod) return `https://wa.me/${COACH_SUBSCRIPTION_WA_E164}`;
     const def = COACH_PLAN_PICKER_DEFS[coachPickerPlan];
     const amount = def?.prices?.[coachPickerPeriod];
@@ -2733,7 +2749,6 @@ const handleSignOut = async () => {
               type="button"
               onClick={() => {
                 setCoachPlanPickerVoluntary(true);
-                setCoachPaymentModalOpen(false);
               }}
               style={{
                 padding: "8px 14px",
@@ -2973,7 +2988,6 @@ const handleSignOut = async () => {
                 type="button"
                 onClick={() => {
                   setCoachPlanPickerVoluntary(false);
-                  setCoachPaymentModalOpen(false);
                 }}
                 style={{
                   position: "absolute",
@@ -3129,7 +3143,7 @@ const handleSignOut = async () => {
             </div>
           </div>
 
-          {coachPaymentModalOpen ? (
+          {false ? (
             <div
               style={{
                 position: "fixed",
