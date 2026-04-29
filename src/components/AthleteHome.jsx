@@ -74,7 +74,104 @@ const SOLO_PLAN_MONTHLY_COP = 25000;
 const SOLO_PLAN_ANNUAL_COP = 250000;
 import { refreshFcmTokenIfGranted } from "../firebase.js";
 
-const MarketplacePlanWorkoutsAccordion = () => null;
+function MarketplacePlanWorkoutsAccordion({ previewWorkouts, resetKey, lockAfterWeek1 = false }) {
+  const list = Array.isArray(previewWorkouts) ? previewWorkouts : [];
+  const [openWeeks, setOpenWeeks] = useState(() => new Set([1]));
+
+  useEffect(() => {
+    setOpenWeeks(new Set([lockAfterWeek1 ? 1 : (list[0]?.week ?? 1)]));
+  }, [resetKey, lockAfterWeek1]);
+
+  const weekGroups = useMemo(() => {
+    const groups = new Map();
+    list.forEach((w, i) => {
+      const wn = w?.week != null && w.week !== "" ? Number(w.week) : NaN;
+      const key = Number.isFinite(wn) && wn > 0 ? wn : 0;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push({ w, i });
+    });
+    return [...groups.entries()].sort((a, b) => {
+      if (a[0] === 0) return 1;
+      if (b[0] === 0) return -1;
+      return a[0] - b[0];
+    });
+  }, [previewWorkouts]);
+
+  if (list.length === 0) {
+    return <div style={{ color: "#94a3b8", fontSize: ".82em", marginBottom: 12 }}>No hay workouts en este plan.</div>;
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
+      {weekGroups.map(([weekKey, items]) => {
+        const open = openWeeks.has(weekKey);
+        const label = weekKey === 0 ? "Sin número de semana" : `Semana ${weekKey}`;
+        const isLocked = lockAfterWeek1 && weekKey !== 1 && weekKey !== 0;
+        return (
+          <div key={weekKey} style={{ border: "1px solid #e2e8f0", borderRadius: 10, overflow: "hidden" }}>
+            <button
+              type="button"
+              onClick={() => {
+                if (isLocked) return;
+                setOpenWeeks((prev) => {
+                  if (prev.has(weekKey) && prev.size === 1) return new Set();
+                  return new Set([weekKey]);
+                });
+              }}
+              style={{
+                width: "100%",
+                textAlign: "left",
+                padding: "10px 12px",
+                border: "none",
+                background: open ? "#f1f5f9" : "#fff",
+                fontWeight: 800,
+                fontSize: ".82em",
+                color: isLocked ? "#94a3b8" : "#0f172a",
+                cursor: isLocked ? "default" : "pointer",
+                fontFamily: "inherit",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+              }}
+            >
+              <span>
+                {label}
+                {isLocked ? " 🔒" : ""}
+                <span style={{ fontWeight: 600, color: "#64748b", marginLeft: 6 }}>
+                  ({items.length} {items.length === 1 ? "sesión" : "sesiones"})
+                </span>
+              </span>
+              {!isLocked && <span style={{ fontSize: ".75em", color: "#64748b" }}>{open ? "▾" : "▸"}</span>}
+            </button>
+            {open && !isLocked ? (
+              <div style={{ padding: "8px 10px 10px", background: "#fafafa", display: "grid", gap: 8 }}>
+                {items.map(({ w, i }) => (
+                  <div key={i} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", background: "#fff" }}>
+                    <div style={{ fontWeight: 800, fontSize: ".85em" }}>
+                      {w.day ? `${w.day} · ` : ""}{w.title || `Sesión ${i + 1}`}
+                    </div>
+                    {w.description ? (
+                      <div style={{ fontSize: ".78em", color: "#475569", marginTop: 4, lineHeight: 1.4 }}>{w.description}</div>
+                    ) : null}
+                    {(w.distance_km || w.duration_min || w.pace_range) ? (
+                      <div style={{ fontSize: ".75em", color: "#64748b", marginTop: 4 }}>
+                        {[
+                          w.pace_range ? `${w.pace_range} min/km` : null,
+                          w.distance_km ? `${w.distance_km} km` : null,
+                          w.duration_min ? `${w.duration_min} min` : null,
+                        ].filter(Boolean).join(" · ")}
+                      </div>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 const ChallengesHub = lazy(() => import("./ChallengesHub"));
 const MarketplaceHub = lazy(() => import("./MarketplaceHub"));
 const EvaluationView = lazy(() => import("./EvaluationView"));
