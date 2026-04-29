@@ -1,0 +1,130 @@
+export default function handler(req, res) {
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.status(200).send(`<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Política de Privacidad — RunningApexFlow</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f8fafc; color: #0f172a; line-height: 1.7; }
+    .container { max-width: 780px; margin: 0 auto; padding: 48px 24px 80px; }
+    .logo { display: flex; align-items: center; gap: 10px; margin-bottom: 40px; }
+    .logo-icon { width: 36px; height: 36px; background: #f59e0b; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 900; font-size: 1.2em; }
+    .logo-name { font-weight: 900; font-size: 1.15em; letter-spacing: .04em; }
+    .logo-name span { color: #f59e0b; }
+    h1 { font-size: 2em; font-weight: 900; margin-bottom: 8px; }
+    .updated { color: #64748b; font-size: .9em; margin-bottom: 40px; }
+    h2 { font-size: 1.15em; font-weight: 800; margin: 32px 0 12px; color: #0f172a; }
+    p { color: #334155; margin-bottom: 14px; }
+    ul { color: #334155; padding-left: 20px; margin-bottom: 14px; }
+    ul li { margin-bottom: 6px; }
+    a { color: #f59e0b; text-decoration: none; }
+    .card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 24px; margin-bottom: 8px; }
+    .footer { margin-top: 48px; padding-top: 24px; border-top: 1px solid #e2e8f0; color: #94a3b8; font-size: .85em; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="logo">
+      <div class="logo-icon">▲</div>
+      <div class="logo-name">RUNNING<span>APEX</span>FLOW</div>
+    </div>
+
+    <h1>Política de Privacidad</h1>
+    <p class="updated">Última actualización: 29 de abril de 2026</p>
+
+    <div class="card">
+      <h2>1. Información que recopilamos</h2>
+      <p>RunningApexFlow recopila la siguiente información cuando usas nuestra plataforma:</p>
+      <ul>
+        <li><strong>Datos de cuenta:</strong> nombre completo, dirección de correo electrónico y contraseña cifrada.</li>
+        <li><strong>Datos de entrenamiento:</strong> workouts, distancias, tiempos, frecuencia cardíaca, RPE y notas de sesión.</li>
+        <li><strong>Datos de rendimiento:</strong> evaluaciones VDOT, zonas de FC y métricas de carga de entrenamiento.</li>
+        <li><strong>Datos de pago:</strong> procesados de forma segura por Wompi. No almacenamos datos de tarjetas de crédito.</li>
+        <li><strong>Datos de dispositivo:</strong> token de notificaciones push (FCM) para envío de alertas.</li>
+        <li><strong>Integraciones opcionales:</strong> datos de Strava, Garmin y COROS cuando el usuario los conecta voluntariamente.</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h2>2. Cómo usamos tu información</h2>
+      <p>Usamos tu información exclusivamente para:</p>
+      <ul>
+        <li>Proveer el servicio de coaching y seguimiento deportivo.</li>
+        <li>Personalizar planes de entrenamiento con inteligencia artificial.</li>
+        <li>Enviar notificaciones push sobre workouts y mensajes de tu coach.</li>
+        <li>Procesar pagos de suscripciones y planes del marketplace.</li>
+        <li>Calcular métricas de rendimiento (VDOT, zonas FC, carga de entrenamiento).</li>
+        <li>Mejorar la plataforma mediante análisis de uso agregado y anónimo.</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h2>3. Compartición de datos</h2>
+      <p>No vendemos ni compartimos tu información personal con terceros, excepto:</p>
+      <ul>
+        <li><strong>Tu coach:</strong> si eres atleta, tu coach asignado puede ver tus datos de entrenamiento.</li>
+        <li><strong>Wompi:</strong> procesador de pagos. Su política de privacidad aplica para transacciones.</li>
+        <li><strong>Supabase:</strong> proveedor de base de datos y autenticación con cifrado en reposo.</li>
+        <li><strong>Anthropic:</strong> proveedor de IA para generación de entrenamientos. Los datos enviados no se usan para entrenar modelos.</li>
+        <li><strong>Firebase (Google):</strong> servicio de notificaciones push.</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h2>4. Seguridad de los datos</h2>
+      <p>Implementamos las siguientes medidas de seguridad:</p>
+      <ul>
+        <li>Contraseñas cifradas con bcrypt a través de Supabase Auth.</li>
+        <li>Comunicaciones cifradas con TLS/HTTPS en todo momento.</li>
+        <li>Políticas de seguridad a nivel de fila (RLS) en la base de datos.</li>
+        <li>Claves de API almacenadas como variables de entorno seguras en Vercel.</li>
+        <li>Tokens de pago manejados exclusivamente por Wompi, nunca almacenados en nuestros servidores.</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h2>5. Retención de datos</h2>
+      <p>Conservamos tus datos mientras tu cuenta esté activa. Si eliminas tu cuenta, tus datos personales se eliminan dentro de los 30 días siguientes a la solicitud, excepto los registros de transacciones que debemos conservar por obligaciones legales.</p>
+    </div>
+
+    <div class="card">
+      <h2>6. Tus derechos</h2>
+      <p>Tienes derecho a:</p>
+      <ul>
+        <li><strong>Acceder</strong> a todos los datos que tenemos sobre ti.</li>
+        <li><strong>Corregir</strong> información incorrecta desde tu perfil en la app.</li>
+        <li><strong>Eliminar</strong> tu cuenta y todos tus datos personales.</li>
+        <li><strong>Exportar</strong> tus datos de entrenamiento en cualquier momento.</li>
+        <li><strong>Revocar</strong> integraciones (Strava, Garmin, COROS) desde Configuración.</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h2>7. Menores de edad</h2>
+      <p>RunningApexFlow no está dirigido a menores de 13 años. No recopilamos intencionalmente información de menores de 13 años. Si eres padre o tutor y crees que tu hijo ha proporcionado datos personales, contáctanos para eliminarlos.</p>
+    </div>
+
+    <div class="card">
+      <h2>8. Cambios a esta política</h2>
+      <p>Podemos actualizar esta política ocasionalmente. Te notificaremos por correo electrónico o mediante un aviso en la app cuando realicemos cambios significativos. El uso continuado de la plataforma después de los cambios constituye tu aceptación.</p>
+    </div>
+
+    <div class="card">
+      <h2>9. Contacto</h2>
+      <p>Si tienes preguntas sobre esta política de privacidad o quieres ejercer tus derechos, contáctanos:</p>
+      <ul>
+        <li><strong>Email:</strong> <a href="mailto:acostamerlano87@gmail.com">acostamerlano87@gmail.com</a></li>
+        <li><strong>Plataforma:</strong> <a href="https://pace-forge-eta.vercel.app">pace-forge-eta.vercel.app</a></li>
+      </ul>
+    </div>
+
+    <div class="footer">
+      <p>© 2026 RunningApexFlow. Todos los derechos reservados.</p>
+    </div>
+  </div>
+</body>
+</html>`);
+}
