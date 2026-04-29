@@ -29,6 +29,7 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
   });
   const [salesByPlanId, setSalesByPlanId] = useState({});
   const [ratingsByPlanId, setRatingsByPlanId] = useState({});
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
 
   const loadMarketplace = useCallback(async () => {
     setLoadingPlans(true);
@@ -156,17 +157,86 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
     [plans, coachUserId],
   );
 
-  const openPurchaseInstructions = (plan) => {
-    setSelectedPlan(plan);
+  const handleBuyWithWompi = async (plan) => {
+    if (!currentUserId) {
+      notify?.("Inicia sesión para comprar.");
+      return;
+    }
+    setCheckoutLoading(String(plan.id));
+    try {
+      const { data: sessData } = await supabase.auth.getSession();
+      const accessToken = sessData?.session?.access_token;
+      if (!accessToken) {
+        notify?.("Tu sesión expiró. Vuelve a iniciar sesión.");
+        return;
+      }
+
+      // Primero insertamos la fila en plan_purchases con estado pending
+      const { data: purchaseRow, error: purchaseErr } = await supabase
+        .from("plan_purchases")
+        .insert({
+          plan_id: plan.id,
+          buyer_user_id: currentUserId,
+          buyer_name: "",
+          plan_title: plan.title || "",
+          amount_cop: Number(plan.price_cop || 0),
+          payment_status: "pending",
+          coach_id: plan.coach_user_id || null,
+        })
+        .select()
+        .single();
+
+      if (purchaseErr) {
+        console.error("plan_purchases insert:", purchaseErr);
+        notify?.(purchaseErr.message || "No se pudo iniciar la compra.");
+        return;
+      }
+
+      // Luego creamos el checkout con Wompi
+      const response = await fetch("/api/wompi-create-checkout", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          payer_type: "marketplace_purchase",
+          plan_key: null,
+          plan_period: null,
+          amount_cop: Number(plan.price_cop || 0),
+          marketplace_plan_id: plan.id,
+          marketplace_purchase_id: purchaseRow.id,
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        console.error("create-checkout marketplace:", data);
+        notify?.(data?.error || "No se pudo iniciar el pago.");
+        return;
+      }
+
+      const params = new URLSearchParams({
+        "public-key": data.public_key,
+        currency: data.currency,
+        "amount-in-cents": String(data.amount_in_cents),
+        reference: data.reference,
+        "signature:integrity": data.signature,
+        "redirect-url": data.redirect_url,
+      });
+      if (data.customer_email) params.set("customer-data:email", data.customer_email);
+
+      const checkoutUrl = `https://checkout.wompi.co/p/?${params.toString()}`;
+      window.location.href = checkoutUrl;
+    } catch (e) {
+      console.error("handleBuyWithWompi exception:", e);
+      notify?.("Error al iniciar el pago.");
+    } finally {
+      setCheckoutLoading(null);
+    }
   };
 
-  const purchaseWhatsappHref = useMemo(() => {
-    if (!selectedPlan) return "https://wa.me/573233675434";
-    const txt = encodeURIComponent(
-      `Hola, pagué el plan ${selectedPlan.title || "Plan"} por $${formatCopInt(selectedPlan.price_cop)} COP`,
-    );
-    return `https://wa.me/573233675434?text=${txt}`;
-  }, [selectedPlan]);
+ 
 
   const selectedPlanIsOwner = useMemo(
     () => Boolean(selectedPlan && String(selectedPlan.coach_user_id || "") === String(currentUserId || "")),
@@ -689,28 +759,16 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
                 <div style={{ fontSize: ".9em", fontWeight: 800, color: "#0f172a", marginBottom: 12, lineHeight: 1.45 }}>
                   Adquiere este plan para desbloquear todas las semanas
                 </div>
-                <button type="button" onClick={() => openPurchaseInstructions(selectedPlan)} style={{ width: "100%", background: "linear-gradient(135deg,#ea580c,#f97316)", border: "none", borderRadius: 10, padding: "10px 14px", color: "#fff", fontWeight: 900, cursor: "pointer", fontFamily: "inherit", fontSize: ".85em" }}>
-                  Comprar - ${formatCopInt(selectedPlan.price_cop)} COP
+               <button type="button" onClick={() => handleBuyWithWompi(selectedPlan)} disabled={checkoutLoading === String(selectedPlan?.id)} style={{ width: "100%", background: checkoutLoading === String(selectedPlan?.id) ? "#cbd5e1" : "linear-gradient(135deg,#ea580c,#f97316)", border: "none", borderRadius: 10, padding: "10px 14px", color: "#fff", fontWeight: 900, cursor: checkoutLoading === String(selectedPlan?.id) ? "not-allowed" : "pointer", fontFamily: "inherit", fontSize: ".85em" }}>
+                  {checkoutLoading === String(selectedPlan?.id) ? "Iniciando pago…" : `Comprar - $${formatCopInt(selectedPlan.price_cop)} COP`}
                 </button>
               </div>
             ) : !hidePurchaseCta ? (
-              <button type="button" onClick={() => openPurchaseInstructions(selectedPlan)} style={{ width: "100%", background: "linear-gradient(135deg,#ea580c,#f97316)", border: "none", borderRadius: 10, padding: "10px 14px", color: "#fff", fontWeight: 900, cursor: "pointer", fontFamily: "inherit", fontSize: ".85em", marginTop: 10 }}>
-                Comprar - ${formatCopInt(selectedPlan.price_cop)} COP
+              <button type="button" onClick={() => handleBuyWithWompi(selectedPlan)} disabled={checkoutLoading === String(selectedPlan?.id)} style={{ width: "100%", background: checkoutLoading === String(selectedPlan?.id) ? "#cbd5e1" : "linear-gradient(135deg,#ea580c,#f97316)", border: "none", borderRadius: 10, padding: "10px 14px", color: "#fff", fontWeight: 900, cursor: checkoutLoading === String(selectedPlan?.id) ? "not-allowed" : "pointer", fontFamily: "inherit", fontSize: ".85em", marginTop: 10 }}>
+                {checkoutLoading === String(selectedPlan?.id) ? "Iniciando pago…" : `Comprar - $${formatCopInt(selectedPlan.price_cop)} COP`}
               </button>
             ) : null}
-            <div style={{ marginTop: 12, border: "1px solid #e2e8f0", borderRadius: 10, padding: 12, background: "#fff7ed" }}>
-              <div style={{ fontWeight: 800, marginBottom: 6 }}>Realiza tu pago a:</div>
-              <div style={{ fontSize: ".84em", lineHeight: 1.5 }}>
-                📱 Nequi: 3233675434
-                <br />
-                📸 Envía comprobante por WhatsApp indicando el plan: {selectedPlan.title}
-                <br />
-                ✅ Recibirás el plan en menos de 24 horas
-              </div>
-              <a href={purchaseWhatsappHref} target="_blank" rel="noreferrer" style={{ display: "inline-block", marginTop: 10, background: "#16a34a", color: "#fff", textDecoration: "none", borderRadius: 8, padding: "8px 12px", fontWeight: 800, fontSize: ".8em" }}>
-                Enviar comprobante
-              </a>
-            </div>
+            
           </div>
         </div>
       ) : null}
