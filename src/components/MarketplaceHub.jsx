@@ -172,16 +172,18 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
       }
 
       // Primero insertamos la fila en plan_purchases con estado pending
+ // Primero insertamos la fila en plan_purchases con estado pending
       const { data: purchaseRow, error: purchaseErr } = await supabase
         .from("plan_purchases")
         .insert({
           plan_id: plan.id,
           buyer_user_id: currentUserId,
-          buyer_name: "",
-          plan_title: plan.title || "",
-          amount_cop: Number(plan.price_cop || 0),
-          payment_status: "pending",
           coach_id: plan.coach_user_id || null,
+          price_paid: Number(plan.price_cop || 0),
+          platform_fee: Math.round(Number(plan.price_cop || 0) * 0.2),
+          coach_earnings: Math.round(Number(plan.price_cop || 0) * 0.8),
+          payment_method: "wompi",
+          payment_status: "pending",
         })
         .select()
         .single();
