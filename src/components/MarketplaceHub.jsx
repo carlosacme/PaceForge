@@ -28,6 +28,9 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
     preview_workouts: [],
   });
   const [salesByPlanId, setSalesByPlanId] = useState({});
+  const [purchasedPlans, setPurchasedPlans] = useState([]);
+  const [loadingPurchasedPlans, setLoadingPurchasedPlans] = useState(false);
+  const [selectedPurchasedPlan, setSelectedPurchasedPlan] = useState(null);
   const [ratingsByPlanId, setRatingsByPlanId] = useState({});
   const [checkoutLoading, setCheckoutLoading] = useState(false);
 
@@ -100,7 +103,64 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
     loadMarketplace();
     loadSales();
   }, [loadMarketplace, loadSales]);
+const loadPurchasedPlans = useCallback(async () => {
+    if (!currentUserId || !isAthlete) {
+      setPurchasedPlans([]);
+      return;
+    }
+    setLoadingPurchasedPlans(true);
+    try {
+      const { data, error } = await supabase
+        .from("plan_purchases")
+        .select("id, plan_id, price_paid, created_at, confirmed_at")
+        .eq("buyer_user_id", currentUserId)
+        .eq("payment_status", "confirmed")
+        .order("created_at", { ascending: false });
 
+      if (error) {
+        console.error("plan_purchases (purchased):", error);
+        setPurchasedPlans([]);
+        return;
+      }
+
+      if (!data || data.length === 0) {
+        setPurchasedPlans([]);
+        return;
+      }
+
+      const planIds = [...new Set(data.map((r) => r.plan_id).filter(Boolean))];
+      const { data: planData, error: planErr } = await supabase
+        .from("plan_marketplace")
+        .select("*")
+        .in("id", planIds);
+
+      if (planErr) {
+        console.error("plan_marketplace (purchased lookup):", planErr);
+        setPurchasedPlans([]);
+        return;
+      }
+
+      const planMap = {};
+      for (const p of planData || []) planMap[String(p.id)] = p;
+
+      const result = data
+        .map((row) => {
+          const plan = planMap[String(row.plan_id)];
+          if (!plan) return null;
+          return {
+            purchaseId: row.id,
+            purchasedAt: row.confirmed_at || row.created_at,
+            pricePaid: row.price_paid,
+            plan,
+          };
+        })
+        .filter(Boolean);
+
+      setPurchasedPlans(result);
+    } finally {
+      setLoadingPurchasedPlans(false);
+    }
+  }, [currentUserId, isAthlete]);
   const loadPendingPurchases = useCallback(async () => {
     const canSeePending = isCoach || isAdmin;
     if (!canSeePending) {
@@ -131,7 +191,9 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
       setPendingPurchasesList(pendingRows.filter((row) => myPlanIds.has(String(row.plan_id || ""))));
     }
   }, [isCoach, isAdmin, coachUserId, currentUserId, plans]);
-
+useEffect(() => {
+    loadPurchasedPlans();
+  }, [loadPurchasedPlans]);
   useEffect(() => {
     loadPendingPurchases();
   }, [loadPendingPurchases]);
@@ -611,7 +673,66 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
           )}
         </div>
       ) : null}
-
+{isAthlete && (purchasedPlans.length > 0 || loadingPurchasedPlans) ? (
+        <div style={{ ...S.card, marginBottom: 14 }}>
+          <div style={{ fontSize: ".72em", letterSpacing: ".12em", textTransform: "uppercase", color: "#64748b", marginBottom: 10 }}>
+            📦 Mis planes adquiridos
+          </div>
+          {loadingPurchasedPlans ? (
+            <div style={{ color: "#64748b", fontSize: ".84em" }}>Cargando tus planes…</div>
+          ) : (
+            <div style={{ display: "grid", gap: 10 }}>
+              {purchasedPlans.map(({ purchaseId, purchasedAt, pricePaid, plan }) => (
+                <div
+                  key={purchaseId}
+                  style={{
+                    border: "1px solid #bbf7d0",
+                    borderRadius: 12,
+                    padding: "12px 14px",
+                    background: "linear-gradient(145deg,#f0fdf4,#fff)",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    gap: 12,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 800, color: "#0f172a", marginBottom: 4 }}>
+                      ✅ {plan.title}
+                    </div>
+                    <div style={{ fontSize: ".78em", color: "#64748b" }}>
+                      {plan.duration_weeks} semanas · {plan.sessions_per_week} sesiones/sem · {String(plan.level || "")}
+                    </div>
+                    <div style={{ fontSize: ".75em", color: "#16a34a", fontWeight: 700, marginTop: 4 }}>
+                      Comprado el {new Date(purchasedAt).toLocaleDateString("es-CO", { day: "numeric", month: "long", year: "numeric" })}
+                      {" · "}${Number(pricePaid || 0).toLocaleString("es-CO")} COP
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedPurchasedPlan(plan)}
+                    style={{
+                      background: "linear-gradient(135deg,#16a34a,#22c55e)",
+                      border: "none",
+                      borderRadius: 9,
+                      padding: "9px 14px",
+                      color: "#fff",
+                      fontWeight: 800,
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                      fontSize: ".8em",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    Ver plan completo
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : null}
       {loadingPlans ? (
         <div style={{ color: "#64748b" }}>Cargando planes…</div>
       ) : plansVisible.length === 0 ? (
@@ -774,7 +895,41 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
           </div>
         </div>
       ) : null}
-
+{selectedPurchasedPlan ? (
+        <div style={{ position: "fixed", inset: 0, zIndex: 10032, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ ...S.card, width: "100%", maxWidth: 720, margin: 0, maxHeight: "90vh", overflowY: "auto" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginBottom: 8 }}>
+              <div>
+                <div style={{ fontSize: "1.05em", fontWeight: 900, color: "#0f172a" }}>{selectedPurchasedPlan.title}</div>
+                <div style={{ fontSize: ".72em", color: "#16a34a", fontWeight: 700, marginTop: 4 }}>
+                  ✅ Plan adquirido — acceso completo
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedPurchasedPlan(null)}
+                style={{ border: "1px solid #e2e8f0", background: "#fff", borderRadius: 8, padding: "6px 10px", cursor: "pointer", fontFamily: "inherit" }}
+              >
+                ✕
+              </button>
+            </div>
+            <div style={{ color: "#475569", fontSize: ".86em", marginBottom: 10 }}>
+              {selectedPurchasedPlan.description || "Sin descripción."}
+            </div>
+            <div style={{ fontSize: ".78em", color: "#64748b", marginBottom: 6 }}>
+              Coach: {selectedPurchasedPlan.coach_name || "Coach"} · {selectedPurchasedPlan.duration_weeks} semanas · {selectedPurchasedPlan.sessions_per_week} sesiones/semana
+            </div>
+            <div style={{ fontSize: ".78em", fontWeight: 800, color: "#334155", marginBottom: 8 }}>
+              Contenido completo del plan
+            </div>
+            <MarketplacePlanWorkoutsAccordion
+              previewWorkouts={getMarketplacePlanWorkoutRows(selectedPurchasedPlan)}
+              resetKey={selectedPurchasedPlan.id}
+              lockAfterWeek1={false}
+            />
+          </div>
+        </div>
+      ) : null}
       {showPublishModal ? (
         <div style={{ position: "fixed", inset: 0, zIndex: 10031, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
           <div style={{ ...S.card, width: "100%", maxWidth: 760, margin: 0, maxHeight: "90vh", overflowY: "auto" }}>
