@@ -57,12 +57,17 @@ import {
 } from "./shared/appShared";
 
 /** Plan de suscripción atleta independiente (profiles / athletes). */
-function normalizeSoloAthletePlanKey(raw) {
-  const s = String(raw ?? "").trim().toLowerCase();
-  if (s === "monthly" || s === "mensual") return "monthly";
-  if (s === "annual" || s === "anual" || s === "yearly") return "annual";
-  if (s === "free" || s === "") return "free";
-  return "free";
+/**
+ * Determina el plan visible del atleta independiente combinando athlete_plan y subscription_period.
+ * - Si athlete_plan='free' o no hay datos → "free"
+ * - Si athlete_plan='premium' → usa subscription_period para distinguir mensual vs anual
+ */
+function normalizeSoloAthletePlanKey(athletePlan, subscriptionPeriod) {
+  const planRaw = String(athletePlan ?? "").trim().toLowerCase();
+  if (planRaw !== "premium") return "free";
+  const periodRaw = String(subscriptionPeriod ?? "").trim().toLowerCase();
+  if (periodRaw === "annual" || periodRaw === "anual" || periodRaw === "yearly") return "annual";
+  return "monthly";
 }
 
 const SOLO_PLAN_MONTHLY_COP = 25000;
@@ -881,9 +886,17 @@ export default function AthleteHome({ profile }) {
     return true;
   }, [profile?.coach_id, profile?.user_id]);
 
-  const soloAthletePlanKey = useMemo(
-    () => normalizeSoloAthletePlanKey(profile?.athlete_plan ?? athleteInfo?.athlete_plan),
-    [profile?.athlete_plan, athleteInfo?.athlete_plan],
+ const soloAthletePlanKey = useMemo(
+    () => normalizeSoloAthletePlanKey(
+      profile?.athlete_plan ?? athleteInfo?.athlete_plan,
+      profile?.subscription_period ?? athleteInfo?.subscription_period,
+    ),
+    [
+      profile?.athlete_plan, 
+      athleteInfo?.athlete_plan,
+      profile?.subscription_period,
+      athleteInfo?.subscription_period,
+    ],
   );
 
   const subscriptionExpiresFormatted = useMemo(() => {
