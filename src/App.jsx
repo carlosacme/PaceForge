@@ -1504,7 +1504,19 @@ export default function App() {
       cancelled = true;
     };
   }, [selectedAthlete?.id, athletes, notify]);
-
+// Detectar retorno de OAuth Strava (flujo nuevo vía /api/strava-callback)
+useEffect(() => {
+  if (typeof window === "undefined") return;
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("strava_connected") === "true") {
+    notify("✅ ¡Strava conectado exitosamente! Tus actividades se sincronizarán automáticamente.");
+    window.history.replaceState({}, "", window.location.pathname);
+  }
+  if (params.get("strava_error")) {
+    notify(`Error conectando Strava: ${params.get("strava_error")}`);
+    window.history.replaceState({}, "", window.location.pathname);
+  }
+}, [notify]);
   useEffect(() => {
     const loadAthletes = async () => {
       if (!session) {
