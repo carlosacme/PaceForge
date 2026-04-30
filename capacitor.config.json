@@ -1,5 +1,9 @@
 {
-  "appId": "com.runningapexflow.app",
+  "appId": "com.paceforge.app",
   "appName": "RunningApexFlow",
-  "webDir": "dist"
+  "webDir": "dist",
+  "server": {
+    "url": "https://pace-forge-eta.vercel.app",
+    "cleartext": false
+  }
 }
