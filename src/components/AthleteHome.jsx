@@ -1267,23 +1267,31 @@ export default function AthleteHome({ profile }) {
     }
   };
 
-  const disconnectStrava = async () => {
-    if (!athleteInfo?.id) return;
-    if (!window.confirm("¿Desconectar Strava de tu cuenta?")) return;
-    setStravaDisconnecting(true);
-    try {
-      const { error } = await supabase.from("strava_tokens").delete().eq("user_id", profile?.user_id);
-      if (error) {
-        console.error(error);
-        setMessage(error.message || "No se pudo desconectar Strava");
-        return;
-      }
-      setStravaConnection(null);
-      setStravaActivities([]);
-    } finally {
-      setStravaDisconnecting(false);
+ const disconnectStrava = async () => {
+  const userId = profile?.user_id;
+  if (!userId) {
+    setMessage("No se pudo obtener tu usuario. Intenta recargar.");
+    return;
+  }
+  if (!window.confirm("¿Desconectar Strava de tu cuenta?")) return;
+  setStravaDisconnecting(true);
+  try {
+    const { error } = await supabase
+      .from("strava_tokens")
+      .delete()
+      .eq("user_id", userId);
+    if (error) {
+      console.error(error);
+      setMessage(error.message || "No se pudo desconectar Strava");
+      return;
     }
-  };
+    setStravaConnection(null);
+    setStravaActivities([]);
+    setMessage("✅ Strava desconectado correctamente.");
+  } finally {
+    setStravaDisconnecting(false);
+  }
+};
 
   // ── FIX: Guarda flag en sessionStorage ANTES de redirigir
   const openAthleteStravaOAuth = useCallback(async () => {
