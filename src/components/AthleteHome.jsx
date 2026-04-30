@@ -1151,7 +1151,20 @@ export default function AthleteHome({ profile }) {
     setStravaLoadingActivities(false);
   }
 }, [profile?.user_id, stravaConnection?.access_token]);
-
+// Detectar retorno OAuth Strava
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("strava_connected") === "true") {
+      setMessage("✅ ¡Strava conectado! Tus actividades se sincronizarán automáticamente.");
+      window.history.replaceState({}, "", window.location.pathname);
+      loadStravaConnection();
+    }
+    if (params.get("strava_error")) {
+      setMessage(`Error conectando Strava: ${params.get("strava_error")}`);
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, [loadStravaConnection]);
   useEffect(() => {
     loadAthleteChat();
   }, [loadAthleteChat]);
