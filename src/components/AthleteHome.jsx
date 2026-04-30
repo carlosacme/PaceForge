@@ -1152,23 +1152,22 @@ export default function AthleteHome({ profile }) {
   }
 }, [profile?.user_id, stravaConnection?.access_token]);
 // Detectar retorno OAuth Strava — solo al montar
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("strava_connected") === "true") {
-      window.history.replaceState({}, "", window.location.pathname);
-      // Pequeño delay para que React termine de montar
-      setTimeout(() => {
-        setMessage("✅ ¡Strava conectado! Recarga la página para ver tus actividades.");
-      }, 500);
-    }
-    if (params.get("strava_error")) {
-      window.history.replaceState({}, "", window.location.pathname);
-      setTimeout(() => {
-        setMessage(`Error conectando Strava: ${params.get("strava_error")}`);
-      }, 500);
-    }
-  }, []); // Solo al montar
+useEffect(() => {
+  if (typeof window === "undefined") return;
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("strava_connected") === "true") {
+    window.history.replaceState({}, "", window.location.pathname);
+    setTimeout(() => {
+      setAthleteActiveTab("profile");
+      setAthleteProfileTab("config");
+      setMessage("✅ ¡Strava conectado! Tus actividades se sincronizarán automáticamente.");
+    }, 300);
+  }
+  if (params.get("strava_error")) {
+    window.history.replaceState({}, "", window.location.pathname);
+    setMessage(`Error conectando Strava: ${params.get("strava_error")}`);
+  }
+}, []); // Solo al montar
   useEffect(() => {
     loadAthleteChat();
   }, [loadAthleteChat]);
@@ -1427,10 +1426,16 @@ const openAthleteStravaOAuth = useCallback(async () => {
   return (
     <div style={{ ...S.page, paddingBottom: 96, overflow: "visible", position: "relative" }}>
       {message ? (
-        <div style={{ ...S.card, border: "1px solid rgba(239,68,68,.35)", background: "rgba(239,68,68,.08)", color: "#fecaca", marginBottom: 14 }}>
-          {message}
-        </div>
-      ) : null}
+  <div style={{
+    ...S.card,
+    border: `1px solid ${message.startsWith("✅") ? "rgba(34,197,94,.45)" : "rgba(239,68,68,.35)"}`,
+    background: message.startsWith("✅") ? "rgba(34,197,94,.1)" : "rgba(239,68,68,.08)",
+    color: message.startsWith("✅") ? "#166534" : "#fecaca",
+    marginBottom: 14
+  }}>
+    {message}
+  </div>
+) : null}
       <div style={{ marginBottom: 14 }}>
         <h1 style={{ ...S.pageTitle, marginBottom: 4 }}>Hola, {athleteName}</h1>
       </div>
