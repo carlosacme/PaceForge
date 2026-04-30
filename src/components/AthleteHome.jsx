@@ -1106,49 +1106,51 @@ export default function AthleteHome({ profile }) {
   }, [athleteInfo?.id]);
 
   const loadStravaConnection = useCallback(async () => {
-    if (!athleteInfo?.id) {
-      setStravaConnection(null);
-      return;
-    }
-    const { data, error } = await supabase
-      .from("strava_connections")
-      .select("*")
-      .eq("athlete_id", athleteInfo.id)
-      .maybeSingle();
-    if (error) {
-      console.error("Error cargando conexión Strava:", error);
-      setStravaConnection(null);
-      return;
-    }
-    setStravaConnection(data || null);
-  }, [athleteInfo?.id]);
+  const userId = profile?.user_id;
+  if (!userId) {
+    setStravaConnection(null);
+    return;
+  }
+  const { data, error } = await supabase
+    .from("strava_tokens")
+    .select("*")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) {
+    console.error("Error cargando conexión Strava:", error);
+    setStravaConnection(null);
+    return;
+  }
+  setStravaConnection(data || null);
+}, [profile?.user_id]);
 
   const loadStravaActivities = useCallback(async () => {
-    if (!stravaConnection?.access_token) {
+  const userId = profile?.user_id;
+  if (!userId || !stravaConnection?.access_token) {
+    setStravaActivities([]);
+    return;
+  }
+  setStravaLoadingActivities(true);
+  try {
+    const { data, error } = await supabase
+      .from("strava_activities")
+      .select("*")
+      .eq("user_id", userId)
+      .order("start_date", { ascending: false })
+      .limit(10);
+    if (error) {
+      console.warn("Error cargando actividades Strava:", error);
       setStravaActivities([]);
       return;
     }
-    setStravaLoadingActivities(true);
-    try {
-      const r = await fetch("/api/strava?action=activities", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ access_token: stravaConnection.access_token }),
-      });
-      const data = await r.json();
-      if (!r.ok || !Array.isArray(data)) {
-        console.warn("Error cargando actividades Strava:", data);
-        setStravaActivities([]);
-        return;
-      }
-      setStravaActivities(data.slice(0, 10).map(normalizeStravaActivity).filter(Boolean));
-    } catch (e) {
-      console.error("Error consultando Strava:", e);
-      setStravaActivities([]);
-    } finally {
-      setStravaLoadingActivities(false);
-    }
-  }, [stravaConnection?.access_token]);
+    setStravaActivities((data || []).map(normalizeStravaActivity).filter(Boolean));
+  } catch (e) {
+    console.error("Error consultando strava_activities:", e);
+    setStravaActivities([]);
+  } finally {
+    setStravaLoadingActivities(false);
+  }
+}, [profile?.user_id, stravaConnection?.access_token]);
 
   useEffect(() => {
     loadAthleteChat();
