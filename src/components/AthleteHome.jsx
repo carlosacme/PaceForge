@@ -1263,10 +1263,22 @@ export default function AthleteHome({ profile }) {
     }
   };
 
-  const openAthleteStravaOAuth = useCallback(() => {
-    const authUrl = `https://www.strava.com/oauth/authorize?client_id=218467&redirect_uri=${encodeURIComponent(STRAVA_CALLBACK_URL)}&response_type=code&scope=activity:read_all&state=${encodeURIComponent(String(athleteInfo?.id || ""))}`;
-    window.location.href = authUrl;
-  }, [athleteInfo?.id]);
+ const openAthleteStravaOAuth = useCallback(() => {
+  const userId = profile?.user_id || "";
+  if (!userId) {
+    setMessage("Tu sesión expiró. Vuelve a iniciar sesión.");
+    return;
+  }
+  const params = new URLSearchParams({
+    client_id: "218467",
+    redirect_uri: "https://pace-forge-eta.vercel.app/api/strava-callback",
+    response_type: "code",
+    approval_prompt: "auto",
+    scope: "read,activity:read_all",
+    state: userId,
+  });
+  window.location.href = `https://www.strava.com/oauth/authorize?${params.toString()}`;
+}, [profile?.user_id]);
 
   const setAthleteDeviceConnection = async (deviceValue) => {
     if (!athleteInfo?.id) return;
