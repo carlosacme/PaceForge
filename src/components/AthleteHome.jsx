@@ -1265,8 +1265,12 @@ export default function AthleteHome({ profile }) {
     }
   };
 
- const openAthleteStravaOAuth = useCallback(() => {
-  const userId = profile?.user_id || "";
+const openAthleteStravaOAuth = useCallback(async () => {
+  let userId = profile?.user_id || "";
+  if (!userId) {
+    const { data } = await supabase.auth.getUser();
+    userId = data?.user?.id || "";
+  }
   if (!userId) {
     setMessage("Tu sesión expiró. Vuelve a iniciar sesión.");
     return;
