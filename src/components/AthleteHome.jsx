@@ -56,12 +56,6 @@ import {
   computeGarminLoadMetricsFromWorkouts,
 } from "./shared/appShared";
 
-/** Plan de suscripción atleta independiente (profiles / athletes). */
-/**
- * Determina el plan visible del atleta independiente combinando athlete_plan y subscription_period.
- * - Si athlete_plan='free' o no hay datos → "free"
- * - Si athlete_plan='premium' → usa subscription_period para distinguir mensual vs anual
- */
 function normalizeSoloAthletePlanKey(athletePlan, subscriptionPeriod) {
   const planRaw = String(athletePlan ?? "").trim().toLowerCase();
   if (planRaw !== "premium") return "free";
@@ -176,9 +170,7 @@ const ChallengesHub = lazy(() => import("./ChallengesHub"));
 const MarketplaceHub = lazy(() => import("./MarketplaceHub"));
 const EvaluationView = lazy(() => import("./EvaluationView"));
 
-/** Pestaña inferior del atleta (inicio, market, retos, eval VDOT, perfil). */
 const RAF_ATHLETE_NAV_TAB_KEY = "raf_athlete_tab";
-/** Antes se reutilizaba `raf_athlete_tab` para el panel de evaluación legacy; ahora va aparte. */
 const RAF_ATHLETE_EVAL_OPEN_KEY = "raf_athlete_eval_open";
 const ATHLETE_NAV_TAB_IDS = ["home", "marketplace", "challenges", "eval", "profile"];
 
@@ -207,7 +199,6 @@ function readStoredAthleteProgressTab() {
   return "week";
 }
 
-/** Mismo gráfico que en App.jsx (RPE×km aguda/crónica/forma). */
 function FormaFatigaLineChart({ chronological }) {
   const n = chronological.length;
   const W = 360;
@@ -287,9 +278,7 @@ export default function AthleteHome({ profile }) {
   const [athleteChatSending, setAthleteChatSending] = useState(false);
   const [corosModalOpen, setCorosModalOpen] = useState(false);
   const [garminModalOpen, setGarminModalOpen] = useState(false);
-  /** Modal Plan Premium Atleta (Mensual/Semestral/Anual): solo desde Perfil → Pagos → Suscribirme; no cambia de pestaña. */
   const [showPlanModal, setShowPlanModal] = useState(false);
-  /** Instrucciones pago manual atleta independiente: "monthly" | "annual" */
   const [soloPayInstructions, setSoloPayInstructions] = useState(null);
   const [athleteNotRegistered, setAthleteNotRegistered] = useState(false);
   const [showEvaluation, setShowEvaluation] = useState(false);
@@ -337,6 +326,22 @@ export default function AthleteHome({ profile }) {
   const [athleteProgressTab, setAthleteProgressTab] = useState(() => readStoredAthleteProgressTab());
 
   const profileUserId = profile?.user_id ?? null;
+
+  // ── FIX: Limpiar URL de Strava al montar (antes de que la carga borre el mensaje)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("strava_connected") === "true") {
+      window.history.replaceState({}, "", window.location.pathname);
+      // Guardamos flag en sessionStorage para mostrarlo DESPUÉS de que cargue el perfil
+      sessionStorage.setItem("raf_strava_success", "1");
+    }
+    if (params.get("strava_error")) {
+      const err = params.get("strava_error");
+      window.history.replaceState({}, "", window.location.pathname);
+      sessionStorage.setItem("raf_strava_error", err);
+    }
+  }, []);
 
   useEffect(() => {
     if (typeof localStorage === "undefined") {
@@ -387,7 +392,6 @@ export default function AthleteHome({ profile }) {
     localStorage.setItem(RAF_ATHLETE_PROGRESS_TAB_KEY, athleteProgressTab);
   }, [athleteProgressTab]);
 
-  /** Último `profileUserId` para el que ya se completó la carga inicial (evita loop si `profile` del padre se recrea). */
   const prevProfileUserIdRef = useRef(null);
 
   useEffect(() => {
@@ -517,6 +521,27 @@ export default function AthleteHome({ profile }) {
 
       setLoading(false);
       markInitialLoadFinished();
+
+      // ── FIX: Mostrar notificación Strava DESPUÉS de que cargue el perfil
+      if (typeof sessionStorage !== "undefined") {
+        const stravaSuccess = sessionStorage.getItem("raf_strava_success");
+        const stravaErr = sessionStorage.getItem("raf_strava_error");
+        if (stravaSuccess === "1") {
+          sessionStorage.removeItem("raf_strava_success");
+          setTimeout(() => {
+            if (cancelled) return;
+            setAthleteActiveTab("profile");
+            setAthleteProfileTab("config");
+            setMessage("✅ ¡Strava conectado! Tus actividades se sincronizarán automáticamente.");
+          }, 300);
+        } else if (stravaErr) {
+          sessionStorage.removeItem("raf_strava_error");
+          setTimeout(() => {
+            if (cancelled) return;
+            setMessage(`Error conectando Strava: ${stravaErr}`);
+          }, 300);
+        }
+      }
     };
 
     load();
@@ -910,14 +935,9 @@ export default function AthleteHome({ profile }) {
             });
           }
         }
-      } catch (_) {
-        // diagnóstico silencioso para no bloquear UX de marcado completado
-      }
+      } catch (_) {}
       const doneAfterToggle = nextWorkouts.filter((x) => x.done);
-      const workoutsCompletadosTotales = doneAfterToggle.length;
-      const kmTotalesAcumulados = doneAfterToggle.reduce((s, x) => s + (Number(x.total_km) || 0), 0);
       const { newAwards, snapshot, progress } = await evaluateAndAwardAthleteAchievements(athleteInfo.id);
-      const hayLogroNuevo = newAwards.length > 0;
       if (progress) void progress;
       setAchievementsCatalog(snapshot.achievements || []);
       setEarnedAchievements(snapshot.earned || []);
@@ -983,13 +1003,13 @@ export default function AthleteHome({ profile }) {
     return true;
   }, [profile?.coach_id, profile?.user_id]);
 
- const soloAthletePlanKey = useMemo(
+  const soloAthletePlanKey = useMemo(
     () => normalizeSoloAthletePlanKey(
       profile?.athlete_plan ?? athleteInfo?.athlete_plan,
       profile?.subscription_period ?? athleteInfo?.subscription_period,
     ),
     [
-      profile?.athlete_plan, 
+      profile?.athlete_plan,
       athleteInfo?.athlete_plan,
       profile?.subscription_period,
       athleteInfo?.subscription_period,
@@ -1106,68 +1126,52 @@ export default function AthleteHome({ profile }) {
   }, [athleteInfo?.id]);
 
   const loadStravaConnection = useCallback(async () => {
-  const userId = profile?.user_id;
-  if (!userId) {
-    setStravaConnection(null);
-    return;
-  }
-  const { data, error } = await supabase
-    .from("strava_tokens")
-    .select("*")
-    .eq("user_id", userId)
-    .maybeSingle();
-  if (error) {
-    console.error("Error cargando conexión Strava:", error);
-    setStravaConnection(null);
-    return;
-  }
-  setStravaConnection(data || null);
-}, [profile?.user_id]);
-
-  const loadStravaActivities = useCallback(async () => {
-  const userId = profile?.user_id;
-  if (!userId || !stravaConnection?.access_token) {
-    setStravaActivities([]);
-    return;
-  }
-  setStravaLoadingActivities(true);
-  try {
+    const userId = profile?.user_id;
+    if (!userId) {
+      setStravaConnection(null);
+      return;
+    }
     const { data, error } = await supabase
-      .from("strava_activities")
+      .from("strava_tokens")
       .select("*")
       .eq("user_id", userId)
-      .order("start_date", { ascending: false })
-      .limit(10);
+      .maybeSingle();
     if (error) {
-      console.warn("Error cargando actividades Strava:", error);
+      console.error("Error cargando conexión Strava:", error);
+      setStravaConnection(null);
+      return;
+    }
+    setStravaConnection(data || null);
+  }, [profile?.user_id]);
+
+  const loadStravaActivities = useCallback(async () => {
+    const userId = profile?.user_id;
+    if (!userId || !stravaConnection?.access_token) {
       setStravaActivities([]);
       return;
     }
-    setStravaActivities((data || []).map(normalizeStravaActivity).filter(Boolean));
-  } catch (e) {
-    console.error("Error consultando strava_activities:", e);
-    setStravaActivities([]);
-  } finally {
-    setStravaLoadingActivities(false);
-  }
-}, [profile?.user_id, stravaConnection?.access_token]);
-// Detectar retorno OAuth Strava — solo al montar
-useEffect(() => {
-  if (typeof window === "undefined") return;
-  const params = new URLSearchParams(window.location.search);
-  if (params.get("strava_connected") === "true") {
-    window.history.replaceState({}, "", window.location.pathname);
-    setTimeout(() => {
-      setAthleteActiveTab("profile");
-      setAthleteProfileTab("config");
-      setMessage("✅ ¡Strava conectado! Tus actividades se sincronizarán automáticamente.");
-    }, 300);
-  }
-  if (params.get("strava_error")) {
-    window.history.replaceState({}, "", window.location.pathname);
-    setMessage(`Error conectando Strava: ${params.get("strava_error")}`);
-  }
-}, []); // Solo al montar
+    setStravaLoadingActivities(true);
+    try {
+      const { data, error } = await supabase
+        .from("strava_activities")
+        .select("*")
+        .eq("user_id", userId)
+        .order("start_date", { ascending: false })
+        .limit(10);
+      if (error) {
+        console.warn("Error cargando actividades Strava:", error);
+        setStravaActivities([]);
+        return;
+      }
+      setStravaActivities((data || []).map(normalizeStravaActivity).filter(Boolean));
+    } catch (e) {
+      console.error("Error consultando strava_activities:", e);
+      setStravaActivities([]);
+    } finally {
+      setStravaLoadingActivities(false);
+    }
+  }, [profile?.user_id, stravaConnection?.access_token]);
+
   useEffect(() => {
     loadAthleteChat();
   }, [loadAthleteChat]);
@@ -1268,7 +1272,7 @@ useEffect(() => {
     if (!window.confirm("¿Desconectar Strava de tu cuenta?")) return;
     setStravaDisconnecting(true);
     try {
-      const { error } = await supabase.from("strava_connections").delete().eq("athlete_id", athleteInfo.id);
+      const { error } = await supabase.from("strava_tokens").delete().eq("user_id", profile?.user_id);
       if (error) {
         console.error(error);
         setMessage(error.message || "No se pudo desconectar Strava");
@@ -1281,26 +1285,31 @@ useEffect(() => {
     }
   };
 
-const openAthleteStravaOAuth = useCallback(async () => {
-  let userId = profile?.user_id || "";
-  if (!userId) {
-    const { data } = await supabase.auth.getUser();
-    userId = data?.user?.id || "";
-  }
-  if (!userId) {
-    setMessage("Tu sesión expiró. Vuelve a iniciar sesión.");
-    return;
-  }
-  const params = new URLSearchParams({
-    client_id: "218467",
-    redirect_uri: "https://pace-forge-eta.vercel.app/api/strava-callback",
-    response_type: "code",
-    approval_prompt: "auto",
-    scope: "read,activity:read_all",
-    state: userId,
-  });
-  window.location.href = `https://www.strava.com/oauth/authorize?${params.toString()}`;
-}, [profile?.user_id]);
+  // ── FIX: Guarda flag en sessionStorage ANTES de redirigir
+  const openAthleteStravaOAuth = useCallback(async () => {
+    let userId = profile?.user_id || "";
+    if (!userId) {
+      const { data } = await supabase.auth.getUser();
+      userId = data?.user?.id || "";
+    }
+    if (!userId) {
+      setMessage("Tu sesión expiró. Vuelve a iniciar sesión.");
+      return;
+    }
+    const params = new URLSearchParams({
+      client_id: "218467",
+      redirect_uri: "https://pace-forge-eta.vercel.app/api/strava-callback",
+      response_type: "code",
+      approval_prompt: "force",
+      scope: "read,activity:read_all",
+      state: userId,
+    });
+    // Guardamos flag para mostrar notificación después del redirect
+    if (typeof sessionStorage !== "undefined") {
+      sessionStorage.setItem("raf_strava_success", "1");
+    }
+    window.location.href = `https://www.strava.com/oauth/authorize?${params.toString()}`;
+  }, [profile?.user_id]);
 
   const setAthleteDeviceConnection = async (deviceValue) => {
     if (!athleteInfo?.id) return;
@@ -1426,16 +1435,16 @@ const openAthleteStravaOAuth = useCallback(async () => {
   return (
     <div style={{ ...S.page, paddingBottom: 96, overflow: "visible", position: "relative" }}>
       {message ? (
-  <div style={{
-    ...S.card,
-    border: `1px solid ${message.startsWith("✅") ? "rgba(34,197,94,.45)" : "rgba(239,68,68,.35)"}`,
-    background: message.startsWith("✅") ? "rgba(34,197,94,.1)" : "rgba(239,68,68,.08)",
-    color: message.startsWith("✅") ? "#166534" : "#fecaca",
-    marginBottom: 14
-  }}>
-    {message}
-  </div>
-) : null}
+        <div style={{
+          ...S.card,
+          border: `1px solid ${message.startsWith("✅") ? "rgba(34,197,94,.45)" : "rgba(239,68,68,.35)"}`,
+          background: message.startsWith("✅") ? "rgba(34,197,94,.1)" : "rgba(239,68,68,.08)",
+          color: message.startsWith("✅") ? "#166534" : "#fecaca",
+          marginBottom: 14
+        }}>
+          {message}
+        </div>
+      ) : null}
       <div style={{ marginBottom: 14 }}>
         <h1 style={{ ...S.pageTitle, marginBottom: 4 }}>Hola, {athleteName}</h1>
       </div>
@@ -1661,21 +1670,15 @@ const openAthleteStravaOAuth = useCallback(async () => {
                             <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
                               <div style={{ fontSize: "1.9rem", lineHeight: 1 }}>{a.icon}</div>
                               {earned ? (
-                                <span style={{ fontSize: ".66em", fontWeight: 800, color: "#166534", background: "#dcfce7", border: "1px solid #86efac", borderRadius: 999, padding: "4px 8px", whiteSpace: "nowrap" }}>
-                                  ✅ Ganado
-                                </span>
+                                <span style={{ fontSize: ".66em", fontWeight: 800, color: "#166534", background: "#dcfce7", border: "1px solid #86efac", borderRadius: 999, padding: "4px 8px", whiteSpace: "nowrap" }}>✅ Ganado</span>
                               ) : (
-                                <span style={{ fontSize: ".66em", fontWeight: 700, color: "#64748b", background: "#e2e8f0", border: "1px solid #cbd5e1", borderRadius: 999, padding: "4px 8px", whiteSpace: "nowrap" }}>
-                                  🔒 Bloqueado
-                                </span>
+                                <span style={{ fontSize: ".66em", fontWeight: 700, color: "#64748b", background: "#e2e8f0", border: "1px solid #cbd5e1", borderRadius: 999, padding: "4px 8px", whiteSpace: "nowrap" }}>🔒 Bloqueado</span>
                               )}
                             </div>
                             <div style={{ fontSize: ".87em", fontWeight: 900, marginTop: 8, color: "#0f172a" }}>{a.name}</div>
                             <div style={{ fontSize: ".77em", color: "#475569", marginTop: 6, lineHeight: 1.45 }}>{a.requirement}</div>
                             {earned ? (
-                              <div style={{ marginTop: 10, fontSize: ".72em", color: "#166534", fontWeight: 700 }}>
-                                Fecha de logro: {formattedDate}
-                              </div>
+                              <div style={{ marginTop: 10, fontSize: ".72em", color: "#166534", fontWeight: 700 }}>Fecha de logro: {formattedDate}</div>
                             ) : (
                               <div style={{ marginTop: 10 }}>
                                 <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 5 }}>{a.requirement}</div>
@@ -1705,9 +1708,6 @@ const openAthleteStravaOAuth = useCallback(async () => {
                           <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: "14px 12px", background: "#fafafa" }}>
                             <div style={{ fontSize: ".72em", color: "#64748b", fontWeight: 700, marginBottom: 6 }}>Estado de entrenamiento</div>
                             <div style={{ fontSize: "1.2em", fontWeight: 900, color: athleteLoadGarminMetrics.statusColor }}>{athleteLoadGarminMetrics.statusLabel}</div>
-                            <div style={{ fontSize: ".7em", color: "#64748b", marginTop: 8, lineHeight: 1.45 }}>
-                              Ratio 7 días / promedio semanal (4 sem): &lt; 0.8 desentrenado · 0.8–1.3 óptimo · &gt; 1.3 sobreentrenado
-                            </div>
                           </div>
                           <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: "14px 12px", background: "#fafafa" }}>
                             <div style={{ fontSize: ".72em", color: "#64748b", fontWeight: 700, marginBottom: 6 }}>Carga aguda (7 días)</div>
@@ -1717,79 +1717,10 @@ const openAthleteStravaOAuth = useCallback(async () => {
                             <div style={{ fontSize: ".72em", color: "#64748b", fontWeight: 700, marginBottom: 6 }}>Carga crónica (prom. semanal)</div>
                             <div style={{ fontSize: "1.35em", fontWeight: 900, color: athleteLoadGarminMetrics.COLOR_ORANGE, fontFamily: "monospace" }}>{athleteLoadGarminMetrics.chronicWeeklyAvgKm.toFixed(1)} km/sem</div>
                           </div>
-                          <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: "14px 12px", background: "#fafafa", gridColumn: "1 / -1", minWidth: 0 }}>
-                            <div style={{ fontSize: ".72em", color: "#64748b", fontWeight: 700, marginBottom: 6 }}>Ratio carga aguda / crónica</div>
-                            <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
-                              <span style={{ fontSize: "1.35em", fontWeight: 900, fontFamily: "monospace", color: athleteLoadGarminMetrics.ratioIndicatorColor }}>
-                                {athleteLoadGarminMetrics.hasRatio ? athleteLoadGarminMetrics.ratio.toFixed(2) : "—"}
-                              </span>
-                              <span style={{ fontSize: ".72em", color: "#64748b" }}>verde = óptimo · rojo = extremos</span>
-                            </div>
-                            <div style={{ position: "relative", marginTop: 10, height: 14, borderRadius: 7, background: "linear-gradient(90deg, #dc2626 0%, #dc2626 40%, #16a34a 40%, #16a34a 65%, #dc2626 65%, #dc2626 100%)" }}>
-                              {athleteLoadGarminMetrics.hasRatio ? (
-                                <div
-                                  style={{
-                                    position: "absolute",
-                                    top: -2,
-                                    width: 4,
-                                    height: 18,
-                                    marginLeft: -2,
-                                    left: `${Math.min(100, Math.max(0, (athleteLoadGarminMetrics.ratio / 2) * 100))}%`,
-                                    background: "#0f172a",
-                                    borderRadius: 2,
-                                    boxShadow: "0 0 0 2px #fff",
-                                  }}
-                                />
-                              ) : null}
-                            </div>
-                            <div style={{ display: "flex", justifyContent: "space-between", fontSize: ".65em", color: "#94a3b8", marginTop: 4 }}>
-                              <span>0</span>
-                              <span>Óptimo 0.8–1.3</span>
-                              <span>2+</span>
-                            </div>
-                          </div>
-                          <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: "14px 12px", background: "#fafafa" }}>
-                            <div style={{ fontSize: ".72em", color: "#64748b", fontWeight: 700, marginBottom: 6 }}>Sesiones / semana (prom.)</div>
-                            <div style={{ fontSize: "1.35em", fontWeight: 900, color: "#0f172a", fontFamily: "monospace" }}>{athleteLoadGarminMetrics.avgSessionsPerWeek.toFixed(1)}</div>
-                          </div>
-                          <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: "14px 12px", background: "#fafafa" }}>
-                            <div style={{ fontSize: ".72em", color: "#64748b", fontWeight: 700, marginBottom: 6 }}>Tiempo total (4 sem)</div>
-                            <div style={{ fontSize: "1.15em", fontWeight: 900, color: "#0f172a", fontFamily: "monospace" }}>{formatDurationMinutesTotal(athleteLoadGarminMetrics.totalMin4w)}</div>
-                          </div>
-                          <div style={{ gridColumn: "1 / -1", border: "1px solid #e2e8f0", borderRadius: 12, padding: "14px 12px", background: "#fafafa" }}>
-                            <div style={{ fontSize: ".72em", color: "#64748b", fontWeight: 700, marginBottom: 10 }}>Km por semana (lun–dom, más antigua → actual)</div>
-                            <div style={{ display: "flex", alignItems: "flex-end", gap: 10, minHeight: 120, paddingTop: 4 }}>
-                              {athleteLoadGarminMetrics.weekBarsOldestFirst.map((b) => {
-                                const hPct = Math.max(6, (b.km / athleteLoadGarminMetrics.maxBarKm) * 100);
-                                return (
-                                  <div key={b.key} style={{ flex: "1 1 0", minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-                                    <div style={{ width: "100%", height: 100, display: "flex", alignItems: "flex-end", justifyContent: "center", background: "#f1f5f9", borderRadius: 8, padding: "0 6px", boxSizing: "border-box" }}>
-                                      <div
-                                        style={{
-                                          width: "72%",
-                                          height: `${hPct}%`,
-                                          maxHeight: "100%",
-                                          background: athleteLoadGarminMetrics.COLOR_ORANGE,
-                                          borderRadius: "6px 6px 2px 2px",
-                                          boxShadow: "0 0 10px rgba(249,115,22,.35)",
-                                        }}
-                                      />
-                                    </div>
-                                    <div style={{ fontSize: ".62em", color: "#64748b", textAlign: "center", lineHeight: 1.2 }}>{b.label}</div>
-                                    <div style={{ fontSize: ".68em", fontWeight: 800, color: "#0f172a", fontFamily: "monospace" }}>{b.km.toFixed(1)} km</div>
-                                    <div style={{ fontSize: ".58em", color: "#94a3b8", textAlign: "center" }}>{b.rangeLabel}</div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
                         </div>
                       </div>
                       <div style={{ ...S.card }}>
                         <div style={{ fontSize: ".72em", marginBottom: 8, color: "#475569", textTransform: "uppercase", letterSpacing: ".13em" }}>RPE × km (tendencia)</div>
-                        <div style={{ fontSize: ".78em", color: "#64748b", marginBottom: 12, lineHeight: 1.45 }}>
-                          Carga aguda = promedio (RPE × km) últimos 7 días; carga crónica = promedio (RPE × km) últimos 28 días; forma = crónica − aguda.
-                        </div>
                         <div style={{ marginBottom: 12, fontWeight: 800, color: athleteFormaFatigaStatus.kind === "forma" ? "#22c55e" : athleteFormaFatigaStatus.kind === "fatiga" ? "#f87171" : "#94a3b8" }}>
                           Estado (RPE): {athleteFormaFatigaStatus.label}
                         </div>
@@ -1799,40 +1730,48 @@ const openAthleteStravaOAuth = useCallback(async () => {
                   ) : (
                     <div style={{ ...S.card, textAlign: "center" }}>
                       <p style={{ color: "#64748b" }}>Esta sección requiere Plan Premium Atleta.</p>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setAthleteProfileTab("pagos");
-                          handleAthleteNavTabChange("profile");
-                        }}
-                        style={{ background: "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 10, padding: "10px 20px", color: "#fff", fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}
-                      >
+                      <button type="button" onClick={() => { setAthleteProfileTab("pagos"); handleAthleteNavTabChange("profile"); }} style={{ background: "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 10, padding: "10px 20px", color: "#fff", fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>
                         Ir a Pagos para suscribirme
                       </button>
                     </div>
                   )
                 ) : null}
-                {athleteProfileTab === "config" ? <div style={{ ...S.card }}>{/* Config existente simplificada */}<div style={{ fontSize: ".72em", marginBottom: 10, color: "#475569", textTransform: "uppercase", letterSpacing: ".13em" }}>MI CONFIGURACIÓN</div><div style={{ color: "#64748b", fontSize: ".84em", marginBottom: 8 }}>Gestiona conexiones y preferencias.</div><button type="button" onClick={openAthleteStravaOAuth} style={{ background: "linear-gradient(135deg,#ea580c,#f97316)", border: "none", borderRadius: 8, padding: "8px 12px", color: "#fff", fontWeight: 800, fontFamily: "inherit", cursor: "pointer" }}>Conectar Strava</button></div> : null}
+                {athleteProfileTab === "config" ? (
+                  <div style={{ ...S.card }}>
+                    <div style={{ fontSize: ".72em", marginBottom: 10, color: "#475569", textTransform: "uppercase", letterSpacing: ".13em" }}>MI CONFIGURACIÓN</div>
+                    <div style={{ color: "#64748b", fontSize: ".84em", marginBottom: 8 }}>Gestiona conexiones y preferencias.</div>
+                    {stravaConnection ? (
+                      <div style={{ marginBottom: 12 }}>
+                        <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "rgba(34,197,94,.12)", border: "1px solid rgba(34,197,94,.4)", color: "#166534", borderRadius: 8, padding: "8px 14px", fontWeight: 700, fontSize: ".84em", marginBottom: 10 }}>
+                          ✅ Strava conectado · ID {stravaConnection.athlete_strava_id}
+                        </div>
+                        <br />
+                        <button
+                          type="button"
+                          onClick={disconnectStrava}
+                          disabled={stravaDisconnecting}
+                          style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "8px 12px", color: "#b91c1c", fontWeight: 700, fontFamily: "inherit", cursor: "pointer", fontSize: ".82em" }}
+                        >
+                          {stravaDisconnecting ? "Desconectando…" : "Desconectar Strava"}
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={openAthleteStravaOAuth}
+                        style={{ background: "linear-gradient(135deg,#ea580c,#f97316)", border: "none", borderRadius: 8, padding: "8px 12px", color: "#fff", fontWeight: 800, fontFamily: "inherit", cursor: "pointer" }}
+                      >
+                        Conectar Strava
+                      </button>
+                    )}
+                  </div>
+                ) : null}
                 {athleteProfileTab === "pagos" ? (
                   <>
                     {hasCoachPremiumIncluded ? (
                       <div style={{ ...S.card, marginBottom: 14 }}>
                         <div style={{ fontSize: ".72em", marginBottom: 12, color: "#475569", textTransform: "uppercase", letterSpacing: ".13em" }}>Tu acceso</div>
-                        <div
-                          style={{
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: 8,
-                            background: "rgba(34,197,94,.14)",
-                            border: "1px solid rgba(34,197,94,.45)",
-                            color: "#166534",
-                            borderRadius: 10,
-                            padding: "12px 16px",
-                            fontWeight: 800,
-                            fontSize: ".9em",
-                            lineHeight: 1.35,
-                          }}
-                        >
+                        <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "rgba(34,197,94,.14)", border: "1px solid rgba(34,197,94,.45)", color: "#166534", borderRadius: 10, padding: "12px 16px", fontWeight: 800, fontSize: ".9em", lineHeight: 1.35 }}>
                           ✅ Plan Premium — Incluido con tu coach
                         </div>
                         <p style={{ margin: "14px 0 0", color: "#64748b", fontSize: ".84em", lineHeight: 1.5 }}>
@@ -1843,141 +1782,35 @@ const openAthleteStravaOAuth = useCallback(async () => {
                       <div style={{ ...S.card, marginBottom: 14 }}>
                         <div style={{ fontSize: ".72em", marginBottom: 10, color: "#475569", textTransform: "uppercase", letterSpacing: ".13em" }}>Tu plan</div>
                         <div style={{ fontWeight: 800, fontSize: ".95em", color: "#0f172a", marginBottom: 4 }}>
-                          Plan actual:{" "}
-                          {soloAthletePlanKey === "monthly"
-                            ? "Mensual"
-                            : soloAthletePlanKey === "annual"
-                              ? "Anual"
-                              : "Gratis (free)"}
+                          Plan actual: {soloAthletePlanKey === "monthly" ? "Mensual" : soloAthletePlanKey === "annual" ? "Anual" : "Gratis (free)"}
                         </div>
                         <div style={{ color: "#64748b", fontSize: ".82em", marginBottom: 16, lineHeight: 1.45 }}>
                           Atleta independiente — gestiona tu suscripción aquí.
                         </div>
                         {soloAthletePlanKey === "free" ? (
                           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                            <div
-                              style={{
-                                border: "1px solid #e2e8f0",
-                                borderRadius: 12,
-                                padding: "14px 16px",
-                                display: "flex",
-                                flexWrap: "wrap",
-                                alignItems: "center",
-                                justifyContent: "space-between",
-                                gap: 12,
-                                background: "#fafafa",
-                              }}
-                            >
+                            <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: "14px 16px", display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 12, background: "#fafafa" }}>
                               <div>
                                 <div style={{ fontWeight: 800, color: "#0f172a" }}>Mensual</div>
-                                <div style={{ fontSize: ".92em", color: "#b45309", fontWeight: 800, marginTop: 6 }}>
-                                  ${Number(SOLO_PLAN_MONTHLY_COP).toLocaleString("es-CO")} COP/mes
-                                </div>
+                                <div style={{ fontSize: ".92em", color: "#b45309", fontWeight: 800, marginTop: 6 }}>${Number(SOLO_PLAN_MONTHLY_COP).toLocaleString("es-CO")} COP/mes</div>
                               </div>
-                              <button
-                                type="button"
-                                onClick={() => trySoloIndependentCheckout("monthly")}
-                                style={{
-                                  padding: "10px 18px",
-                                  borderRadius: 10,
-                                  border: "none",
-                                  background: "linear-gradient(135deg,#0d9488,#14b8a6)",
-                                  color: "#fff",
-                                  fontWeight: 800,
-                                  fontSize: ".84em",
-                                  cursor: "pointer",
-                                  fontFamily: "inherit",
-                                }}
-                              >
-                                Suscribirse
-                              </button>
+                              <button type="button" onClick={() => trySoloIndependentCheckout("monthly")} style={{ padding: "10px 18px", borderRadius: 10, border: "none", background: "linear-gradient(135deg,#0d9488,#14b8a6)", color: "#fff", fontWeight: 800, fontSize: ".84em", cursor: "pointer", fontFamily: "inherit" }}>Suscribirse</button>
                             </div>
-                            <div
-                              style={{
-                                border: "1px solid #e2e8f0",
-                                borderRadius: 12,
-                                padding: "14px 16px",
-                                display: "flex",
-                                flexWrap: "wrap",
-                                alignItems: "center",
-                                justifyContent: "space-between",
-                                gap: 12,
-                                background: "#fafafa",
-                              }}
-                            >
+                            <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: "14px 16px", display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 12, background: "#fafafa" }}>
                               <div>
-                                <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                                  <div style={{ fontWeight: 800, color: "#0f172a" }}>Anual</div>
-                                  <span
-                                    style={{
-                                      fontSize: ".72em",
-                                      fontWeight: 800,
-                                      color: "#15803d",
-                                      background: "rgba(34,197,94,.18)",
-                                      border: "1px solid rgba(34,197,94,.4)",
-                                      borderRadius: 8,
-                                      padding: "4px 10px",
-                                    }}
-                                  >
-                                    Ahorra $50.000
-                                  </span>
-                                </div>
-                                <div style={{ fontSize: ".92em", color: "#b45309", fontWeight: 800, marginTop: 6 }}>
-                                  ${Number(SOLO_PLAN_ANNUAL_COP).toLocaleString("es-CO")} COP/año
-                                </div>
+                                <div style={{ fontWeight: 800, color: "#0f172a" }}>Anual <span style={{ fontSize: ".72em", fontWeight: 800, color: "#15803d", background: "rgba(34,197,94,.18)", border: "1px solid rgba(34,197,94,.4)", borderRadius: 8, padding: "4px 10px" }}>Ahorra $50.000</span></div>
+                                <div style={{ fontSize: ".92em", color: "#b45309", fontWeight: 800, marginTop: 6 }}>${Number(SOLO_PLAN_ANNUAL_COP).toLocaleString("es-CO")} COP/año</div>
                               </div>
-                              <button
-                                type="button"
-                                onClick={() => trySoloIndependentCheckout("annual")}
-                                style={{
-                                  padding: "10px 18px",
-                                  borderRadius: 10,
-                                  border: "none",
-                                  background: "linear-gradient(135deg,#0d9488,#14b8a6)",
-                                  color: "#fff",
-                                  fontWeight: 800,
-                                  fontSize: ".84em",
-                                  cursor: "pointer",
-                                  fontFamily: "inherit",
-                                }}
-                              >
-                                Suscribirse
-                              </button>
+                              <button type="button" onClick={() => trySoloIndependentCheckout("annual")} style={{ padding: "10px 18px", borderRadius: 10, border: "none", background: "linear-gradient(135deg,#0d9488,#14b8a6)", color: "#fff", fontWeight: 800, fontSize: ".84em", cursor: "pointer", fontFamily: "inherit" }}>Suscribirse</button>
                             </div>
                           </div>
                         ) : (
-                          <div
-                            style={{
-                              border: "1px solid #e2e8f0",
-                              borderRadius: 12,
-                              padding: "14px 16px",
-                              background: "#f8fafc",
-                            }}
-                          >
-                            <div style={{ fontWeight: 800, color: "#0f172a", marginBottom: 8 }}>
-                              Plan activo: {soloAthletePlanKey === "monthly" ? "Mensual" : "Anual"}
-                            </div>
+                          <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: "14px 16px", background: "#f8fafc" }}>
+                            <div style={{ fontWeight: 800, color: "#0f172a", marginBottom: 8 }}>Plan activo: {soloAthletePlanKey === "monthly" ? "Mensual" : "Anual"}</div>
                             <div style={{ color: "#64748b", fontSize: ".86em", marginBottom: 14 }}>
-                              Fecha de vencimiento:{" "}
-                              <strong style={{ color: "#0f172a" }}>{subscriptionExpiresFormatted || "Sin fecha registrada"}</strong>
+                              Fecha de vencimiento: <strong style={{ color: "#0f172a" }}>{subscriptionExpiresFormatted || "Sin fecha registrada"}</strong>
                             </div>
-                            <button
-                              type="button"
-                              onClick={() => trySoloIndependentCheckout(soloAthletePlanKey)}
-                              style={{
-                                padding: "10px 18px",
-                                borderRadius: 10,
-                                border: "none",
-                                background: "linear-gradient(135deg,#b45309,#f59e0b)",
-                                color: "#fff",
-                                fontWeight: 800,
-                                fontSize: ".84em",
-                                cursor: "pointer",
-                                fontFamily: "inherit",
-                              }}
-                            >
-                              Renovar
-                            </button>
+                            <button type="button" onClick={() => trySoloIndependentCheckout(soloAthletePlanKey)} style={{ padding: "10px 18px", borderRadius: 10, border: "none", background: "linear-gradient(135deg,#b45309,#f59e0b)", color: "#fff", fontWeight: 800, fontSize: ".84em", cursor: "pointer", fontFamily: "inherit" }}>Renovar</button>
                           </div>
                         )}
                       </div>
@@ -1992,12 +1825,8 @@ const openAthleteStravaOAuth = useCallback(async () => {
                         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                           {athletePayments.map((p) => (
                             <div key={p.id} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: "10px 12px", background: "#f8fafc" }}>
-                              <div style={{ fontWeight: 700, fontSize: ".84em" }}>
-                                ${Number(p.amount || 0).toLocaleString("es-CO")} {p.currency || "COP"} · {p.plan}
-                              </div>
-                              <div style={{ marginTop: 4, color: "#64748b", fontSize: ".74em" }}>
-                                {new Date(p.payment_date).toLocaleDateString("es-CO")} · {p.payment_method}
-                              </div>
+                              <div style={{ fontWeight: 700, fontSize: ".84em" }}>${Number(p.amount || 0).toLocaleString("es-CO")} {p.currency || "COP"} · {p.plan}</div>
+                              <div style={{ marginTop: 4, color: "#64748b", fontSize: ".74em" }}>{new Date(p.payment_date).toLocaleDateString("es-CO")} · {p.payment_method}</div>
                             </div>
                           ))}
                         </div>
@@ -2021,20 +1850,7 @@ const openAthleteStravaOAuth = useCallback(async () => {
                       alert(`Error al cerrar sesión: ${error.message}`);
                     }
                   }}
-                  style={{
-                    width: "100%",
-                    marginTop: 12,
-                    background: "rgba(239,68,68,.08)",
-                    border: "1px solid rgba(239,68,68,.25)",
-                    borderRadius: 8,
-                    padding: "10px 14px",
-                    color: "#ef4444",
-                    cursor: "pointer",
-                    fontFamily: "inherit",
-                    fontSize: ".82em",
-                    fontWeight: 700,
-                    whiteSpace: "nowrap",
-                  }}
+                  style={{ width: "100%", marginTop: 12, background: "rgba(239,68,68,.08)", border: "1px solid rgba(239,68,68,.25)", borderRadius: 8, padding: "10px 14px", color: "#ef4444", cursor: "pointer", fontFamily: "inherit", fontSize: ".82em", fontWeight: 700, whiteSpace: "nowrap" }}
                 >
                   Cerrar sesión
                 </button>
@@ -2075,7 +1891,6 @@ const openAthleteStravaOAuth = useCallback(async () => {
             <div style={{ color: "#64748b", fontSize: ".84em", marginBottom: 12 }}>
               {(workoutSummaryModal.workout?.title || "Workout")} · {workoutSummaryModal.workout?.scheduled_date || "—"}
             </div>
-            <WorkoutStructureTable structure={workoutSummaryModal.workout?.workout_structure || workoutSummaryModal.workout?.structure || []} />
             {workoutSummaryModal.stravaConnected ? (
               workoutSummaryModal.stravaActivityPending ? (
                 <div style={{ color: "#64748b", fontSize: ".86em", marginBottom: 14 }}>Cargando datos de Strava…</div>
@@ -2085,15 +1900,11 @@ const openAthleteStravaOAuth = useCallback(async () => {
                   <div style={{ ...S.card, margin: 0, padding: 12 }}><div style={{ fontSize: ".72em", color: "#64748b" }}>Tiempo total</div><div style={{ fontWeight: 800 }}>{formatDurationClock(Number(workoutSummaryModal.activity.elapsed_time || workoutSummaryModal.activity.moving_time || 0))}</div></div>
                   <div style={{ ...S.card, margin: 0, padding: 12 }}><div style={{ fontSize: ".72em", color: "#64748b" }}>Ritmo promedio</div><div style={{ fontWeight: 800 }}>{formatStravaPace(Number(workoutSummaryModal.activity.distance || 0), Number(workoutSummaryModal.activity.moving_time || 0))}</div></div>
                   <div style={{ ...S.card, margin: 0, padding: 12 }}><div style={{ fontSize: ".72em", color: "#64748b" }}>FC prom / máx</div><div style={{ fontWeight: 800 }}>{Number(workoutSummaryModal.activity.average_heartrate || 0) > 0 ? Math.round(Number(workoutSummaryModal.activity.average_heartrate)) : "—"} / {Number(workoutSummaryModal.activity.max_heartrate || 0) > 0 ? Math.round(Number(workoutSummaryModal.activity.max_heartrate)) : "—"} lpm</div></div>
-                  <div style={{ ...S.card, margin: 0, padding: 12 }}><div style={{ fontSize: ".72em", color: "#64748b" }}>Elevación</div><div style={{ fontWeight: 800 }}>{Math.round(Number(workoutSummaryModal.activity.total_elevation_gain || 0))} m</div></div>
-                  <div style={{ ...S.card, margin: 0, padding: 12 }}><div style={{ fontSize: ".72em", color: "#64748b" }}>Calorías</div><div style={{ fontWeight: 800 }}>{Math.round(Number(workoutSummaryModal.activity.calories || workoutSummaryModal.activity.kilojoules || 0))}</div></div>
                 </div>
               ) : (
                 <div style={{ color: "#64748b", fontSize: ".86em", marginBottom: 14 }}>No encontramos una actividad de Strava para ese día.</div>
               )
-            ) : (
-              <></>
-            )}
+            ) : null}
             <div style={{ display: "grid", gap: 10, marginBottom: 14 }}>
               {!workoutSummaryModal.stravaConnected ? (
                 <>
@@ -2123,183 +1934,6 @@ const openAthleteStravaOAuth = useCallback(async () => {
           </div>
         </div>
       )}
-
-      {showPlanModal && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(15,23,42,0.55)",
-            zIndex: 10020,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 20,
-          }}
-          onClick={() => setShowPlanModal(false)}
-          onMouseDown={(e) => e.stopPropagation()}
-          onKeyDown={(e) => e.key === "Escape" && setShowPlanModal(false)}
-          role="presentation"
-        >
-          <div
-            style={{
-              background: "#fff",
-              borderRadius: 16,
-              padding: 24,
-              maxWidth: 440,
-              width: "100%",
-              boxShadow: "0 20px 60px rgba(15,23,42,.25)",
-            }}
-            onClick={(e) => e.stopPropagation()}
-            onMouseDown={(e) => e.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="athlete-premium-modal-title"
-          >
-            <h3 id="athlete-premium-modal-title" style={{ margin: "0 0 16px", fontSize: "1.25em", fontWeight: 800, color: "#0f172a" }}>
-              Plan Premium Atleta
-            </h3>
-            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              {[
-                { period: "Mensual", amount: "$20,000", note: null },
-                { period: "Semestral", amount: "$105,600", note: "Ahorra 12%" },
-                { period: "Anual", amount: "$192,000", note: "Ahorra 20%" },
-              ].map((row) => (
-                <div
-                  key={row.period}
-                  style={{
-                    border: "1px solid #e2e8f0",
-                    borderRadius: 12,
-                    padding: "12px 14px",
-                    display: "flex",
-                    flexWrap: "wrap",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    gap: 10,
-                  }}
-                >
-                  <div>
-                    <div style={{ fontWeight: 800, color: "#0f172a" }}>{row.period}</div>
-                    <div style={{ fontSize: ".95em", color: "#334155", marginTop: 4 }}>
-                      {row.amount} COP
-                      {row.note ? <span style={{ color: "#15803d", fontSize: ".82em", marginLeft: 8 }}>{row.note}</span> : null}
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => openAthletePremiumWa(row.period, row.amount)}
-                    style={{
-                      padding: "8px 14px",
-                      borderRadius: 8,
-                      border: "none",
-                      background: "linear-gradient(135deg,#0d9488,#14b8a6)",
-                      color: "#fff",
-                      fontWeight: 800,
-                      fontSize: ".8em",
-                      cursor: "pointer",
-                      fontFamily: "inherit",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    Suscribirme
-                  </button>
-                </div>
-              ))}
-            </div>
-            <button
-              type="button"
-              onClick={() => setShowPlanModal(false)}
-              style={{
-                marginTop: 18,
-                width: "100%",
-                padding: "10px 14px",
-                borderRadius: 8,
-                border: "1px solid #e2e8f0",
-                background: "#f8fafc",
-                color: "#64748b",
-                fontWeight: 700,
-                cursor: "pointer",
-                fontFamily: "inherit",
-                fontSize: ".85em",
-              }}
-            >
-              Cerrar
-            </button>
-          </div>
-        </div>
-      )}
-
-      {soloPayInstructions ? (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(15,23,42,0.55)",
-            zIndex: 10021,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 20,
-          }}
-          onClick={() => setSoloPayInstructions(null)}
-          onMouseDown={(e) => e.stopPropagation()}
-          onKeyDown={(e) => e.key === "Escape" && setSoloPayInstructions(null)}
-          role="presentation"
-        >
-          <div
-            style={{
-              background: "#fff",
-              borderRadius: 16,
-              padding: 24,
-              maxWidth: 460,
-              width: "100%",
-              boxShadow: "0 20px 60px rgba(15,23,42,.25)",
-            }}
-            onClick={(e) => e.stopPropagation()}
-            onMouseDown={(e) => e.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="solo-pay-instructions-title"
-          >
-            <h3 id="solo-pay-instructions-title" style={{ margin: "0 0 12px", fontSize: "1.1em", fontWeight: 800, color: "#0f172a" }}>
-              Pago manual (Mercado Pago próximamente)
-            </h3>
-            <p style={{ margin: "0 0 10px", color: "#334155", fontSize: ".9em", lineHeight: 1.55 }}>
-              Mientras activamos el checkout con Mercado Pago, realiza el pago por <strong>Nequi</strong> o <strong>transferencia</strong> por el monto indicado y envía el comprobante por el canal que te indique el equipo (por ejemplo WhatsApp de soporte).
-            </p>
-            <p style={{ margin: "0 0 18px", color: "#64748b", fontSize: ".86em", lineHeight: 1.5 }}>
-              {soloPayInstructions === "annual" ? (
-                <>
-                  <strong style={{ color: "#0f172a" }}>Plan anual</strong> — ${Number(SOLO_PLAN_ANNUAL_COP).toLocaleString("es-CO")} COP/año
-                </>
-              ) : (
-                <>
-                  <strong style={{ color: "#0f172a" }}>Plan mensual</strong> — ${Number(SOLO_PLAN_MONTHLY_COP).toLocaleString("es-CO")} COP/mes
-                </>
-              )}
-            </p>
-            <button
-              type="button"
-              onClick={() => setSoloPayInstructions(null)}
-              style={{
-                width: "100%",
-                padding: "10px 14px",
-                borderRadius: 8,
-                border: "none",
-                background: "linear-gradient(135deg,#b45309,#f59e0b)",
-                color: "#fff",
-                fontWeight: 800,
-                cursor: "pointer",
-                fontFamily: "inherit",
-                fontSize: ".85em",
-              }}
-            >
-              Entendido
-            </button>
-          </div>
-        </div>
-      ) : null}
     </div>
   );
-
 }
