@@ -3,7 +3,7 @@
   "appName": "RunningApexFlow",
   "webDir": "dist",
   "server": {
-    "url": "https://pace-forge-eta.vercel.app",
+    "url": "https://www.runningapexflow.com",
     "cleartext": false
   }
 }
