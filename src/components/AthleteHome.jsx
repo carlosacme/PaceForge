@@ -1306,7 +1306,7 @@ export default function AthleteHome({ profile }) {
     }
     const params = new URLSearchParams({
       client_id: "218467",
-      redirect_uri: "https://pace-forge-eta.vercel.app/api/strava-callback",
+      redirect_uri: "https://www.runningapexflow.com/api/strava-callback",
       response_type: "code",
       approval_prompt: "force",
       scope: "read,activity:read_all",
