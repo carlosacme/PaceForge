@@ -1,6 +1,47 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "../lib/supabase";
-import { formatCopInt, getMarketplacePlanWorkoutRows } from "./shared/appShared";
+import { formatCopInt, getMarketplacePlanWorkoutRows, formatLocalYMD, addDays } from "./shared/appShared";
+
+// ── Mapeo de nombre de día a offset desde el lunes (0=Lun, 1=Mar, ... 6=Dom)
+const DAY_OFFSET = {
+  lun: 0, mar: 1, "mié": 2, mie: 2, jue: 3, vie: 4, sáb: 5, sab: 5, dom: 6,
+  monday: 0, tuesday: 1, wednesday: 2, thursday: 3, friday: 4, saturday: 5, sunday: 6,
+};
+
+/**
+ * Calcula la fecha de un workout dado:
+ * - startDate: Date objeto (lunes de la semana 1)
+ * - week: número de semana (1-based)
+ * - day: string del día ("Lun", "Mar", etc.) o número (1=lun..7=dom)
+ */
+function calculateWorkoutDate(startDate, week, day) {
+  const weekOffset = Math.max(0, (Number(week) || 1) - 1);
+  const mondayOfWeek = addDays(startDate, weekOffset * 7);
+
+  let dayOffset = 0;
+  if (day != null && day !== "") {
+    const dayStr = String(day).toLowerCase().trim();
+    if (DAY_OFFSET[dayStr] !== undefined) {
+      dayOffset = DAY_OFFSET[dayStr];
+    } else {
+      // Si es número (1-7)
+      const n = Number(dayStr);
+      if (Number.isFinite(n) && n >= 1 && n <= 7) dayOffset = n - 1;
+    }
+  }
+  return addDays(mondayOfWeek, dayOffset);
+}
+
+/**
+ * Asegura que startDate sea un lunes (retrocede al lunes anterior si es otro día).
+ */
+function toMonday(date) {
+  const d = new Date(date);
+  const day = d.getDay(); // 0=dom, 1=lun...
+  const diff = day === 0 ? -6 : 1 - day;
+  d.setDate(d.getDate() + diff);
+  return d;
+}
 
 function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify, styles, MarketplacePlanWorkoutsAccordion }) {
   const S = styles;
@@ -33,6 +74,13 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
   const [selectedPurchasedPlan, setSelectedPurchasedPlan] = useState(null);
   const [ratingsByPlanId, setRatingsByPlanId] = useState({});
   const [checkoutLoading, setCheckoutLoading] = useState(false);
+
+  // ── NUEVO: Modal de fecha de inicio
+  const [showStartDateModal, setShowStartDateModal] = useState(false);
+  const [startDatePlan, setStartDatePlan] = useState(null);
+  const [startDateValue, setStartDateValue] = useState(formatLocalYMD(new Date()));
+  const [loadingCalendarSync, setLoadingCalendarSync] = useState(false);
+  const [calendarSyncDone, setCalendarSyncDone] = useState({}); // { purchaseId: true }
 
   const loadMarketplace = useCallback(async () => {
     setLoadingPlans(true);
@@ -103,7 +151,8 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
     loadMarketplace();
     loadSales();
   }, [loadMarketplace, loadSales]);
-const loadPurchasedPlans = useCallback(async () => {
+
+  const loadPurchasedPlans = useCallback(async () => {
     if (!currentUserId || !isAthlete) {
       setPurchasedPlans([]);
       return;
@@ -161,6 +210,7 @@ const loadPurchasedPlans = useCallback(async () => {
       setLoadingPurchasedPlans(false);
     }
   }, [currentUserId, isAthlete]);
+
   const loadPendingPurchases = useCallback(async () => {
     const canSeePending = isCoach || isAdmin;
     if (!canSeePending) {
@@ -191,9 +241,11 @@ const loadPurchasedPlans = useCallback(async () => {
       setPendingPurchasesList(pendingRows.filter((row) => myPlanIds.has(String(row.plan_id || ""))));
     }
   }, [isCoach, isAdmin, coachUserId, currentUserId, plans]);
-useEffect(() => {
+
+  useEffect(() => {
     loadPurchasedPlans();
   }, [loadPurchasedPlans]);
+
   useEffect(() => {
     loadPendingPurchases();
   }, [loadPendingPurchases]);
@@ -233,8 +285,6 @@ useEffect(() => {
         return;
       }
 
-      // Primero insertamos la fila en plan_purchases con estado pending
- // Primero insertamos la fila en plan_purchases con estado pending
       const { data: purchaseRow, error: purchaseErr } = await supabase
         .from("plan_purchases")
         .insert({
@@ -256,7 +306,6 @@ useEffect(() => {
         return;
       }
 
-      // Luego creamos el checkout con Wompi
       const response = await fetch("/api/wompi-create-checkout", {
         method: "POST",
         headers: {
@@ -300,7 +349,89 @@ useEffect(() => {
     }
   };
 
- 
+  // ── NUEVO: Abrir modal de fecha de inicio
+  const openStartDateModal = (plan) => {
+    setStartDatePlan(plan);
+    setStartDateValue(formatLocalYMD(new Date()));
+    setShowStartDateModal(true);
+  };
+
+  // ── NUEVO: Cargar workouts del plan al calendario del atleta
+  const loadPlanToCalendar = async () => {
+    if (!startDatePlan || !currentUserId || !startDateValue) return;
+    setLoadingCalendarSync(true);
+    try {
+      // 1. Obtener athlete_id del usuario actual
+      const { data: authData } = await supabase.auth.getUser();
+      const userEmail = authData?.user?.email?.trim();
+      if (!userEmail) {
+        notify?.("No se pudo obtener tu cuenta. Intenta recargar.");
+        return;
+      }
+      const { data: athleteRows, error: athErr } = await supabase
+        .from("athletes")
+        .select("id, coach_id")
+        .ilike("email", userEmail)
+        .limit(1);
+
+      if (athErr || !athleteRows?.length) {
+        notify?.("No encontramos tu perfil de atleta. Contacta a tu coach.");
+        return;
+      }
+      const athleteId = athleteRows[0].id;
+      const coachIdForWorkout = athleteRows[0].coach_id || startDatePlan.coach_user_id || null;
+
+      // 2. Obtener workouts del plan
+      const planWorkouts = getMarketplacePlanWorkoutRows(startDatePlan);
+      if (!planWorkouts.length) {
+        notify?.("Este plan no tiene workouts configurados.");
+        return;
+      }
+
+      // 3. Calcular fechas — startDate es el lunes de inicio
+      const startDate = toMonday(new Date(`${startDateValue}T12:00:00`));
+
+      // 4. Construir filas para insertar
+      const rows = planWorkouts.map((w, idx) => {
+        const week = w.week != null && w.week !== "" ? Number(w.week) : Math.floor(idx / (startDatePlan.sessions_per_week || 4)) + 1;
+        const scheduledDate = formatLocalYMD(calculateWorkoutDate(startDate, week, w.day));
+        const structure = Array.isArray(w.workout_structure) ? w.workout_structure : Array.isArray(w.structure) ? w.structure : [];
+        return {
+          athlete_id: athleteId,
+          coach_id: coachIdForWorkout,
+          scheduled_date: scheduledDate,
+          title: w.title || `Sesión ${idx + 1}`,
+          type: w.type || "easy",
+          total_km: Number(w.distance_km || w.total_km || 0),
+          distance_km: Number(w.distance_km || w.total_km || 0),
+          duration_min: Number(w.duration_min || 0),
+          description: w.description || "",
+          structure,
+          workout_structure: structure,
+          done: false,
+        };
+      });
+
+      // 5. Insertar en workouts
+      const { error: insertErr } = await supabase.from("workouts").insert(rows);
+      if (insertErr) {
+        console.error("loadPlanToCalendar insert:", insertErr);
+        notify?.(insertErr.message || "Error al cargar el plan al calendario.");
+        return;
+      }
+
+      // 6. Marcar como cargado (para ocultar el botón)
+      setCalendarSyncDone((prev) => ({ ...prev, [String(startDatePlan.id)]: true }));
+      setShowStartDateModal(false);
+      setStartDatePlan(null);
+      notify?.(`✅ ¡${rows.length} entrenamientos cargados a tu calendario desde el ${startDateValue}!`);
+    } catch (e) {
+      console.error("loadPlanToCalendar exception:", e);
+      notify?.("Error inesperado al cargar el plan.");
+    } finally {
+      setLoadingCalendarSync(false);
+    }
+  };
 
   const selectedPlanIsOwner = useMemo(
     () => Boolean(selectedPlan && String(selectedPlan.coach_user_id || "") === String(currentUserId || "")),
@@ -309,7 +440,6 @@ useEffect(() => {
 
   const lockAfterWeek1 = Boolean(selectedPlan && !isAdmin && !selectedPlanIsOwner);
 
-  /** Vista restringida: hay semanas distintas de la 1 (o sin numerar) → CTA de desbloqueo bajo el acordeón. */
   const planPreviewHasLockedWeeks = useMemo(() => {
     if (!selectedPlan || !lockAfterWeek1) return false;
     const arr = getMarketplacePlanWorkoutRows(selectedPlan);
@@ -329,10 +459,7 @@ useEffect(() => {
 
   const approveMarketplaceRow = async (planId) => {
     const { error } = await supabase.from("plan_marketplace").update({ is_approved: true, is_active: true }).eq("id", planId);
-    if (error) {
-      notify?.(error.message || "No se pudo aprobar");
-      return;
-    }
+    if (error) { notify?.(error.message || "No se pudo aprobar"); return; }
     notify?.("Plan aprobado");
     loadMarketplace();
   };
@@ -340,10 +467,7 @@ useEffect(() => {
   const rejectMarketplaceRow = async (planId) => {
     if (typeof window !== "undefined" && !window.confirm("¿Rechazar este plan?")) return;
     const { error } = await supabase.from("plan_marketplace").update({ is_approved: false, is_active: false }).eq("id", planId);
-    if (error) {
-      notify?.(error.message || "No se pudo rechazar");
-      return;
-    }
+    if (error) { notify?.(error.message || "No se pudo rechazar"); return; }
     notify?.("Plan rechazado");
     loadMarketplace();
   };
@@ -355,10 +479,7 @@ useEffect(() => {
     if (!own && !isAdmin) return;
     if (typeof window !== "undefined" && !window.confirm("¿Eliminar este plan del marketplace?")) return;
     const { error } = await supabase.from("plan_marketplace").delete().eq("id", plan.id);
-    if (error) {
-      notify?.(error.message || "No se pudo eliminar");
-      return;
-    }
+    if (error) { notify?.(error.message || "No se pudo eliminar"); return; }
     if (String(selectedPlan?.id) === String(plan.id)) setSelectedPlan(null);
     notify?.("Plan eliminado");
     loadMarketplace();
@@ -391,10 +512,7 @@ useEffect(() => {
 
   const confirmCoachPendingPurchase = async (purchaseId) => {
     const { error } = await supabase.from("plan_purchases").update({ payment_status: "confirmed" }).eq("id", purchaseId);
-    if (error) {
-      notify?.(error.message || "No se pudo confirmar");
-      return;
-    }
+    if (error) { notify?.(error.message || "No se pudo confirmar"); return; }
     notify?.("Pago confirmado");
     loadPendingPurchases();
     loadSales();
@@ -404,10 +522,7 @@ useEffect(() => {
     const uid = coachUserId || currentUserId;
     if (!uid) return;
     const title = String(planForm.title || "").trim();
-    if (!title) {
-      notify?.("Ingresa un título");
-      return;
-    }
+    if (!title) { notify?.("Ingresa un título"); return; }
     const description = String(planForm.description || "").trim();
     const durationWeeks = Math.max(1, Math.round(Number(planForm.duration_weeks) || 0));
     const sessionsPerWeek = Math.max(1, Math.round(Number(planForm.sessions_per_week) || 0));
@@ -422,8 +537,7 @@ useEffect(() => {
       description: w.description || "",
       workout_structure: Array.isArray(w.workout_structure) ? w.workout_structure : Array.isArray(w.structure) ? w.structure : [],
     }));
-    const fallbackPreview =
-      editingPlanSnapshot && Array.isArray(editingPlanSnapshot.preview_workouts) ? editingPlanSnapshot.preview_workouts : [];
+    const fallbackPreview = editingPlanSnapshot && Array.isArray(editingPlanSnapshot.preview_workouts) ? editingPlanSnapshot.preview_workouts : [];
     const fallbackSessions = editingPlanSnapshot ? getMarketplacePlanWorkoutRows(editingPlanSnapshot) : [];
     const outPreview = previewWorkouts.length > 0 ? previewWorkouts : fallbackPreview;
     const outSessions = previewWorkouts.length > 0 ? previewWorkouts : fallbackSessions.length > 0 ? fallbackSessions : outPreview;
@@ -432,57 +546,27 @@ useEffect(() => {
     if (editingMarketplacePlanId) {
       let upd = supabase
         .from("plan_marketplace")
-        .update({
-          title,
-          description,
-          level: String(planForm.level || "intermedio"),
-          duration_weeks: durationWeeks,
-          sessions_per_week: sessionsPerWeek,
-          price_cop: priceCop,
-          preview_workouts: outPreview,
-          plan_sessions: outSessions,
-        })
+        .update({ title, description, level: String(planForm.level || "intermedio"), duration_weeks: durationWeeks, sessions_per_week: sessionsPerWeek, price_cop: priceCop, preview_workouts: outPreview, plan_sessions: outSessions })
         .eq("id", editingMarketplacePlanId);
       if (!isAdmin) upd = upd.eq("coach_user_id", uid);
       const res = await upd;
       error = res.error;
     } else {
       const res = await supabase.from("plan_marketplace").insert({
-        coach_user_id: uid,
-        coach_id: uid,
-        coach_name: "",
-        title,
-        description,
-        level: String(planForm.level || "intermedio"),
-        duration_weeks: durationWeeks,
-        sessions_per_week: sessionsPerWeek,
-        price_cop: priceCop,
-        preview_workouts: outPreview,
-        plan_sessions: outSessions,
-        is_active: true,
-        is_approved: false,
+        coach_user_id: uid, coach_id: uid, coach_name: "", title, description,
+        level: String(planForm.level || "intermedio"), duration_weeks: durationWeeks,
+        sessions_per_week: sessionsPerWeek, price_cop: priceCop,
+        preview_workouts: outPreview, plan_sessions: outSessions, is_active: true, is_approved: false,
       });
       error = res.error;
     }
     setSavingPlan(false);
-    if (error) {
-      console.error("plan_marketplace coach save:", error);
-      notify?.(error.message || "No se pudo guardar el plan");
-      return;
-    }
+    if (error) { console.error("plan_marketplace coach save:", error); notify?.(error.message || "No se pudo guardar el plan"); return; }
     notify?.(editingMarketplacePlanId ? "Plan actualizado." : "Plan enviado. Quedó pendiente de aprobación.");
     setShowPublishModal(false);
     setEditingMarketplacePlanId(null);
     setEditingPlanSnapshot(null);
-    setPlanForm({
-      title: "",
-      description: "",
-      level: "intermedio",
-      duration_weeks: "8",
-      sessions_per_week: "4",
-      price_cop: "120000",
-      preview_workouts: [],
-    });
+    setPlanForm({ title: "", description: "", level: "intermedio", duration_weeks: "8", sessions_per_week: "4", price_cop: "120000", preview_workouts: [] });
     loadMarketplace();
     loadSales();
     loadPendingPurchases();
@@ -506,15 +590,7 @@ useEffect(() => {
             onClick={() => {
               setEditingMarketplacePlanId(null);
               setEditingPlanSnapshot(null);
-              setPlanForm({
-                title: "",
-                description: "",
-                level: "intermedio",
-                duration_weeks: "8",
-                sessions_per_week: "4",
-                price_cop: "120000",
-                preview_workouts: [],
-              });
+              setPlanForm({ title: "", description: "", level: "intermedio", duration_weeks: "8", sessions_per_week: "4", price_cop: "120000", preview_workouts: [] });
               setShowPublishModal(true);
             }}
             style={{ background: "linear-gradient(135deg,#0ea5e9,#0284c7)", border: "none", borderRadius: 9, padding: "8px 12px", color: "#fff", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".8em" }}
@@ -526,9 +602,7 @@ useEffect(() => {
 
       {isCoach ? (
         <div style={{ ...S.card, marginBottom: 14 }}>
-          <div style={{ fontSize: ".72em", letterSpacing: ".12em", textTransform: "uppercase", color: "#64748b", marginBottom: 8 }}>
-            Mis planes publicados
-          </div>
+          <div style={{ fontSize: ".72em", letterSpacing: ".12em", textTransform: "uppercase", color: "#64748b", marginBottom: 8 }}>Mis planes publicados</div>
           {coachOwnPlans.length === 0 ? (
             <div style={{ color: "#94a3b8", fontSize: ".85em" }}>Aún no has publicado planes.</div>
           ) : (
@@ -544,74 +618,22 @@ useEffect(() => {
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                           <div style={{ fontWeight: 800 }}>{p.title}</div>
-                          <span
-                            style={{
-                              fontSize: ".62em",
-                              fontWeight: 900,
-                              letterSpacing: ".04em",
-                              textTransform: "uppercase",
-                              borderRadius: 999,
-                              padding: "4px 10px",
-                              border: approved ? "1px solid #86efac" : "1px solid #fdba74",
-                              background: approved ? "#dcfce7" : "#ffedd5",
-                              color: approved ? "#166534" : "#9a3412",
-                            }}
-                          >
+                          <span style={{ fontSize: ".62em", fontWeight: 900, letterSpacing: ".04em", textTransform: "uppercase", borderRadius: 999, padding: "4px 10px", border: approved ? "1px solid #86efac" : "1px solid #fdba74", background: approved ? "#dcfce7" : "#ffedd5", color: approved ? "#166534" : "#9a3412" }}>
                             {approved ? "Aprobado" : "Pendiente"}
                           </span>
                         </div>
-                        <div style={{ fontSize: ".8em", color: "#64748b", marginTop: 4 }}>
-                          {p.duration_weeks} semanas · {p.sessions_per_week} sesiones/sem
-                        </div>
+                        <div style={{ fontSize: ".8em", color: "#64748b", marginTop: 4 }}>{p.duration_weeks} semanas · {p.sessions_per_week} sesiones/sem</div>
                       </div>
                       <div style={{ textAlign: "right" }}>
-                        <div style={{ fontWeight: 800, color: approved ? "#16a34a" : "#b45309" }}>
-                          {approved ? "Visible en tienda" : "En revisión"}
-                        </div>
+                        <div style={{ fontWeight: 800, color: approved ? "#16a34a" : "#b45309" }}>{approved ? "Visible en tienda" : "En revisión"}</div>
                         <div style={{ fontSize: ".78em", color: "#64748b", marginTop: 4 }}>Ventas: {sales}</div>
                       </div>
                     </div>
-                    <div style={{ marginTop: 8, fontSize: ".82em", color: "#0f172a", fontWeight: 700 }}>
-                      Ganancia estimada: ${formatCopInt(coachEarnings)} COP
-                    </div>
-                    <div style={{ marginTop: 4, fontSize: ".75em", color: "#64748b" }}>
-                      Tu ganancia: ${formatCopInt(Math.round(price * 0.8))} COP (80% del precio)
-                    </div>
+                    <div style={{ marginTop: 8, fontSize: ".82em", color: "#0f172a", fontWeight: 700 }}>Ganancia estimada: ${formatCopInt(coachEarnings)} COP</div>
+                    <div style={{ marginTop: 4, fontSize: ".75em", color: "#64748b" }}>Tu ganancia: ${formatCopInt(Math.round(price * 0.8))} COP (80% del precio)</div>
                     <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                      <button
-                        type="button"
-                        onClick={() => openEditMarketplacePlan(p)}
-                        style={{
-                          border: "1px solid #bae6fd",
-                          background: "#f0f9ff",
-                          color: "#0369a1",
-                          borderRadius: 8,
-                          padding: "6px 10px",
-                          fontWeight: 800,
-                          cursor: "pointer",
-                          fontFamily: "inherit",
-                          fontSize: ".74em",
-                        }}
-                      >
-                        ✏️ Editar
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => deleteMarketplacePlanCoach(p)}
-                        style={{
-                          border: "1px solid #fecaca",
-                          background: "#fef2f2",
-                          color: "#b91c1c",
-                          borderRadius: 8,
-                          padding: "6px 10px",
-                          fontWeight: 800,
-                          cursor: "pointer",
-                          fontFamily: "inherit",
-                          fontSize: ".74em",
-                        }}
-                      >
-                        🗑️ Eliminar
-                      </button>
+                      <button type="button" onClick={() => openEditMarketplacePlan(p)} style={{ border: "1px solid #bae6fd", background: "#f0f9ff", color: "#0369a1", borderRadius: 8, padding: "6px 10px", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".74em" }}>✏️ Editar</button>
+                      <button type="button" onClick={() => deleteMarketplacePlanCoach(p)} style={{ border: "1px solid #fecaca", background: "#fef2f2", color: "#b91c1c", borderRadius: 8, padding: "6px 10px", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".74em" }}>🗑️ Eliminar</button>
                     </div>
                   </div>
                 );
@@ -623,9 +645,7 @@ useEffect(() => {
 
       {isCoach || isAdmin ? (
         <div style={{ ...S.card, marginBottom: 14 }}>
-          <div style={{ fontSize: ".72em", letterSpacing: ".12em", textTransform: "uppercase", color: "#64748b", marginBottom: 8 }}>
-            Compras pendientes de confirmar
-          </div>
+          <div style={{ fontSize: ".72em", letterSpacing: ".12em", textTransform: "uppercase", color: "#64748b", marginBottom: 8 }}>Compras pendientes de confirmar</div>
           {loadingPendingPurchases ? (
             <div style={{ color: "#64748b", fontSize: ".84em" }}>Cargando compras…</div>
           ) : pendingPurchasesList.length === 0 ? (
@@ -633,106 +653,81 @@ useEffect(() => {
           ) : (
             <div style={{ display: "grid", gap: 8 }}>
               {pendingPurchasesList.map((row) => (
-                <div
-                  key={row.id}
-                  style={{
-                    border: "1px solid #e2e8f0",
-                    borderRadius: 10,
-                    padding: "10px 12px",
-                    background: "#f8fafc",
-                    display: "flex",
-                    justifyContent: "space-between",
-                    gap: 10,
-                    flexWrap: "wrap",
-                    alignItems: "center",
-                  }}
-                >
+                <div key={row.id} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: "10px 12px", background: "#f8fafc", display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
                   <div style={{ fontSize: ".82em", color: "#334155" }}>
                     Plan: <strong>{row.plan_title || row.plan_id}</strong> · ${formatCopInt(row.amount_cop || 0)} COP · {row.buyer_name || row.buyer_user_id || "Comprador"}
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => confirmCoachPendingPurchase(row.id)}
-                    style={{
-                      border: "1px solid #bbf7d0",
-                      background: "#f0fdf4",
-                      color: "#166534",
-                      borderRadius: 8,
-                      padding: "7px 10px",
-                      fontWeight: 800,
-                      cursor: "pointer",
-                      fontFamily: "inherit",
-                      fontSize: ".76em",
-                    }}
-                  >
-                    ✅ Confirmar pago
-                  </button>
+                  <button type="button" onClick={() => confirmCoachPendingPurchase(row.id)} style={{ border: "1px solid #bbf7d0", background: "#f0fdf4", color: "#166534", borderRadius: 8, padding: "7px 10px", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".76em" }}>✅ Confirmar pago</button>
                 </div>
               ))}
             </div>
           )}
         </div>
       ) : null}
-{isAthlete && (purchasedPlans.length > 0 || loadingPurchasedPlans) ? (
+
+      {/* ── Mis planes adquiridos (atleta) */}
+      {isAthlete && (purchasedPlans.length > 0 || loadingPurchasedPlans) ? (
         <div style={{ ...S.card, marginBottom: 14 }}>
-          <div style={{ fontSize: ".72em", letterSpacing: ".12em", textTransform: "uppercase", color: "#64748b", marginBottom: 10 }}>
-            📦 Mis planes adquiridos
-          </div>
+          <div style={{ fontSize: ".72em", letterSpacing: ".12em", textTransform: "uppercase", color: "#64748b", marginBottom: 10 }}>📦 Mis planes adquiridos</div>
           {loadingPurchasedPlans ? (
             <div style={{ color: "#64748b", fontSize: ".84em" }}>Cargando tus planes…</div>
           ) : (
             <div style={{ display: "grid", gap: 10 }}>
-              {purchasedPlans.map(({ purchaseId, purchasedAt, pricePaid, plan }) => (
-                <div
-                  key={purchaseId}
-                  style={{
-                    border: "1px solid #bbf7d0",
-                    borderRadius: 12,
-                    padding: "12px 14px",
-                    background: "linear-gradient(145deg,#f0fdf4,#fff)",
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    gap: 12,
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 800, color: "#0f172a", marginBottom: 4 }}>
-                      ✅ {plan.title}
-                    </div>
-                    <div style={{ fontSize: ".78em", color: "#64748b" }}>
-                      {plan.duration_weeks} semanas · {plan.sessions_per_week} sesiones/sem · {String(plan.level || "")}
-                    </div>
-                    <div style={{ fontSize: ".75em", color: "#16a34a", fontWeight: 700, marginTop: 4 }}>
-                      Comprado el {new Date(purchasedAt).toLocaleDateString("es-CO", { day: "numeric", month: "long", year: "numeric" })}
-                      {" · "}${Number(pricePaid || 0).toLocaleString("es-CO")} COP
+              {purchasedPlans.map(({ purchaseId, purchasedAt, pricePaid, plan }) => {
+                const alreadySynced = Boolean(calendarSyncDone[String(plan.id)]);
+                return (
+                  <div key={purchaseId} style={{ border: "1px solid #bbf7d0", borderRadius: 12, padding: "12px 14px", background: "linear-gradient(145deg,#f0fdf4,#fff)" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 800, color: "#0f172a", marginBottom: 4 }}>✅ {plan.title}</div>
+                        <div style={{ fontSize: ".78em", color: "#64748b" }}>
+                          {plan.duration_weeks} semanas · {plan.sessions_per_week} sesiones/sem · {String(plan.level || "")}
+                        </div>
+                        <div style={{ fontSize: ".75em", color: "#16a34a", fontWeight: 700, marginTop: 4 }}>
+                          Comprado el {new Date(purchasedAt).toLocaleDateString("es-CO", { day: "numeric", month: "long", year: "numeric" })}
+                          {" · "}${Number(pricePaid || 0).toLocaleString("es-CO")} COP
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-end" }}>
+                        <button type="button" onClick={() => setSelectedPurchasedPlan(plan)} style={{ background: "linear-gradient(135deg,#16a34a,#22c55e)", border: "none", borderRadius: 9, padding: "9px 14px", color: "#fff", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".8em", whiteSpace: "nowrap" }}>
+                          Ver plan completo
+                        </button>
+                        {/* ── NUEVO: Botón cargar al calendario */}
+                        {alreadySynced ? (
+                          <div style={{ fontSize: ".75em", color: "#16a34a", fontWeight: 700, textAlign: "center" }}>
+                            ✅ Cargado al calendario
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => openStartDateModal(plan)}
+                            style={{
+                              background: "linear-gradient(135deg,#7c3aed,#a78bfa)",
+                              border: "none",
+                              borderRadius: 9,
+                              padding: "9px 14px",
+                              color: "#fff",
+                              fontWeight: 800,
+                              cursor: "pointer",
+                              fontFamily: "inherit",
+                              fontSize: ".8em",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            📅 Cargar al calendario
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedPurchasedPlan(plan)}
-                    style={{
-                      background: "linear-gradient(135deg,#16a34a,#22c55e)",
-                      border: "none",
-                      borderRadius: 9,
-                      padding: "9px 14px",
-                      color: "#fff",
-                      fontWeight: 800,
-                      cursor: "pointer",
-                      fontFamily: "inherit",
-                      fontSize: ".8em",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    Ver plan completo
-                  </button>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
       ) : null}
+
+      {/* ── Catálogo de planes */}
       {loadingPlans ? (
         <div style={{ color: "#64748b" }}>Cargando planes…</div>
       ) : plansVisible.length === 0 ? (
@@ -750,22 +745,8 @@ useEffect(() => {
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "flex-start" }}>
                   <div style={{ fontWeight: 800, color: "#0f172a", flex: 1, minWidth: 0 }}>{p.title}</div>
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
-                    <span style={{ fontSize: ".7em", borderRadius: 999, padding: "3px 8px", background: "rgba(14,165,233,.12)", color: "#0369a1", fontWeight: 800 }}>
-                      {String(p.level || "intermedio")}
-                    </span>
-                    <span
-                      style={{
-                        fontSize: ".58em",
-                        fontWeight: 900,
-                        letterSpacing: ".06em",
-                        textTransform: "uppercase",
-                        borderRadius: 999,
-                        padding: "3px 7px",
-                        border: approved ? "1px solid #86efac" : "1px solid #fdba74",
-                        background: approved ? "#dcfce7" : "#ffedd5",
-                        color: approved ? "#166534" : "#9a3412",
-                      }}
-                    >
+                    <span style={{ fontSize: ".7em", borderRadius: 999, padding: "3px 8px", background: "rgba(14,165,233,.12)", color: "#0369a1", fontWeight: 800 }}>{String(p.level || "intermedio")}</span>
+                    <span style={{ fontSize: ".58em", fontWeight: 900, letterSpacing: ".06em", textTransform: "uppercase", borderRadius: 999, padding: "3px 7px", border: approved ? "1px solid #86efac" : "1px solid #fdba74", background: approved ? "#dcfce7" : "#ffedd5", color: approved ? "#166534" : "#9a3412" }}>
                       {approved ? "Aprobado" : "Pendiente"}
                     </span>
                   </div>
@@ -774,91 +755,17 @@ useEffect(() => {
                 <div style={{ fontSize: ".78em", color: "#64748b", marginTop: 2 }}>{p.duration_weeks} semanas · {p.sessions_per_week} sesiones/semana</div>
                 <div style={{ marginTop: 8, fontSize: ".95em", fontWeight: 800, color: "#0f172a" }}>${formatCopInt(p.price_cop)} COP</div>
                 <div style={{ marginTop: 6, fontSize: ".78em", color: "#f59e0b", fontWeight: 700 }}>{ratingStars} {rating > 0 ? rating.toFixed(1) : "0.0"}</div>
-                <button type="button" onClick={() => setSelectedPlan(p)} style={{ marginTop: 10, width: "100%", background: "linear-gradient(135deg,#0d9488,#14b8a6)", border: "none", borderRadius: 8, padding: "8px 10px", color: "#fff", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".78em" }}>
-                  Ver plan
-                </button>
+                <button type="button" onClick={() => setSelectedPlan(p)} style={{ marginTop: 10, width: "100%", background: "linear-gradient(135deg,#0d9488,#14b8a6)", border: "none", borderRadius: 8, padding: "8px 10px", color: "#fff", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".78em" }}>Ver plan</button>
                 {isAdmin ? (
                   <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
-                    <button
-                      type="button"
-                      onClick={() => approveMarketplaceRow(p.id)}
-                      style={{
-                        flex: 1,
-                        minWidth: 100,
-                        border: "1px solid #bbf7d0",
-                        background: "#f0fdf4",
-                        color: "#166534",
-                        borderRadius: 8,
-                        padding: "6px 8px",
-                        fontWeight: 800,
-                        cursor: "pointer",
-                        fontFamily: "inherit",
-                        fontSize: ".72em",
-                      }}
-                    >
-                      ✅ Aprobar
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => rejectMarketplaceRow(p.id)}
-                      style={{
-                        flex: 1,
-                        minWidth: 100,
-                        border: "1px solid #fecaca",
-                        background: "#fef2f2",
-                        color: "#b91c1c",
-                        borderRadius: 8,
-                        padding: "6px 8px",
-                        fontWeight: 800,
-                        cursor: "pointer",
-                        fontFamily: "inherit",
-                        fontSize: ".72em",
-                      }}
-                    >
-                      ❌ Rechazar
-                    </button>
+                    <button type="button" onClick={() => approveMarketplaceRow(p.id)} style={{ flex: 1, minWidth: 100, border: "1px solid #bbf7d0", background: "#f0fdf4", color: "#166534", borderRadius: 8, padding: "6px 8px", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".72em" }}>✅ Aprobar</button>
+                    <button type="button" onClick={() => rejectMarketplaceRow(p.id)} style={{ flex: 1, minWidth: 100, border: "1px solid #fecaca", background: "#fef2f2", color: "#b91c1c", borderRadius: 8, padding: "6px 8px", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".72em" }}>❌ Rechazar</button>
                   </div>
                 ) : null}
                 {canManage && (isCoach || isAdmin) ? (
                   <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
-                    <button
-                      type="button"
-                      onClick={() => openEditMarketplacePlan(p)}
-                      style={{
-                        flex: 1,
-                        minWidth: 100,
-                        border: "1px solid #bae6fd",
-                        background: "#f0f9ff",
-                        color: "#0369a1",
-                        borderRadius: 8,
-                        padding: "6px 8px",
-                        fontWeight: 800,
-                        cursor: "pointer",
-                        fontFamily: "inherit",
-                        fontSize: ".72em",
-                      }}
-                    >
-                      ✏️ Editar
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => deleteMarketplacePlanCoach(p)}
-                      style={{
-                        flex: 1,
-                        minWidth: 100,
-                        border: "1px solid #fecaca",
-                        background: "#fef2f2",
-                        color: "#b91c1c",
-                        borderRadius: 8,
-                        padding: "6px 8px",
-                        fontWeight: 800,
-                        cursor: "pointer",
-                        fontFamily: "inherit",
-                        fontSize: ".72em",
-                      }}
-                    >
-                      🗑️ Eliminar
-                    </button>
+                    <button type="button" onClick={() => openEditMarketplacePlan(p)} style={{ flex: 1, minWidth: 100, border: "1px solid #bae6fd", background: "#f0f9ff", color: "#0369a1", borderRadius: 8, padding: "6px 8px", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".72em" }}>✏️ Editar</button>
+                    <button type="button" onClick={() => deleteMarketplacePlanCoach(p)} style={{ flex: 1, minWidth: 100, border: "1px solid #fecaca", background: "#fef2f2", color: "#b91c1c", borderRadius: 8, padding: "6px 8px", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".72em" }}>🗑️ Eliminar</button>
                   </div>
                 ) : null}
               </div>
@@ -867,6 +774,7 @@ useEffect(() => {
         </div>
       )}
 
+      {/* ── Modal detalle plan (preview) */}
       {selectedPlan ? (
         <div style={{ position: "fixed", inset: 0, zIndex: 10030, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
           <div style={{ ...S.card, width: "100%", maxWidth: 720, margin: 0, maxHeight: "90vh", overflowY: "auto" }}>
@@ -879,10 +787,8 @@ useEffect(() => {
             <MarketplacePlanWorkoutsAccordion previewWorkouts={getMarketplacePlanWorkoutRows(selectedPlan)} resetKey={selectedPlan.id} lockAfterWeek1={lockAfterWeek1} />
             {!hidePurchaseCta && planPreviewHasLockedWeeks ? (
               <div style={{ marginTop: 14, marginBottom: 12, padding: "14px 16px", borderRadius: 12, background: "linear-gradient(180deg,#f1f5f9,#fff)", border: "1px solid #e2e8f0", textAlign: "center" }}>
-                <div style={{ fontSize: ".9em", fontWeight: 800, color: "#0f172a", marginBottom: 12, lineHeight: 1.45 }}>
-                  Adquiere este plan para desbloquear todas las semanas
-                </div>
-               <button type="button" onClick={() => handleBuyWithWompi(selectedPlan)} disabled={checkoutLoading === String(selectedPlan?.id)} style={{ width: "100%", background: checkoutLoading === String(selectedPlan?.id) ? "#cbd5e1" : "linear-gradient(135deg,#ea580c,#f97316)", border: "none", borderRadius: 10, padding: "10px 14px", color: "#fff", fontWeight: 900, cursor: checkoutLoading === String(selectedPlan?.id) ? "not-allowed" : "pointer", fontFamily: "inherit", fontSize: ".85em" }}>
+                <div style={{ fontSize: ".9em", fontWeight: 800, color: "#0f172a", marginBottom: 12, lineHeight: 1.45 }}>Adquiere este plan para desbloquear todas las semanas</div>
+                <button type="button" onClick={() => handleBuyWithWompi(selectedPlan)} disabled={checkoutLoading === String(selectedPlan?.id)} style={{ width: "100%", background: checkoutLoading === String(selectedPlan?.id) ? "#cbd5e1" : "linear-gradient(135deg,#ea580c,#f97316)", border: "none", borderRadius: 10, padding: "10px 14px", color: "#fff", fontWeight: 900, cursor: checkoutLoading === String(selectedPlan?.id) ? "not-allowed" : "pointer", fontFamily: "inherit", fontSize: ".85em" }}>
                   {checkoutLoading === String(selectedPlan?.id) ? "Iniciando pago…" : `Comprar - $${formatCopInt(selectedPlan.price_cop)} COP`}
                 </button>
               </div>
@@ -891,45 +797,111 @@ useEffect(() => {
                 {checkoutLoading === String(selectedPlan?.id) ? "Iniciando pago…" : `Comprar - $${formatCopInt(selectedPlan.price_cop)} COP`}
               </button>
             ) : null}
-            
           </div>
         </div>
       ) : null}
-{selectedPurchasedPlan ? (
+
+      {/* ── Modal plan adquirido (acceso completo) */}
+      {selectedPurchasedPlan ? (
         <div style={{ position: "fixed", inset: 0, zIndex: 10032, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
           <div style={{ ...S.card, width: "100%", maxWidth: 720, margin: 0, maxHeight: "90vh", overflowY: "auto" }}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginBottom: 8 }}>
               <div>
                 <div style={{ fontSize: "1.05em", fontWeight: 900, color: "#0f172a" }}>{selectedPurchasedPlan.title}</div>
-                <div style={{ fontSize: ".72em", color: "#16a34a", fontWeight: 700, marginTop: 4 }}>
-                  ✅ Plan adquirido — acceso completo
-                </div>
+                <div style={{ fontSize: ".72em", color: "#16a34a", fontWeight: 700, marginTop: 4 }}>✅ Plan adquirido — acceso completo</div>
               </div>
-              <button
-                type="button"
-                onClick={() => setSelectedPurchasedPlan(null)}
-                style={{ border: "1px solid #e2e8f0", background: "#fff", borderRadius: 8, padding: "6px 10px", cursor: "pointer", fontFamily: "inherit" }}
-              >
-                ✕
-              </button>
+              <button type="button" onClick={() => setSelectedPurchasedPlan(null)} style={{ border: "1px solid #e2e8f0", background: "#fff", borderRadius: 8, padding: "6px 10px", cursor: "pointer", fontFamily: "inherit" }}>✕</button>
             </div>
-            <div style={{ color: "#475569", fontSize: ".86em", marginBottom: 10 }}>
-              {selectedPurchasedPlan.description || "Sin descripción."}
-            </div>
+            <div style={{ color: "#475569", fontSize: ".86em", marginBottom: 10 }}>{selectedPurchasedPlan.description || "Sin descripción."}</div>
             <div style={{ fontSize: ".78em", color: "#64748b", marginBottom: 6 }}>
               Coach: {selectedPurchasedPlan.coach_name || "Coach"} · {selectedPurchasedPlan.duration_weeks} semanas · {selectedPurchasedPlan.sessions_per_week} sesiones/semana
             </div>
-            <div style={{ fontSize: ".78em", fontWeight: 800, color: "#334155", marginBottom: 8 }}>
-              Contenido completo del plan
-            </div>
-            <MarketplacePlanWorkoutsAccordion
-              previewWorkouts={getMarketplacePlanWorkoutRows(selectedPurchasedPlan)}
-              resetKey={selectedPurchasedPlan.id}
-              lockAfterWeek1={false}
-            />
+            <div style={{ fontSize: ".78em", fontWeight: 800, color: "#334155", marginBottom: 8 }}>Contenido completo del plan</div>
+            <MarketplacePlanWorkoutsAccordion previewWorkouts={getMarketplacePlanWorkoutRows(selectedPurchasedPlan)} resetKey={selectedPurchasedPlan.id} lockAfterWeek1={false} />
+            {/* Botón cargar al calendario desde el modal de plan completo */}
+            {!calendarSyncDone[String(selectedPurchasedPlan.id)] ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedPurchasedPlan(null);
+                  openStartDateModal(selectedPurchasedPlan);
+                }}
+                style={{ marginTop: 14, width: "100%", background: "linear-gradient(135deg,#7c3aed,#a78bfa)", border: "none", borderRadius: 10, padding: "10px 14px", color: "#fff", fontWeight: 900, cursor: "pointer", fontFamily: "inherit", fontSize: ".85em" }}
+              >
+                📅 Cargar al calendario
+              </button>
+            ) : (
+              <div style={{ marginTop: 14, textAlign: "center", color: "#16a34a", fontWeight: 700, fontSize: ".88em" }}>
+                ✅ Ya está cargado en tu calendario
+              </div>
+            )}
           </div>
         </div>
       ) : null}
+
+      {/* ── NUEVO: Modal fecha de inicio */}
+      {showStartDateModal && startDatePlan ? (
+        <div style={{ position: "fixed", inset: 0, zIndex: 10035, background: "rgba(15,23,42,.55)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ ...S.card, width: "100%", maxWidth: 460, margin: 0 }}>
+            <div style={{ fontSize: "1.05em", fontWeight: 900, color: "#0f172a", marginBottom: 6 }}>
+              📅 ¿Desde cuándo empiezas?
+            </div>
+            <div style={{ color: "#475569", fontSize: ".88em", marginBottom: 16, lineHeight: 1.55 }}>
+              Selecciona la fecha en que quieres comenzar el plan
+              <strong style={{ color: "#0f172a" }}> {startDatePlan.title}</strong>.
+              Los entrenamientos se cargarán automáticamente a tu calendario.
+            </div>
+
+            <div style={{ marginBottom: 8 }}>
+              <div style={{ fontSize: ".75em", color: "#64748b", fontWeight: 700, marginBottom: 6 }}>Fecha de inicio</div>
+              <input
+                type="date"
+                value={startDateValue}
+                min={formatLocalYMD(new Date())}
+                onChange={(e) => setStartDateValue(e.target.value)}
+                style={{ width: "100%", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", fontFamily: "inherit", fontSize: ".9em", color: "#0f172a", boxSizing: "border-box" }}
+              />
+            </div>
+
+            <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", marginBottom: 16, fontSize: ".78em", color: "#475569", lineHeight: 1.5 }}>
+              ℹ️ El plan se distribuirá desde el <strong>lunes</strong> de la semana que elijas.
+              {startDatePlan.duration_weeks ? ` Duración total: ${startDatePlan.duration_weeks} semanas.` : ""}
+              {startDatePlan.sessions_per_week ? ` ${startDatePlan.sessions_per_week} sesiones por semana.` : ""}
+            </div>
+
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button
+                type="button"
+                onClick={() => { setShowStartDateModal(false); setStartDatePlan(null); }}
+                disabled={loadingCalendarSync}
+                style={{ border: "1px solid #e2e8f0", background: "#fff", borderRadius: 8, padding: "10px 14px", color: "#64748b", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".84em" }}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={loadPlanToCalendar}
+                disabled={loadingCalendarSync || !startDateValue}
+                style={{
+                  background: loadingCalendarSync ? "#e2e8f0" : "linear-gradient(135deg,#7c3aed,#a78bfa)",
+                  border: "none",
+                  borderRadius: 8,
+                  padding: "10px 18px",
+                  color: loadingCalendarSync ? "#64748b" : "#fff",
+                  fontWeight: 800,
+                  cursor: loadingCalendarSync ? "not-allowed" : "pointer",
+                  fontFamily: "inherit",
+                  fontSize: ".84em",
+                }}
+              >
+                {loadingCalendarSync ? "Cargando…" : "✅ Cargar plan"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* ── Modal publicar/editar plan (coach) */}
       {showPublishModal ? (
         <div style={{ position: "fixed", inset: 0, zIndex: 10031, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
           <div style={{ ...S.card, width: "100%", maxWidth: 760, margin: 0, maxHeight: "90vh", overflowY: "auto" }}>
@@ -957,18 +929,7 @@ useEffect(() => {
                       const checked = planForm.preview_workouts.includes(String(w.id));
                       return (
                         <label key={w.id} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: ".82em", color: "#334155" }}>
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() =>
-                              setPlanForm((f) => ({
-                                ...f,
-                                preview_workouts: checked
-                                  ? f.preview_workouts.filter((id) => id !== String(w.id))
-                                  : [...f.preview_workouts, String(w.id)],
-                              }))
-                            }
-                          />
+                          <input type="checkbox" checked={checked} onChange={() => setPlanForm((f) => ({ ...f, preview_workouts: checked ? f.preview_workouts.filter((id) => id !== String(w.id)) : [...f.preview_workouts, String(w.id)] }))} />
                           <span>{w.title} · {w.total_km || 0} km · {w.duration_min || 0} min</span>
                         </label>
                       );
@@ -981,17 +942,7 @@ useEffect(() => {
               Tu ganancia: ${formatCopInt(Math.round((Number(planForm.price_cop || 0) || 0) * 0.8))} COP (80% del precio)
             </div>
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowPublishModal(false);
-                  setEditingMarketplacePlanId(null);
-                  setEditingPlanSnapshot(null);
-                }}
-                style={{ border: "1px solid #e2e8f0", borderRadius: 8, background: "#fff", padding: "8px 12px", cursor: "pointer", fontFamily: "inherit" }}
-              >
-                Cancelar
-              </button>
+              <button type="button" onClick={() => { setShowPublishModal(false); setEditingMarketplacePlanId(null); setEditingPlanSnapshot(null); }} style={{ border: "1px solid #e2e8f0", borderRadius: 8, background: "#fff", padding: "8px 12px", cursor: "pointer", fontFamily: "inherit" }}>Cancelar</button>
               <button type="button" onClick={submitCoachPlan} disabled={savingPlan} style={{ border: "none", borderRadius: 8, background: savingPlan ? "#cbd5e1" : "linear-gradient(135deg,#0ea5e9,#0284c7)", padding: "8px 12px", color: "#fff", fontWeight: 800, cursor: savingPlan ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
                 {savingPlan ? "Guardando…" : editingMarketplacePlanId ? "Guardar cambios" : "Publicar plan"}
               </button>
