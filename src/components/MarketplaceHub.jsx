@@ -81,7 +81,7 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
   const [startDateValue, setStartDateValue] = useState(formatLocalYMD(new Date()));
   const [loadingCalendarSync, setLoadingCalendarSync] = useState(false);
   const [calendarSyncDone, setCalendarSyncDone] = useState({}); // { purchaseId: true }
-
+const [selectedDays, setSelectedDays] = useState([]); // [0,1,2...6] lun=0...dom=6
   const loadMarketplace = useCallback(async () => {
     setLoadingPlans(true);
     const { data, error } = await supabase
@@ -351,10 +351,11 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
 
   // ── NUEVO: Abrir modal de fecha de inicio
   const openStartDateModal = (plan) => {
-    setStartDatePlan(plan);
-    setStartDateValue(formatLocalYMD(new Date()));
-    setShowStartDateModal(true);
-  };
+  setStartDatePlan(plan);
+  setStartDateValue(formatLocalYMD(new Date()));
+  setSelectedDays([]);
+  setShowStartDateModal(true);
+};
 
   // ── NUEVO: Cargar workouts del plan al calendario del atleta
   const loadPlanToCalendar = async () => {
@@ -394,34 +395,23 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
       // 4. Construir filas para insertar
 const rows = planWorkouts.map((w, idx) => {
   const sessPerWeek = Math.max(1, Number(startDatePlan.sessions_per_week) || 4);
+if (selectedDays.length !== sessPerWeek) {
+  notify?.(`Debes seleccionar exactamente ${sessPerWeek} días de entrenamiento.`);
+  return;
+}
+const sortedDays = [...selectedDays].sort((a, b) => a - b);
 
-  // Semana basada en índice (ignora w.week si no es confiable)
+const rows = planWorkouts.map((w, idx) => {
   const week = w.week != null && w.week !== "" && Number(w.week) > 0
     ? Number(w.week)
     : Math.floor(idx / sessPerWeek) + 1;
-
-  // Sesión dentro de la semana (siempre por índice, ignora w.day)
   const sessionInWeek = idx % sessPerWeek;
-
-  // Días disponibles según sesiones/semana
-  const dayMaps = {
-    1: [0],
-    2: [0, 3],
-    3: [0, 2, 4],
-    4: [0, 1, 3, 5],
-    5: [0, 1, 2, 3, 5],
-    6: [0, 1, 2, 3, 4, 5],
-    7: [0, 1, 2, 3, 4, 5, 6],
-  };
-  const dayOffsets = dayMaps[Math.min(sessPerWeek, 7)] || dayMaps[4];
-  const dayOffset = dayOffsets[sessionInWeek % dayOffsets.length];
-
+  const dayOffset = sortedDays[sessionInWeek % sortedDays.length];
   const mondayOfWeek = addDays(startDate, (week - 1) * 7);
   const scheduledDate = formatLocalYMD(addDays(mondayOfWeek, dayOffset));
   const structure = Array.isArray(w.workout_structure)
     ? w.workout_structure
     : Array.isArray(w.structure) ? w.structure : [];
-
   return {
     athlete_id: athleteId,
     coach_id: coachIdForWorkout,
@@ -864,66 +854,104 @@ const rows = planWorkouts.map((w, idx) => {
       ) : null}
 
       {/* ── NUEVO: Modal fecha de inicio */}
-      {showStartDateModal && startDatePlan ? (
-        <div style={{ position: "fixed", inset: 0, zIndex: 10035, background: "rgba(15,23,42,.55)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-          <div style={{ ...S.card, width: "100%", maxWidth: 460, margin: 0 }}>
-            <div style={{ fontSize: "1.05em", fontWeight: 900, color: "#0f172a", marginBottom: 6 }}>
-              📅 ¿Desde cuándo empiezas?
-            </div>
-            <div style={{ color: "#475569", fontSize: ".88em", marginBottom: 16, lineHeight: 1.55 }}>
-              Selecciona la fecha en que quieres comenzar el plan
-              <strong style={{ color: "#0f172a" }}> {startDatePlan.title}</strong>.
-              Los entrenamientos se cargarán automáticamente a tu calendario.
-            </div>
+  {showStartDateModal && startDatePlan ? (
+  <div style={{ position: "fixed", inset: 0, zIndex: 10035, background: "rgba(15,23,42,.55)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+    <div style={{ ...S.card, width: "100%", maxWidth: 460, margin: 0 }}>
+      <div style={{ fontSize: "1.05em", fontWeight: 900, color: "#0f172a", marginBottom: 6 }}>
+        📅 Configura tu plan
+      </div>
+      <div style={{ color: "#475569", fontSize: ".88em", marginBottom: 16, lineHeight: 1.55 }}>
+        Configura el inicio de <strong style={{ color: "#0f172a" }}>{startDatePlan.title}</strong>.
+        Selecciona tu fecha de inicio y los días en que entrenarás.
+      </div>
 
-            <div style={{ marginBottom: 8 }}>
-              <div style={{ fontSize: ".75em", color: "#64748b", fontWeight: 700, marginBottom: 6 }}>Fecha de inicio</div>
-              <input
-                type="date"
-                value={startDateValue}
-                min={formatLocalYMD(new Date())}
-                onChange={(e) => setStartDateValue(e.target.value)}
-                style={{ width: "100%", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", fontFamily: "inherit", fontSize: ".9em", color: "#0f172a", boxSizing: "border-box" }}
-              />
-            </div>
+      {/* Fecha de inicio */}
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ fontSize: ".75em", color: "#64748b", fontWeight: 700, marginBottom: 6 }}>Fecha de inicio</div>
+        <input
+          type="date"
+          value={startDateValue}
+          min={formatLocalYMD(new Date())}
+          onChange={(e) => setStartDateValue(e.target.value)}
+          style={{ width: "100%", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", fontFamily: "inherit", fontSize: ".9em", color: "#0f172a", boxSizing: "border-box" }}
+        />
+      </div>
 
-            <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", marginBottom: 16, fontSize: ".78em", color: "#475569", lineHeight: 1.5 }}>
-              ℹ️ El plan se distribuirá desde el <strong>lunes</strong> de la semana que elijas.
-              {startDatePlan.duration_weeks ? ` Duración total: ${startDatePlan.duration_weeks} semanas.` : ""}
-              {startDatePlan.sessions_per_week ? ` ${startDatePlan.sessions_per_week} sesiones por semana.` : ""}
-            </div>
-
-            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+      {/* Selector de días */}
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ fontSize: ".75em", color: "#64748b", fontWeight: 700, marginBottom: 8 }}>
+          Días de entrenamiento — selecciona {startDatePlan.sessions_per_week || 4}
+          {selectedDays.length > 0 ? ` (${selectedDays.length} seleccionados)` : ""}
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 4 }}>
+          {["L","M","X","J","V","S","D"].map((label, i) => {
+            const selected = selectedDays.includes(i);
+            const sessPerWeek = Number(startDatePlan.sessions_per_week) || 4;
+            const maxReached = selectedDays.length >= sessPerWeek && !selected;
+            return (
               <button
+                key={i}
                 type="button"
-                onClick={() => { setShowStartDateModal(false); setStartDatePlan(null); }}
-                disabled={loadingCalendarSync}
-                style={{ border: "1px solid #e2e8f0", background: "#fff", borderRadius: 8, padding: "10px 14px", color: "#64748b", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".84em" }}
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={loadPlanToCalendar}
-                disabled={loadingCalendarSync || !startDateValue}
+                disabled={maxReached}
+                onClick={() => {
+                  setSelectedDays((prev) =>
+                    prev.includes(i) ? prev.filter((d) => d !== i) : [...prev, i]
+                  );
+                }}
                 style={{
-                  background: loadingCalendarSync ? "#e2e8f0" : "linear-gradient(135deg,#7c3aed,#a78bfa)",
-                  border: "none",
+                  padding: "10px 0",
                   borderRadius: 8,
-                  padding: "10px 18px",
-                  color: loadingCalendarSync ? "#64748b" : "#fff",
+                  border: selected ? "2px solid #7c3aed" : "1px solid #e2e8f0",
+                  background: selected ? "linear-gradient(135deg,#7c3aed,#a78bfa)" : maxReached ? "#f8fafc" : "#fff",
+                  color: selected ? "#fff" : maxReached ? "#cbd5e1" : "#334155",
                   fontWeight: 800,
-                  cursor: loadingCalendarSync ? "not-allowed" : "pointer",
+                  fontSize: ".82em",
+                  cursor: maxReached ? "not-allowed" : "pointer",
                   fontFamily: "inherit",
-                  fontSize: ".84em",
                 }}
               >
-                {loadingCalendarSync ? "Cargando…" : "✅ Cargar plan"}
+                {label}
               </button>
-            </div>
-          </div>
+            );
+          })}
         </div>
-      ) : null}
+      </div>
+
+      {/* Info */}
+      <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", marginBottom: 16, fontSize: ".78em", color: "#475569", lineHeight: 1.5 }}>
+        ℹ️ El plan empieza el <strong>lunes</strong> de la semana elegida.
+        {startDatePlan.duration_weeks ? ` Duración: ${startDatePlan.duration_weeks} semanas.` : ""}
+        {startDatePlan.sessions_per_week ? ` ${startDatePlan.sessions_per_week} sesiones/semana.` : ""}
+      </div>
+
+      <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+        <button
+          type="button"
+          onClick={() => { setShowStartDateModal(false); setStartDatePlan(null); setSelectedDays([]); }}
+          disabled={loadingCalendarSync}
+          style={{ border: "1px solid #e2e8f0", background: "#fff", borderRadius: 8, padding: "10px 14px", color: "#64748b", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".84em" }}
+        >
+          Cancelar
+        </button>
+        <button
+          type="button"
+          onClick={loadPlanToCalendar}
+          disabled={loadingCalendarSync || !startDateValue || selectedDays.length !== (Number(startDatePlan.sessions_per_week) || 4)}
+          style={{
+            background: (loadingCalendarSync || selectedDays.length !== (Number(startDatePlan.sessions_per_week) || 4)) ? "#e2e8f0" : "linear-gradient(135deg,#7c3aed,#a78bfa)",
+            border: "none", borderRadius: 8, padding: "10px 18px",
+            color: (loadingCalendarSync || selectedDays.length !== (Number(startDatePlan.sessions_per_week) || 4)) ? "#64748b" : "#fff",
+            fontWeight: 800,
+            cursor: (loadingCalendarSync || selectedDays.length !== (Number(startDatePlan.sessions_per_week) || 4)) ? "not-allowed" : "pointer",
+            fontFamily: "inherit", fontSize: ".84em",
+          }}
+        >
+          {loadingCalendarSync ? "Cargando…" : "✅ Cargar plan"}
+        </button>
+      </div>
+    </div>
+  </div>
+) : null}
 
       {/* ── Modal publicar/editar plan (coach) */}
       {showPublishModal ? (
