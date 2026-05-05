@@ -392,24 +392,41 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
       const startDate = toMonday(new Date(`${startDateValue}T12:00:00`));
 
       // 4. Construir filas para insertar
-            const rows = planWorkouts.map((w, idx) => {
-        const week = w.week != null && w.week !== "" ? Number(w.week) : Math.floor(idx / (startDatePlan.sessions_per_week || 4)) + 1;
-        const scheduledDate = formatLocalYMD(calculateWorkoutDate(startDate, week, w.day));
-        const structure = Array.isArray(w.workout_structure) ? w.workout_structure : Array.isArray(w.structure) ? w.structure : [];
-        return {
-          athlete_id: athleteId,
-          coach_id: coachIdForWorkout,
-          scheduled_date: scheduledDate,
-          title: w.title || `Sesión ${idx + 1}`,
-          type: w.type || "easy",
-          total_km: Number(w.distance_km || w.total_km || 0),
-          duration_min: Number(w.duration_min || 0),
-          description: w.description || "",
-          workout_structure: structure,
-          done: false,
-        };
-      });
+         const rows = planWorkouts.map((w, idx) => {
+  const sessPerWeek = Number(startDatePlan.sessions_per_week) || 4;
+  const week = w.week != null && w.week !== ""
+    ? Number(w.week)
+    : Math.floor(idx / sessPerWeek) + 1;
+  const sessionInWeek = idx % sessPerWeek; // 0, 1, 2, 3...
 
+  // Distribuir días uniformemente en la semana (Lun, Mar, Mié, Jue, Vie, Sáb)
+  const availableDays = [0, 1, 2, 3, 4, 5]; // lun=0 ... sáb=5
+  const spread = Math.floor(6 / sessPerWeek);
+  let dayOffset = 0;
+  if (w.day != null && w.day !== "" && DAY_OFFSET[String(w.day).toLowerCase().trim()] !== undefined) {
+    dayOffset = DAY_OFFSET[String(w.day).toLowerCase().trim()];
+  } else {
+    dayOffset = availableDays[Math.min(sessionInWeek * spread, 5)];
+  }
+
+  const mondayOfWeek = addDays(startDate, (week - 1) * 7);
+  const scheduledDate = formatLocalYMD(addDays(mondayOfWeek, dayOffset));
+  const structure = Array.isArray(w.workout_structure)
+    ? w.workout_structure
+    : Array.isArray(w.structure) ? w.structure : [];
+  return {
+    athlete_id: athleteId,
+    coach_id: coachIdForWorkout,
+    scheduled_date: scheduledDate,
+    title: w.title || `Sesión ${idx + 1}`,
+    type: w.type || "easy",
+    total_km: Number(w.distance_km || w.total_km || 0),
+    duration_min: Number(w.duration_min || 0),
+    description: w.description || "",
+    workout_structure: structure,
+    done: false,
+  };
+});
 
       // 5. Insertar en workouts
       const { error: insertErr } = await supabase.from("workouts").insert(rows);
