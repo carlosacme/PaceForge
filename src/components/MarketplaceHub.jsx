@@ -392,28 +392,36 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
       const startDate = toMonday(new Date(`${startDateValue}T12:00:00`));
 
       // 4. Construir filas para insertar
-         const rows = planWorkouts.map((w, idx) => {
-  const sessPerWeek = Number(startDatePlan.sessions_per_week) || 4;
-  const week = w.week != null && w.week !== ""
+const rows = planWorkouts.map((w, idx) => {
+  const sessPerWeek = Math.max(1, Number(startDatePlan.sessions_per_week) || 4);
+
+  // Semana basada en índice (ignora w.week si no es confiable)
+  const week = w.week != null && w.week !== "" && Number(w.week) > 0
     ? Number(w.week)
     : Math.floor(idx / sessPerWeek) + 1;
-  const sessionInWeek = idx % sessPerWeek; // 0, 1, 2, 3...
 
-  // Distribuir días uniformemente en la semana (Lun, Mar, Mié, Jue, Vie, Sáb)
-  const availableDays = [0, 1, 2, 3, 4, 5]; // lun=0 ... sáb=5
-  const spread = Math.floor(6 / sessPerWeek);
-  let dayOffset = 0;
-  if (w.day != null && w.day !== "" && DAY_OFFSET[String(w.day).toLowerCase().trim()] !== undefined) {
-    dayOffset = DAY_OFFSET[String(w.day).toLowerCase().trim()];
-  } else {
-    dayOffset = availableDays[Math.min(sessionInWeek * spread, 5)];
-  }
+  // Sesión dentro de la semana (siempre por índice, ignora w.day)
+  const sessionInWeek = idx % sessPerWeek;
+
+  // Días disponibles según sesiones/semana
+  const dayMaps = {
+    1: [0],
+    2: [0, 3],
+    3: [0, 2, 4],
+    4: [0, 1, 3, 5],
+    5: [0, 1, 2, 3, 5],
+    6: [0, 1, 2, 3, 4, 5],
+    7: [0, 1, 2, 3, 4, 5, 6],
+  };
+  const dayOffsets = dayMaps[Math.min(sessPerWeek, 7)] || dayMaps[4];
+  const dayOffset = dayOffsets[sessionInWeek % dayOffsets.length];
 
   const mondayOfWeek = addDays(startDate, (week - 1) * 7);
   const scheduledDate = formatLocalYMD(addDays(mondayOfWeek, dayOffset));
   const structure = Array.isArray(w.workout_structure)
     ? w.workout_structure
     : Array.isArray(w.structure) ? w.structure : [];
+
   return {
     athlete_id: athleteId,
     coach_id: coachIdForWorkout,
