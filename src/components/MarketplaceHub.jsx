@@ -392,7 +392,7 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
       const startDate = toMonday(new Date(`${startDateValue}T12:00:00`));
 
       // 4. Construir filas para insertar
-      const rows = planWorkouts.map((w, idx) => {
+            const rows = planWorkouts.map((w, idx) => {
         const week = w.week != null && w.week !== "" ? Number(w.week) : Math.floor(idx / (startDatePlan.sessions_per_week || 4)) + 1;
         const scheduledDate = formatLocalYMD(calculateWorkoutDate(startDate, week, w.day));
         const structure = Array.isArray(w.workout_structure) ? w.workout_structure : Array.isArray(w.structure) ? w.structure : [];
@@ -403,14 +403,13 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
           title: w.title || `Sesión ${idx + 1}`,
           type: w.type || "easy",
           total_km: Number(w.distance_km || w.total_km || 0),
-          distance_km: Number(w.distance_km || w.total_km || 0),
           duration_min: Number(w.duration_min || 0),
           description: w.description || "",
-          structure,
           workout_structure: structure,
           done: false,
         };
       });
+
 
       // 5. Insertar en workouts
       const { error: insertErr } = await supabase.from("workouts").insert(rows);
