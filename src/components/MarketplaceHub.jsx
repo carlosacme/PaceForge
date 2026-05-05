@@ -2,42 +2,9 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "../lib/supabase";
 import { formatCopInt, getMarketplacePlanWorkoutRows, formatLocalYMD, addDays } from "./shared/appShared";
 
-// ── Mapeo de nombre de día a offset desde el lunes (0=Lun, 1=Mar, ... 6=Dom)
-const DAY_OFFSET = {
-  lun: 0, mar: 1, "mié": 2, mie: 2, jue: 3, vie: 4, sáb: 5, sab: 5, dom: 6,
-  monday: 0, tuesday: 1, wednesday: 2, thursday: 3, friday: 4, saturday: 5, sunday: 6,
-};
-
-/**
- * Calcula la fecha de un workout dado:
- * - startDate: Date objeto (lunes de la semana 1)
- * - week: número de semana (1-based)
- * - day: string del día ("Lun", "Mar", etc.) o número (1=lun..7=dom)
- */
-function calculateWorkoutDate(startDate, week, day) {
-  const weekOffset = Math.max(0, (Number(week) || 1) - 1);
-  const mondayOfWeek = addDays(startDate, weekOffset * 7);
-
-  let dayOffset = 0;
-  if (day != null && day !== "") {
-    const dayStr = String(day).toLowerCase().trim();
-    if (DAY_OFFSET[dayStr] !== undefined) {
-      dayOffset = DAY_OFFSET[dayStr];
-    } else {
-      // Si es número (1-7)
-      const n = Number(dayStr);
-      if (Number.isFinite(n) && n >= 1 && n <= 7) dayOffset = n - 1;
-    }
-  }
-  return addDays(mondayOfWeek, dayOffset);
-}
-
-/**
- * Asegura que startDate sea un lunes (retrocede al lunes anterior si es otro día).
- */
 function toMonday(date) {
   const d = new Date(date);
-  const day = d.getDay(); // 0=dom, 1=lun...
+  const day = d.getDay();
   const diff = day === 0 ? -6 : 1 - day;
   d.setDate(d.getDate() + diff);
   return d;
@@ -60,13 +27,8 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
   const [editingMarketplacePlanId, setEditingMarketplacePlanId] = useState(null);
   const [editingPlanSnapshot, setEditingPlanSnapshot] = useState(null);
   const [planForm, setPlanForm] = useState({
-    title: "",
-    description: "",
-    level: "intermedio",
-    duration_weeks: "8",
-    sessions_per_week: "4",
-    price_cop: "120000",
-    preview_workouts: [],
+    title: "", description: "", level: "intermedio",
+    duration_weeks: "8", sessions_per_week: "4", price_cop: "120000", preview_workouts: [],
   });
   const [salesByPlanId, setSalesByPlanId] = useState({});
   const [purchasedPlans, setPurchasedPlans] = useState([]);
@@ -74,48 +36,30 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
   const [selectedPurchasedPlan, setSelectedPurchasedPlan] = useState(null);
   const [ratingsByPlanId, setRatingsByPlanId] = useState({});
   const [checkoutLoading, setCheckoutLoading] = useState(false);
-
-  // ── NUEVO: Modal de fecha de inicio
   const [showStartDateModal, setShowStartDateModal] = useState(false);
   const [startDatePlan, setStartDatePlan] = useState(null);
   const [startDateValue, setStartDateValue] = useState(formatLocalYMD(new Date()));
   const [loadingCalendarSync, setLoadingCalendarSync] = useState(false);
-  const [calendarSyncDone, setCalendarSyncDone] = useState({}); // { purchaseId: true }
-const [selectedDays, setSelectedDays] = useState([]); // [0,1,2...6] lun=0...dom=6
+  const [calendarSyncDone, setCalendarSyncDone] = useState({});
+  const [selectedDays, setSelectedDays] = useState([]);
+
   const loadMarketplace = useCallback(async () => {
     setLoadingPlans(true);
-    const { data, error } = await supabase
-      .from("plan_marketplace")
-      .select("*")
-      .order("created_at", { ascending: false });
+    const { data, error } = await supabase.from("plan_marketplace").select("*").order("created_at", { ascending: false });
     setLoadingPlans(false);
-    if (error) {
-      console.error("plan_marketplace load:", error);
-      setPlans([]);
-      return;
-    }
+    if (error) { console.error("plan_marketplace load:", error); setPlans([]); return; }
     setPlans(data || []);
   }, []);
 
   const loadSales = useCallback(async () => {
-    const { data, error } = await supabase
-      .from("plan_purchases")
-      .select("plan_id, payment_status, rating")
-      .order("created_at", { ascending: false });
-    if (error) {
-      console.error("plan_purchases load:", error);
-      setSalesByPlanId({});
-      setRatingsByPlanId({});
-      return;
-    }
+    const { data, error } = await supabase.from("plan_purchases").select("plan_id, payment_status, rating").order("created_at", { ascending: false });
+    if (error) { console.error("plan_purchases load:", error); setSalesByPlanId({}); setRatingsByPlanId({}); return; }
     const salesMap = {};
     const ratingAcc = {};
     for (const row of data || []) {
       const pid = String(row.plan_id || "");
       if (!pid) continue;
-      if (String(row.payment_status || "").toLowerCase() === "confirmed") {
-        salesMap[pid] = (salesMap[pid] || 0) + 1;
-      }
+      if (String(row.payment_status || "").toLowerCase() === "confirmed") salesMap[pid] = (salesMap[pid] || 0) + 1;
       if (row.rating != null && Number.isFinite(Number(row.rating))) {
         if (!ratingAcc[pid]) ratingAcc[pid] = { sum: 0, count: 0 };
         ratingAcc[pid].sum += Number(row.rating);
@@ -123,9 +67,7 @@ const [selectedDays, setSelectedDays] = useState([]); // [0,1,2...6] lun=0...dom
       }
     }
     const ratingsMap = {};
-    for (const [pid, acc] of Object.entries(ratingAcc)) {
-      ratingsMap[pid] = acc.count > 0 ? acc.sum / acc.count : 0;
-    }
+    for (const [pid, acc] of Object.entries(ratingAcc)) ratingsMap[pid] = acc.count > 0 ? acc.sum / acc.count : 0;
     setSalesByPlanId(salesMap);
     setRatingsByPlanId(ratingsMap);
   }, []);
@@ -133,127 +75,53 @@ const [selectedDays, setSelectedDays] = useState([]); // [0,1,2...6] lun=0...dom
   const loadCoachLibrary = useCallback(async () => {
     if (!coachUserId) return;
     setLoadingLibrary(true);
-    const { data, error } = await supabase
-      .from("workout_library")
-      .select("id,title,type,total_km,duration_min,description,structure,workout_structure")
-      .eq("coach_id", coachUserId)
-      .order("created_at", { ascending: false });
+    const { data, error } = await supabase.from("workout_library").select("id,title,type,total_km,duration_min,description,structure,workout_structure").eq("coach_id", coachUserId).order("created_at", { ascending: false });
     setLoadingLibrary(false);
-    if (error) {
-      console.error("workout_library for marketplace:", error);
-      setCoachLibraryRows([]);
-      return;
-    }
+    if (error) { console.error("workout_library for marketplace:", error); setCoachLibraryRows([]); return; }
     setCoachLibraryRows(data || []);
   }, [coachUserId]);
 
-  useEffect(() => {
-    loadMarketplace();
-    loadSales();
-  }, [loadMarketplace, loadSales]);
+  useEffect(() => { loadMarketplace(); loadSales(); }, [loadMarketplace, loadSales]);
 
   const loadPurchasedPlans = useCallback(async () => {
-    if (!currentUserId || !isAthlete) {
-      setPurchasedPlans([]);
-      return;
-    }
+    if (!currentUserId || !isAthlete) { setPurchasedPlans([]); return; }
     setLoadingPurchasedPlans(true);
     try {
-      const { data, error } = await supabase
-        .from("plan_purchases")
-        .select("id, plan_id, price_paid, created_at, confirmed_at")
-        .eq("buyer_user_id", currentUserId)
-        .eq("payment_status", "confirmed")
-        .order("created_at", { ascending: false });
-
-      if (error) {
-        console.error("plan_purchases (purchased):", error);
-        setPurchasedPlans([]);
-        return;
-      }
-
-      if (!data || data.length === 0) {
-        setPurchasedPlans([]);
-        return;
-      }
-
+      const { data, error } = await supabase.from("plan_purchases").select("id, plan_id, price_paid, created_at, confirmed_at").eq("buyer_user_id", currentUserId).eq("payment_status", "confirmed").order("created_at", { ascending: false });
+      if (error) { console.error("plan_purchases (purchased):", error); setPurchasedPlans([]); return; }
+      if (!data || data.length === 0) { setPurchasedPlans([]); return; }
       const planIds = [...new Set(data.map((r) => r.plan_id).filter(Boolean))];
-      const { data: planData, error: planErr } = await supabase
-        .from("plan_marketplace")
-        .select("*")
-        .in("id", planIds);
-
-      if (planErr) {
-        console.error("plan_marketplace (purchased lookup):", planErr);
-        setPurchasedPlans([]);
-        return;
-      }
-
+      const { data: planData, error: planErr } = await supabase.from("plan_marketplace").select("*").in("id", planIds);
+      if (planErr) { console.error("plan_marketplace (purchased lookup):", planErr); setPurchasedPlans([]); return; }
       const planMap = {};
       for (const p of planData || []) planMap[String(p.id)] = p;
-
-      const result = data
-        .map((row) => {
-          const plan = planMap[String(row.plan_id)];
-          if (!plan) return null;
-          return {
-            purchaseId: row.id,
-            purchasedAt: row.confirmed_at || row.created_at,
-            pricePaid: row.price_paid,
-            plan,
-          };
-        })
-        .filter(Boolean);
-
+      const result = data.map((row) => {
+        const plan = planMap[String(row.plan_id)];
+        if (!plan) return null;
+        return { purchaseId: row.id, purchasedAt: row.confirmed_at || row.created_at, pricePaid: row.price_paid, plan };
+      }).filter(Boolean);
       setPurchasedPlans(result);
-    } finally {
-      setLoadingPurchasedPlans(false);
-    }
+    } finally { setLoadingPurchasedPlans(false); }
   }, [currentUserId, isAthlete]);
 
   const loadPendingPurchases = useCallback(async () => {
     const canSeePending = isCoach || isAdmin;
-    if (!canSeePending) {
-      setPendingPurchasesList([]);
-      setLoadingPendingPurchases(false);
-      return;
-    }
+    if (!canSeePending) { setPendingPurchasesList([]); setLoadingPendingPurchases(false); return; }
     setLoadingPendingPurchases(true);
     const { data, error } = await supabase.from("plan_purchases").select("*").order("created_at", { ascending: false });
     setLoadingPendingPurchases(false);
-    if (error) {
-      console.error("plan_purchases pending (marketplace hub):", error);
-      setPendingPurchasesList([]);
-      return;
-    }
+    if (error) { console.error("plan_purchases pending:", error); setPendingPurchasesList([]); return; }
     const pendingRows = (data || []).filter((row) => String(row.payment_status || "").toLowerCase() === "pending");
-    if (isAdmin) {
-      setPendingPurchasesList(pendingRows);
-    } else {
-      const uid = coachUserId || currentUserId;
-      if (!uid) {
-        setPendingPurchasesList([]);
-        return;
-      }
-      const myPlanIds = new Set(
-        (plans || []).filter((p) => String(p.coach_user_id || "") === String(uid)).map((p) => String(p.id)),
-      );
-      setPendingPurchasesList(pendingRows.filter((row) => myPlanIds.has(String(row.plan_id || ""))));
-    }
+    if (isAdmin) { setPendingPurchasesList(pendingRows); return; }
+    const uid = coachUserId || currentUserId;
+    if (!uid) { setPendingPurchasesList([]); return; }
+    const myPlanIds = new Set((plans || []).filter((p) => String(p.coach_user_id || "") === String(uid)).map((p) => String(p.id)));
+    setPendingPurchasesList(pendingRows.filter((row) => myPlanIds.has(String(row.plan_id || ""))));
   }, [isCoach, isAdmin, coachUserId, currentUserId, plans]);
 
-  useEffect(() => {
-    loadPurchasedPlans();
-  }, [loadPurchasedPlans]);
-
-  useEffect(() => {
-    loadPendingPurchases();
-  }, [loadPendingPurchases]);
-
-  useEffect(() => {
-    if (!showPublishModal || !isCoach) return;
-    loadCoachLibrary();
-  }, [showPublishModal, isCoach, loadCoachLibrary]);
+  useEffect(() => { loadPurchasedPlans(); }, [loadPurchasedPlans]);
+  useEffect(() => { loadPendingPurchases(); }, [loadPendingPurchases]);
+  useEffect(() => { if (!showPublishModal || !isCoach) return; loadCoachLibrary(); }, [showPublishModal, isCoach, loadCoachLibrary]);
 
   const plansVisible = useMemo(() => {
     const all = plans || [];
@@ -266,195 +134,95 @@ const [selectedDays, setSelectedDays] = useState([]); // [0,1,2...6] lun=0...dom
     });
   }, [plans, coachUserId, currentUserId, isAdmin]);
 
-  const coachOwnPlans = useMemo(
-    () => (plans || []).filter((p) => String(p.coach_user_id || "") === String(coachUserId || "")),
-    [plans, coachUserId],
-  );
+  const coachOwnPlans = useMemo(() => (plans || []).filter((p) => String(p.coach_user_id || "") === String(coachUserId || "")), [plans, coachUserId]);
 
   const handleBuyWithWompi = async (plan) => {
-    if (!currentUserId) {
-      notify?.("Inicia sesión para comprar.");
-      return;
-    }
+    if (!currentUserId) { notify?.("Inicia sesión para comprar."); return; }
     setCheckoutLoading(String(plan.id));
     try {
       const { data: sessData } = await supabase.auth.getSession();
       const accessToken = sessData?.session?.access_token;
-      if (!accessToken) {
-        notify?.("Tu sesión expiró. Vuelve a iniciar sesión.");
-        return;
-      }
-
-      const { data: purchaseRow, error: purchaseErr } = await supabase
-        .from("plan_purchases")
-        .insert({
-          plan_id: plan.id,
-          buyer_user_id: currentUserId,
-          coach_id: plan.coach_user_id || null,
-          price_paid: Number(plan.price_cop || 0),
-          platform_fee: Math.round(Number(plan.price_cop || 0) * 0.2),
-          coach_earnings: Math.round(Number(plan.price_cop || 0) * 0.8),
-          payment_method: "wompi",
-          payment_status: "pending",
-        })
-        .select()
-        .single();
-
-      if (purchaseErr) {
-        console.error("plan_purchases insert:", purchaseErr);
-        notify?.(purchaseErr.message || "No se pudo iniciar la compra.");
-        return;
-      }
-
+      if (!accessToken) { notify?.("Tu sesión expiró. Vuelve a iniciar sesión."); return; }
+      const { data: purchaseRow, error: purchaseErr } = await supabase.from("plan_purchases").insert({
+        plan_id: plan.id, buyer_user_id: currentUserId, coach_id: plan.coach_user_id || null,
+        price_paid: Number(plan.price_cop || 0), platform_fee: Math.round(Number(plan.price_cop || 0) * 0.2),
+        coach_earnings: Math.round(Number(plan.price_cop || 0) * 0.8), payment_method: "wompi", payment_status: "pending",
+      }).select().single();
+      if (purchaseErr) { console.error("plan_purchases insert:", purchaseErr); notify?.(purchaseErr.message || "No se pudo iniciar la compra."); return; }
       const response = await fetch("/api/wompi-create-checkout", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify({
-          payer_type: "marketplace_purchase",
-          plan_key: null,
-          plan_period: null,
-          amount_cop: Number(plan.price_cop || 0),
-          marketplace_plan_id: plan.id,
-          marketplace_purchase_id: purchaseRow.id,
-        }),
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+        body: JSON.stringify({ payer_type: "marketplace_purchase", plan_key: null, plan_period: null, amount_cop: Number(plan.price_cop || 0), marketplace_plan_id: plan.id, marketplace_purchase_id: purchaseRow.id }),
       });
-
       const data = await response.json();
-      if (!response.ok) {
-        console.error("create-checkout marketplace:", data);
-        notify?.(data?.error || "No se pudo iniciar el pago.");
-        return;
-      }
-
+      if (!response.ok) { console.error("create-checkout marketplace:", data); notify?.(data?.error || "No se pudo iniciar el pago."); return; }
       const params = new URLSearchParams({
-        "public-key": data.public_key,
-        currency: data.currency,
-        "amount-in-cents": String(data.amount_in_cents),
-        reference: data.reference,
-        "signature:integrity": data.signature,
-        "redirect-url": data.redirect_url,
+        "public-key": data.public_key, currency: data.currency,
+        "amount-in-cents": String(data.amount_in_cents), reference: data.reference,
+        "signature:integrity": data.signature, "redirect-url": data.redirect_url,
       });
       if (data.customer_email) params.set("customer-data:email", data.customer_email);
-
-      const checkoutUrl = `https://checkout.wompi.co/p/?${params.toString()}`;
-      window.location.href = checkoutUrl;
-    } catch (e) {
-      console.error("handleBuyWithWompi exception:", e);
-      notify?.("Error al iniciar el pago.");
-    } finally {
-      setCheckoutLoading(null);
-    }
+      window.location.href = `https://checkout.wompi.co/p/?${params.toString()}`;
+    } catch (e) { console.error("handleBuyWithWompi exception:", e); notify?.("Error al iniciar el pago."); }
+    finally { setCheckoutLoading(null); }
   };
 
-  // ── NUEVO: Abrir modal de fecha de inicio
   const openStartDateModal = (plan) => {
-  setStartDatePlan(plan);
-  setStartDateValue(formatLocalYMD(new Date()));
-  setSelectedDays([]);
-  setShowStartDateModal(true);
-};
+    setStartDatePlan(plan);
+    setStartDateValue(formatLocalYMD(new Date()));
+    setSelectedDays([]);
+    setShowStartDateModal(true);
+  };
 
-  // ── NUEVO: Cargar workouts del plan al calendario del atleta
   const loadPlanToCalendar = async () => {
     if (!startDatePlan || !currentUserId || !startDateValue) return;
+    const sessPerWeek = Math.max(1, Number(startDatePlan.sessions_per_week) || 4);
+    if (selectedDays.length !== sessPerWeek) {
+      notify?.(`Debes seleccionar exactamente ${sessPerWeek} días de entrenamiento.`);
+      return;
+    }
     setLoadingCalendarSync(true);
     try {
-      // 1. Obtener athlete_id del usuario actual
       const { data: authData } = await supabase.auth.getUser();
       const userEmail = authData?.user?.email?.trim();
-      if (!userEmail) {
-        notify?.("No se pudo obtener tu cuenta. Intenta recargar.");
-        return;
-      }
-      const { data: athleteRows, error: athErr } = await supabase
-        .from("athletes")
-        .select("id, coach_id")
-        .ilike("email", userEmail)
-        .limit(1);
-
-      if (athErr || !athleteRows?.length) {
-        notify?.("No encontramos tu perfil de atleta. Contacta a tu coach.");
-        return;
-      }
+      if (!userEmail) { notify?.("No se pudo obtener tu cuenta. Intenta recargar."); return; }
+      const { data: athleteRows, error: athErr } = await supabase.from("athletes").select("id, coach_id").ilike("email", userEmail).limit(1);
+      if (athErr || !athleteRows?.length) { notify?.("No encontramos tu perfil de atleta. Contacta a tu coach."); return; }
       const athleteId = athleteRows[0].id;
       const coachIdForWorkout = athleteRows[0].coach_id || startDatePlan.coach_user_id || null;
-
-      // 2. Obtener workouts del plan
       const planWorkouts = getMarketplacePlanWorkoutRows(startDatePlan);
-      if (!planWorkouts.length) {
-        notify?.("Este plan no tiene workouts configurados.");
-        return;
-      }
-
-      // 3. Calcular fechas — startDate es el lunes de inicio
+      if (!planWorkouts.length) { notify?.("Este plan no tiene workouts configurados."); return; }
       const startDate = toMonday(new Date(`${startDateValue}T12:00:00`));
-
-      // 4. Construir filas para insertar
-const rows = planWorkouts.map((w, idx) => {
-  const sessPerWeek = Math.max(1, Number(startDatePlan.sessions_per_week) || 4);
-if (selectedDays.length !== sessPerWeek) {
-  notify?.(`Debes seleccionar exactamente ${sessPerWeek} días de entrenamiento.`);
-  setLoadingCalendarSync(false);
-  return;
-}
-const sortedDays = [...selectedDays].sort((a, b) => a - b);
-
-const rows = planWorkouts.map((w, idx) => {
-  const week = w.week != null && w.week !== "" && Number(w.week) > 0
-    ? Number(w.week)
-    : Math.floor(idx / sessPerWeek) + 1;
-  const sessionInWeek = idx % sessPerWeek;
-  const dayOffset = sortedDays[sessionInWeek % sortedDays.length];
-  const mondayOfWeek = addDays(startDate, (week - 1) * 7);
-  const scheduledDate = formatLocalYMD(addDays(mondayOfWeek, dayOffset));
-  const structure = Array.isArray(w.workout_structure)
-    ? w.workout_structure
-    : Array.isArray(w.structure) ? w.structure : [];
-  return {
-    athlete_id: athleteId,
-    coach_id: coachIdForWorkout,
-    scheduled_date: scheduledDate,
-    title: w.title || `Sesión ${idx + 1}`,
-    type: w.type || "easy",
-    total_km: Number(w.distance_km || w.total_km || 0),
-    duration_min: Number(w.duration_min || 0),
-    description: w.description || "",
-    workout_structure: structure,
-    done: false,
-  };
-});
-
-      // 5. Insertar en workouts
+      const sortedDays = [...selectedDays].sort((a, b) => a - b);
+      const rows = planWorkouts.map((w, idx) => {
+        const week = w.week != null && w.week !== "" && Number(w.week) > 0
+          ? Number(w.week)
+          : Math.floor(idx / sessPerWeek) + 1;
+        const sessionInWeek = idx % sessPerWeek;
+        const dayOffset = sortedDays[sessionInWeek % sortedDays.length];
+        const mondayOfWeek = addDays(startDate, (week - 1) * 7);
+        const scheduledDate = formatLocalYMD(addDays(mondayOfWeek, dayOffset));
+        const structure = Array.isArray(w.workout_structure) ? w.workout_structure : Array.isArray(w.structure) ? w.structure : [];
+        return {
+          athlete_id: athleteId, coach_id: coachIdForWorkout, scheduled_date: scheduledDate,
+          title: w.title || `Sesión ${idx + 1}`, type: w.type || "easy",
+          total_km: Number(w.distance_km || w.total_km || 0), duration_min: Number(w.duration_min || 0),
+          description: w.description || "", workout_structure: structure, done: false,
+        };
+      });
       const { error: insertErr } = await supabase.from("workouts").insert(rows);
-      if (insertErr) {
-        console.error("loadPlanToCalendar insert:", insertErr);
-        notify?.(insertErr.message || "Error al cargar el plan al calendario.");
-        return;
-      }
-
-      // 6. Marcar como cargado (para ocultar el botón)
+      if (insertErr) { console.error("loadPlanToCalendar insert:", insertErr); notify?.(insertErr.message || "Error al cargar el plan al calendario."); return; }
       setCalendarSyncDone((prev) => ({ ...prev, [String(startDatePlan.id)]: true }));
       setShowStartDateModal(false);
       setStartDatePlan(null);
+      setSelectedDays([]);
       notify?.(`✅ ¡${rows.length} entrenamientos cargados a tu calendario desde el ${startDateValue}!`);
-    } catch (e) {
-      console.error("loadPlanToCalendar exception:", e);
-      notify?.("Error inesperado al cargar el plan.");
-    } finally {
-      setLoadingCalendarSync(false);
-    }
+    } catch (e) { console.error("loadPlanToCalendar exception:", e); notify?.("Error inesperado al cargar el plan."); }
+    finally { setLoadingCalendarSync(false); }
   };
 
-  const selectedPlanIsOwner = useMemo(
-    () => Boolean(selectedPlan && String(selectedPlan.coach_user_id || "") === String(currentUserId || "")),
-    [selectedPlan, currentUserId],
-  );
-
+  const selectedPlanIsOwner = useMemo(() => Boolean(selectedPlan && String(selectedPlan.coach_user_id || "") === String(currentUserId || "")), [selectedPlan, currentUserId]);
   const lockAfterWeek1 = Boolean(selectedPlan && !isAdmin && !selectedPlanIsOwner);
-
   const planPreviewHasLockedWeeks = useMemo(() => {
     if (!selectedPlan || !lockAfterWeek1) return false;
     const arr = getMarketplacePlanWorkoutRows(selectedPlan);
@@ -466,25 +234,19 @@ const rows = planWorkouts.map((w, idx) => {
     }
     return false;
   }, [selectedPlan, lockAfterWeek1]);
-
-  const hidePurchaseCta = useMemo(
-    () => Boolean(isAdmin || selectedPlanIsOwner),
-    [isAdmin, selectedPlanIsOwner],
-  );
+  const hidePurchaseCta = useMemo(() => Boolean(isAdmin || selectedPlanIsOwner), [isAdmin, selectedPlanIsOwner]);
 
   const approveMarketplaceRow = async (planId) => {
     const { error } = await supabase.from("plan_marketplace").update({ is_approved: true, is_active: true }).eq("id", planId);
     if (error) { notify?.(error.message || "No se pudo aprobar"); return; }
-    notify?.("Plan aprobado");
-    loadMarketplace();
+    notify?.("Plan aprobado"); loadMarketplace();
   };
 
   const rejectMarketplaceRow = async (planId) => {
     if (typeof window !== "undefined" && !window.confirm("¿Rechazar este plan?")) return;
     const { error } = await supabase.from("plan_marketplace").update({ is_approved: false, is_active: false }).eq("id", planId);
     if (error) { notify?.(error.message || "No se pudo rechazar"); return; }
-    notify?.("Plan rechazado");
-    loadMarketplace();
+    notify?.("Plan rechazado"); loadMarketplace();
   };
 
   const deleteMarketplacePlanCoach = async (plan) => {
@@ -496,10 +258,7 @@ const rows = planWorkouts.map((w, idx) => {
     const { error } = await supabase.from("plan_marketplace").delete().eq("id", plan.id);
     if (error) { notify?.(error.message || "No se pudo eliminar"); return; }
     if (String(selectedPlan?.id) === String(plan.id)) setSelectedPlan(null);
-    notify?.("Plan eliminado");
-    loadMarketplace();
-    loadSales();
-    loadPendingPurchases();
+    notify?.("Plan eliminado"); loadMarketplace(); loadSales(); loadPendingPurchases();
   };
 
   const openEditMarketplacePlan = (plan) => {
@@ -508,29 +267,17 @@ const rows = planWorkouts.map((w, idx) => {
     if (!uid && !isAdmin) return;
     const own = String(plan.coach_user_id || "") === String(uid || "");
     if (!own && !isAdmin) return;
-    const libIds = (Array.isArray(plan.preview_workouts) ? plan.preview_workouts : [])
-      .map((w) => (w?.id != null ? String(w.id) : ""))
-      .filter(Boolean);
+    const libIds = (Array.isArray(plan.preview_workouts) ? plan.preview_workouts : []).map((w) => (w?.id != null ? String(w.id) : "")).filter(Boolean);
     setEditingMarketplacePlanId(plan.id);
     setEditingPlanSnapshot(plan);
-    setPlanForm({
-      title: String(plan.title || ""),
-      description: String(plan.description || ""),
-      level: String(plan.level || "intermedio"),
-      duration_weeks: String(plan.duration_weeks ?? 8),
-      sessions_per_week: String(plan.sessions_per_week ?? 4),
-      price_cop: String(plan.price_cop ?? 0),
-      preview_workouts: libIds,
-    });
+    setPlanForm({ title: String(plan.title || ""), description: String(plan.description || ""), level: String(plan.level || "intermedio"), duration_weeks: String(plan.duration_weeks ?? 8), sessions_per_week: String(plan.sessions_per_week ?? 4), price_cop: String(plan.price_cop ?? 0), preview_workouts: libIds });
     setShowPublishModal(true);
   };
 
   const confirmCoachPendingPurchase = async (purchaseId) => {
     const { error } = await supabase.from("plan_purchases").update({ payment_status: "confirmed" }).eq("id", purchaseId);
     if (error) { notify?.(error.message || "No se pudo confirmar"); return; }
-    notify?.("Pago confirmado");
-    loadPendingPurchases();
-    loadSales();
+    notify?.("Pago confirmado"); loadPendingPurchases(); loadSales();
   };
 
   const submitCoachPlan = async () => {
@@ -543,15 +290,7 @@ const rows = planWorkouts.map((w, idx) => {
     const sessionsPerWeek = Math.max(1, Math.round(Number(planForm.sessions_per_week) || 0));
     const priceCop = Math.max(0, Math.round(Number(String(planForm.price_cop).replace(/[^\d]/g, "")) || 0));
     const selectedPreview = (coachLibraryRows || []).filter((w) => planForm.preview_workouts.includes(String(w.id)));
-    const previewWorkouts = selectedPreview.map((w) => ({
-      id: w.id,
-      title: w.title,
-      type: w.type,
-      total_km: Number(w.total_km || 0),
-      duration_min: Number(w.duration_min || 0),
-      description: w.description || "",
-      workout_structure: Array.isArray(w.workout_structure) ? w.workout_structure : Array.isArray(w.structure) ? w.structure : [],
-    }));
+    const previewWorkouts = selectedPreview.map((w) => ({ id: w.id, title: w.title, type: w.type, total_km: Number(w.total_km || 0), duration_min: Number(w.duration_min || 0), description: w.description || "", workout_structure: Array.isArray(w.workout_structure) ? w.workout_structure : Array.isArray(w.structure) ? w.structure : [] }));
     const fallbackPreview = editingPlanSnapshot && Array.isArray(editingPlanSnapshot.preview_workouts) ? editingPlanSnapshot.preview_workouts : [];
     const fallbackSessions = editingPlanSnapshot ? getMarketplacePlanWorkoutRows(editingPlanSnapshot) : [];
     const outPreview = previewWorkouts.length > 0 ? previewWorkouts : fallbackPreview;
@@ -559,57 +298,29 @@ const rows = planWorkouts.map((w, idx) => {
     setSavingPlan(true);
     let error = null;
     if (editingMarketplacePlanId) {
-      let upd = supabase
-        .from("plan_marketplace")
-        .update({ title, description, level: String(planForm.level || "intermedio"), duration_weeks: durationWeeks, sessions_per_week: sessionsPerWeek, price_cop: priceCop, preview_workouts: outPreview, plan_sessions: outSessions })
-        .eq("id", editingMarketplacePlanId);
+      let upd = supabase.from("plan_marketplace").update({ title, description, level: String(planForm.level || "intermedio"), duration_weeks: durationWeeks, sessions_per_week: sessionsPerWeek, price_cop: priceCop, preview_workouts: outPreview, plan_sessions: outSessions }).eq("id", editingMarketplacePlanId);
       if (!isAdmin) upd = upd.eq("coach_user_id", uid);
-      const res = await upd;
-      error = res.error;
+      const res = await upd; error = res.error;
     } else {
-      const res = await supabase.from("plan_marketplace").insert({
-        coach_user_id: uid, coach_id: uid, coach_name: "", title, description,
-        level: String(planForm.level || "intermedio"), duration_weeks: durationWeeks,
-        sessions_per_week: sessionsPerWeek, price_cop: priceCop,
-        preview_workouts: outPreview, plan_sessions: outSessions, is_active: true, is_approved: false,
-      });
+      const res = await supabase.from("plan_marketplace").insert({ coach_user_id: uid, coach_id: uid, coach_name: "", title, description, level: String(planForm.level || "intermedio"), duration_weeks: durationWeeks, sessions_per_week: sessionsPerWeek, price_cop: priceCop, preview_workouts: outPreview, plan_sessions: outSessions, is_active: true, is_approved: false });
       error = res.error;
     }
     setSavingPlan(false);
     if (error) { console.error("plan_marketplace coach save:", error); notify?.(error.message || "No se pudo guardar el plan"); return; }
     notify?.(editingMarketplacePlanId ? "Plan actualizado." : "Plan enviado. Quedó pendiente de aprobación.");
-    setShowPublishModal(false);
-    setEditingMarketplacePlanId(null);
-    setEditingPlanSnapshot(null);
+    setShowPublishModal(false); setEditingMarketplacePlanId(null); setEditingPlanSnapshot(null);
     setPlanForm({ title: "", description: "", level: "intermedio", duration_weeks: "8", sessions_per_week: "4", price_cop: "120000", preview_workouts: [] });
-    loadMarketplace();
-    loadSales();
-    loadPendingPurchases();
+    loadMarketplace(); loadSales(); loadPendingPurchases();
   };
 
-  const cardStyle = {
-    border: "1px solid #e2e8f0",
-    borderRadius: 12,
-    padding: "12px 14px",
-    background: "#fff",
-    boxShadow: "0 1px 2px rgba(15,23,42,.04)",
-  };
+  const cardStyle = { border: "1px solid #e2e8f0", borderRadius: 12, padding: "12px 14px", background: "#fff", boxShadow: "0 1px 2px rgba(15,23,42,.04)" };
 
   return (
     <div style={S.page}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
         <h1 style={{ ...S.pageTitle, marginBottom: 0 }}>🛒 Marketplace</h1>
         {isCoach ? (
-          <button
-            type="button"
-            onClick={() => {
-              setEditingMarketplacePlanId(null);
-              setEditingPlanSnapshot(null);
-              setPlanForm({ title: "", description: "", level: "intermedio", duration_weeks: "8", sessions_per_week: "4", price_cop: "120000", preview_workouts: [] });
-              setShowPublishModal(true);
-            }}
-            style={{ background: "linear-gradient(135deg,#0ea5e9,#0284c7)", border: "none", borderRadius: 9, padding: "8px 12px", color: "#fff", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".8em" }}
-          >
+          <button type="button" onClick={() => { setEditingMarketplacePlanId(null); setEditingPlanSnapshot(null); setPlanForm({ title: "", description: "", level: "intermedio", duration_weeks: "8", sessions_per_week: "4", price_cop: "120000", preview_workouts: [] }); setShowPublishModal(true); }} style={{ background: "linear-gradient(135deg,#0ea5e9,#0284c7)", border: "none", borderRadius: 9, padding: "8px 12px", color: "#fff", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".8em" }}>
             ➕ Publicar plan
           </button>
         ) : null}
@@ -618,9 +329,7 @@ const rows = planWorkouts.map((w, idx) => {
       {isCoach ? (
         <div style={{ ...S.card, marginBottom: 14 }}>
           <div style={{ fontSize: ".72em", letterSpacing: ".12em", textTransform: "uppercase", color: "#64748b", marginBottom: 8 }}>Mis planes publicados</div>
-          {coachOwnPlans.length === 0 ? (
-            <div style={{ color: "#94a3b8", fontSize: ".85em" }}>Aún no has publicado planes.</div>
-          ) : (
+          {coachOwnPlans.length === 0 ? <div style={{ color: "#94a3b8", fontSize: ".85em" }}>Aún no has publicado planes.</div> : (
             <div style={{ display: "grid", gap: 10 }}>
               {coachOwnPlans.map((p) => {
                 const sales = Number(salesByPlanId[String(p.id)] || 0);
@@ -633,9 +342,7 @@ const rows = planWorkouts.map((w, idx) => {
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                           <div style={{ fontWeight: 800 }}>{p.title}</div>
-                          <span style={{ fontSize: ".62em", fontWeight: 900, letterSpacing: ".04em", textTransform: "uppercase", borderRadius: 999, padding: "4px 10px", border: approved ? "1px solid #86efac" : "1px solid #fdba74", background: approved ? "#dcfce7" : "#ffedd5", color: approved ? "#166534" : "#9a3412" }}>
-                            {approved ? "Aprobado" : "Pendiente"}
-                          </span>
+                          <span style={{ fontSize: ".62em", fontWeight: 900, letterSpacing: ".04em", textTransform: "uppercase", borderRadius: 999, padding: "4px 10px", border: approved ? "1px solid #86efac" : "1px solid #fdba74", background: approved ? "#dcfce7" : "#ffedd5", color: approved ? "#166534" : "#9a3412" }}>{approved ? "Aprobado" : "Pendiente"}</span>
                         </div>
                         <div style={{ fontSize: ".8em", color: "#64748b", marginTop: 4 }}>{p.duration_weeks} semanas · {p.sessions_per_week} sesiones/sem</div>
                       </div>
@@ -661,17 +368,11 @@ const rows = planWorkouts.map((w, idx) => {
       {isCoach || isAdmin ? (
         <div style={{ ...S.card, marginBottom: 14 }}>
           <div style={{ fontSize: ".72em", letterSpacing: ".12em", textTransform: "uppercase", color: "#64748b", marginBottom: 8 }}>Compras pendientes de confirmar</div>
-          {loadingPendingPurchases ? (
-            <div style={{ color: "#64748b", fontSize: ".84em" }}>Cargando compras…</div>
-          ) : pendingPurchasesList.length === 0 ? (
-            <div style={{ color: "#94a3b8", fontSize: ".84em" }}>No hay compras pendientes.</div>
-          ) : (
+          {loadingPendingPurchases ? <div style={{ color: "#64748b", fontSize: ".84em" }}>Cargando compras…</div> : pendingPurchasesList.length === 0 ? <div style={{ color: "#94a3b8", fontSize: ".84em" }}>No hay compras pendientes.</div> : (
             <div style={{ display: "grid", gap: 8 }}>
               {pendingPurchasesList.map((row) => (
                 <div key={row.id} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: "10px 12px", background: "#f8fafc", display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-                  <div style={{ fontSize: ".82em", color: "#334155" }}>
-                    Plan: <strong>{row.plan_title || row.plan_id}</strong> · ${formatCopInt(row.amount_cop || 0)} COP · {row.buyer_name || row.buyer_user_id || "Comprador"}
-                  </div>
+                  <div style={{ fontSize: ".82em", color: "#334155" }}>Plan: <strong>{row.plan_title || row.plan_id}</strong> · ${formatCopInt(row.amount_cop || 0)} COP · {row.buyer_name || row.buyer_user_id || "Comprador"}</div>
                   <button type="button" onClick={() => confirmCoachPendingPurchase(row.id)} style={{ border: "1px solid #bbf7d0", background: "#f0fdf4", color: "#166534", borderRadius: 8, padding: "7px 10px", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".76em" }}>✅ Confirmar pago</button>
                 </div>
               ))}
@@ -680,13 +381,10 @@ const rows = planWorkouts.map((w, idx) => {
         </div>
       ) : null}
 
-      {/* ── Mis planes adquiridos (atleta) */}
       {isAthlete && (purchasedPlans.length > 0 || loadingPurchasedPlans) ? (
         <div style={{ ...S.card, marginBottom: 14 }}>
           <div style={{ fontSize: ".72em", letterSpacing: ".12em", textTransform: "uppercase", color: "#64748b", marginBottom: 10 }}>📦 Mis planes adquiridos</div>
-          {loadingPurchasedPlans ? (
-            <div style={{ color: "#64748b", fontSize: ".84em" }}>Cargando tus planes…</div>
-          ) : (
+          {loadingPurchasedPlans ? <div style={{ color: "#64748b", fontSize: ".84em" }}>Cargando tus planes…</div> : (
             <div style={{ display: "grid", gap: 10 }}>
               {purchasedPlans.map(({ purchaseId, purchasedAt, pricePaid, plan }) => {
                 const alreadySynced = Boolean(calendarSyncDone[String(plan.id)]);
@@ -695,42 +393,17 @@ const rows = planWorkouts.map((w, idx) => {
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontWeight: 800, color: "#0f172a", marginBottom: 4 }}>✅ {plan.title}</div>
-                        <div style={{ fontSize: ".78em", color: "#64748b" }}>
-                          {plan.duration_weeks} semanas · {plan.sessions_per_week} sesiones/sem · {String(plan.level || "")}
-                        </div>
+                        <div style={{ fontSize: ".78em", color: "#64748b" }}>{plan.duration_weeks} semanas · {plan.sessions_per_week} sesiones/sem · {String(plan.level || "")}</div>
                         <div style={{ fontSize: ".75em", color: "#16a34a", fontWeight: 700, marginTop: 4 }}>
-                          Comprado el {new Date(purchasedAt).toLocaleDateString("es-CO", { day: "numeric", month: "long", year: "numeric" })}
-                          {" · "}${Number(pricePaid || 0).toLocaleString("es-CO")} COP
+                          Comprado el {new Date(purchasedAt).toLocaleDateString("es-CO", { day: "numeric", month: "long", year: "numeric" })}{" · "}${Number(pricePaid || 0).toLocaleString("es-CO")} COP
                         </div>
                       </div>
                       <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-end" }}>
-                        <button type="button" onClick={() => setSelectedPurchasedPlan(plan)} style={{ background: "linear-gradient(135deg,#16a34a,#22c55e)", border: "none", borderRadius: 9, padding: "9px 14px", color: "#fff", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".8em", whiteSpace: "nowrap" }}>
-                          Ver plan completo
-                        </button>
-                        {/* ── NUEVO: Botón cargar al calendario */}
+                        <button type="button" onClick={() => setSelectedPurchasedPlan(plan)} style={{ background: "linear-gradient(135deg,#16a34a,#22c55e)", border: "none", borderRadius: 9, padding: "9px 14px", color: "#fff", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".8em", whiteSpace: "nowrap" }}>Ver plan completo</button>
                         {alreadySynced ? (
-                          <div style={{ fontSize: ".75em", color: "#16a34a", fontWeight: 700, textAlign: "center" }}>
-                            ✅ Cargado al calendario
-                          </div>
+                          <div style={{ fontSize: ".75em", color: "#16a34a", fontWeight: 700, textAlign: "center" }}>✅ Cargado al calendario</div>
                         ) : (
-                          <button
-                            type="button"
-                            onClick={() => openStartDateModal(plan)}
-                            style={{
-                              background: "linear-gradient(135deg,#7c3aed,#a78bfa)",
-                              border: "none",
-                              borderRadius: 9,
-                              padding: "9px 14px",
-                              color: "#fff",
-                              fontWeight: 800,
-                              cursor: "pointer",
-                              fontFamily: "inherit",
-                              fontSize: ".8em",
-                              whiteSpace: "nowrap",
-                            }}
-                          >
-                            📅 Cargar al calendario
-                          </button>
+                          <button type="button" onClick={() => openStartDateModal(plan)} style={{ background: "linear-gradient(135deg,#7c3aed,#a78bfa)", border: "none", borderRadius: 9, padding: "9px 14px", color: "#fff", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".8em", whiteSpace: "nowrap" }}>📅 Cargar al calendario</button>
                         )}
                       </div>
                     </div>
@@ -742,12 +415,7 @@ const rows = planWorkouts.map((w, idx) => {
         </div>
       ) : null}
 
-      {/* ── Catálogo de planes */}
-      {loadingPlans ? (
-        <div style={{ color: "#64748b" }}>Cargando planes…</div>
-      ) : plansVisible.length === 0 ? (
-        <div style={{ color: "#94a3b8" }}>No hay planes disponibles por ahora.</div>
-      ) : (
+      {loadingPlans ? <div style={{ color: "#64748b" }}>Cargando planes…</div> : plansVisible.length === 0 ? <div style={{ color: "#94a3b8" }}>No hay planes disponibles por ahora.</div> : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(240px,1fr))", gap: 12 }}>
           {plansVisible.map((p) => {
             const rating = Number(ratingsByPlanId[String(p.id)] || 0);
@@ -761,9 +429,7 @@ const rows = planWorkouts.map((w, idx) => {
                   <div style={{ fontWeight: 800, color: "#0f172a", flex: 1, minWidth: 0 }}>{p.title}</div>
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
                     <span style={{ fontSize: ".7em", borderRadius: 999, padding: "3px 8px", background: "rgba(14,165,233,.12)", color: "#0369a1", fontWeight: 800 }}>{String(p.level || "intermedio")}</span>
-                    <span style={{ fontSize: ".58em", fontWeight: 900, letterSpacing: ".06em", textTransform: "uppercase", borderRadius: 999, padding: "3px 7px", border: approved ? "1px solid #86efac" : "1px solid #fdba74", background: approved ? "#dcfce7" : "#ffedd5", color: approved ? "#166534" : "#9a3412" }}>
-                      {approved ? "Aprobado" : "Pendiente"}
-                    </span>
+                    <span style={{ fontSize: ".58em", fontWeight: 900, letterSpacing: ".06em", textTransform: "uppercase", borderRadius: 999, padding: "3px 7px", border: approved ? "1px solid #86efac" : "1px solid #fdba74", background: approved ? "#dcfce7" : "#ffedd5", color: approved ? "#166534" : "#9a3412" }}>{approved ? "Aprobado" : "Pendiente"}</span>
                   </div>
                 </div>
                 <div style={{ fontSize: ".78em", color: "#64748b", marginTop: 4 }}>Coach: {p.coach_name || "Coach"}</div>
@@ -789,7 +455,7 @@ const rows = planWorkouts.map((w, idx) => {
         </div>
       )}
 
-      {/* ── Modal detalle plan (preview) */}
+      {/* Modal detalle plan (preview) */}
       {selectedPlan ? (
         <div style={{ position: "fixed", inset: 0, zIndex: 10030, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
           <div style={{ ...S.card, width: "100%", maxWidth: 720, margin: 0, maxHeight: "90vh", overflowY: "auto" }}>
@@ -816,7 +482,7 @@ const rows = planWorkouts.map((w, idx) => {
         </div>
       ) : null}
 
-      {/* ── Modal plan adquirido (acceso completo) */}
+      {/* Modal plan adquirido (acceso completo) */}
       {selectedPurchasedPlan ? (
         <div style={{ position: "fixed", inset: 0, zIndex: 10032, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
           <div style={{ ...S.card, width: "100%", maxWidth: 720, margin: 0, maxHeight: "90vh", overflowY: "auto" }}>
@@ -828,133 +494,67 @@ const rows = planWorkouts.map((w, idx) => {
               <button type="button" onClick={() => setSelectedPurchasedPlan(null)} style={{ border: "1px solid #e2e8f0", background: "#fff", borderRadius: 8, padding: "6px 10px", cursor: "pointer", fontFamily: "inherit" }}>✕</button>
             </div>
             <div style={{ color: "#475569", fontSize: ".86em", marginBottom: 10 }}>{selectedPurchasedPlan.description || "Sin descripción."}</div>
-            <div style={{ fontSize: ".78em", color: "#64748b", marginBottom: 6 }}>
-              Coach: {selectedPurchasedPlan.coach_name || "Coach"} · {selectedPurchasedPlan.duration_weeks} semanas · {selectedPurchasedPlan.sessions_per_week} sesiones/semana
-            </div>
+            <div style={{ fontSize: ".78em", color: "#64748b", marginBottom: 6 }}>Coach: {selectedPurchasedPlan.coach_name || "Coach"} · {selectedPurchasedPlan.duration_weeks} semanas · {selectedPurchasedPlan.sessions_per_week} sesiones/semana</div>
             <div style={{ fontSize: ".78em", fontWeight: 800, color: "#334155", marginBottom: 8 }}>Contenido completo del plan</div>
             <MarketplacePlanWorkoutsAccordion previewWorkouts={getMarketplacePlanWorkoutRows(selectedPurchasedPlan)} resetKey={selectedPurchasedPlan.id} lockAfterWeek1={false} />
-            {/* Botón cargar al calendario desde el modal de plan completo */}
             {!calendarSyncDone[String(selectedPurchasedPlan.id)] ? (
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedPurchasedPlan(null);
-                  openStartDateModal(selectedPurchasedPlan);
-                }}
-                style={{ marginTop: 14, width: "100%", background: "linear-gradient(135deg,#7c3aed,#a78bfa)", border: "none", borderRadius: 10, padding: "10px 14px", color: "#fff", fontWeight: 900, cursor: "pointer", fontFamily: "inherit", fontSize: ".85em" }}
-              >
+              <button type="button" onClick={() => { setSelectedPurchasedPlan(null); openStartDateModal(selectedPurchasedPlan); }} style={{ marginTop: 14, width: "100%", background: "linear-gradient(135deg,#7c3aed,#a78bfa)", border: "none", borderRadius: 10, padding: "10px 14px", color: "#fff", fontWeight: 900, cursor: "pointer", fontFamily: "inherit", fontSize: ".85em" }}>
                 📅 Cargar al calendario
               </button>
             ) : (
-              <div style={{ marginTop: 14, textAlign: "center", color: "#16a34a", fontWeight: 700, fontSize: ".88em" }}>
-                ✅ Ya está cargado en tu calendario
-              </div>
+              <div style={{ marginTop: 14, textAlign: "center", color: "#16a34a", fontWeight: 700, fontSize: ".88em" }}>✅ Ya está cargado en tu calendario</div>
             )}
           </div>
         </div>
       ) : null}
 
-      {/* ── NUEVO: Modal fecha de inicio */}
-  {showStartDateModal && startDatePlan ? (
-  <div style={{ position: "fixed", inset: 0, zIndex: 10035, background: "rgba(15,23,42,.55)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-    <div style={{ ...S.card, width: "100%", maxWidth: 460, margin: 0 }}>
-      <div style={{ fontSize: "1.05em", fontWeight: 900, color: "#0f172a", marginBottom: 6 }}>
-        📅 Configura tu plan
-      </div>
-      <div style={{ color: "#475569", fontSize: ".88em", marginBottom: 16, lineHeight: 1.55 }}>
-        Configura el inicio de <strong style={{ color: "#0f172a" }}>{startDatePlan.title}</strong>.
-        Selecciona tu fecha de inicio y los días en que entrenarás.
-      </div>
-
-      {/* Fecha de inicio */}
-      <div style={{ marginBottom: 14 }}>
-        <div style={{ fontSize: ".75em", color: "#64748b", fontWeight: 700, marginBottom: 6 }}>Fecha de inicio</div>
-        <input
-          type="date"
-          value={startDateValue}
-          min={formatLocalYMD(new Date())}
-          onChange={(e) => setStartDateValue(e.target.value)}
-          style={{ width: "100%", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", fontFamily: "inherit", fontSize: ".9em", color: "#0f172a", boxSizing: "border-box" }}
-        />
-      </div>
-
-      {/* Selector de días */}
-      <div style={{ marginBottom: 14 }}>
-        <div style={{ fontSize: ".75em", color: "#64748b", fontWeight: 700, marginBottom: 8 }}>
-          Días de entrenamiento — selecciona {startDatePlan.sessions_per_week || 4}
-          {selectedDays.length > 0 ? ` (${selectedDays.length} seleccionados)` : ""}
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 4 }}>
-          {["L","M","X","J","V","S","D"].map((label, i) => {
-            const selected = selectedDays.includes(i);
-            const sessPerWeek = Number(startDatePlan.sessions_per_week) || 4;
-            const maxReached = selectedDays.length >= sessPerWeek && !selected;
-            return (
-              <button
-                key={i}
-                type="button"
-                disabled={maxReached}
-                onClick={() => {
-                  setSelectedDays((prev) =>
-                    prev.includes(i) ? prev.filter((d) => d !== i) : [...prev, i]
+      {/* Modal fecha de inicio + selector de días */}
+      {showStartDateModal && startDatePlan ? (
+        <div style={{ position: "fixed", inset: 0, zIndex: 10035, background: "rgba(15,23,42,.55)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ ...S.card, width: "100%", maxWidth: 460, margin: 0 }}>
+            <div style={{ fontSize: "1.05em", fontWeight: 900, color: "#0f172a", marginBottom: 6 }}>📅 Configura tu plan</div>
+            <div style={{ color: "#475569", fontSize: ".88em", marginBottom: 16, lineHeight: 1.55 }}>
+              Configura el inicio de <strong style={{ color: "#0f172a" }}>{startDatePlan.title}</strong>. Selecciona tu fecha de inicio y los días en que entrenarás.
+            </div>
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: ".75em", color: "#64748b", fontWeight: 700, marginBottom: 6 }}>Fecha de inicio</div>
+              <input type="date" value={startDateValue} min={formatLocalYMD(new Date())} onChange={(e) => setStartDateValue(e.target.value)} style={{ width: "100%", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", fontFamily: "inherit", fontSize: ".9em", color: "#0f172a", boxSizing: "border-box" }} />
+            </div>
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: ".75em", color: "#64748b", fontWeight: 700, marginBottom: 8 }}>
+                Días de entrenamiento — selecciona {startDatePlan.sessions_per_week || 4}{selectedDays.length > 0 ? ` (${selectedDays.length} seleccionados)` : ""}
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 4 }}>
+                {["L", "M", "X", "J", "V", "S", "D"].map((label, i) => {
+                  const selected = selectedDays.includes(i);
+                  const sessPerWeek = Number(startDatePlan.sessions_per_week) || 4;
+                  const maxReached = selectedDays.length >= sessPerWeek && !selected;
+                  return (
+                    <button key={i} type="button" disabled={maxReached}
+                      onClick={() => setSelectedDays((prev) => prev.includes(i) ? prev.filter((d) => d !== i) : [...prev, i])}
+                      style={{ padding: "10px 0", borderRadius: 8, border: selected ? "2px solid #7c3aed" : "1px solid #e2e8f0", background: selected ? "linear-gradient(135deg,#7c3aed,#a78bfa)" : maxReached ? "#f8fafc" : "#fff", color: selected ? "#fff" : maxReached ? "#cbd5e1" : "#334155", fontWeight: 800, fontSize: ".82em", cursor: maxReached ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+                      {label}
+                    </button>
                   );
-                }}
-                style={{
-                  padding: "10px 0",
-                  borderRadius: 8,
-                  border: selected ? "2px solid #7c3aed" : "1px solid #e2e8f0",
-                  background: selected ? "linear-gradient(135deg,#7c3aed,#a78bfa)" : maxReached ? "#f8fafc" : "#fff",
-                  color: selected ? "#fff" : maxReached ? "#cbd5e1" : "#334155",
-                  fontWeight: 800,
-                  fontSize: ".82em",
-                  cursor: maxReached ? "not-allowed" : "pointer",
-                  fontFamily: "inherit",
-                }}
-              >
-                {label}
+                })}
+              </div>
+            </div>
+            <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", marginBottom: 16, fontSize: ".78em", color: "#475569", lineHeight: 1.5 }}>
+              ℹ️ El plan empieza el <strong>lunes</strong> de la semana elegida.{startDatePlan.duration_weeks ? ` Duración: ${startDatePlan.duration_weeks} semanas.` : ""}{startDatePlan.sessions_per_week ? ` ${startDatePlan.sessions_per_week} sesiones/semana.` : ""}
+            </div>
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button type="button" onClick={() => { setShowStartDateModal(false); setStartDatePlan(null); setSelectedDays([]); }} disabled={loadingCalendarSync} style={{ border: "1px solid #e2e8f0", background: "#fff", borderRadius: 8, padding: "10px 14px", color: "#64748b", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".84em" }}>Cancelar</button>
+              <button type="button" onClick={loadPlanToCalendar}
+                disabled={loadingCalendarSync || !startDateValue || selectedDays.length !== (Number(startDatePlan.sessions_per_week) || 4)}
+                style={{ background: (loadingCalendarSync || selectedDays.length !== (Number(startDatePlan.sessions_per_week) || 4)) ? "#e2e8f0" : "linear-gradient(135deg,#7c3aed,#a78bfa)", border: "none", borderRadius: 8, padding: "10px 18px", color: (loadingCalendarSync || selectedDays.length !== (Number(startDatePlan.sessions_per_week) || 4)) ? "#64748b" : "#fff", fontWeight: 800, cursor: (loadingCalendarSync || selectedDays.length !== (Number(startDatePlan.sessions_per_week) || 4)) ? "not-allowed" : "pointer", fontFamily: "inherit", fontSize: ".84em" }}>
+                {loadingCalendarSync ? "Cargando…" : "✅ Cargar plan"}
               </button>
-            );
-          })}
+            </div>
+          </div>
         </div>
-      </div>
+      ) : null}
 
-      {/* Info */}
-      <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", marginBottom: 16, fontSize: ".78em", color: "#475569", lineHeight: 1.5 }}>
-        ℹ️ El plan empieza el <strong>lunes</strong> de la semana elegida.
-        {startDatePlan.duration_weeks ? ` Duración: ${startDatePlan.duration_weeks} semanas.` : ""}
-        {startDatePlan.sessions_per_week ? ` ${startDatePlan.sessions_per_week} sesiones/semana.` : ""}
-      </div>
-
-      <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-        <button
-          type="button"
-          onClick={() => { setShowStartDateModal(false); setStartDatePlan(null); setSelectedDays([]); }}
-          disabled={loadingCalendarSync}
-          style={{ border: "1px solid #e2e8f0", background: "#fff", borderRadius: 8, padding: "10px 14px", color: "#64748b", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".84em" }}
-        >
-          Cancelar
-        </button>
-        <button
-          type="button"
-          onClick={loadPlanToCalendar}
-          disabled={loadingCalendarSync || !startDateValue || selectedDays.length !== (Number(startDatePlan.sessions_per_week) || 4)}
-          style={{
-            background: (loadingCalendarSync || selectedDays.length !== (Number(startDatePlan.sessions_per_week) || 4)) ? "#e2e8f0" : "linear-gradient(135deg,#7c3aed,#a78bfa)",
-            border: "none", borderRadius: 8, padding: "10px 18px",
-            color: (loadingCalendarSync || selectedDays.length !== (Number(startDatePlan.sessions_per_week) || 4)) ? "#64748b" : "#fff",
-            fontWeight: 800,
-            cursor: (loadingCalendarSync || selectedDays.length !== (Number(startDatePlan.sessions_per_week) || 4)) ? "not-allowed" : "pointer",
-            fontFamily: "inherit", fontSize: ".84em",
-          }}
-        >
-          {loadingCalendarSync ? "Cargando…" : "✅ Cargar plan"}
-        </button>
-      </div>
-    </div>
-  </div>
-) : null}
-
-      {/* ── Modal publicar/editar plan (coach) */}
+      {/* Modal publicar/editar plan (coach) */}
       {showPublishModal ? (
         <div style={{ position: "fixed", inset: 0, zIndex: 10031, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
           <div style={{ ...S.card, width: "100%", maxWidth: 760, margin: 0, maxHeight: "90vh", overflowY: "auto" }}>
@@ -972,11 +572,7 @@ const rows = planWorkouts.map((w, idx) => {
               <input type="number" value={planForm.price_cop} onChange={(e) => setPlanForm((f) => ({ ...f, price_cop: e.target.value }))} placeholder="Precio COP" style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit" }} />
               <div style={{ gridColumn: "1 / -1", border: "1px solid #e2e8f0", borderRadius: 10, padding: 10 }}>
                 <div style={{ fontSize: ".78em", fontWeight: 800, marginBottom: 8 }}>Workouts de muestra (biblioteca)</div>
-                {loadingLibrary ? (
-                  <div style={{ color: "#64748b", fontSize: ".82em" }}>Cargando biblioteca…</div>
-                ) : coachLibraryRows.length === 0 ? (
-                  <div style={{ color: "#94a3b8", fontSize: ".82em" }}>No tienes workouts en tu biblioteca.</div>
-                ) : (
+                {loadingLibrary ? <div style={{ color: "#64748b", fontSize: ".82em" }}>Cargando biblioteca…</div> : coachLibraryRows.length === 0 ? <div style={{ color: "#94a3b8", fontSize: ".82em" }}>No tienes workouts en tu biblioteca.</div> : (
                   <div style={{ display: "grid", gap: 6, maxHeight: 220, overflowY: "auto" }}>
                     {coachLibraryRows.map((w) => {
                       const checked = planForm.preview_workouts.includes(String(w.id));
@@ -991,9 +587,7 @@ const rows = planWorkouts.map((w, idx) => {
                 )}
               </div>
             </div>
-            <div style={{ marginTop: 8, fontSize: ".8em", color: "#334155", fontWeight: 700 }}>
-              Tu ganancia: ${formatCopInt(Math.round((Number(planForm.price_cop || 0) || 0) * 0.8))} COP (80% del precio)
-            </div>
+            <div style={{ marginTop: 8, fontSize: ".8em", color: "#334155", fontWeight: 700 }}>Tu ganancia: ${formatCopInt(Math.round((Number(planForm.price_cop || 0) || 0) * 0.8))} COP (80% del precio)</div>
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
               <button type="button" onClick={() => { setShowPublishModal(false); setEditingMarketplacePlanId(null); setEditingPlanSnapshot(null); }} style={{ border: "1px solid #e2e8f0", borderRadius: 8, background: "#fff", padding: "8px 12px", cursor: "pointer", fontFamily: "inherit" }}>Cancelar</button>
               <button type="button" onClick={submitCoachPlan} disabled={savingPlan} style={{ border: "none", borderRadius: 8, background: savingPlan ? "#cbd5e1" : "linear-gradient(135deg,#0ea5e9,#0284c7)", padding: "8px 12px", color: "#fff", fontWeight: 800, cursor: savingPlan ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
