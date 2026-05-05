@@ -397,6 +397,7 @@ const rows = planWorkouts.map((w, idx) => {
   const sessPerWeek = Math.max(1, Number(startDatePlan.sessions_per_week) || 4);
 if (selectedDays.length !== sessPerWeek) {
   notify?.(`Debes seleccionar exactamente ${sessPerWeek} días de entrenamiento.`);
+  setLoadingCalendarSync(false);
   return;
 }
 const sortedDays = [...selectedDays].sort((a, b) => a - b);
