@@ -324,7 +324,8 @@ export default function AthleteHome({ profile }) {
   });
   const [manualSummarySaving, setManualSummarySaving] = useState(false);
   const [athleteProgressTab, setAthleteProgressTab] = useState(() => readStoredAthleteProgressTab());
-
+const [workoutAnalysis, setWorkoutAnalysis] = useState("");
+const [loadingAnalysis, setLoadingAnalysis] = useState(false);
   const profileUserId = profile?.user_id ?? null;
 
   // ── FIX: Limpiar URL de Strava al montar (antes de que la carga borre el mensaje)
@@ -905,7 +906,28 @@ export default function AthleteHome({ profile }) {
     setWorkouts((prev) =>
       prev.map((w) => (String(w.id) === String(workoutRow.id) ? normalizeWorkoutRow({ ...w, ...payload }) : w)),
     );
-    setWorkoutSummaryModal(null);
+   // Análisis Claude
+    setLoadingAnalysis(true);
+    setWorkoutAnalysis("");
+    try {
+      const updatedWorkout = { ...workoutRow, ...payload };
+      const recentDone = workouts.filter((w) => w.done && String(w.id) !== String(workoutRow.id)).slice(-5);
+      const response = await fetch("/api/analyze-workout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          workout: updatedWorkout,
+          recentWorkouts: recentDone,
+          athleteName: athleteName,
+        }),
+      });
+      const data = await response.json();
+      if (data?.analysis) setWorkoutAnalysis(data.analysis);
+    } catch (e) {
+      console.error("analyze-workout error:", e);
+    } finally {
+      setLoadingAnalysis(false);
+    }
   };
 
   const toggleDone = async (w) => {
@@ -1930,6 +1952,20 @@ export default function AthleteHome({ profile }) {
                 ))}
               </select>
               <textarea rows={3} value={manualSummaryForm.notes} onChange={(e) => setManualSummaryForm((f) => ({ ...f, notes: e.target.value }))} placeholder="Describe tu entrenamiento..." style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit", boxSizing: "border-box" }} />
+              {(loadingAnalysis || workoutAnalysis) ? (
+              <div style={{ marginTop: 14, padding: "14px 16px", borderRadius: 12, background: "linear-gradient(145deg,#fffbeb,#fff7ed)", border: "1px solid rgba(245,158,11,.4)" }}>
+                <div style={{ fontSize: ".75em", fontWeight: 800, color: "#b45309", marginBottom: 8, letterSpacing: ".08em", textTransform: "uppercase" }}>
+                  🤖 Análisis de tu entrenamiento
+                </div>
+                {loadingAnalysis ? (
+                  <div style={{ color: "#64748b", fontSize: ".84em" }}>Analizando tu sesión…</div>
+                ) : (
+                  <div style={{ fontSize: ".86em", color: "#0f172a", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
+                    {workoutAnalysis}
+                  </div>
+                )}
+              </div>
+            ) : null}
               <div style={{ display: "flex", justifyContent: "flex-end" }}>
                 <button type="button" disabled={manualSummarySaving} onClick={saveManualWorkoutSummary} style={{ background: manualSummarySaving ? "#cbd5e1" : "linear-gradient(135deg,#0d9488,#14b8a6)", border: "none", borderRadius: 8, padding: "8px 12px", color: "#fff", fontWeight: 800, fontFamily: "inherit", cursor: manualSummarySaving ? "not-allowed" : "pointer", fontSize: ".78em" }}>{manualSummarySaving ? "Guardando…" : workoutSummaryModal.stravaConnected ? "Guardar notas" : "Guardar registro"}</button>
               </div>
