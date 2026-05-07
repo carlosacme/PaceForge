@@ -741,24 +741,7 @@ export default function AthleteHome({ profile }) {
     }
     setWorkouts((prev) => prev.map((w) => (String(w.id) === String(workoutRow.id) ? normalizeWorkoutRow({ ...w, ...payload }) : w)));
 
-    // ── Análisis Claude API
-    setLoadingAnalysis(true);
-    setWorkoutAnalysis("");
-    try {
-      const updatedWorkout = { ...workoutRow, ...payload };
-      const recentDone = workouts.filter((w) => w.done && String(w.id) !== String(workoutRow.id)).slice(-5);
-      const response = await fetch("/api/analyze-workout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ workout: updatedWorkout, recentWorkouts: recentDone, athleteName }),
-      });
-      const data = await response.json();
-      if (data?.analysis) setWorkoutAnalysis(data.analysis);
-    } catch (e) {
-      console.error("analyze-workout error:", e);
-    } finally {
-      setLoadingAnalysis(false);
-    }
+  
   };
 
   const toggleDone = async (w) => {
@@ -1430,21 +1413,7 @@ export default function AthleteHome({ profile }) {
               </div>
             </div>
 
-            {/* ── Análisis Claude */}
-            {(loadingAnalysis || workoutAnalysis) ? (
-              <div style={{ marginBottom: 14, padding: "14px 16px", borderRadius: 12, background: "linear-gradient(145deg,#fffbeb,#fff7ed)", border: "1px solid rgba(245,158,11,.4)" }}>
-                <div style={{ fontSize: ".75em", fontWeight: 800, color: "#b45309", marginBottom: 8, letterSpacing: ".08em", textTransform: "uppercase" }}>
-                  🤖 Análisis de tu entrenamiento
-                </div>
-                {loadingAnalysis ? (
-                  <div style={{ color: "#64748b", fontSize: ".84em" }}>Analizando tu sesión con IA…</div>
-                ) : (
-                  <div style={{ fontSize: ".86em", color: "#0f172a", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
-                    {workoutAnalysis}
-                  </div>
-                )}
-              </div>
-            ) : null}
+            
 
             <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 14 }}>
               <button type="button" onClick={closeWorkoutModal} style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#475569", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".8em" }}>
