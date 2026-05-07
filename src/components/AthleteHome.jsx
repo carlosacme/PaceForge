@@ -324,17 +324,16 @@ export default function AthleteHome({ profile }) {
   });
   const [manualSummarySaving, setManualSummarySaving] = useState(false);
   const [athleteProgressTab, setAthleteProgressTab] = useState(() => readStoredAthleteProgressTab());
-const [workoutAnalysis, setWorkoutAnalysis] = useState("");
-const [loadingAnalysis, setLoadingAnalysis] = useState(false);
+  const [workoutAnalysis, setWorkoutAnalysis] = useState("");
+  const [loadingAnalysis, setLoadingAnalysis] = useState(false);
+
   const profileUserId = profile?.user_id ?? null;
 
-  // ── FIX: Limpiar URL de Strava al montar (antes de que la carga borre el mensaje)
   useEffect(() => {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
     if (params.get("strava_connected") === "true") {
       window.history.replaceState({}, "", window.location.pathname);
-      // Guardamos flag en sessionStorage para mostrarlo DESPUÉS de que cargue el perfil
       sessionStorage.setItem("raf_strava_success", "1");
     }
     if (params.get("strava_error")) {
@@ -378,9 +377,7 @@ const [loadingAnalysis, setLoadingAnalysis] = useState(false);
       localStorage.setItem(RAF_ATHLETE_EVAL_OPEN_KEY, showEvaluation ? "evaluation" : "home");
     };
     document.addEventListener("visibilitychange", onVisibilityChange);
-    return () => {
-      document.removeEventListener("visibilitychange", onVisibilityChange);
-    };
+    return () => { document.removeEventListener("visibilitychange", onVisibilityChange); };
   }, [showEvaluation, athleteTabRestored]);
 
   useEffect(() => {
@@ -404,100 +401,56 @@ const [loadingAnalysis, setLoadingAnalysis] = useState(false);
       setLoading(false);
       return;
     }
-
-    if (prevProfileUserIdRef.current === profileUserId) {
-      return;
-    }
-
+    if (prevProfileUserIdRef.current === profileUserId) return;
     let cancelled = false;
-    const markInitialLoadFinished = () => {
-      if (!cancelled) {
-        prevProfileUserIdRef.current = profileUserId;
-      }
-    };
-
+    const markInitialLoadFinished = () => { if (!cancelled) prevProfileUserIdRef.current = profileUserId; };
     const load = async () => {
       setLoading(true);
       setMessage("");
       setCoachAssignSuccess("");
       setAthleteNotRegistered(false);
-
       const { data: authData, error: authErr } = await supabase.auth.getUser();
       if (cancelled) return;
-
       const userEmail = authData?.user?.email?.trim();
       if (authErr || !userEmail) {
         console.error("Error obteniendo sesión:", authErr);
-        setAthleteInfo(null);
-        setWorkouts([]);
-        setAthleteEvaluations([]);
-        setLoading(false);
+        setAthleteInfo(null); setWorkouts([]); setAthleteEvaluations([]); setLoading(false);
         if (!userEmail) setMessage("No se pudo obtener el email de tu cuenta.");
         return;
       }
-
-      const { data: athleteRows, error: athleteErr } = await supabase
-        .from("athletes")
-        .select("*")
-        .ilike("email", userEmail)
-        .limit(1);
-
+      const { data: athleteRows, error: athleteErr } = await supabase.from("athletes").select("*").ilike("email", userEmail).limit(1);
       if (cancelled) return;
-
       if (athleteErr) {
         console.error("Error cargando atleta:", athleteErr);
-        setAthleteInfo(null);
-        setWorkouts([]);
-        setAthleteEvaluations([]);
-        setLoading(false);
+        setAthleteInfo(null); setWorkouts([]); setAthleteEvaluations([]); setLoading(false);
         return;
       }
-
       const athleteRow = athleteRows?.[0];
       if (!athleteRow) {
-        setAthleteInfo(null);
-        setWorkouts([]);
-        setAthleteEvaluations([]);
-        setAthleteNotRegistered(true);
-        setLoading(false);
+        setAthleteInfo(null); setWorkouts([]); setAthleteEvaluations([]);
+        setAthleteNotRegistered(true); setLoading(false);
         markInitialLoadFinished();
         return;
       }
-
       setAthleteInfo(athleteRow);
-
       if (authData?.user?.id) {
         const { error: linkErr } = await supabase.from("athletes").update({ user_id: authData.user.id }).eq("id", athleteRow.id);
         if (linkErr) console.warn("[AthleteHome] link user_id:", linkErr);
         const tok = await refreshFcmTokenIfGranted();
-        if (tok) {
-          await supabase.from("profiles").update({ fcm_token: tok }).eq("user_id", authData.user.id).limit(1);
-        }
+        if (tok) await supabase.from("profiles").update({ fcm_token: tok }).eq("user_id", authData.user.id).limit(1);
       }
-
       const [wRes, eRes] = await Promise.all([
-        supabase
-          .from("workouts")
-          .select("*")
-          .eq("athlete_id", athleteRow.id)
-          .order("scheduled_date", { ascending: true }),
-        supabase
-          .from("athlete_evaluations")
-          .select("vdot, created_at")
-          .eq("athlete_id", athleteRow.id)
-          .order("created_at", { ascending: true }),
+        supabase.from("workouts").select("*").eq("athlete_id", athleteRow.id).order("scheduled_date", { ascending: true }),
+        supabase.from("athlete_evaluations").select("vdot, created_at").eq("athlete_id", athleteRow.id).order("created_at", { ascending: true }),
       ]);
+      if (cancelled) return;
       const workoutsRows = wRes.data;
       const workoutsErr = wRes.error;
       const evalRows = eRes.data;
       if (eRes.error) console.warn("[AthleteHome] athlete_evaluations:", eRes.error);
-
-      if (cancelled) return;
-
       if (workoutsErr) {
         console.error("Error cargando workouts atleta:", workoutsErr);
-        setWorkouts([]);
-        setAthleteEvaluations(evalRows || []);
+        setWorkouts([]); setAthleteEvaluations(evalRows || []);
       } else {
         const normalizedWorkouts = (workoutsRows || []).map(normalizeWorkoutRow);
         setWorkouts(normalizedWorkouts);
@@ -512,18 +465,13 @@ const [loadingAnalysis, setLoadingAnalysis] = useState(false);
                 setAchievementsCatalog(snapshot.achievements || []);
                 setEarnedAchievements(snapshot.earned || []);
                 setAchProgress(progress || computeAchievementProgress(normalizedWorkouts.filter((w) => w.done)));
-              } catch (e) {
-                console.warn("[AthleteHome] evaluateAndAwardAthleteAchievements (fondo):", e);
-              }
+              } catch (e) { console.warn("[AthleteHome] evaluateAndAwardAthleteAchievements (fondo):", e); }
             })();
           }, 0);
         }
       }
-
       setLoading(false);
       markInitialLoadFinished();
-
-      // ── FIX: Mostrar notificación Strava DESPUÉS de que cargue el perfil
       if (typeof sessionStorage !== "undefined") {
         const stravaSuccess = sessionStorage.getItem("raf_strava_success");
         const stravaErr = sessionStorage.getItem("raf_strava_error");
@@ -537,25 +485,16 @@ const [loadingAnalysis, setLoadingAnalysis] = useState(false);
           }, 300);
         } else if (stravaErr) {
           sessionStorage.removeItem("raf_strava_error");
-          setTimeout(() => {
-            if (cancelled) return;
-            setMessage(`Error conectando Strava: ${stravaErr}`);
-          }, 300);
+          setTimeout(() => { if (cancelled) return; setMessage(`Error conectando Strava: ${stravaErr}`); }, 300);
         }
       }
     };
-
     load();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [profileUserId]);
 
   const athleteCoachIdPrimitive = athleteInfo?.coach_id ?? null;
-  const achievementDisplayProgress = useMemo(
-    () => computeAthleteAchievementVisualProgress(workouts, athleteEvaluations),
-    [workouts, athleteEvaluations],
-  );
+  const achievementDisplayProgress = useMemo(() => computeAthleteAchievementVisualProgress(workouts, athleteEvaluations), [workouts, athleteEvaluations]);
   const earnedAchievementDateByCode = useMemo(() => {
     const m = {};
     for (const row of earnedAchievements || []) {
@@ -567,23 +506,14 @@ const [loadingAnalysis, setLoadingAnalysis] = useState(false);
   }, [earnedAchievements]);
 
   useEffect(() => {
-    if (!athleteInfo?.id || athleteNotRegistered || athleteCoachIdPrimitive) {
-      setPublicCoachesAthlete([]);
-      return;
-    }
+    if (!athleteInfo?.id || athleteNotRegistered || athleteCoachIdPrimitive) { setPublicCoachesAthlete([]); return; }
     let cancelled = false;
     (async () => {
       setLoadingPublicCoachesAthlete(true);
-      const { data, error } = await supabase
-        .from("coach_profiles")
-        .select("user_id, full_name, avatar_url, city, country, subscription_plan")
-        .eq("is_public", true)
-        .order("updated_at", { ascending: false });
+      const { data, error } = await supabase.from("coach_profiles").select("user_id, full_name, avatar_url, city, country, subscription_plan").eq("is_public", true).order("updated_at", { ascending: false });
       if (cancelled) return;
-      if (error) {
-        console.error("[AthleteHome] coaches públicos:", error);
-        setPublicCoachesAthlete([]);
-      } else {
+      if (error) { console.error("[AthleteHome] coaches públicos:", error); setPublicCoachesAthlete([]); }
+      else {
         const list = data || [];
         const sorted = [...list].sort((a, b) => {
           const ap = String(a.user_id) === PLATFORM_ADMIN_USER_ID ? 0 : 1;
@@ -594,9 +524,7 @@ const [loadingAnalysis, setLoadingAnalysis] = useState(false);
       }
       setLoadingPublicCoachesAthlete(false);
     })();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [athleteInfo?.id, athleteNotRegistered, athleteCoachIdPrimitive]);
 
   const workoutsByDate = useMemo(() => {
@@ -614,44 +542,20 @@ const [loadingAnalysis, setLoadingAnalysis] = useState(false);
     const n = new Date();
     return { y: n.getFullYear(), m: n.getMonth() };
   });
-  const calendarCells = useMemo(
-    () => getMonthGrid(calendarViewMonth.y, calendarViewMonth.m),
-    [calendarViewMonth.y, calendarViewMonth.m],
-  );
-  const calendarMonthLabel = useMemo(
-    () =>
-      new Date(calendarViewMonth.y, calendarViewMonth.m, 1).toLocaleDateString("es-CO", {
-        month: "long",
-        year: "numeric",
-      }),
-    [calendarViewMonth.y, calendarViewMonth.m],
-  );
+  const calendarCells = useMemo(() => getMonthGrid(calendarViewMonth.y, calendarViewMonth.m), [calendarViewMonth.y, calendarViewMonth.m]);
+  const calendarMonthLabel = useMemo(() => new Date(calendarViewMonth.y, calendarViewMonth.m, 1).toLocaleDateString("es-CO", { month: "long", year: "numeric" }), [calendarViewMonth.y, calendarViewMonth.m]);
 
   const [races, setRaces] = useState([]);
-
   useEffect(() => {
-    if (!athleteInfo?.id) {
-      setRaces([]);
-      return;
-    }
+    if (!athleteInfo?.id) { setRaces([]); return; }
     let cancelled = false;
     (async () => {
-      const { data, error } = await supabase
-        .from("races")
-        .select("*")
-        .eq("athlete_id", athleteInfo.id)
-        .order("date", { ascending: true });
+      const { data, error } = await supabase.from("races").select("*").eq("athlete_id", athleteInfo.id).order("date", { ascending: true });
       if (cancelled) return;
-      if (error) {
-        console.error("Error cargando carreras (atleta):", error);
-        setRaces([]);
-        return;
-      }
+      if (error) { console.error("Error cargando carreras (atleta):", error); setRaces([]); return; }
       setRaces((data || []).map(normalizeRaceRow));
     })();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [athleteInfo?.id]);
 
   const racesByDate = useMemo(() => {
@@ -676,28 +580,15 @@ const [loadingAnalysis, setLoadingAnalysis] = useState(false);
   }, [stravaActivities]);
 
   const athleteTodayYmd = calendarCellToIsoYmd(new Date());
-
-  const nextRaceCountdownAthlete = useMemo(
-    () => getNextRaceCountdown(races, athleteTodayYmd),
-    [races, athleteTodayYmd],
-  );
-
+  const nextRaceCountdownAthlete = useMemo(() => getNextRaceCountdown(races, athleteTodayYmd), [races, athleteTodayYmd]);
   const closeAthleteCalendarCtxMenu = () => setAthleteCalendarCtxMenu(null);
-
   const ctxMenuWorkoutId = athleteCalendarCtxMenu?.workoutId ?? null;
-
-  const ctxMenuAthleteWorkout = useMemo(
-    () =>
-      ctxMenuWorkoutId ? workouts.find((x) => String(x.id) === String(ctxMenuWorkoutId)) || null : null,
-    [workouts, ctxMenuWorkoutId],
-  );
+  const ctxMenuAthleteWorkout = useMemo(() => ctxMenuWorkoutId ? workouts.find((x) => String(x.id) === String(ctxMenuWorkoutId)) || null : null, [workouts, ctxMenuWorkoutId]);
 
   const openAthleteWorkoutMenu = (e, w) => {
     e.preventDefault();
     e.stopPropagation();
-    const pad = 8;
-    const mw = 260;
-    const mh = 52;
+    const pad = 8; const mw = 260; const mh = 52;
     const vw = typeof window !== "undefined" ? window.innerWidth : 800;
     const vh = typeof window !== "undefined" ? window.innerHeight : 600;
     const x = Math.min(e.clientX, vw - mw - pad);
@@ -705,21 +596,12 @@ const [loadingAnalysis, setLoadingAnalysis] = useState(false);
     setAthleteCalendarCtxMenu({ x, y, workoutId: w.id });
   };
 
-  const ctxMenuListenerKey = athleteCalendarCtxMenu
-    ? `${athleteCalendarCtxMenu.workoutId}:${athleteCalendarCtxMenu.x}:${athleteCalendarCtxMenu.y}`
-    : "";
-
+  const ctxMenuListenerKey = athleteCalendarCtxMenu ? `${athleteCalendarCtxMenu.workoutId}:${athleteCalendarCtxMenu.x}:${athleteCalendarCtxMenu.y}` : "";
   useEffect(() => {
     if (!ctxMenuListenerKey) return;
-    const onDown = (ev) => {
-      if (athleteCalendarCtxMenuRef.current?.contains(ev.target)) return;
-      closeAthleteCalendarCtxMenu();
-    };
+    const onDown = (ev) => { if (athleteCalendarCtxMenuRef.current?.contains(ev.target)) return; closeAthleteCalendarCtxMenu(); };
     const t = setTimeout(() => document.addEventListener("mousedown", onDown), 0);
-    return () => {
-      clearTimeout(t);
-      document.removeEventListener("mousedown", onDown);
-    };
+    return () => { clearTimeout(t); document.removeEventListener("mousedown", onDown); };
   }, [ctxMenuListenerKey]);
 
   const athleteProgressRangeYmd = useMemo(() => {
@@ -733,10 +615,7 @@ const [loadingAnalysis, setLoadingAnalysis] = useState(false);
       const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
       return { startYmd: formatLocalYMD(start), endYmd: formatLocalYMD(end) };
     }
-    return {
-      startYmd: formatLocalYMD(new Date(now.getFullYear(), 0, 1)),
-      endYmd: formatLocalYMD(new Date(now.getFullYear(), 11, 31)),
-    };
+    return { startYmd: formatLocalYMD(new Date(now.getFullYear(), 0, 1)), endYmd: formatLocalYMD(new Date(now.getFullYear(), 11, 31)) };
   }, [athleteProgressTab, athleteTodayYmd]);
 
   const athleteProgressStats = useMemo(() => {
@@ -747,12 +626,7 @@ const [loadingAnalysis, setLoadingAnalysis] = useState(false);
     });
     const totalKm = doneInRange.reduce((s, w) => s + (Number(w.distance_km) || 0), 0);
     const totalMin = doneInRange.reduce((s, w) => s + (Number(w.duration_min) || 0), 0);
-    return {
-      sessions: doneInRange.length,
-      totalKm,
-      totalMin,
-      rangeLabel: `${startYmd} → ${endYmd}`,
-    };
+    return { sessions: doneInRange.length, totalKm, totalMin, rangeLabel: `${startYmd} → ${endYmd}` };
   }, [workouts, athleteProgressRangeYmd]);
 
   const last4WeeksSummary = useMemo(() => {
@@ -770,23 +644,12 @@ const [loadingAnalysis, setLoadingAnalysis] = useState(false);
       const kmTotal = weekRows.reduce((sum, w) => sum + (Number(w.total_km) || 0), 0);
       const completed = weekRows.filter((w) => w.done).length;
       const adherence = weekRows.length > 0 ? Math.round((completed / weekRows.length) * 100) : 0;
-      rows.push({
-        key: `${startYmd}-${endYmd}`,
-        label: i === 0 ? "Semana actual" : `Hace ${i} semana${i === 1 ? "" : "s"}`,
-        range: `${startYmd} → ${endYmd}`,
-        kmTotal,
-        completed,
-        total: weekRows.length,
-        adherence,
-      });
+      rows.push({ key: `${startYmd}-${endYmd}`, label: i === 0 ? "Semana actual" : `Hace ${i} semana${i === 1 ? "" : "s"}`, range: `${startYmd} → ${endYmd}`, kmTotal, completed, total: weekRows.length, adherence });
     }
     return rows;
   }, [workouts]);
 
-  const workoutsAchSyncKey = useMemo(
-    () => (workouts || []).map((w) => `${w.id}:${w.done ? 1 : 0}:${w.rpe ?? ""}`).join("|"),
-    [workouts],
-  );
+  const workoutsAchSyncKey = useMemo(() => (workouts || []).map((w) => `${w.id}:${w.done ? 1 : 0}:${w.rpe ?? ""}`).join("|"), [workouts]);
 
   const openWorkoutSummaryModal = (workoutRow) => {
     if (!workoutRow?.scheduled_date) return;
@@ -802,13 +665,10 @@ const [loadingAnalysis, setLoadingAnalysis] = useState(false);
       notes: workoutRow.athlete_notes || "",
     };
     setManualSummaryForm(baseManual);
+    setWorkoutAnalysis("");
+    setLoadingAnalysis(false);
     if (isStravaConnected && athleteInfo?.id) {
-      setWorkoutSummaryModal({
-        workout: workoutRow,
-        stravaConnected: true,
-        activity: null,
-        stravaActivityPending: true,
-      });
+      setWorkoutSummaryModal({ workout: workoutRow, stravaConnected: true, activity: null, stravaActivityPending: true });
       return;
     }
     setWorkoutSummaryModal({ workout: workoutRow, stravaConnected: false, activity: null, stravaActivityPending: false });
@@ -816,24 +676,14 @@ const [loadingAnalysis, setLoadingAnalysis] = useState(false);
 
   useEffect(() => {
     const modal = workoutSummaryModal;
-    if (!modal?.stravaActivityPending || !modal.stravaConnected || !athleteInfo?.id || !stravaConnection?.access_token) {
-      return undefined;
-    }
+    if (!modal?.stravaActivityPending || !modal.stravaConnected || !athleteInfo?.id || !stravaConnection?.access_token) return undefined;
     const workoutRow = modal.workout;
     if (!workoutRow?.scheduled_date) return undefined;
     let cancelled = false;
     const dayStart = `${workoutRow.scheduled_date}T00:00:00`;
     const dayEnd = `${formatLocalYMD(addDays(new Date(`${workoutRow.scheduled_date}T12:00:00`), 1))}T00:00:00`;
     (async () => {
-      const { data, error } = await supabase
-        .from("strava_activities")
-        .select("*")
-        .eq("athlete_id", athleteInfo.id)
-        .gte("start_date_local", dayStart)
-        .lt("start_date_local", dayEnd)
-        .order("start_date_local", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      const { data, error } = await supabase.from("strava_activities").select("*").eq("athlete_id", athleteInfo.id).gte("start_date_local", dayStart).lt("start_date_local", dayEnd).order("start_date_local", { ascending: false }).limit(1).maybeSingle();
       if (cancelled) return;
       if (error) console.warn("No se pudo cargar actividad strava_activities:", error);
       const activity = data || null;
@@ -849,26 +699,12 @@ const [loadingAnalysis, setLoadingAnalysis] = useState(false);
           durationMin: activity.moving_time != null ? String(Math.max(0, Math.round(Number(activity.moving_time) / 60))) : f.durationMin,
           avgHr: activity.average_heartrate != null ? String(Math.round(Number(activity.average_heartrate))) : f.avgHr,
           maxHr: activity.max_heartrate != null ? String(Math.round(Number(activity.max_heartrate))) : f.maxHr,
-          calories:
-            activity.calories != null
-              ? String(Math.round(Number(activity.calories)))
-              : activity.kilojoules != null
-                ? String(Math.round(Number(activity.kilojoules)))
-                : f.calories,
+          calories: activity.calories != null ? String(Math.round(Number(activity.calories))) : activity.kilojoules != null ? String(Math.round(Number(activity.kilojoules))) : f.calories,
         }));
       }
     })();
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    workoutSummaryModal?.workout?.id,
-    workoutSummaryModal?.workout?.scheduled_date,
-    workoutSummaryModal?.stravaActivityPending,
-    workoutSummaryModal?.stravaConnected,
-    athleteInfo?.id,
-    stravaConnection?.access_token,
-  ]);
+    return () => { cancelled = true; };
+  }, [workoutSummaryModal?.workout?.id, workoutSummaryModal?.workout?.scheduled_date, workoutSummaryModal?.stravaActivityPending, workoutSummaryModal?.stravaConnected, athleteInfo?.id, stravaConnection?.access_token]);
 
   const saveManualWorkoutSummary = async () => {
     const workoutRow = workoutSummaryModal?.workout;
@@ -903,10 +739,9 @@ const [loadingAnalysis, setLoadingAnalysis] = useState(false);
       setMessage(error.message || "No se pudo guardar el resumen.");
       return;
     }
-    setWorkouts((prev) =>
-      prev.map((w) => (String(w.id) === String(workoutRow.id) ? normalizeWorkoutRow({ ...w, ...payload }) : w)),
-    );
-   // Análisis Claude
+    setWorkouts((prev) => prev.map((w) => (String(w.id) === String(workoutRow.id) ? normalizeWorkoutRow({ ...w, ...payload }) : w)));
+
+    // ── Análisis Claude API
     setLoadingAnalysis(true);
     setWorkoutAnalysis("");
     try {
@@ -915,11 +750,7 @@ const [loadingAnalysis, setLoadingAnalysis] = useState(false);
       const response = await fetch("/api/analyze-workout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          workout: updatedWorkout,
-          recentWorkouts: recentDone,
-          athleteName: athleteName,
-        }),
+        body: JSON.stringify({ workout: updatedWorkout, recentWorkouts: recentDone, athleteName }),
       });
       const data = await response.json();
       if (data?.analysis) setWorkoutAnalysis(data.analysis);
@@ -948,17 +779,10 @@ const [loadingAnalysis, setLoadingAnalysis] = useState(false);
           const { data: coachProf } = await supabase.from("profiles").select("fcm_token").eq("user_id", athleteInfo.coach_id).maybeSingle();
           const coachToken = coachProf?.fcm_token ?? null;
           if (coachToken && String(coachToken).trim() !== "") {
-            await sendChatPushNotification({
-              token: coachToken,
-              title: "✅ Workout completado",
-              body: `${athleteInfo.name || "Atleta"} completó: ${w.title || "Workout"}`,
-              data: { type: "workout_done", athlete_id: athleteInfo.id, workout_id: w.id },
-              logLabel: "workout done athlete→coach",
-            });
+            await sendChatPushNotification({ token: coachToken, title: "✅ Workout completado", body: `${athleteInfo.name || "Atleta"} completó: ${w.title || "Workout"}`, data: { type: "workout_done", athlete_id: athleteInfo.id, workout_id: w.id }, logLabel: "workout done athlete→coach" });
           }
         }
       } catch (_) {}
-      const doneAfterToggle = nextWorkouts.filter((x) => x.done);
       const { newAwards, snapshot, progress } = await evaluateAndAwardAthleteAchievements(athleteInfo.id);
       if (progress) void progress;
       setAchievementsCatalog(snapshot.achievements || []);
@@ -1012,7 +836,6 @@ const [loadingAnalysis, setLoadingAnalysis] = useState(false);
   const athleteFormaFatigaChronological = useMemo(() => [...athleteFormaFatigaPoints].reverse(), [athleteFormaFatigaPoints]);
   const athleteFormaFatigaStatus = useMemo(() => formaFatigaStatusFromPoint(athleteFormaFatigaPoints[0]), [athleteFormaFatigaPoints]);
   const athleteFormaFatigaTableRows = useMemo(() => athleteFormaFatigaPoints.slice(0, 4), [athleteFormaFatigaPoints]);
-
   const athleteLoadGarminMetrics = useMemo(() => computeGarminLoadMetricsFromWorkouts(workouts), [workouts]);
 
   const hasCoachPremiumIncluded = useMemo(() => {
@@ -1025,18 +848,7 @@ const [loadingAnalysis, setLoadingAnalysis] = useState(false);
     return true;
   }, [profile?.coach_id, profile?.user_id]);
 
-  const soloAthletePlanKey = useMemo(
-    () => normalizeSoloAthletePlanKey(
-      profile?.athlete_plan ?? athleteInfo?.athlete_plan,
-      profile?.subscription_period ?? athleteInfo?.subscription_period,
-    ),
-    [
-      profile?.athlete_plan,
-      athleteInfo?.athlete_plan,
-      profile?.subscription_period,
-      athleteInfo?.subscription_period,
-    ],
-  );
+  const soloAthletePlanKey = useMemo(() => normalizeSoloAthletePlanKey(profile?.athlete_plan ?? athleteInfo?.athlete_plan, profile?.subscription_period ?? athleteInfo?.subscription_period), [profile?.athlete_plan, athleteInfo?.athlete_plan, profile?.subscription_period, athleteInfo?.subscription_period]);
 
   const subscriptionExpiresFormatted = useMemo(() => {
     const raw = profile?.subscription_expires_at;
@@ -1056,169 +868,74 @@ const [loadingAnalysis, setLoadingAnalysis] = useState(false);
     try {
       const { data: sessData } = await supabase.auth.getSession();
       const accessToken = sessData?.session?.access_token;
-      if (!accessToken) {
-        setMessage("Tu sesión expiró. Vuelve a iniciar sesión.");
-        return;
-      }
+      if (!accessToken) { setMessage("Tu sesión expiró. Vuelve a iniciar sesión."); return; }
       const response = await fetch("/api/wompi-create-checkout", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify({
-          payer_type: "athlete_solo_subscription",
-          plan_key: "premium",
-          plan_period: period === "annual" ? "annual" : "monthly",
-          amount_cop: amountCop,
-        }),
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+        body: JSON.stringify({ payer_type: "athlete_solo_subscription", plan_key: "premium", plan_period: period === "annual" ? "annual" : "monthly", amount_cop: amountCop }),
       });
       const data = await response.json();
-      if (!response.ok) {
-        console.error("create-checkout error:", data);
-        setMessage(data?.error || "No se pudo iniciar el pago.");
-        return;
-      }
-      const params = new URLSearchParams({
-        "public-key": data.public_key,
-        currency: data.currency,
-        "amount-in-cents": String(data.amount_in_cents),
-        reference: data.reference,
-        "signature:integrity": data.signature,
-        "redirect-url": data.redirect_url,
-      });
+      if (!response.ok) { console.error("create-checkout error:", data); setMessage(data?.error || "No se pudo iniciar el pago."); return; }
+      const params = new URLSearchParams({ "public-key": data.public_key, currency: data.currency, "amount-in-cents": String(data.amount_in_cents), reference: data.reference, "signature:integrity": data.signature, "redirect-url": data.redirect_url });
       if (data.customer_email) params.set("customer-data:email", data.customer_email);
-      const checkoutUrl = `https://checkout.wompi.co/p/?${params.toString()}`;
-      window.location.href = checkoutUrl;
-    } catch (e) {
-      console.error("trySoloIndependentCheckout exception:", e);
-      setMessage("Error al iniciar el pago.");
-    }
+      window.location.href = `https://checkout.wompi.co/p/?${params.toString()}`;
+    } catch (e) { console.error("trySoloIndependentCheckout exception:", e); setMessage("Error al iniciar el pago."); }
   };
 
   const athleteName = profile?.name || athleteInfo?.name || "Atleta";
   const handleAthleteNavTabChange = (tabId) => {
     setAthleteChatOpen(false);
     setAthleteActiveTab(tabId);
-    if (typeof localStorage !== "undefined") {
-      localStorage.setItem(RAF_ATHLETE_NAV_TAB_KEY, tabId);
-    }
+    if (typeof localStorage !== "undefined") localStorage.setItem(RAF_ATHLETE_NAV_TAB_KEY, tabId);
   };
   const nextRaceText = athleteInfo?.next_race ? `🏁 ${getRaceCountdownText(athleteInfo.next_race)}` : "🏁 Próxima carrera · fecha pendiente";
-
   const coachIdForChat = athleteInfo?.coach_id || null;
 
   const loadAthleteChat = useCallback(async () => {
-    if (!athleteInfo?.id || !coachIdForChat) {
-      setAthleteChatMessages([]);
-      return;
-    }
-    const { data, error } = await supabase
-      .from("messages")
-      .select("*")
-      .eq("athlete_id", athleteInfo.id)
-      .eq("coach_id", coachIdForChat)
-      .order("created_at", { ascending: true });
-    if (error) {
-      console.error("Error cargando chat atleta:", error);
-      return;
-    }
+    if (!athleteInfo?.id || !coachIdForChat) { setAthleteChatMessages([]); return; }
+    const { data, error } = await supabase.from("messages").select("*").eq("athlete_id", athleteInfo.id).eq("coach_id", coachIdForChat).order("created_at", { ascending: true });
+    if (error) { console.error("Error cargando chat atleta:", error); return; }
     setAthleteChatMessages(data || []);
   }, [athleteInfo?.id, coachIdForChat]);
 
   const loadMyPayments = useCallback(async () => {
-    if (!athleteInfo?.id) {
-      setAthletePayments([]);
-      return;
-    }
+    if (!athleteInfo?.id) { setAthletePayments([]); return; }
     setLoadingAthletePayments(true);
-    const { data, error } = await supabase
-      .from("athlete_payments")
-      .select("*")
-      .eq("athlete_id", athleteInfo.id)
-      .order("payment_date", { ascending: false })
-      .order("created_at", { ascending: false });
+    const { data, error } = await supabase.from("athlete_payments").select("*").eq("athlete_id", athleteInfo.id).order("payment_date", { ascending: false }).order("created_at", { ascending: false });
     setLoadingAthletePayments(false);
-    if (error) {
-      console.error("Error cargando pagos del atleta:", error);
-      setAthletePayments([]);
-      return;
-    }
+    if (error) { console.error("Error cargando pagos del atleta:", error); setAthletePayments([]); return; }
     setAthletePayments(data || []);
   }, [athleteInfo?.id]);
 
   const loadStravaConnection = useCallback(async () => {
     const userId = profile?.user_id;
-    if (!userId) {
-      setStravaConnection(null);
-      return;
-    }
-    const { data, error } = await supabase
-      .from("strava_tokens")
-      .select("*")
-      .eq("user_id", userId)
-      .maybeSingle();
-    if (error) {
-      console.error("Error cargando conexión Strava:", error);
-      setStravaConnection(null);
-      return;
-    }
+    if (!userId) { setStravaConnection(null); return; }
+    const { data, error } = await supabase.from("strava_tokens").select("*").eq("user_id", userId).maybeSingle();
+    if (error) { console.error("Error cargando conexión Strava:", error); setStravaConnection(null); return; }
     setStravaConnection(data || null);
   }, [profile?.user_id]);
 
   const loadStravaActivities = useCallback(async () => {
     const userId = profile?.user_id;
-    if (!userId || !stravaConnection?.access_token) {
-      setStravaActivities([]);
-      return;
-    }
+    if (!userId || !stravaConnection?.access_token) { setStravaActivities([]); return; }
     setStravaLoadingActivities(true);
     try {
-      const { data, error } = await supabase
-        .from("strava_activities")
-        .select("*")
-        .eq("user_id", userId)
-        .order("start_date", { ascending: false })
-        .limit(10);
-      if (error) {
-        console.warn("Error cargando actividades Strava:", error);
-        setStravaActivities([]);
-        return;
-      }
+      const { data, error } = await supabase.from("strava_activities").select("*").eq("user_id", userId).order("start_date", { ascending: false }).limit(10);
+      if (error) { console.warn("Error cargando actividades Strava:", error); setStravaActivities([]); return; }
       setStravaActivities((data || []).map(normalizeStravaActivity).filter(Boolean));
-    } catch (e) {
-      console.error("Error consultando strava_activities:", e);
-      setStravaActivities([]);
-    } finally {
-      setStravaLoadingActivities(false);
-    }
+    } catch (e) { console.error("Error consultando strava_activities:", e); setStravaActivities([]); }
+    finally { setStravaLoadingActivities(false); }
   }, [profile?.user_id, stravaConnection?.access_token]);
 
-  useEffect(() => {
-    loadAthleteChat();
-  }, [loadAthleteChat]);
-
-  useEffect(() => {
-    loadMyPayments();
-  }, [loadMyPayments]);
-
-  useEffect(() => {
-    loadStravaConnection();
-  }, [loadStravaConnection]);
-
-  useEffect(() => {
-    loadStravaActivities();
-  }, [loadStravaActivities]);
+  useEffect(() => { loadAthleteChat(); }, [loadAthleteChat]);
+  useEffect(() => { loadMyPayments(); }, [loadMyPayments]);
+  useEffect(() => { loadStravaConnection(); }, [loadStravaConnection]);
+  useEffect(() => { loadStravaActivities(); }, [loadStravaActivities]);
 
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
-      if (!athleteInfo?.id) {
-        setAchievementsCatalog([]);
-        setEarnedAchievements([]);
-        setAchProgress(null);
-        return;
-      }
+      if (!athleteInfo?.id) { setAchievementsCatalog([]); setEarnedAchievements([]); setAchProgress(null); return; }
       const snapshot = await loadAthleteAchievementSnapshot(athleteInfo.id);
       if (cancelled) return;
       setAchievementsCatalog(snapshot.achievements || []);
@@ -1226,50 +943,25 @@ const [loadingAnalysis, setLoadingAnalysis] = useState(false);
       setAchProgress(computeAchievementProgress((workouts || []).filter((w) => w.done)));
     };
     load();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [athleteInfo?.id, workoutsAchSyncKey]);
 
-  useEffect(() => {
-    const t = setInterval(() => loadAthleteChat(), 10000);
-    return () => clearInterval(t);
-  }, [loadAthleteChat]);
-
-  useEffect(() => {
-    if (!athleteChatScrollRef.current) return;
-    athleteChatScrollRef.current.scrollTop = athleteChatScrollRef.current.scrollHeight;
-  }, [athleteChatMessages]);
+  useEffect(() => { const t = setInterval(() => loadAthleteChat(), 10000); return () => clearInterval(t); }, [loadAthleteChat]);
+  useEffect(() => { if (!athleteChatScrollRef.current) return; athleteChatScrollRef.current.scrollTop = athleteChatScrollRef.current.scrollHeight; }, [athleteChatMessages]);
 
   const sendAthleteChat = async () => {
     const body = athleteChatDraft.trim();
     if (!body || !athleteInfo?.id || !coachIdForChat || athleteChatSending) return;
     setAthleteChatSending(true);
     try {
-      const { error } = await supabase.from("messages").insert({
-        athlete_id: athleteInfo.id,
-        coach_id: coachIdForChat,
-        sender_role: "athlete",
-        body,
-      });
-      if (error) {
-        console.error(error);
-        setMessage(`Error al enviar mensaje: ${error.message}`);
-        return;
-      }
+      const { error } = await supabase.from("messages").insert({ athlete_id: athleteInfo.id, coach_id: coachIdForChat, sender_role: "athlete", body });
+      if (error) { console.error(error); setMessage(`Error al enviar mensaje: ${error.message}`); return; }
       const { data: coachProf } = await supabase.from("profiles").select("fcm_token").eq("user_id", coachIdForChat).maybeSingle();
       const recipientFcmToken = coachProf?.fcm_token ?? null;
-      await sendChatPushNotification({
-        token: recipientFcmToken,
-        title: `Tu atleta ${athleteName} respondió`,
-        body,
-        logLabel: "chat atleta→coach",
-      });
+      await sendChatPushNotification({ token: recipientFcmToken, title: `Tu atleta ${athleteName} respondió`, body, logLabel: "chat atleta→coach" });
       setAthleteChatDraft("");
       await loadAthleteChat();
-    } finally {
-      setAthleteChatSending(false);
-    }
+    } finally { setAthleteChatSending(false); }
   };
 
   const clearAthleteChat = async () => {
@@ -1278,168 +970,81 @@ const [loadingAnalysis, setLoadingAnalysis] = useState(false);
     setAthleteChatClearing(true);
     try {
       const { error } = await supabase.from("messages").delete().eq("athlete_id", athleteInfo.id).eq("coach_id", coachIdForChat);
-      if (error) {
-        console.error(error);
-        setMessage(error.message || "No se pudo limpiar el chat");
-        return;
-      }
+      if (error) { console.error(error); setMessage(error.message || "No se pudo limpiar el chat"); return; }
       setAthleteChatMessages([]);
-    } finally {
-      setAthleteChatClearing(false);
-    }
+    } finally { setAthleteChatClearing(false); }
   };
 
- const disconnectStrava = async () => {
-  const userId = profile?.user_id;
-  if (!userId) {
-    setMessage("No se pudo obtener tu usuario. Intenta recargar.");
-    return;
-  }
-  if (!window.confirm("¿Desconectar Strava de tu cuenta?")) return;
-  setStravaDisconnecting(true);
-  try {
-    const { error } = await supabase
-      .from("strava_tokens")
-      .delete()
-      .eq("user_id", userId);
-    if (error) {
-      console.error(error);
-      setMessage(error.message || "No se pudo desconectar Strava");
-      return;
-    }
-    setStravaConnection(null);
-    setStravaActivities([]);
-    setMessage("✅ Strava desconectado correctamente.");
-  } finally {
-    setStravaDisconnecting(false);
-  }
-};
+  const disconnectStrava = async () => {
+    const userId = profile?.user_id;
+    if (!userId) { setMessage("No se pudo obtener tu usuario. Intenta recargar."); return; }
+    if (!window.confirm("¿Desconectar Strava de tu cuenta?")) return;
+    setStravaDisconnecting(true);
+    try {
+      const { error } = await supabase.from("strava_tokens").delete().eq("user_id", userId);
+      if (error) { console.error(error); setMessage(error.message || "No se pudo desconectar Strava"); return; }
+      setStravaConnection(null); setStravaActivities([]);
+      setMessage("✅ Strava desconectado correctamente.");
+    } finally { setStravaDisconnecting(false); }
+  };
 
-  // ── FIX: Guarda flag en sessionStorage ANTES de redirigir
   const openAthleteStravaOAuth = useCallback(async () => {
     let userId = profile?.user_id || "";
-    if (!userId) {
-      const { data } = await supabase.auth.getUser();
-      userId = data?.user?.id || "";
-    }
-    if (!userId) {
-      setMessage("Tu sesión expiró. Vuelve a iniciar sesión.");
-      return;
-    }
-    const params = new URLSearchParams({
-      client_id: "218467",
-      redirect_uri: "https://www.runningapexflow.com/api/strava-callback",
-      response_type: "code",
-      approval_prompt: "force",
-      scope: "read,activity:read_all",
-      state: userId,
-    });
-    // Guardamos flag para mostrar notificación después del redirect
-    if (typeof sessionStorage !== "undefined") {
-      sessionStorage.setItem("raf_strava_success", "1");
-    }
+    if (!userId) { const { data } = await supabase.auth.getUser(); userId = data?.user?.id || ""; }
+    if (!userId) { setMessage("Tu sesión expiró. Vuelve a iniciar sesión."); return; }
+    const params = new URLSearchParams({ client_id: "218467", redirect_uri: "https://www.runningapexflow.com/api/strava-callback", response_type: "code", approval_prompt: "force", scope: "read,activity:read_all", state: userId });
+    if (typeof sessionStorage !== "undefined") sessionStorage.setItem("raf_strava_success", "1");
     window.location.href = `https://www.strava.com/oauth/authorize?${params.toString()}`;
   }, [profile?.user_id]);
 
   const setAthleteDeviceConnection = async (deviceValue) => {
     if (!athleteInfo?.id) return;
     const { error } = await supabase.from("athletes").update({ device: deviceValue }).eq("id", athleteInfo.id);
-    if (error) {
-      console.error("Error actualizando dispositivo atleta:", error);
-      setMessage(error.message || "No se pudo actualizar el dispositivo");
-      return;
-    }
+    if (error) { console.error("Error actualizando dispositivo atleta:", error); setMessage(error.message || "No se pudo actualizar el dispositivo"); return; }
     setAthleteInfo((prev) => (prev ? { ...prev, device: deviceValue } : prev));
   };
 
-  const athleteNeedsCoachLink =
-    Boolean(athleteInfo) &&
-    !athleteNotRegistered &&
-    (athleteInfo.coach_id == null || athleteInfo.coach_id === "");
+  const athleteNeedsCoachLink = Boolean(athleteInfo) && !athleteNotRegistered && (athleteInfo.coach_id == null || athleteInfo.coach_id === "");
 
   const linkAthleteToCoach = async (coachUserId) => {
     if (!athleteInfo?.id || !profile?.user_id || !coachUserId) return false;
     setMessage("");
     const { error: eAth } = await supabase.from("athletes").update({ coach_id: coachUserId }).eq("id", athleteInfo.id);
-    if (eAth) {
-      setMessage(eAth.message || "No se pudo vincular el coach.");
-      return false;
-    }
+    if (eAth) { setMessage(eAth.message || "No se pudo vincular el coach."); return false; }
     const { error: eProf } = await supabase.from("profiles").update({ coach_id: coachUserId }).eq("user_id", profile.user_id);
-    if (eProf) {
-      setMessage(eProf.message || "No se pudo actualizar tu perfil. Revisa permisos o contacta soporte.");
-      return false;
-    }
+    if (eProf) { setMessage(eProf.message || "No se pudo actualizar tu perfil. Revisa permisos o contacta soporte."); return false; }
     setAthleteInfo((prev) => (prev ? { ...prev, coach_id: coachUserId } : prev));
     setCoachAssignSuccess("¡Coach asignado exitosamente! Ya puedes ver tus entrenamientos.");
     setTimeout(() => setCoachAssignSuccess(""), 8000);
-    const { data: wRows, error: wErr } = await supabase
-      .from("workouts")
-      .select("*")
-      .eq("athlete_id", athleteInfo.id)
-      .order("scheduled_date", { ascending: true });
-    if (!wErr && wRows) {
-      setWorkouts((wRows || []).map(normalizeWorkoutRow));
-    }
+    const { data: wRows, error: wErr } = await supabase.from("workouts").select("*").eq("athlete_id", athleteInfo.id).order("scheduled_date", { ascending: true });
+    if (!wErr && wRows) setWorkouts((wRows || []).map(normalizeWorkoutRow));
     return true;
   };
 
   const connectCoachByCode = async () => {
     const code = findCoachCodeInput.trim();
-    if (!code) {
-      setMessage("Ingresa el código de tu coach.");
-      return;
-    }
+    if (!code) { setMessage("Ingresa el código de tu coach."); return; }
     setFindCoachCodeBusy(true);
     setMessage("");
     try {
       const coachId = await resolveCoachUserIdFromPublicCode(code);
-      if (!coachId) {
-        setMessage("No encontramos un coach con ese código.");
-        return;
-      }
+      if (!coachId) { setMessage("No encontramos un coach con ese código."); return; }
       await linkAthleteToCoach(coachId);
-    } finally {
-      setFindCoachCodeBusy(false);
-    }
+    } finally { setFindCoachCodeBusy(false); }
   };
 
   const selectPublicCoach = async (coachUserId) => {
     setSelectCoachBusyId(String(coachUserId));
     setMessage("");
-    try {
-      await linkAthleteToCoach(coachUserId);
-    } finally {
-      setSelectCoachBusyId("");
-    }
+    try { await linkAthleteToCoach(coachUserId); }
+    finally { setSelectCoachBusyId(""); }
   };
 
   const renderAthleteProgressCard = (marginBottom) => (
     <div style={{ ...S.card, marginBottom, overflow: "visible" }}>
       <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
-        {[
-          { id: "week", label: "Semana" },
-          { id: "month", label: "Mes" },
-          { id: "year", label: "Año" },
-        ].map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => setAthleteProgressTab(t.id)}
-            style={{
-              border: "1px solid #e2e8f0",
-              borderRadius: 8,
-              padding: "8px 12px",
-              background: athleteProgressTab === t.id ? "rgba(245,158,11,.14)" : "#fff",
-              fontWeight: athleteProgressTab === t.id ? 800 : 600,
-              cursor: "pointer",
-              fontFamily: "inherit",
-              fontSize: ".78em",
-              color: athleteProgressTab === t.id ? "#c2410c" : "#64748b",
-            }}
-          >
-            {t.label}
-          </button>
+        {[{ id: "week", label: "Semana" }, { id: "month", label: "Mes" }, { id: "year", label: "Año" }].map((t) => (
+          <button key={t.id} type="button" onClick={() => setAthleteProgressTab(t.id)} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 12px", background: athleteProgressTab === t.id ? "rgba(245,158,11,.14)" : "#fff", fontWeight: athleteProgressTab === t.id ? 800 : 600, cursor: "pointer", fontFamily: "inherit", fontSize: ".78em", color: athleteProgressTab === t.id ? "#c2410c" : "#64748b" }}>{t.label}</button>
         ))}
       </div>
       <div style={{ color: "#64748b", fontSize: ".8em", marginBottom: 12 }}>{athleteProgressStats.rangeLabel}</div>
@@ -1450,9 +1055,7 @@ const [loadingAnalysis, setLoadingAnalysis] = useState(false);
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
           <span style={{ color: "#64748b", fontSize: ".85em" }}>⏱️ Tiempo total</span>
-          <span style={{ fontSize: "1.35em", fontWeight: 900, color: "#22c55e", fontFamily: "monospace" }}>
-            {formatDurationMinutesTotal(athleteProgressStats.totalMin)}
-          </span>
+          <span style={{ fontSize: "1.35em", fontWeight: 900, color: "#22c55e", fontFamily: "monospace" }}>{formatDurationMinutesTotal(athleteProgressStats.totalMin)}</span>
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
           <span style={{ color: "#64748b", fontSize: ".85em" }}>🗓️ Sesiones completadas</span>
@@ -1462,16 +1065,16 @@ const [loadingAnalysis, setLoadingAnalysis] = useState(false);
     </div>
   );
 
+  const closeWorkoutModal = () => {
+    setWorkoutSummaryModal(null);
+    setWorkoutAnalysis("");
+    setLoadingAnalysis(false);
+  };
+
   return (
     <div style={{ ...S.page, paddingBottom: 96, overflow: "visible", position: "relative" }}>
       {message ? (
-        <div style={{
-          ...S.card,
-          border: `1px solid ${message.startsWith("✅") ? "rgba(34,197,94,.45)" : "rgba(239,68,68,.35)"}`,
-          background: message.startsWith("✅") ? "rgba(34,197,94,.1)" : "rgba(239,68,68,.08)",
-          color: message.startsWith("✅") ? "#166534" : "#fecaca",
-          marginBottom: 14
-        }}>
+        <div style={{ ...S.card, border: `1px solid ${message.startsWith("✅") ? "rgba(34,197,94,.45)" : "rgba(239,68,68,.35)"}`, background: message.startsWith("✅") ? "rgba(34,197,94,.1)" : "rgba(239,68,68,.08)", color: message.startsWith("✅") ? "#166534" : "#fecaca", marginBottom: 14 }}>
           {message}
         </div>
       ) : null}
@@ -1483,9 +1086,7 @@ const [loadingAnalysis, setLoadingAnalysis] = useState(false);
 
       <div style={{ ...S.card, marginBottom: 14 }}>
         <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 10 }}>
-          <div style={{ fontSize: ".65em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase" }}>
-            CALENDARIO · {calendarMonthLabel}
-          </div>
+          <div style={{ fontSize: ".65em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase" }}>CALENDARIO · {calendarMonthLabel}</div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <button type="button" onClick={() => setCalendarViewMonth(({ y, m }) => (m === 0 ? { y: y - 1, m: 11 } : { y, m: m - 1 }))} style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "6px 10px", color: "#0f172a", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".78em" }}>←</button>
             <button type="button" onClick={() => setCalendarViewMonth(({ y, m }) => (m === 11 ? { y: y + 1, m: 0 } : { y, m: m + 1 }))} style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "6px 10px", color: "#0f172a", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".78em" }}>→</button>
@@ -1515,51 +1116,13 @@ const [loadingAnalysis, setLoadingAnalysis] = useState(false);
           </div>
         )}
       </div>
+
       {athleteCalendarCtxMenu && ctxMenuAthleteWorkout ? (
-        <>
-          <div
-            ref={athleteCalendarCtxMenuRef}
-            style={{
-              position: "fixed",
-              left: athleteCalendarCtxMenu.x,
-              top: athleteCalendarCtxMenu.y,
-              zIndex: 10002,
-              minWidth: 240,
-              maxWidth: "min(92vw, 300px)",
-              background: "#ffffff",
-              borderRadius: 10,
-              boxShadow: "0 10px 40px rgba(15,23,42,.2)",
-              border: "1px solid #e2e8f0",
-              padding: 6,
-            }}
-          >
-            <button
-              type="button"
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={async (e) => {
-                e.stopPropagation();
-                await toggleDone(ctxMenuAthleteWorkout);
-                closeAthleteCalendarCtxMenu();
-              }}
-              style={{
-                display: "block",
-                width: "100%",
-                textAlign: "left",
-                background: "transparent",
-                border: "none",
-                borderRadius: 8,
-                padding: "10px 12px",
-                color: "#0f172a",
-                fontWeight: 600,
-                cursor: "pointer",
-                fontFamily: "inherit",
-                fontSize: ".82em",
-              }}
-            >
-              {ctxMenuAthleteWorkout.done ? "✓ Marcar pendiente" : "✓ Marcar hecho"}
-            </button>
-          </div>
-        </>
+        <div ref={athleteCalendarCtxMenuRef} style={{ position: "fixed", left: athleteCalendarCtxMenu.x, top: athleteCalendarCtxMenu.y, zIndex: 10002, minWidth: 240, maxWidth: "min(92vw, 300px)", background: "#ffffff", borderRadius: 10, boxShadow: "0 10px 40px rgba(15,23,42,.2)", border: "1px solid #e2e8f0", padding: 6 }}>
+          <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={async (e) => { e.stopPropagation(); await toggleDone(ctxMenuAthleteWorkout); closeAthleteCalendarCtxMenu(); }} style={{ display: "block", width: "100%", textAlign: "left", background: "transparent", border: "none", borderRadius: 8, padding: "10px 12px", color: "#0f172a", fontWeight: 600, cursor: "pointer", fontFamily: "inherit", fontSize: ".82em" }}>
+            {ctxMenuAthleteWorkout.done ? "✓ Marcar pendiente" : "✓ Marcar hecho"}
+          </button>
+        </div>
       ) : null}
 
       <div style={{ ...S.card, marginBottom: 18 }}>
@@ -1577,32 +1140,9 @@ const [loadingAnalysis, setLoadingAnalysis] = useState(false);
         </div>
       </div>
 
-      <button
-        type="button"
-        onClick={() => setAthleteChatOpen(true)}
-        style={{ position: "fixed", right: 18, bottom: 104, width: 52, height: 52, borderRadius: "50%", border: "none", background: "linear-gradient(135deg,#f59e0b,#ea580c)", color: "#fff", fontSize: "1.3em", boxShadow: "0 8px 20px rgba(234,88,12,.35)", cursor: "pointer", zIndex: 9000 }}
-      >
-        💬
-      </button>
+      <button type="button" onClick={() => setAthleteChatOpen(true)} style={{ position: "fixed", right: 18, bottom: 104, width: 52, height: 52, borderRadius: "50%", border: "none", background: "linear-gradient(135deg,#f59e0b,#ea580c)", color: "#fff", fontSize: "1.3em", boxShadow: "0 8px 20px rgba(234,88,12,.35)", cursor: "pointer", zIndex: 9000 }}>💬</button>
 
-      <nav
-        aria-label="Navegación atleta"
-        style={{
-          position: "fixed",
-          left: 0,
-          right: 0,
-          bottom: 0,
-          zIndex: 9999,
-          display: "flex",
-          flexDirection: "row",
-          justifyContent: "space-around",
-          alignItems: "center",
-          background: "white",
-          borderTop: "1px solid #e2e8f0",
-          padding: "8px 0 12px 0",
-          height: "60px",
-        }}
-      >
+      <nav aria-label="Navegación atleta" style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 9999, display: "flex", flexDirection: "row", justifyContent: "space-around", alignItems: "center", background: "white", borderTop: "1px solid #e2e8f0", padding: "8px 0 12px 0", height: "60px" }}>
         <button type="button" style={{ minWidth: 60, color: athleteActiveTab === "home" ? "#c2410c" : "#64748b", background: athleteActiveTab === "home" ? "rgba(245,158,11,.14)" : "transparent", fontWeight: athleteActiveTab === "home" ? 800 : 600 }} onClick={() => handleAthleteNavTabChange("home")}><span className="pf-bnav-icon">🏠</span><span style={{ fontSize: "10px" }}>Inicio</span></button>
         <button type="button" style={{ minWidth: 60, color: athleteActiveTab === "marketplace" ? "#c2410c" : "#64748b", background: athleteActiveTab === "marketplace" ? "rgba(245,158,11,.14)" : "transparent", fontWeight: athleteActiveTab === "marketplace" ? 800 : 600 }} onClick={() => handleAthleteNavTabChange("marketplace")}><span className="pf-bnav-icon">🛒</span><span style={{ fontSize: "10px" }}>Market</span></button>
         <button type="button" style={{ minWidth: 60, color: athleteActiveTab === "challenges" ? "#c2410c" : "#64748b", background: athleteActiveTab === "challenges" ? "rgba(245,158,11,.14)" : "transparent", fontWeight: athleteActiveTab === "challenges" ? 800 : 600 }} onClick={() => handleAthleteNavTabChange("challenges")}><span className="pf-bnav-icon">🏆</span><span style={{ fontSize: "10px" }}>Retos</span></button>
@@ -1622,30 +1162,13 @@ const [loadingAnalysis, setLoadingAnalysis] = useState(false);
 
             {athleteActiveTab === "marketplace" ? (
               <Suspense fallback={<div>Cargando...</div>}>
-                <MarketplaceHub
-                  profileRole="athlete"
-                  currentUserId={profile?.user_id ?? null}
-                  coachUserId={null}
-                  notify={notifyCallback}
-                  styles={styles}
-                  MarketplacePlanWorkoutsAccordion={MarketplacePlanWorkoutsAccordion}
-                />
+                <MarketplaceHub profileRole="athlete" currentUserId={profile?.user_id ?? null} coachUserId={null} notify={notifyCallback} styles={styles} MarketplacePlanWorkoutsAccordion={MarketplacePlanWorkoutsAccordion} />
               </Suspense>
             ) : null}
 
             {athleteActiveTab === "challenges" ? (
               <Suspense fallback={<div style={{ padding: 20 }}>Cargando retos...</div>}>
-                <ChallengesHub
-                  profileRole="athlete"
-                  currentUserId={profile?.user_id ?? null}
-                  athleteId={athleteInfo?.id ?? null}
-                  isAthlete
-                  coachAthletes={EMPTY_ARRAY}
-                  workouts={workouts}
-                  notify={notifyCallback}
-                  styles={styles}
-                  normalizeWorkoutRow={normalizeWorkoutRowStable}
-                />
+                <ChallengesHub profileRole="athlete" currentUserId={profile?.user_id ?? null} athleteId={athleteInfo?.id ?? null} isAthlete coachAthletes={EMPTY_ARRAY} workouts={workouts} notify={notifyCallback} styles={styles} normalizeWorkoutRow={normalizeWorkoutRowStable} />
               </Suspense>
             ) : null}
 
@@ -1657,16 +1180,7 @@ const [loadingAnalysis, setLoadingAnalysis] = useState(false);
               ) : (
                 <div style={{ ...S.card, textAlign: "center" }}>
                   <p style={{ color: "#64748b" }}>La evaluación VDOT requiere Plan Premium Atleta.</p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setAthleteProfileTab("pagos");
-                      handleAthleteNavTabChange("profile");
-                    }}
-                    style={{ background: "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 10, padding: "10px 20px", color: "#fff", fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}
-                  >
-                    Ir a Pagos para suscribirme
-                  </button>
+                  <button type="button" onClick={() => { setAthleteProfileTab("pagos"); handleAthleteNavTabChange("profile"); }} style={{ background: "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 10, padding: "10px 20px", color: "#fff", fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>Ir a Pagos para suscribirme</button>
                 </div>
               )
             ) : null}
@@ -1679,6 +1193,7 @@ const [loadingAnalysis, setLoadingAnalysis] = useState(false);
                   <button type="button" onClick={() => setAthleteProfileTab("config")} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", background: athleteProfileTab === "config" ? "rgba(245,158,11,.14)" : "#fff", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>⚙️ Config</button>
                   <button type="button" onClick={() => setAthleteProfileTab("pagos")} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", background: athleteProfileTab === "pagos" ? "rgba(245,158,11,.14)" : "#fff", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>💳 Pagos</button>
                 </div>
+
                 {athleteProfileTab === "logros" ? (
                   <div style={{ ...S.card }}>
                     <div style={{ fontSize: ".72em", marginBottom: 10, color: "#475569", textTransform: "uppercase", letterSpacing: ".13em" }}>MIS LOGROS</div>
@@ -1691,19 +1206,12 @@ const [loadingAnalysis, setLoadingAnalysis] = useState(false);
                         const earnedByProgress = currentValue >= a.target;
                         const earned = Boolean(awardedAt || earnedByProgress);
                         const formattedDate = awardedAt ? new Date(awardedAt).toLocaleDateString("es-CO") : "Sin fecha registrada";
-                        const currentLabel =
-                          a.metric === "totalKm"
-                            ? `${currentValue.toFixed(1)} / ${a.target} km`
-                            : `${Math.round(currentValue)} / ${a.target}`;
+                        const currentLabel = a.metric === "totalKm" ? `${currentValue.toFixed(1)} / ${a.target} km` : `${Math.round(currentValue)} / ${a.target}`;
                         return (
                           <div key={a.id} style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: "14px 12px", background: earned ? "linear-gradient(145deg,#fffbeb,#fff7ed)" : "#f8fafc" }}>
                             <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
                               <div style={{ fontSize: "1.9rem", lineHeight: 1 }}>{a.icon}</div>
-                              {earned ? (
-                                <span style={{ fontSize: ".66em", fontWeight: 800, color: "#166534", background: "#dcfce7", border: "1px solid #86efac", borderRadius: 999, padding: "4px 8px", whiteSpace: "nowrap" }}>✅ Ganado</span>
-                              ) : (
-                                <span style={{ fontSize: ".66em", fontWeight: 700, color: "#64748b", background: "#e2e8f0", border: "1px solid #cbd5e1", borderRadius: 999, padding: "4px 8px", whiteSpace: "nowrap" }}>🔒 Bloqueado</span>
-                              )}
+                              {earned ? <span style={{ fontSize: ".66em", fontWeight: 800, color: "#166534", background: "#dcfce7", border: "1px solid #86efac", borderRadius: 999, padding: "4px 8px", whiteSpace: "nowrap" }}>✅ Ganado</span> : <span style={{ fontSize: ".66em", fontWeight: 700, color: "#64748b", background: "#e2e8f0", border: "1px solid #cbd5e1", borderRadius: 999, padding: "4px 8px", whiteSpace: "nowrap" }}>🔒 Bloqueado</span>}
                             </div>
                             <div style={{ fontSize: ".87em", fontWeight: 900, marginTop: 8, color: "#0f172a" }}>{a.name}</div>
                             <div style={{ fontSize: ".77em", color: "#475569", marginTop: 6, lineHeight: 1.45 }}>{a.requirement}</div>
@@ -1716,8 +1224,7 @@ const [loadingAnalysis, setLoadingAnalysis] = useState(false);
                                   <div style={{ width: `${progressPct}%`, height: "100%", background: "linear-gradient(90deg,#f59e0b,#f97316)" }} />
                                 </div>
                                 <div style={{ marginTop: 5, fontSize: ".7em", color: "#64748b", display: "flex", justifyContent: "space-between" }}>
-                                  <span>{currentLabel}</span>
-                                  <span>{progressPct}%</span>
+                                  <span>{currentLabel}</span><span>{progressPct}%</span>
                                 </div>
                               </div>
                             )}
@@ -1727,13 +1234,12 @@ const [loadingAnalysis, setLoadingAnalysis] = useState(false);
                     </div>
                   </div>
                 ) : null}
+
                 {athleteProfileTab === "forma" ? (
                   hasPremiumAccess ? (
                     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                       <div style={{ ...S.card }}>
-                        <div style={{ fontSize: ".72em", marginBottom: 12, color: "#475569", textTransform: "uppercase", letterSpacing: ".13em" }}>
-                          Carga por volumen (completados · 4 semanas)
-                        </div>
+                        <div style={{ fontSize: ".72em", marginBottom: 12, color: "#475569", textTransform: "uppercase", letterSpacing: ".13em" }}>Carga por volumen (completados · 4 semanas)</div>
                         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(168px, 1fr))", gap: 12 }}>
                           <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: "14px 12px", background: "#fafafa" }}>
                             <div style={{ fontSize: ".72em", color: "#64748b", fontWeight: 700, marginBottom: 6 }}>Estado de entrenamiento</div>
@@ -1751,21 +1257,18 @@ const [loadingAnalysis, setLoadingAnalysis] = useState(false);
                       </div>
                       <div style={{ ...S.card }}>
                         <div style={{ fontSize: ".72em", marginBottom: 8, color: "#475569", textTransform: "uppercase", letterSpacing: ".13em" }}>RPE × km (tendencia)</div>
-                        <div style={{ marginBottom: 12, fontWeight: 800, color: athleteFormaFatigaStatus.kind === "forma" ? "#22c55e" : athleteFormaFatigaStatus.kind === "fatiga" ? "#f87171" : "#94a3b8" }}>
-                          Estado (RPE): {athleteFormaFatigaStatus.label}
-                        </div>
+                        <div style={{ marginBottom: 12, fontWeight: 800, color: athleteFormaFatigaStatus.kind === "forma" ? "#22c55e" : athleteFormaFatigaStatus.kind === "fatiga" ? "#f87171" : "#94a3b8" }}>Estado (RPE): {athleteFormaFatigaStatus.label}</div>
                         <FormaFatigaLineChart chronological={athleteFormaFatigaChronological} />
                       </div>
                     </div>
                   ) : (
                     <div style={{ ...S.card, textAlign: "center" }}>
                       <p style={{ color: "#64748b" }}>Esta sección requiere Plan Premium Atleta.</p>
-                      <button type="button" onClick={() => { setAthleteProfileTab("pagos"); handleAthleteNavTabChange("profile"); }} style={{ background: "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 10, padding: "10px 20px", color: "#fff", fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>
-                        Ir a Pagos para suscribirme
-                      </button>
+                      <button type="button" onClick={() => { setAthleteProfileTab("pagos"); handleAthleteNavTabChange("profile"); }} style={{ background: "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 10, padding: "10px 20px", color: "#fff", fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>Ir a Pagos para suscribirme</button>
                     </div>
                   )
                 ) : null}
+
                 {athleteProfileTab === "config" ? (
                   <div style={{ ...S.card }}>
                     <div style={{ fontSize: ".72em", marginBottom: 10, color: "#475569", textTransform: "uppercase", letterSpacing: ".13em" }}>MI CONFIGURACIÓN</div>
@@ -1776,70 +1279,44 @@ const [loadingAnalysis, setLoadingAnalysis] = useState(false);
                           ✅ Strava conectado · ID {stravaConnection.athlete_strava_id}
                         </div>
                         <br />
-                        <button
-                          type="button"
-                          onClick={disconnectStrava}
-                          disabled={stravaDisconnecting}
-                          style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "8px 12px", color: "#b91c1c", fontWeight: 700, fontFamily: "inherit", cursor: "pointer", fontSize: ".82em" }}
-                        >
+                        <button type="button" onClick={disconnectStrava} disabled={stravaDisconnecting} style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "8px 12px", color: "#b91c1c", fontWeight: 700, fontFamily: "inherit", cursor: "pointer", fontSize: ".82em" }}>
                           {stravaDisconnecting ? "Desconectando…" : "Desconectar Strava"}
                         </button>
                       </div>
                     ) : (
-                      <button
-                        type="button"
-                        onClick={openAthleteStravaOAuth}
-                        style={{ background: "linear-gradient(135deg,#ea580c,#f97316)", border: "none", borderRadius: 8, padding: "8px 12px", color: "#fff", fontWeight: 800, fontFamily: "inherit", cursor: "pointer" }}
-                      >
-                        Conectar Strava
-                      </button>
+                      <button type="button" onClick={openAthleteStravaOAuth} style={{ background: "linear-gradient(135deg,#ea580c,#f97316)", border: "none", borderRadius: 8, padding: "8px 12px", color: "#fff", fontWeight: 800, fontFamily: "inherit", cursor: "pointer" }}>Conectar Strava</button>
                     )}
                   </div>
                 ) : null}
+
                 {athleteProfileTab === "pagos" ? (
                   <>
                     {hasCoachPremiumIncluded ? (
                       <div style={{ ...S.card, marginBottom: 14 }}>
                         <div style={{ fontSize: ".72em", marginBottom: 12, color: "#475569", textTransform: "uppercase", letterSpacing: ".13em" }}>Tu acceso</div>
-                        <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "rgba(34,197,94,.14)", border: "1px solid rgba(34,197,94,.45)", color: "#166534", borderRadius: 10, padding: "12px 16px", fontWeight: 800, fontSize: ".9em", lineHeight: 1.35 }}>
-                          ✅ Plan Premium — Incluido con tu coach
-                        </div>
-                        <p style={{ margin: "14px 0 0", color: "#64748b", fontSize: ".84em", lineHeight: 1.5 }}>
-                          No necesitas contratar un plan por separado: tu suscripción va ligada al coach que te entrena.
-                        </p>
+                        <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "rgba(34,197,94,.14)", border: "1px solid rgba(34,197,94,.45)", color: "#166534", borderRadius: 10, padding: "12px 16px", fontWeight: 800, fontSize: ".9em", lineHeight: 1.35 }}>✅ Plan Premium — Incluido con tu coach</div>
+                        <p style={{ margin: "14px 0 0", color: "#64748b", fontSize: ".84em", lineHeight: 1.5 }}>No necesitas contratar un plan por separado: tu suscripción va ligada al coach que te entrena.</p>
                       </div>
                     ) : (
                       <div style={{ ...S.card, marginBottom: 14 }}>
                         <div style={{ fontSize: ".72em", marginBottom: 10, color: "#475569", textTransform: "uppercase", letterSpacing: ".13em" }}>Tu plan</div>
-                        <div style={{ fontWeight: 800, fontSize: ".95em", color: "#0f172a", marginBottom: 4 }}>
-                          Plan actual: {soloAthletePlanKey === "monthly" ? "Mensual" : soloAthletePlanKey === "annual" ? "Anual" : "Gratis (free)"}
-                        </div>
-                        <div style={{ color: "#64748b", fontSize: ".82em", marginBottom: 16, lineHeight: 1.45 }}>
-                          Atleta independiente — gestiona tu suscripción aquí.
-                        </div>
+                        <div style={{ fontWeight: 800, fontSize: ".95em", color: "#0f172a", marginBottom: 4 }}>Plan actual: {soloAthletePlanKey === "monthly" ? "Mensual" : soloAthletePlanKey === "annual" ? "Anual" : "Gratis (free)"}</div>
+                        <div style={{ color: "#64748b", fontSize: ".82em", marginBottom: 16, lineHeight: 1.45 }}>Atleta independiente — gestiona tu suscripción aquí.</div>
                         {soloAthletePlanKey === "free" ? (
                           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                             <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: "14px 16px", display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 12, background: "#fafafa" }}>
-                              <div>
-                                <div style={{ fontWeight: 800, color: "#0f172a" }}>Mensual</div>
-                                <div style={{ fontSize: ".92em", color: "#b45309", fontWeight: 800, marginTop: 6 }}>${Number(SOLO_PLAN_MONTHLY_COP).toLocaleString("es-CO")} COP/mes</div>
-                              </div>
+                              <div><div style={{ fontWeight: 800, color: "#0f172a" }}>Mensual</div><div style={{ fontSize: ".92em", color: "#b45309", fontWeight: 800, marginTop: 6 }}>${Number(SOLO_PLAN_MONTHLY_COP).toLocaleString("es-CO")} COP/mes</div></div>
                               <button type="button" onClick={() => trySoloIndependentCheckout("monthly")} style={{ padding: "10px 18px", borderRadius: 10, border: "none", background: "linear-gradient(135deg,#0d9488,#14b8a6)", color: "#fff", fontWeight: 800, fontSize: ".84em", cursor: "pointer", fontFamily: "inherit" }}>Suscribirse</button>
                             </div>
                             <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: "14px 16px", display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 12, background: "#fafafa" }}>
-                              <div>
-                                <div style={{ fontWeight: 800, color: "#0f172a" }}>Anual <span style={{ fontSize: ".72em", fontWeight: 800, color: "#15803d", background: "rgba(34,197,94,.18)", border: "1px solid rgba(34,197,94,.4)", borderRadius: 8, padding: "4px 10px" }}>Ahorra $50.000</span></div>
-                                <div style={{ fontSize: ".92em", color: "#b45309", fontWeight: 800, marginTop: 6 }}>${Number(SOLO_PLAN_ANNUAL_COP).toLocaleString("es-CO")} COP/año</div>
-                              </div>
+                              <div><div style={{ fontWeight: 800, color: "#0f172a" }}>Anual <span style={{ fontSize: ".72em", fontWeight: 800, color: "#15803d", background: "rgba(34,197,94,.18)", border: "1px solid rgba(34,197,94,.4)", borderRadius: 8, padding: "4px 10px" }}>Ahorra $50.000</span></div><div style={{ fontSize: ".92em", color: "#b45309", fontWeight: 800, marginTop: 6 }}>${Number(SOLO_PLAN_ANNUAL_COP).toLocaleString("es-CO")} COP/año</div></div>
                               <button type="button" onClick={() => trySoloIndependentCheckout("annual")} style={{ padding: "10px 18px", borderRadius: 10, border: "none", background: "linear-gradient(135deg,#0d9488,#14b8a6)", color: "#fff", fontWeight: 800, fontSize: ".84em", cursor: "pointer", fontFamily: "inherit" }}>Suscribirse</button>
                             </div>
                           </div>
                         ) : (
                           <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: "14px 16px", background: "#f8fafc" }}>
                             <div style={{ fontWeight: 800, color: "#0f172a", marginBottom: 8 }}>Plan activo: {soloAthletePlanKey === "monthly" ? "Mensual" : "Anual"}</div>
-                            <div style={{ color: "#64748b", fontSize: ".86em", marginBottom: 14 }}>
-                              Fecha de vencimiento: <strong style={{ color: "#0f172a" }}>{subscriptionExpiresFormatted || "Sin fecha registrada"}</strong>
-                            </div>
+                            <div style={{ color: "#64748b", fontSize: ".86em", marginBottom: 14 }}>Fecha de vencimiento: <strong style={{ color: "#0f172a" }}>{subscriptionExpiresFormatted || "Sin fecha registrada"}</strong></div>
                             <button type="button" onClick={() => trySoloIndependentCheckout(soloAthletePlanKey)} style={{ padding: "10px 18px", borderRadius: 10, border: "none", background: "linear-gradient(135deg,#b45309,#f59e0b)", color: "#fff", fontWeight: 800, fontSize: ".84em", cursor: "pointer", fontFamily: "inherit" }}>Renovar</button>
                           </div>
                         )}
@@ -1847,11 +1324,7 @@ const [loadingAnalysis, setLoadingAnalysis] = useState(false);
                     )}
                     <div style={{ ...S.card }}>
                       <div style={{ fontSize: ".72em", marginBottom: 10, color: "#475569", textTransform: "uppercase", letterSpacing: ".13em" }}>Mis Pagos</div>
-                      {loadingAthletePayments ? (
-                        <div style={{ color: "#64748b", fontSize: ".84em" }}>Cargando pagos…</div>
-                      ) : athletePayments.length === 0 ? (
-                        <div style={{ color: "#64748b", fontSize: ".84em" }}>Tu coach aún no ha registrado pagos.</div>
-                      ) : (
+                      {loadingAthletePayments ? <div style={{ color: "#64748b", fontSize: ".84em" }}>Cargando pagos…</div> : athletePayments.length === 0 ? <div style={{ color: "#64748b", fontSize: ".84em" }}>Tu coach aún no ha registrado pagos.</div> : (
                         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                           {athletePayments.map((p) => (
                             <div key={p.id} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: "10px 12px", background: "#f8fafc" }}>
@@ -1864,24 +1337,18 @@ const [loadingAnalysis, setLoadingAnalysis] = useState(false);
                     </div>
                   </>
                 ) : null}
-                <button
-                  type="button"
-                  onClick={async () => {
-                    if (typeof localStorage !== "undefined") {
-                      localStorage.removeItem("raf_athlete_tab");
-                      localStorage.removeItem("raf_athlete_eval_open");
-                      localStorage.removeItem("raf_athlete_profile_tab");
-                      localStorage.removeItem("raf_athlete_progress_tab");
-                      localStorage.removeItem("raf_lastView");
-                    }
-                    const { error } = await supabase.auth.signOut();
-                    if (error) {
-                      console.error("Error al cerrar sesión:", error);
-                      alert(`Error al cerrar sesión: ${error.message}`);
-                    }
-                  }}
-                  style={{ width: "100%", marginTop: 12, background: "rgba(239,68,68,.08)", border: "1px solid rgba(239,68,68,.25)", borderRadius: 8, padding: "10px 14px", color: "#ef4444", cursor: "pointer", fontFamily: "inherit", fontSize: ".82em", fontWeight: 700, whiteSpace: "nowrap" }}
-                >
+
+                <button type="button" onClick={async () => {
+                  if (typeof localStorage !== "undefined") {
+                    localStorage.removeItem("raf_athlete_tab");
+                    localStorage.removeItem("raf_athlete_eval_open");
+                    localStorage.removeItem("raf_athlete_profile_tab");
+                    localStorage.removeItem("raf_athlete_progress_tab");
+                    localStorage.removeItem("raf_lastView");
+                  }
+                  const { error } = await supabase.auth.signOut();
+                  if (error) { console.error("Error al cerrar sesión:", error); alert(`Error al cerrar sesión: ${error.message}`); }
+                }} style={{ width: "100%", marginTop: 12, background: "rgba(239,68,68,.08)", border: "1px solid rgba(239,68,68,.25)", borderRadius: 8, padding: "10px 14px", color: "#ef4444", cursor: "pointer", fontFamily: "inherit", fontSize: ".82em", fontWeight: 700, whiteSpace: "nowrap" }}>
                   Cerrar sesión
                 </button>
               </div>
@@ -1902,7 +1369,10 @@ const [loadingAnalysis, setLoadingAnalysis] = useState(false);
             ) : (
               <>
                 <div ref={athleteChatScrollRef} style={{ maxHeight: 420, overflowY: "auto", padding: "10px 8px", borderRadius: 10, background: "#f1f5f9", border: "1px solid #e2e8f0", marginBottom: 10, display: "flex", flexDirection: "column", gap: 8 }}>
-                  {athleteChatMessages.length === 0 ? <div style={{ color: "#64748b", fontSize: ".8em", textAlign: "center", padding: "12px 0" }}>Sin mensajes aún</div> : athleteChatMessages.map((m) => { const isCoach = m.sender_role === "coach"; return <div key={m.id} style={{ alignSelf: isCoach ? "flex-end" : "flex-start", maxWidth: "88%", padding: "8px 12px", borderRadius: 10, background: isCoach ? "linear-gradient(135deg, rgba(180,83,9,.85), rgba(245,158,11,.75))" : "#eff6ff", border: `1px solid ${isCoach ? "rgba(245,158,11,.5)" : "rgba(59,130,246,.35)"}`, color: isCoach ? "#f8fafc" : "#0f172a", fontSize: ".82em", lineHeight: 1.45 }}><div>{m.body}</div><div style={{ fontSize: ".65em", color: isCoach ? "rgba(255,255,255,.85)" : "#64748b", marginTop: 6 }}>{formatMessageTimestamp(m.created_at)}</div></div>; })}
+                  {athleteChatMessages.length === 0 ? <div style={{ color: "#64748b", fontSize: ".8em", textAlign: "center", padding: "12px 0" }}>Sin mensajes aún</div> : athleteChatMessages.map((m) => {
+                    const isCoach = m.sender_role === "coach";
+                    return <div key={m.id} style={{ alignSelf: isCoach ? "flex-end" : "flex-start", maxWidth: "88%", padding: "8px 12px", borderRadius: 10, background: isCoach ? "linear-gradient(135deg, rgba(180,83,9,.85), rgba(245,158,11,.75))" : "#eff6ff", border: `1px solid ${isCoach ? "rgba(245,158,11,.5)" : "rgba(59,130,246,.35)"}`, color: isCoach ? "#f8fafc" : "#0f172a", fontSize: ".82em", lineHeight: 1.45 }}><div>{m.body}</div><div style={{ fontSize: ".65em", color: isCoach ? "rgba(255,255,255,.85)" : "#64748b", marginTop: 6 }}>{formatMessageTimestamp(m.created_at)}</div></div>;
+                  })}
                 </div>
                 <div style={{ display: "flex", gap: 8 }}>
                   <input type="text" value={athleteChatDraft} onChange={(e) => setAthleteChatDraft(e.target.value)} onKeyDown={(e) => e.key === "Enter" && sendAthleteChat()} placeholder="Escribe un mensaje a tu coach…" style={{ flex: 1, background: "#f1f5f9", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", color: "#0f172a", fontFamily: "inherit", fontSize: ".85em" }} />
@@ -1914,13 +1384,15 @@ const [loadingAnalysis, setLoadingAnalysis] = useState(false);
         </div>
       ) : null}
 
+      {/* ── Modal resumen workout + análisis Claude */}
       {workoutSummaryModal && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.55)", zIndex: 10001, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-          <div style={{ ...S.card, width: "100%", maxWidth: 520, margin: 0 }}>
+          <div style={{ ...S.card, width: "100%", maxWidth: 520, margin: 0, maxHeight: "90vh", overflowY: "auto" }}>
             <div style={{ fontSize: "1.1em", fontWeight: 900, color: "#0f172a", marginBottom: 6 }}>Resumen del entrenamiento</div>
             <div style={{ color: "#64748b", fontSize: ".84em", marginBottom: 12 }}>
               {(workoutSummaryModal.workout?.title || "Workout")} · {workoutSummaryModal.workout?.scheduled_date || "—"}
             </div>
+
             {workoutSummaryModal.stravaConnected ? (
               workoutSummaryModal.stravaActivityPending ? (
                 <div style={{ color: "#64748b", fontSize: ".86em", marginBottom: 14 }}>Cargando datos de Strava…</div>
@@ -1935,6 +1407,7 @@ const [loadingAnalysis, setLoadingAnalysis] = useState(false);
                 <div style={{ color: "#64748b", fontSize: ".86em", marginBottom: 14 }}>No encontramos una actividad de Strava para ese día.</div>
               )
             ) : null}
+
             <div style={{ display: "grid", gap: 10, marginBottom: 14 }}>
               {!workoutSummaryModal.stravaConnected ? (
                 <>
@@ -1947,18 +1420,24 @@ const [loadingAnalysis, setLoadingAnalysis] = useState(false);
                 </>
               ) : null}
               <select value={manualSummaryForm.feeling} onChange={(e) => setManualSummaryForm((f) => ({ ...f, feeling: e.target.value }))} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit", background: "#fff" }}>
-                {["😴 Muy cansado", "😕 Cansado", "😐 Normal", "🙂 Bien", "💪 Excelente"].map((opt) => (
-                  <option key={opt} value={opt}>{opt}</option>
-                ))}
+                {["😴 Muy cansado", "😕 Cansado", "😐 Normal", "🙂 Bien", "💪 Excelente"].map((opt) => <option key={opt} value={opt}>{opt}</option>)}
               </select>
               <textarea rows={3} value={manualSummaryForm.notes} onChange={(e) => setManualSummaryForm((f) => ({ ...f, notes: e.target.value }))} placeholder="Describe tu entrenamiento..." style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit", boxSizing: "border-box" }} />
-              {(loadingAnalysis || workoutAnalysis) ? (
-              <div style={{ marginTop: 14, padding: "14px 16px", borderRadius: 12, background: "linear-gradient(145deg,#fffbeb,#fff7ed)", border: "1px solid rgba(245,158,11,.4)" }}>
+              <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                <button type="button" disabled={manualSummarySaving || loadingAnalysis} onClick={saveManualWorkoutSummary} style={{ background: (manualSummarySaving || loadingAnalysis) ? "#cbd5e1" : "linear-gradient(135deg,#0d9488,#14b8a6)", border: "none", borderRadius: 8, padding: "8px 12px", color: "#fff", fontWeight: 800, fontFamily: "inherit", cursor: (manualSummarySaving || loadingAnalysis) ? "not-allowed" : "pointer", fontSize: ".78em" }}>
+                  {manualSummarySaving ? "Guardando…" : loadingAnalysis ? "Analizando…" : workoutSummaryModal.stravaConnected ? "Guardar notas" : "Guardar registro"}
+                </button>
+              </div>
+            </div>
+
+            {/* ── Análisis Claude */}
+            {(loadingAnalysis || workoutAnalysis) ? (
+              <div style={{ marginBottom: 14, padding: "14px 16px", borderRadius: 12, background: "linear-gradient(145deg,#fffbeb,#fff7ed)", border: "1px solid rgba(245,158,11,.4)" }}>
                 <div style={{ fontSize: ".75em", fontWeight: 800, color: "#b45309", marginBottom: 8, letterSpacing: ".08em", textTransform: "uppercase" }}>
                   🤖 Análisis de tu entrenamiento
                 </div>
                 {loadingAnalysis ? (
-                  <div style={{ color: "#64748b", fontSize: ".84em" }}>Analizando tu sesión…</div>
+                  <div style={{ color: "#64748b", fontSize: ".84em" }}>Analizando tu sesión con IA…</div>
                 ) : (
                   <div style={{ fontSize: ".86em", color: "#0f172a", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
                     {workoutAnalysis}
@@ -1966,12 +1445,9 @@ const [loadingAnalysis, setLoadingAnalysis] = useState(false);
                 )}
               </div>
             ) : null}
-              <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                <button type="button" disabled={manualSummarySaving} onClick={saveManualWorkoutSummary} style={{ background: manualSummarySaving ? "#cbd5e1" : "linear-gradient(135deg,#0d9488,#14b8a6)", border: "none", borderRadius: 8, padding: "8px 12px", color: "#fff", fontWeight: 800, fontFamily: "inherit", cursor: manualSummarySaving ? "not-allowed" : "pointer", fontSize: ".78em" }}>{manualSummarySaving ? "Guardando…" : workoutSummaryModal.stravaConnected ? "Guardar notas" : "Guardar registro"}</button>
-              </div>
-            </div>
+
             <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 14 }}>
-              <button type="button" onClick={() => setWorkoutSummaryModal(null)} style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#475569", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".8em" }}>
+              <button type="button" onClick={closeWorkoutModal} style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#475569", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".8em" }}>
                 Cerrar
               </button>
             </div>
