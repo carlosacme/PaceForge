@@ -2,6 +2,7 @@ import React, { Fragment, useState, useEffect, useMemo, useCallback, useRef, Sus
 import { jsPDF } from "jspdf";
 import FitParser from "fit-file-parser";
 import { supabase } from "./lib/supabase";
+import WeatherWidget from "./components/WeatherWidget";
 import {
   BRAND_NAME,
   STRAVA_CALLBACK_URL,
@@ -4643,7 +4644,9 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
             ))}
           </div>
           </div>
-
+<div style={{ order: 15, marginBottom: 14 }}>
+  <WeatherWidget defaultCity="Bogota,CO" compact />
+</div>
           <div style={{ order: 5, marginBottom: 24, paddingBottom: 20, borderBottom: "1px solid #e2e8f0" }}>
             <div style={{ fontSize: ".65em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase", marginBottom: 12 }}>
               ZONAS FC
