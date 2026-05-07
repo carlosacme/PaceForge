@@ -99,5 +99,5 @@ export function useWeather(defaultCity = "Bogota,CO") {
     const fetchWeather = async (lat, lon) => {
       try {
         const params = lat && lon
-          ? `lat=${lat}&lon=${lon}`
-          : `city=${encodeURIC
+  ? `lat=${lat}&lon=${lon}`
+  : `city=${encodeURIComponent(defaultCity)}`;
