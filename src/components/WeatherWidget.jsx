@@ -1,9 +1,9 @@
 import { useState, useEffect } from "react";
 
 const INTENSITY_STYLES = {
-  normal: { bg: "rgba(34,197,94,.1)", border: "rgba(34,197,94,.4)", color: "#166534", icon: "OK" },
-  caution: { bg: "rgba(245,158,11,.1)", border: "rgba(245,158,11,.4)", color: "#92400e", icon: "!" },
-  warning: { bg: "rgba(239,68,68,.1)", border: "rgba(239,68,68,.4)", color: "#991b1b", icon: "!!" },
+ normal: { bg: "rgba(34,197,94,.1)", border: "rgba(34,197,94,.4)", color: "#166534", icon: "" },
+caution: { bg: "rgba(245,158,11,.1)", border: "rgba(245,158,11,.4)", color: "#92400e", icon: "Precaucion:" },
+warning: { bg: "rgba(239,68,68,.1)", border: "rgba(239,68,68,.4)", color: "#991b1b", icon: "Alerta:" },
 };
 
 export default function WeatherWidget({ defaultCity = "Bogota,CO", compact = false }) {
