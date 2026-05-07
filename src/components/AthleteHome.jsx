@@ -1,5 +1,6 @@
 import React, { lazy, Suspense, useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { supabase } from "../lib/supabase";
+import WeatherWidget from "./WeatherWidget";
 import {
   STRAVA_CALLBACK_URL,
   formatLocalYMD,
@@ -1064,8 +1065,8 @@ export default function AthleteHome({ profile }) {
       <div style={{ marginBottom: 14 }}>
         <h1 style={{ ...S.pageTitle, marginBottom: 4 }}>Hola, {athleteName}</h1>
       </div>
-
-      {renderAthleteProgressCard(14)}
+<WeatherWidget defaultCity="Bogota,CO" />
+{renderAthleteProgressCard(14)}
 
       <div style={{ ...S.card, marginBottom: 14 }}>
         <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 10 }}>
