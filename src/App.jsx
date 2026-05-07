@@ -1259,6 +1259,11 @@ export default function App() {
     const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       if (!mounted) return;
       setSession(nextSession ?? null);
+      if (nextSession?.user && typeof window !== "undefined" && window.posthog) {
+  window.posthog.identify(nextSession.user.id, {
+    email: nextSession.user.email,
+  });
+}
     });
 
     return () => {
@@ -1785,6 +1790,7 @@ useEffect(() => {
   };
 
 const handleSignOut = async () => {
+  if (typeof window !== "undefined" && window.posthog) window.posthog.reset();
     const { error } = await supabase.auth.signOut();
     if (error) {
       console.error("Error al cerrar sesión:", error);
