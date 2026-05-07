@@ -3796,7 +3796,31 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
   const [raceActionBusy, setRaceActionBusy] = useState(false);
   const [chatClearing, setChatClearing] = useState(false);
   const [expandedWorkoutLogs, setExpandedWorkoutLogs] = useState({});
-
+const [coachWorkoutAnalysis, setCoachWorkoutAnalysis] = useState({});
+const [coachWorkoutAnalysisLoading, setCoachWorkoutAnalysisLoading] = useState({});
+const analyzeWorkoutAsCoach = async (w, athleteName) => {
+  if (coachWorkoutAnalysisLoading[w.id]) return;
+  setCoachWorkoutAnalysisLoading((prev) => ({ ...prev, [w.id]: true }));
+  setCoachWorkoutAnalysis((prev) => ({ ...prev, [w.id]: "" }));
+  try {
+    const response = await fetch("/api/analyze-workout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        workout: w,
+        athleteName: athleteName || "el atleta",
+        vdot: athlete?.vdot || null,
+        role: "coach",
+      }),
+    });
+    const data = await response.json();
+    if (data?.analysis) setCoachWorkoutAnalysis((prev) => ({ ...prev, [w.id]: data.analysis }));
+  } catch (e) {
+    console.error("analyzeWorkoutAsCoach error:", e);
+  } finally {
+    setCoachWorkoutAnalysisLoading((prev) => ({ ...prev, [w.id]: false }));
+  }
+};
   const refreshRacesList = useCallback(async () => {
     if (!athlete?.id) return;
     const { data, error } = await supabase
@@ -5195,18 +5219,32 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
                                 style={{ border: "1px solid #cbd5e1", borderRadius: 6, background: "#fff", color: "#334155", padding: "3px 6px", fontSize: ".56em", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}
                               >
                                 {expanded ? "Ocultar registro" : "Ver registro"}
-                              </button>
-                              {expanded ? (
-                                <div style={{ border: "1px solid #e2e8f0", borderRadius: 7, background: "#fff", padding: "6px 7px", fontSize: ".54em", color: "#334155", textAlign: "left", lineHeight: 1.35 }}>
-                                  <div><strong>Distancia:</strong> {w.manual_distance_km != null ? `${w.manual_distance_km} km` : "—"}</div>
-                                  <div><strong>Duración:</strong> {w.manual_duration_min != null ? `${w.manual_duration_min} min` : "—"}</div>
-                                  <div><strong>FC prom/máx:</strong> {w.manual_avg_hr != null ? w.manual_avg_hr : "—"} / {w.manual_max_hr != null ? w.manual_max_hr : "—"} lpm</div>
-                                  <div><strong>Calorías:</strong> {w.manual_calories != null ? w.manual_calories : "—"}</div>
-                                  <div><strong>Cómo se sintió:</strong> {feelingText || "—"}</div>
-                                  <div><strong>Notas:</strong> {notesText || "—"}</div>
-                                  <div><strong>Completado:</strong> {w.completed_at ? new Date(w.completed_at).toLocaleString("es-CO") : "—"}</div>
-                                </div>
-                              ) : null}
+</button>
+<button
+  type="button"
+  onClick={() => analyzeWorkoutAsCoach(w, athlete?.name)}
+  disabled={coachWorkoutAnalysisLoading[w.id]}
+  style={{ border: "1px solid rgba(245,158,11,.5)", borderRadius: 6, background: coachWorkoutAnalysisLoading[w.id] ? "#fef3c7" : "rgba(245,158,11,.12)", color: "#b45309", padding: "3px 6px", fontSize: ".56em", fontWeight: 700, cursor: coachWorkoutAnalysisLoading[w.id] ? "not-allowed" : "pointer", fontFamily: "inherit" }}
+>
+  {coachWorkoutAnalysisLoading[w.id] ? "Analizando…" : "🤖 Analizar IA"}
+</button>
+{expanded ? (
+  <div style={{ border: "1px solid #e2e8f0", borderRadius: 7, background: "#fff", padding: "6px 7px", fontSize: ".54em", color: "#334155", textAlign: "left", lineHeight: 1.35 }}>
+    <div><strong>Distancia:</strong> {w.manual_distance_km != null ? `${w.manual_distance_km} km` : "—"}</div>
+    <div><strong>Duración:</strong> {w.manual_duration_min != null ? `${w.manual_duration_min} min` : "—"}</div>
+    <div><strong>FC prom/máx:</strong> {w.manual_avg_hr != null ? w.manual_avg_hr : "—"} / {w.manual_max_hr != null ? w.manual_max_hr : "—"} lpm</div>
+    <div><strong>Calorías:</strong> {w.manual_calories != null ? w.manual_calories : "—"}</div>
+    <div><strong>Cómo se sintió:</strong> {feelingText || "—"}</div>
+    <div><strong>Notas:</strong> {notesText || "—"}</div>
+    <div><strong>Completado:</strong> {w.completed_at ? new Date(w.completed_at).toLocaleString("es-CO") : "—"}</div>
+  </div>
+) : null}
+{coachWorkoutAnalysis[w.id] ? (
+  <div style={{ border: "1px solid rgba(245,158,11,.4)", borderRadius: 7, background: "linear-gradient(145deg,#fffbeb,#fff7ed)", padding: "8px 10px", fontSize: ".56em", color: "#0f172a", lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
+    <div style={{ fontWeight: 800, color: "#b45309", marginBottom: 4, textTransform: "uppercase", letterSpacing: ".06em" }}>🤖 Análisis IA</div>
+    {coachWorkoutAnalysis[w.id]}
+  </div>
+) : null}
                             </>
                           ) : null}
                         </div>
