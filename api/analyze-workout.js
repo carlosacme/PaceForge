@@ -38,18 +38,30 @@ export default async function handler(req, res) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return res.status(500).json({ error: "ANTHROPIC_API_KEY no configurada" });
 
-  const { action = "analyze", workout, athleteName, vdot, recentWorkouts, role, futureWorkouts } = req.body || {};
+  const {
+    action = "analyze",
+    workout,
+    athleteName,
+    vdot,
+    recentWorkouts,
+    role,
+    futureWorkouts,
+  } = req.body || {};
 
   // ── ACTION: analyze ──────────────────────────────────────────
   if (action === "analyze") {
     if (!workout) return res.status(400).json({ error: "No workout data" });
 
     const isCoach = role === "coach";
-    const recentContext = Array.isArray(recentWorkouts) && recentWorkouts.length > 0
-      ? `\nÚltimos ${recentWorkouts.length} entrenamientos completados:\n${recentWorkouts.map((w, i) =>
-          `${i + 1}. ${w.title || w.type} — ${w.total_km || 0}km, ${w.duration_min || 0}min, RPE ${w.rpe ?? "N/R"}, FC prom ${w.manual_avg_hr ?? "N/R"}`
-        ).join("\n")}`
-      : "";
+    const recentContext =
+      Array.isArray(recentWorkouts) && recentWorkouts.length > 0
+        ? `\nÚltimos ${recentWorkouts.length} entrenamientos completados:\n${recentWorkouts
+            .map(
+              (w, i) =>
+                `${i + 1}. ${w.title || w.type} — ${w.total_km || 0}km, ${w.duration_min || 0}min, RPE ${w.rpe ?? "N/R"}, FC prom ${w.manual_avg_hr ?? "N/R"}`
+            )
+            .join("\n")}`
+        : "";
 
     const prompt = isCoach
       ? `Eres un coach de running experto analizando el entrenamiento de ${athleteName || "tu atleta"} (VDOT ${vdot || "N/A"}).
@@ -66,10 +78,10 @@ Workout analizado:
 ${recentContext}
 
 Responde en español con 4 secciones cortas:
-1. **Rendimiento** — ¿Ejecutó bien el workout según el objetivo?
-2. **Señales fisiológicas** — ¿Qué indican RPE y FC sobre su estado?
-3. **Tendencia** — Basado en los entrenamientos recientes, ¿está progresando, estancado o acumulando fatiga?
-4. **Ajuste recomendado** — ¿Qué ajustar en los próximos 2-3 entrenamientos?`
+1. Rendimiento — ¿Ejecutó bien el workout según el objetivo?
+2. Señales fisiológicas — ¿Qué indican RPE y FC sobre su estado?
+3. Tendencia — Basado en los entrenamientos recientes, ¿está progresando, estancado o acumulando fatiga?
+4. Ajuste recomendado — ¿Qué ajustar en los próximos 2-3 entrenamientos?`
       : `Eres un coach de running experto. Analiza este entrenamiento de ${athleteName || "el atleta"} (VDOT ${vdot || "N/A"}) y da retroalimentación motivadora en español.
 
 Datos:
@@ -94,15 +106,22 @@ Responde en 3 párrafos cortos:
       return res.status(400).json({ error: "Faltan workout completado o entrenamientos futuros" });
     }
 
-    const recentContext = Array.isArray(recentWorkouts) && recentWorkouts.length > 0
-      ? `\nÚltimos entrenamientos:\n${recentWorkouts.map((w, i) =>
-          `${i + 1}. ${w.title || w.type} — ${w.total_km || 0}km, RPE ${w.rpe ?? "N/R"}, FC ${w.manual_avg_hr ?? "N/R"}`
-        ).join("\n")}`
-      : "";
+    const recentContext =
+      Array.isArray(recentWorkouts) && recentWorkouts.length > 0
+        ? `\nÚltimos entrenamientos:\n${recentWorkouts
+            .map(
+              (w, i) =>
+                `${i + 1}. ${w.title || w.type} — ${w.total_km || 0}km, RPE ${w.rpe ?? "N/R"}, FC ${w.manual_avg_hr ?? "N/R"}`
+            )
+            .join("\n")}`
+        : "";
 
-    const futureContext = futureWorkouts.map((w, i) =>
-      `ID:${w.id} | ${w.scheduled_date} | ${w.type} | "${w.title}" | ${w.total_km}km | ${w.duration_min}min`
-    ).join("\n");
+    const futureContext = futureWorkouts
+      .map(
+        (w) =>
+          `ID:${w.id} | ${w.scheduled_date} | ${w.type} | "${w.title}" | ${w.total_km}km | ${w.duration_min}min`
+      )
+      .join("\n");
 
     const prompt = `Eres un coach de running experto. Basado en el último entrenamiento completado, ajusta los próximos workouts del atleta ${athleteName || ""} (VDOT ${vdot || "N/A"}).
 
