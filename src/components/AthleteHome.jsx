@@ -741,7 +741,7 @@ export default function AthleteHome({ profile }) {
       return;
     }
     setWorkouts((prev) => prev.map((w) => (String(w.id) === String(workoutRow.id) ? normalizeWorkoutRow({ ...w, ...payload }) : w)));
-
+closeWorkoutModal();
   
   };
 
