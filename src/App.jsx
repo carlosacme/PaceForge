@@ -3795,7 +3795,8 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
   const [raceMoveDate, setRaceMoveDate] = useState("");
   const [raceActionBusy, setRaceActionBusy] = useState(false);
   const [chatClearing, setChatClearing] = useState(false);
-  const [expandedWorkoutLogs, setExpandedWorkoutLogs] = useState({});
+const [expandedWorkoutLogs, setExpandedWorkoutLogs] = useState({});
+const [coachAnalysisModal, setCoachAnalysisModal] = useState(null);
 const [coachWorkoutAnalysis, setCoachWorkoutAnalysis] = useState({});
 const [coachWorkoutAnalysisLoading, setCoachWorkoutAnalysisLoading] = useState({});
 const analyzeWorkoutAsCoach = async (w, athleteName) => {
@@ -5240,10 +5241,13 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
   </div>
 ) : null}
 {coachWorkoutAnalysis[w.id] ? (
-  <div style={{ border: "1px solid rgba(245,158,11,.4)", borderRadius: 7, background: "linear-gradient(145deg,#fffbeb,#fff7ed)", padding: "8px 10px", fontSize: ".56em", color: "#0f172a", lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
-    <div style={{ fontWeight: 800, color: "#b45309", marginBottom: 4, textTransform: "uppercase", letterSpacing: ".06em" }}>🤖 Análisis IA</div>
-    {coachWorkoutAnalysis[w.id]}
-  </div>
+  <button
+    type="button"
+    onClick={() => setCoachAnalysisModal({ text: coachWorkoutAnalysis[w.id], title: w.title })}
+    style={{ border: "1px solid rgba(245,158,11,.5)", borderRadius: 6, background: "rgba(245,158,11,.12)", color: "#b45309", padding: "3px 6px", fontSize: ".56em", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", width: "100%" }}
+  >
+    📋 Ver análisis
+  </button>
 ) : null}
                             </>
                           ) : null}
@@ -5908,7 +5912,22 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
           </div>
         </div>
       )}
-
+{coachAnalysisModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.6)", zIndex: 10010, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ background: "#fff", borderRadius: 16, padding: 24, maxWidth: 560, width: "100%", maxHeight: "80vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,.3)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+              <div>
+                <div style={{ fontSize: ".7em", fontWeight: 800, color: "#b45309", textTransform: "uppercase", letterSpacing: ".1em" }}>🤖 Análisis IA</div>
+                <div style={{ fontWeight: 800, color: "#0f172a", marginTop: 4 }}>{coachAnalysisModal.title}</div>
+              </div>
+              <button type="button" onClick={() => setCoachAnalysisModal(null)} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "6px 10px", background: "#fff", color: "#475569", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".85em" }}>✕</button>
+            </div>
+            <div style={{ fontSize: ".88em", color: "#0f172a", lineHeight: 1.7, whiteSpace: "pre-wrap", borderTop: "1px solid #f1f5f9", paddingTop: 14 }}>
+              {coachAnalysisModal.text.replace(/#{1,3} /g, "").replace(/\*\*/g, "")}
+            </div>
+          </div>
+        </div>
+      )}
       {paymentModalOpen && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 210, padding: 16 }}>
           <div style={{ ...S.card, width: "100%", maxWidth: 520, margin: 0 }}>
