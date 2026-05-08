@@ -24,11 +24,38 @@ async function callClaude(apiKey, prompt, maxTokens = 800) {
       if (response.ok && data.content?.[0]?.text) {
         return { text: data.content[0].text, model };
       }
-      console.warn(`callClaude: model ${model} failed:`, data);
+      console.warn(`callClaude: model ${model} failed:`, JSON.stringify(data).slice(0, 300));
     } catch (err) {
       console.warn(`callClaude: model ${model} exception:`, err?.message);
     }
   }
+  return null;
+}
+
+/** Intenta extraer el JSON del texto de Claude de múltiples formas */
+function extractJson(text) {
+  if (!text) return null;
+
+  // 1. Intento directo
+  try { return JSON.parse(text.trim()); } catch {}
+
+  // 2. Quitar bloques markdown ```json ... ```
+  const clean1 = text.replace(/```json\s*/gi, "").replace(/```\s*/g, "").trim();
+  try { return JSON.parse(clean1); } catch {}
+
+  // 3. Extraer primer bloque { ... } del texto
+  const match = text.match(/\{[\s\S]*\}/);
+  if (match) {
+    try { return JSON.parse(match[0]); } catch {}
+  }
+
+  // 4. Quitar comentarios JS y limpiar
+  const clean2 = clean1
+    .replace(/\/\/[^\n]*/g, "")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .trim();
+  try { return JSON.parse(clean2); } catch {}
+
   return null;
 }
 
@@ -56,9 +83,8 @@ export default async function handler(req, res) {
     const recentContext =
       Array.isArray(recentWorkouts) && recentWorkouts.length > 0
         ? `\nÚltimos ${recentWorkouts.length} entrenamientos completados:\n${recentWorkouts
-            .map(
-              (w, i) =>
-                `${i + 1}. ${w.title || w.type} — ${w.total_km || 0}km, ${w.duration_min || 0}min, RPE ${w.rpe ?? "N/R"}, FC prom ${w.manual_avg_hr ?? "N/R"}`
+            .map((w, i) =>
+              `${i + 1}. ${w.title || w.type} — ${w.total_km || 0}km, ${w.duration_min || 0}min, RPE ${w.rpe ?? "N/R"}, FC prom ${w.manual_avg_hr ?? "N/R"}`
             )
             .join("\n")}`
         : "";
@@ -77,11 +103,11 @@ Workout analizado:
 - Notas del atleta: ${workout.athlete_notes || "Sin notas"}
 ${recentContext}
 
-Responde en español con 4 secciones cortas:
+Responde en español con 4 secciones cortas (sin markdown, sin asteriscos, sin tablas):
 1. Rendimiento — ¿Ejecutó bien el workout según el objetivo?
 2. Señales fisiológicas — ¿Qué indican RPE y FC sobre su estado?
 3. Tendencia — Basado en los entrenamientos recientes, ¿está progresando, estancado o acumulando fatiga?
-4. Ajuste recomendado — ¿Qué ajustar en los próximos 2-3 entrenamientos?`
+4. Ajuste recomendado — ¿Qué ajustar en los próximos 2-3 entrenamientos? (respuesta en texto plano, no tabla)`
       : `Eres un coach de running experto. Analiza este entrenamiento de ${athleteName || "el atleta"} (VDOT ${vdot || "N/A"}) y da retroalimentación motivadora en español.
 
 Datos:
@@ -90,7 +116,7 @@ Datos:
 - Notas: ${workout.athlete_notes || "Sin notas"}
 ${recentContext}
 
-Responde en 3 párrafos cortos:
+Responde en 3 párrafos cortos (sin markdown, sin asteriscos):
 1. Qué hiciste bien hoy
 2. Cómo estás progresando
 3. Consejo para el próximo entrenamiento`;
@@ -109,21 +135,19 @@ Responde en 3 párrafos cortos:
     const recentContext =
       Array.isArray(recentWorkouts) && recentWorkouts.length > 0
         ? `\nÚltimos entrenamientos:\n${recentWorkouts
-            .map(
-              (w, i) =>
-                `${i + 1}. ${w.title || w.type} — ${w.total_km || 0}km, RPE ${w.rpe ?? "N/R"}, FC ${w.manual_avg_hr ?? "N/R"}`
+            .map((w, i) =>
+              `${i + 1}. ${w.title || w.type} — ${w.total_km || 0}km, RPE ${w.rpe ?? "N/R"}, FC ${w.manual_avg_hr ?? "N/R"}`
             )
             .join("\n")}`
         : "";
 
     const futureContext = futureWorkouts
-      .map(
-        (w) =>
-          `ID:${w.id} | ${w.scheduled_date} | ${w.type} | "${w.title}" | ${w.total_km}km | ${w.duration_min}min`
+      .map((w) =>
+        `ID:${w.id} | ${w.scheduled_date} | ${w.type} | "${w.title}" | ${w.total_km}km | ${w.duration_min}min`
       )
       .join("\n");
 
-    const prompt = `Eres un coach de running experto. Basado en el último entrenamiento completado, ajusta los próximos workouts del atleta ${athleteName || ""} (VDOT ${vdot || "N/A"}).
+    const prompt = `Eres un coach de running experto. Analiza el último entrenamiento completado y ajusta los próximos workouts del atleta ${athleteName || ""} (VDOT ${vdot || "N/A"}).
 
 ÚLTIMO ENTRENAMIENTO COMPLETADO:
 - Tipo: ${workout.type} | Título: ${workout.title}
@@ -135,47 +159,51 @@ Responde en 3 párrafos cortos:
 - Notas: ${workout.athlete_notes || "Sin notas"}
 ${recentContext}
 
-PRÓXIMOS ENTRENAMIENTOS A AJUSTAR:
+PRÓXIMOS ENTRENAMIENTOS:
 ${futureContext}
 
-REGLAS DE AJUSTE:
-- RPE >= 8 o FC > 90% de lo esperado → reducir km y duration_min 10-15% en los próximos 2 workouts; si el siguiente es interval o tempo, cambiar tipo a "recovery"
-- RPE <= 3 (muy fácil) → aumentar km y duration_min 5-10% en el siguiente workout similar
-- 3+ workouts seguidos con RPE >= 7 → reducir TODOS los workouts de la semana siguiente 25-30% (semana de descarga)
-- FC alta con RPE bajo → solo agregar nota de alerta, no cambiar carga
-- Si el atleta está bien (RPE 5-7, FC normal) → no cambiar nada o ajustes menores
+REGLAS:
+- RPE >= 8 → reducir km y duration_min 10-15% en próximos 2 workouts; cambiar interval/tempo a recovery
+- RPE <= 3 → aumentar km y duration_min 5-10% en siguiente workout similar
+- 3+ workouts con RPE >= 7 → reducir semana siguiente 25-30%
+- FC alta + RPE bajo → solo nota de alerta, no cambiar carga
+- RPE 5-7 y FC normal → no cambiar o ajustes mínimos
 
-Responde SOLO con JSON válido, sin texto adicional, con esta estructura exacta:
-{
-  "signal": "fatiga_alta" | "fatiga_media" | "bien" | "descarga_necesaria" | "puede_progresar",
-  "summary": "Explicación breve en español de qué detectaste y por qué ajustas",
-  "adjustments": [
-    {
-      "workout_id": "ID del workout",
-      "changes": {
-        "total_km": número o null,
-        "duration_min": número o null,
-        "type": "tipo nuevo" o null,
-        "description": "nota adicional para el atleta" o null
-      },
-      "reason": "Por qué este ajuste específico"
-    }
-  ]
-}
+IMPORTANTE: Responde ÚNICAMENTE con el siguiente JSON, sin texto antes ni después, sin comentarios, sin markdown:
+{"signal":"bien","summary":"texto explicación","adjustments":[{"workout_id":"ID","changes":{"total_km":null,"duration_min":null,"type":null,"description":null},"reason":"razón"}]}
 
-Solo incluye en "adjustments" los workouts que realmente necesitan cambio. Si ninguno necesita cambio, devuelve "adjustments": [].`;
+Si no hay cambios necesarios: {"signal":"bien","summary":"El atleta está en buen estado, no se requieren ajustes.","adjustments":[]}
 
-    const result = await callClaude(apiKey, prompt, 1200);
+Los valores de signal válidos son exactamente: fatiga_alta, fatiga_media, bien, descarga_necesaria, puede_progresar`;
+
+    const result = await callClaude(apiKey, prompt, 1500);
     if (!result) return res.status(500).json({ error: "Todos los modelos fallaron." });
 
-    try {
-      const clean = result.text.replace(/```json|```/g, "").trim();
-      const parsed = JSON.parse(clean);
-      return res.status(200).json({ ...parsed, model: result.model });
-    } catch (e) {
-      console.error("adjust-plan JSON parse error:", e, result.text);
-      return res.status(500).json({ error: "Error procesando respuesta de IA", raw: result.text });
+    console.log("adjust raw response:", result.text.slice(0, 500));
+
+    const parsed = extractJson(result.text);
+
+    if (!parsed) {
+      console.error("adjust: no se pudo parsear JSON. Raw:", result.text.slice(0, 800));
+      // Fallback: retornar respuesta segura en lugar de 500
+      return res.status(200).json({
+        signal: "bien",
+        summary: "No se pudo procesar la respuesta de IA. Intenta de nuevo.",
+        adjustments: [],
+        model: result.model,
+        parse_error: true,
+      });
     }
+
+    // Validar estructura mínima
+    const safe = {
+      signal: parsed.signal || "bien",
+      summary: parsed.summary || "Análisis completado.",
+      adjustments: Array.isArray(parsed.adjustments) ? parsed.adjustments : [],
+      model: result.model,
+    };
+
+    return res.status(200).json(safe);
   }
 
   return res.status(400).json({ error: "action debe ser 'analyze' o 'adjust'" });
