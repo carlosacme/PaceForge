@@ -1047,7 +1047,7 @@ closeWorkoutModal();
       .from("profiles")
       .select("user_id, name, coach_id, city")
       .in("role", ["coach", "admin"])
-      .in("plan_status", ["active", "trial"])
+      .or("plan_status.eq.active,plan_status.eq.trial")
       .order("name", { ascending: true })
       .limit(20);
     setCoachDirLoading(false);
