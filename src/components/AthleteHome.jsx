@@ -845,14 +845,12 @@ closeWorkoutModal();
       return;
     }
     let cancelled = false;
-    console.log("[coachName] profile.coach_id:", profile.coach_id);
     (async () => {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from("profiles")
         .select("name")
         .eq("user_id", profile.coach_id)
         .maybeSingle();
-      console.log("[coachName] data:", data, "error:", error);
       if (!cancelled && data?.name) setCoachName(data.name);
     })();
     return () => { cancelled = true; };
