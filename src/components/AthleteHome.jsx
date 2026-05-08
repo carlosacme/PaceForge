@@ -271,6 +271,7 @@ export default function AthleteHome({ profile }) {
   const notifyCallback = useCallback((msg) => setMessage(msg), []);
   const normalizeWorkoutRowStable = useCallback(normalizeWorkoutRow, []);
   const [athleteInfo, setAthleteInfo] = useState(null);
+  const [coachName, setCoachName] = useState(null);
   const [workouts, setWorkouts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
