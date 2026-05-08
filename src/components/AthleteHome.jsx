@@ -272,6 +272,11 @@ export default function AthleteHome({ profile }) {
   const normalizeWorkoutRowStable = useCallback(normalizeWorkoutRow, []);
   const [athleteInfo, setAthleteInfo] = useState(null);
   const [coachName, setCoachName] = useState(null);
+  const [coachCodeInput, setCoachCodeInput] = useState("");
+  const [coachCodeSaving, setCoachCodeSaving] = useState(false);
+  const [coachCodeMsg, setCoachCodeMsg] = useState("");
+  const [coachDirectory, setCoachDirectory] = useState([]);
+  const [coachDirLoading, setCoachDirLoading] = useState(false);
   const [workouts, setWorkouts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
@@ -1297,6 +1302,66 @@ closeWorkoutModal();
                   <div style={{ ...S.card }}>
                     <div style={{ fontSize: ".72em", marginBottom: 10, color: "#475569", textTransform: "uppercase", letterSpacing: ".13em" }}>MI CONFIGURACIÓN</div>
                     <div style={{ color: "#64748b", fontSize: ".84em", marginBottom: 8 }}>Gestiona conexiones y preferencias.</div>
+                    {/* MI COACH */}
+                    <div style={{ marginBottom: 20, paddingBottom: 20, borderBottom: "1px solid #e2e8f0" }}>
+                      <div style={{ fontSize: ".72em", fontWeight: 800, color: "#475569", textTransform: "uppercase", letterSpacing: ".1em", marginBottom: 12 }}>MI COACH</div>
+                      {coachName ? (
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 10, background: "rgba(245,158,11,.08)", border: "1px solid rgba(245,158,11,.3)", marginBottom: 10 }}>
+                          <span style={{ fontSize: "1.3em" }}>&#127939;</span>
+                          <div>
+                            <div style={{ fontSize: ".72em", color: "#b45309", fontWeight: 700 }}>Coach actual</div>
+                            <div style={{ fontSize: ".9em", fontWeight: 800, color: "#0f172a" }}>{coachName}</div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: ".82em", color: "#64748b", marginBottom: 10 }}>No tienes coach asignado. Ingresa un codigo para conectarte.</div>
+                      )}
+                      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
+                        <input
+                          type="text"
+                          value={coachCodeInput}
+                          onChange={(e) => { setCoachCodeInput(e.target.value.toUpperCase()); setCoachCodeMsg(""); }}
+                          placeholder="Codigo del coach (ej: B5C9E44A)"
+                          style={{ flex: "1 1 180px", padding: "9px 12px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#0f172a", fontFamily: "inherit", fontSize: ".84em", boxSizing: "border-box" }}
+                        />
+                        <button
+                          type="button"
+                          onClick={connectCoachByCode}
+                          disabled={coachCodeSaving || !coachCodeInput.trim()}
+                          style={{ padding: "9px 16px", borderRadius: 8, border: "none", background: (coachCodeSaving || !coachCodeInput.trim()) ? "#e2e8f0" : "linear-gradient(135deg,#b45309,#f59e0b)", color: (coachCodeSaving || !coachCodeInput.trim()) ? "#94a3b8" : "#fff", fontWeight: 800, cursor: (coachCodeSaving || !coachCodeInput.trim()) ? "not-allowed" : "pointer", fontFamily: "inherit", fontSize: ".82em", whiteSpace: "nowrap" }}
+                        >
+                          {coachCodeSaving ? "Conectando..." : "Conectar"}
+                        </button>
+                      </div>
+                      {coachCodeMsg ? <div style={{ fontSize: ".78em", color: coachCodeMsg.startsWith("Conectado") ? "#166534" : "#dc2626", fontWeight: 600 }}>{coachCodeMsg}</div> : null}
+                    </div>
+                    <div style={{ marginBottom: 20 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                        <div style={{ fontSize: ".72em", fontWeight: 800, color: "#475569", textTransform: "uppercase", letterSpacing: ".1em" }}>DIRECTORIO DE COACHES</div>
+                        <button type="button" onClick={loadCoachDirectory} disabled={coachDirLoading} style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#334155", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".75em" }}>
+                          {coachDirLoading ? "Cargando..." : coachDirectory.length ? "Actualizar" : "Ver coaches"}
+                        </button>
+                      </div>
+                      {coachDirectory.length > 0 ? (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                          {coachDirectory.map((c) => (
+                            <div key={c.user_id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "10px 12px", borderRadius: 10, border: "1px solid #e2e8f0", background: "#fafafa", flexWrap: "wrap" }}>
+                              <div>
+                                <div style={{ fontWeight: 800, color: "#0f172a", fontSize: ".88em" }}>{c.name}</div>
+                                <div style={{ fontSize: ".72em", color: "#64748b", marginTop: 2 }}>
+                                  {"Codigo: " + (c.coach_id || "N/A") + (c.city ? " · " + c.city : "")}
+                                </div>
+                              </div>
+                              <button type="button" onClick={() => { setCoachCodeInput(c.coach_id || ""); setCoachCodeMsg(""); }} style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid rgba(245,158,11,.4)", background: "rgba(245,158,11,.1)", color: "#b45309", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".75em", whiteSpace: "nowrap" }}>
+                                Seleccionar
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : !coachDirLoading ? (
+                        <div style={{ fontSize: ".82em", color: "#94a3b8" }}>Haz clic en "Ver coaches" para explorar el directorio.</div>
+                      ) : null}
+                    </div>
                     {stravaConnection ? (
                       <div style={{ marginBottom: 12 }}>
                         <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "rgba(34,197,94,.12)", border: "1px solid rgba(34,197,94,.4)", color: "#166534", borderRadius: 8, padding: "8px 14px", fontWeight: 700, fontSize: ".84em", marginBottom: 10 }}>
