@@ -3847,6 +3847,7 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
     }
     setAdjustLoading(true);
     setCoachAnalysisModal(null);
+    notify(`Analizando plan con ${future.length} entrenamientos futuros…`);
     try {
       const recent = workouts
         .filter((w) => w.done && String(w.id) !== String(completedWorkout.id))
@@ -3866,6 +3867,8 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
       });
       const data = await response.json();
       if (!response.ok) { notify(data?.error || "Error al ajustar plan."); return; }
+      const adjCount = (data.adjustments || []).length;
+      notify(`IA detectó: ${data.signal || "sin señal"} · ${adjCount} cambio(s) propuesto(s)`);
       setAdjustProposalModal({
         signal: data.signal,
         summary: data.summary,
