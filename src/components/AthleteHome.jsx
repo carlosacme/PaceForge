@@ -1084,7 +1084,28 @@ closeWorkoutModal();
       <div style={{ marginBottom: 14 }}>
         <h1 style={{ ...S.pageTitle, marginBottom: 4 }}>Hola, {athleteName}</h1>
       </div>
-<WeatherWidget defaultCity="Bogota,CO" />
+{coachName ? (
+        <div
+          id="banner-coach-name"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            padding: "10px 14px",
+            borderRadius: 12,
+            background: "linear-gradient(135deg, rgba(245,158,11,.1), rgba(251,191,36,.08))",
+            border: "1px solid rgba(245,158,11,.3)",
+            marginBottom: 12,
+          }}
+        >
+          <span style={{ fontSize: "1.2em" }}>🏃</span>
+          <div>
+            <div style={{ fontSize: ".68em", color: "#b45309", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".08em" }}>Tu coach</div>
+            <div style={{ fontSize: ".9em", fontWeight: 800, color: "#0f172a" }}>{coachName}</div>
+          </div>
+        </div>
+      ) : null}
+      <WeatherWidget defaultCity="Bogota,CO" />
 {renderAthleteProgressCard(14)}
 
       <div style={{ ...S.card, marginBottom: 14 }}>
