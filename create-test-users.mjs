@@ -106,6 +106,10 @@ async function upsertProfile(user, profileInput) {
     trial_started_at: profileInput.trial_started_at,
   };
 
+  if (await profilesHasCoachIdColumn()) {
+    payload.coach_id = null;
+  }
+
   const { error } = await supabase
     .from("profiles")
     .upsert(payload, { onConflict: "user_id" });
@@ -113,6 +117,28 @@ async function upsertProfile(user, profileInput) {
   if (error) {
     throw new Error(`Failed to upsert profile for ${profileInput.email}: ${error.message}`);
   }
+}
+
+let cachedProfilesHasCoachIdColumn;
+async function profilesHasCoachIdColumn() {
+  if (typeof cachedProfilesHasCoachIdColumn === "boolean") {
+    return cachedProfilesHasCoachIdColumn;
+  }
+
+  const { data, error } = await supabase
+    .from("information_schema.columns")
+    .select("column_name")
+    .eq("table_schema", "public")
+    .eq("table_name", "profiles")
+    .eq("column_name", "coach_id")
+    .limit(1);
+
+  if (error) {
+    throw new Error(`Failed to verify profiles.coach_id column: ${error.message}`);
+  }
+
+  cachedProfilesHasCoachIdColumn = Array.isArray(data) && data.length > 0;
+  return cachedProfilesHasCoachIdColumn;
 }
 
 async function main() {
