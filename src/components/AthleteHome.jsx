@@ -819,7 +819,8 @@ closeWorkoutModal();
 
   useEffect(() => {
     if (!athleteTabRestored || !athleteInfo?.id) return;
-    if (!hasPremiumAccess) setShowEvaluation(false);
+    // Opcion C: 1 evaluacion gratis, despues requiere premium
+    if (!hasPremiumAccess && athleteEvaluations.length >= 1) setShowEvaluation(false);
   }, [athleteInfo?.id, athleteInfo?.athlete_plan, athleteInfo?.coach_id, athleteTabRestored, hasPremiumAccess]);
 
   const athleteFormaFatigaPoints = useMemo(() => computeFormaFatigaWeeklyPoints(workouts), [workouts]);
@@ -1216,7 +1217,12 @@ closeWorkoutModal();
             {athleteActiveTab === "eval" ? (
               hasPremiumAccess ? (
                 <Suspense fallback={<div style={{ padding: 20, color: "#64748b" }}>Cargando evaluación…</div>}>
-                  <EvaluationView athletes={[normalizeAthlete(athleteInfo)]} currentUserId={profile?.user_id ?? null} notify={(msg) => setMessage(msg)} athleteOnlyId={athleteInfo?.id} />
+                  {!hasPremiumAccess && athleteEvaluations.length === 0 ? (
+                <div style={{ padding: "10px 14px", borderRadius: 10, background: "rgba(245,158,11,.1)", border: "1px solid rgba(245,158,11,.3)", marginBottom: 14, fontSize: ".82em", color: "#b45309", fontWeight: 600 }}>
+                  Tienes 1 evaluacion VDOT gratuita. Para evaluaciones ilimitadas, conecta un coach o activa Premium.
+                </div>
+              ) : null}
+              <EvaluationView athletes={[normalizeAthlete(athleteInfo)]} currentUserId={profile?.user_id ?? null} notify={(msg) => setMessage(msg)} athleteOnlyId={athleteInfo?.id} />
                 </Suspense>
               ) : (
                 <div style={{ ...S.card, textAlign: "center" }}>
