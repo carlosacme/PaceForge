@@ -3753,6 +3753,21 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
     };
   }, [athlete?.id]);
 
+  // Cargar análisis guardados desde localStorage al cambiar de atleta o workouts
+  useEffect(() => {
+    if (!workouts.length) return;
+    const loaded = {};
+    for (const w of workouts) {
+      try {
+        const saved = localStorage.getItem(`raf_analysis_${w.id}`);
+        if (saved) loaded[w.id] = saved;
+      } catch {}
+    }
+    if (Object.keys(loaded).length > 0) {
+      setCoachWorkoutAnalysis((prev) => ({ ...loaded, ...prev }));
+    }
+  }, [workouts]);
+
   const workoutsByDate = useMemo(() => {
     const m = {};
     for (const w of workouts) {
