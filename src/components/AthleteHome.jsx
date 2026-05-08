@@ -1046,7 +1046,7 @@ closeWorkoutModal();
     const { data, error } = await supabase
       .from("profiles")
       .select("user_id, name, coach_id, city")
-      .in("role", ["coach", "admin"])
+      .eq("role", "coach")
       .order("name", { ascending: true })
       .limit(20);
     setCoachDirLoading(false);
