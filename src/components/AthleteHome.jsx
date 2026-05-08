@@ -1041,6 +1041,19 @@ closeWorkoutModal();
     } finally { setFindCoachCodeBusy(false); }
   };
 
+  const loadCoachDirectory = async () => {
+    setCoachDirLoading(true);
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("user_id, name, coach_id, city")
+      .in("role", ["coach", "admin"])
+      .in("plan_status", ["active", "trial"])
+      .order("name", { ascending: true })
+      .limit(20);
+    setCoachDirLoading(false);
+    if (!error && data) setCoachDirectory(data);
+  };
+
   const selectPublicCoach = async (coachUserId) => {
     setSelectCoachBusyId(String(coachUserId));
     setMessage("");
