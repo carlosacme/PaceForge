@@ -833,6 +833,24 @@ closeWorkoutModal();
     return true;
   }, [profile?.coach_id, profile?.user_id]);
 
+  // Cargar nombre del coach si el atleta tiene uno asignado
+  useEffect(() => {
+    if (!profile?.coach_id) {
+      setCoachName(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from("profiles")
+        .select("name")
+        .eq("user_id", profile.coach_id)
+        .maybeSingle();
+      if (!cancelled && data?.name) setCoachName(data.name);
+    })();
+    return () => { cancelled = true; };
+  }, [profile?.coach_id]);
+
   const soloAthletePlanKey = useMemo(() => normalizeSoloAthletePlanKey(profile?.athlete_plan ?? athleteInfo?.athlete_plan, profile?.subscription_period ?? athleteInfo?.subscription_period), [profile?.athlete_plan, athleteInfo?.athlete_plan, profile?.subscription_period, athleteInfo?.subscription_period]);
 
   const subscriptionExpiresFormatted = useMemo(() => {
