@@ -1031,14 +1031,24 @@ closeWorkoutModal();
   };
 
   const connectCoachByCode = async () => {
-    const code = findCoachCodeInput.trim();
-    if (!code) { setMessage("Ingresa el código de tu coach."); return; }
+    const code = findCoachCodeInput.trim().toUpperCase();
+    if (!code) { setCoachCodeMsg("Ingresa el codigo de tu coach."); return; }
     setFindCoachCodeBusy(true);
-    setMessage("");
+    setCoachCodeMsg("");
     try {
       const coachId = await resolveCoachUserIdFromPublicCode(code);
-      if (!coachId) { setMessage("No encontramos un coach con ese código."); return; }
+      if (!coachId) { setCoachCodeMsg("No encontramos un coach con ese codigo. Verifica e intenta de nuevo."); return; }
       await linkAthleteToCoach(coachId);
+      const { data: coachProf } = await supabase
+        .from("profiles")
+        .select("name")
+        .eq("user_id", coachId)
+        .maybeSingle();
+      if (coachProf?.name) setCoachName(coachProf.name);
+      setCoachCodeMsg("Conectado con " + (coachProf?.name || "tu coach") + "!");
+      setFindCoachCodeInput("");
+    } catch (e) {
+      setCoachCodeMsg("Error inesperado. Intenta de nuevo.");
     } finally { setFindCoachCodeBusy(false); }
   };
 
@@ -1337,18 +1347,18 @@ closeWorkoutModal();
                       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
                         <input
                           type="text"
-                          value={coachCodeInput}
-                          onChange={(e) => { setCoachCodeInput(e.target.value.toUpperCase()); setCoachCodeMsg(""); }}
+                          value={findCoachCodeInput}
+                          onChange={(e) => { setFindCoachCodeInput(e.target.value.toUpperCase()); setCoachCodeMsg(""); }}
                           placeholder="Codigo del coach (ej: B5C9E44A)"
                           style={{ flex: "1 1 180px", padding: "9px 12px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#0f172a", fontFamily: "inherit", fontSize: ".84em", boxSizing: "border-box" }}
                         />
                         <button
                           type="button"
                           onClick={connectCoachByCode}
-                          disabled={coachCodeSaving || !coachCodeInput.trim()}
-                          style={{ padding: "9px 16px", borderRadius: 8, border: "none", background: (coachCodeSaving || !coachCodeInput.trim()) ? "#e2e8f0" : "linear-gradient(135deg,#b45309,#f59e0b)", color: (coachCodeSaving || !coachCodeInput.trim()) ? "#94a3b8" : "#fff", fontWeight: 800, cursor: (coachCodeSaving || !coachCodeInput.trim()) ? "not-allowed" : "pointer", fontFamily: "inherit", fontSize: ".82em", whiteSpace: "nowrap" }}
+                          disabled={findCoachCodeBusy || !findCoachCodeInput.trim()}
+                          style={{ padding: "9px 16px", borderRadius: 8, border: "none", background: (findCoachCodeBusy || !findCoachCodeInput.trim()) ? "#e2e8f0" : "linear-gradient(135deg,#b45309,#f59e0b)", color: (findCoachCodeBusy || !findCoachCodeInput.trim()) ? "#94a3b8" : "#fff", fontWeight: 800, cursor: (findCoachCodeBusy || !findCoachCodeInput.trim()) ? "not-allowed" : "pointer", fontFamily: "inherit", fontSize: ".82em", whiteSpace: "nowrap" }}
                         >
-                          {coachCodeSaving ? "Conectando..." : "Conectar"}
+                          {findCoachCodeBusy ? "Conectando..." : "Conectar"}
                         </button>
                       </div>
                       {coachCodeMsg ? <div style={{ fontSize: ".78em", color: coachCodeMsg.startsWith("Conectado") ? "#166534" : "#dc2626", fontWeight: 600 }}>{coachCodeMsg}</div> : null}
@@ -1370,7 +1380,7 @@ closeWorkoutModal();
                                   {"Codigo: " + (c.coach_id || "N/A") + (c.city ? " · " + c.city : "")}
                                 </div>
                               </div>
-                              <button type="button" onClick={() => { setCoachCodeInput(c.coach_id || ""); setCoachCodeMsg(""); }} style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid rgba(245,158,11,.4)", background: "rgba(245,158,11,.1)", color: "#b45309", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".75em", whiteSpace: "nowrap" }}>
+                              <button type="button" onClick={() => { setFindCoachCodeInput(c.coach_id || ""); setCoachCodeMsg(""); }} style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid rgba(245,158,11,.4)", background: "rgba(245,158,11,.1)", color: "#b45309", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".75em", whiteSpace: "nowrap" }}>
                                 Seleccionar
                               </button>
                             </div>
