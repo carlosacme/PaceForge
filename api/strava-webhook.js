@@ -60,15 +60,10 @@ export default async function handler(req, res) {
     if (adminAction === "delete") {
       const id = req.query.id;
       if (!id) return res.status(400).json({ error: "Missing id" });
-      const r = await fetch(
-        `https://www.strava.com/api/v3/push_subscriptions/${id}`,
-        {
-          method: "DELETE",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: new URLSearchParams({ client_id: CLIENT_ID, client_secret: CLIENT_SECRET }).toString(),
-        }
-      );
-      return res.status(200).json({ status: r.status, ok: r.status === 204 });
+      const delUrl = `https://www.strava.com/api/v3/push_subscriptions/${id}?client_id=${CLIENT_ID}&client_secret=${CLIENT_SECRET}`;
+      const r = await fetch(delUrl, { method: "DELETE" });
+      const txt = await r.text();
+      return res.status(200).json({ status: r.status, ok: r.status === 204, body: txt });
     }
 
     if (adminAction === "create") {
