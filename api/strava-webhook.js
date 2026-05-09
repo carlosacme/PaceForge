@@ -41,19 +41,68 @@ async function refreshStravaToken(supabase, tokenRow) {
 }
 
 export default async function handler(req, res) {
-  // Verificación del webhook (GET)
+
+  // ── ADMIN ACTIONS ──────────────────────────────────────────────
+  const adminAction = req.query.action;
+  if (adminAction && req.method === "GET" && !req.query["hub.mode"]) {
+    const CLIENT_ID = STRAVA_CLIENT_ID;
+    const CLIENT_SECRET = STRAVA_CLIENT_SECRET;
+    const VERIFY_TOKEN = "strava_raf_2026";
+    const CALLBACK_URL = "https://www.runningapexflow.com/api/strava-webhook";
+
+    if (adminAction === "list") {
+      const r = await fetch(
+        `https://www.strava.com/api/v3/push_subscriptions?client_id=${CLIENT_ID}&client_secret=${CLIENT_SECRET}`
+      );
+      return res.status(200).json(await r.json());
+    }
+
+    if (adminAction === "delete") {
+      const id = req.query.id;
+      if (!id) return res.status(400).json({ error: "Missing id" });
+      const r = await fetch(
+        `https://www.strava.com/api/v3/push_subscriptions/${id}`,
+        {
+          method: "DELETE",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({ client_id: CLIENT_ID, client_secret: CLIENT_SECRET }).toString(),
+        }
+      );
+      return res.status(200).json({ status: r.status, ok: r.status === 204 });
+    }
+
+    if (adminAction === "create") {
+      const body = new URLSearchParams({
+        client_id: CLIENT_ID,
+        client_secret: CLIENT_SECRET,
+        callback_url: CALLBACK_URL,
+        verify_token: VERIFY_TOKEN,
+      });
+      const r = await fetch("https://www.strava.com/api/v3/push_subscriptions", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: body.toString(),
+      });
+      const data = await r.json();
+      return res.status(200).json({ status: r.status, data });
+    }
+
+    return res.status(400).json({ error: "action must be list|delete|create" });
+  }
+
+  // ── WEBHOOK VERIFICATION (GET from Strava) ─────────────────────
   if (req.method === "GET") {
     const mode = req.query["hub.mode"];
     const token = req.query["hub.verify_token"];
     const challenge = req.query["hub.challenge"];
     if (mode === "subscribe" && token === STRAVA_VERIFY_TOKEN) {
-      console.log("[strava-webhook] Webhook verified ✅");
+      console.log("[strava-webhook] Webhook verified OK");
       return res.status(200).json({ "hub.challenge": challenge });
     }
     return res.status(403).json({ error: "Forbidden" });
   }
 
-  // Recibir eventos (POST)
+  // ── RECEIVE EVENTS (POST) ──────────────────────────────────────
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
@@ -69,7 +118,6 @@ export default async function handler(req, res) {
 
   console.log("[strava-webhook] Event received:", JSON.stringify(event));
 
-  // Solo procesamos actividades nuevas o actualizadas
   const objectType = event?.object_type;
   const aspectType = event?.aspect_type;
   const activityId = event?.object_id;
@@ -80,15 +128,10 @@ export default async function handler(req, res) {
   }
 
   if (aspectType === "delete") {
-    // Borrar actividad si fue eliminada en Strava
-    await supabase
-      .from("strava_activities")
-      .delete()
-      .eq("strava_activity_id", activityId);
+    await supabase.from("strava_activities").delete().eq("strava_activity_id", activityId);
     return res.status(200).json({ ok: true, message: "Activity deleted" });
   }
 
-  // Buscar el usuario dueño del token
   const { data: tokenRow, error: tokenErr } = await supabase
     .from("strava_tokens")
     .select("*")
@@ -100,7 +143,6 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true, message: "Athlete not registered" });
   }
 
-  // Refrescar token si expiró
   let accessToken = tokenRow.access_token;
   const expiresAt = new Date(tokenRow.expires_at).getTime();
   if (Date.now() >= expiresAt - 60000) {
@@ -110,7 +152,6 @@ export default async function handler(req, res) {
     }
   }
 
-  // Consultar detalles de la actividad a Strava
   const actRes = await fetch(`https://www.strava.com/api/v3/activities/${activityId}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
@@ -121,7 +162,6 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true, message: "Activity not found" });
   }
 
-  // Guardar/actualizar en strava_activities
   const activityData = {
     user_id: tokenRow.user_id,
     strava_activity_id: activity.id,
@@ -154,7 +194,6 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true, message: "Upsert failed" });
   }
 
-  // Actualizar km semanales del atleta en la tabla athletes
   const distanceKm = metersToKm(activity.distance);
   console.log(`[strava-webhook] Activity saved: ${activity.name} ${distanceKm}km`);
 
