@@ -3404,39 +3404,6 @@ function Dashboard({
         </div>
       ) : null}
 
-      {dashAthletes.length === 0 && !showAddAthleteForm ? (
-        <div style={{ marginBottom: 20, borderRadius: 14, background: "linear-gradient(135deg,rgba(13,148,136,.07),rgba(20,184,166,.04))", border: "1px solid rgba(13,148,136,.25)", padding: "20px 22px" }}>
-          <div style={{ fontWeight: 900, color: "#0f172a", fontSize: "1.05em", marginBottom: 6 }}>Bienvenido a RunningApexFlow</div>
-          <div style={{ color: "#475569", fontSize: ".84em", marginBottom: 18 }}>Sigue estos pasos para comenzar a entrenar a tus atletas:</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <div style={{ width: 28, height: 28, borderRadius: 999, background: "#0d9488", color: "#fff", fontWeight: 900, fontSize: ".8em", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>1</div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 800, color: "#0f172a", fontSize: ".88em" }}>Cuenta creada</div>
-                <div style={{ color: "#64748b", fontSize: ".78em" }}>Ya tienes acceso a todas las funciones durante 7 dias</div>
-              </div>
-              <span style={{ color: "#0d9488", fontWeight: 900 }}>Listo</span>
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <div style={{ width: 28, height: 28, borderRadius: 999, background: "#f59e0b", color: "#fff", fontWeight: 900, fontSize: ".8em", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>2</div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 800, color: "#0f172a", fontSize: ".88em" }}>Agrega tu primer atleta</div>
-                <div style={{ color: "#64748b", fontSize: ".78em" }}>Comparte tu codigo de coach o invitalo por email</div>
-              </div>
-              <button type="button" onClick={onOpenAddAthlete} style={{ padding: "6px 14px", borderRadius: 8, border: "none", background: "linear-gradient(135deg,#f59e0b,#d97706)", color: "#fff", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".75em", whiteSpace: "nowrap" }}>Agregar</button>
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 12, opacity: 0.5 }}>
-              <div style={{ width: 28, height: 28, borderRadius: 999, background: "#94a3b8", color: "#fff", fontWeight: 900, fontSize: ".8em", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>3</div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 800, color: "#0f172a", fontSize: ".88em" }}>Crea el primer workout</div>
-                <div style={{ color: "#64748b", fontSize: ".78em" }}>Ve a Entrenamientos y usa el Builder con IA</div>
-              </div>
-              <span style={{ color: "#94a3b8", fontSize: ".75em", fontWeight: 700 }}>Pendiente</span>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
       {showAddAthleteForm && (
         <div style={{ marginBottom: 22, background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 12, padding: 18 }}>
           <div style={{ fontSize: ".75em", letterSpacing: ".13em", color: "#475569", textTransform: "uppercase", marginBottom: 14 }}>
