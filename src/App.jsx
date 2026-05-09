@@ -2800,7 +2800,7 @@ const handleSignOut = async () => {
               setView("athletes");
               setShowAddAthleteForm(false);
             }}
-            onRequestAddAthlete={() => setShowAddAthleteForm(true)}
+            onRequestAddAthlete={() => setInviteModalOpen(true)}
             showAddAthleteForm={showAddAthleteForm}
             planLimitWarning={planLimitWarning}
             onGoToPlans={() => setView("plans")}
