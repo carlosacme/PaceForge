@@ -1177,18 +1177,39 @@ closeWorkoutModal();
         </div>
       ) : null}
 
-      <div style={{ ...S.card, marginBottom: 18 }}>
-        <div style={{ fontSize: ".72em", letterSpacing: ".13em", color: "#475569", textTransform: "uppercase", marginBottom: 10 }}>Resumen últimas 4 semanas</div>
-        <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit,minmax(190px,1fr))" }}>
-          {last4WeeksSummary.map((week) => (
-            <div key={week.key} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: "10px 12px", background: "#f8fafc" }}>
-              <div style={{ color: "#0f172a", fontWeight: 800, fontSize: ".82em" }}>{week.label}</div>
-              <div style={{ color: "#94a3b8", fontSize: ".68em", marginTop: 2 }}>{week.range}</div>
-              <div style={{ marginTop: 8, fontSize: ".75em", color: "#334155" }}>{week.kmTotal.toFixed(1)} km totales</div>
-              <div style={{ fontSize: ".75em", color: "#334155" }}>{week.completed} workouts completados</div>
-              <div style={{ fontSize: ".75em", color: "#334155" }}>Adherencia {week.adherence}%</div>
-            </div>
-          ))}
+      <div style={{ ...S.card, marginBottom: 14 }}>
+        <div style={{ fontSize: ".72em", letterSpacing: ".13em", color: "#475569", textTransform: "uppercase", marginBottom: 12 }}>Progreso semanal</div>
+        <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 4 }}>
+          {last4WeeksSummary.map((week, idx) => {
+            const isCurrentWeek = idx === 0;
+            const adherencePct = week.adherence;
+            const adherenceColor = adherencePct >= 80 ? "#22c55e" : adherencePct >= 50 ? "#f59e0b" : "#ef4444";
+            const maxKm = Math.max(...last4WeeksSummary.map(w => w.kmTotal), 1);
+            const kmPct = Math.round((week.kmTotal / maxKm) * 100);
+            return (
+              <div key={week.key} style={{ flex: "0 0 auto", width: 140, border: isCurrentWeek ? "2px solid rgba(245,158,11,.5)" : "1px solid #e2e8f0", borderRadius: 12, padding: "12px 10px", background: isCurrentWeek ? "rgba(245,158,11,.04)" : "#fafafa" }}>
+                <div style={{ fontWeight: 800, fontSize: ".78em", color: isCurrentWeek ? "#b45309" : "#475569" }}>{week.label}</div>
+                <div style={{ fontSize: ".6em", color: "#94a3b8", marginBottom: 10 }}>{week.range}</div>
+                <div style={{ marginBottom: 8 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: ".65em", color: "#64748b", marginBottom: 3 }}>
+                    <span>Km</span><span style={{ fontWeight: 800, color: "#0f172a" }}>{week.kmTotal.toFixed(1)}</span>
+                  </div>
+                  <div style={{ height: 5, background: "#e2e8f0", borderRadius: 999 }}>
+                    <div style={{ height: "100%", width: kmPct + "%", background: "linear-gradient(90deg,#f59e0b,#f97316)", borderRadius: 999, transition: "width .3s" }} />
+                  </div>
+                </div>
+                <div style={{ marginBottom: 8 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: ".65em", color: "#64748b", marginBottom: 3 }}>
+                    <span>Adherencia</span><span style={{ fontWeight: 800, color: adherenceColor }}>{adherencePct}%</span>
+                  </div>
+                  <div style={{ height: 5, background: "#e2e8f0", borderRadius: 999 }}>
+                    <div style={{ height: "100%", width: adherencePct + "%", background: adherenceColor, borderRadius: 999, transition: "width .3s" }} />
+                  </div>
+                </div>
+                <div style={{ fontSize: ".62em", color: "#94a3b8" }}>{week.completed}/{week.total} sesiones</div>
+              </div>
+            );
+          })}
         </div>
       </div>
 
