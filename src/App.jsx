@@ -3559,7 +3559,7 @@ function Dashboard({
         </div>
       ) : null}
 
-      {dashAthletes.length === 0 && !showAddAthleteForm ? (
+      {!dashLoading && dashAthletes.length === 0 && !showAddAthleteForm ? (
         <div style={{ marginBottom: 20, borderRadius: 14, background: "linear-gradient(135deg,rgba(13,148,136,.07),rgba(20,184,166,.04))", border: "1px solid rgba(13,148,136,.25)", padding: "20px 22px" }}>
           <div style={{ fontWeight: 900, color: "#0f172a", fontSize: "1.05em", marginBottom: 6 }}>Bienvenido a RunningApexFlow</div>
           <div style={{ color: "#475569", fontSize: ".84em", marginBottom: 18 }}>Sigue estos pasos para comenzar a entrenar a tus atletas:</div>
