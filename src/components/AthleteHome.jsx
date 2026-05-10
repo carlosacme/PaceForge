@@ -1109,8 +1109,9 @@ closeWorkoutModal();
           {message}
         </div>
       ) : null}
-      <div style={{ marginBottom: 14 }}>
-        <h1 style={{ ...S.pageTitle, marginBottom: 4 }}>Hola, {athleteName}</h1>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+        <h1 style={{ ...S.pageTitle, marginBottom: 0 }}>Hola, {athleteName}</h1>
+        <img src="/pwa-192.png" alt="RAF" style={{ width: 38, height: 38, borderRadius: 10, objectFit: "cover", flexShrink: 0 }} />
       </div>
 {coachName ? (
         <div
