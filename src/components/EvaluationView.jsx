@@ -513,6 +513,51 @@ export default function EvaluationView({ athletes, currentUserId, notify, athlet
 
       <div style={{ ...S.card }}>
         <div style={{ fontSize: ".76em", color: "#64748b", fontWeight: 700, marginBottom: 10 }}>Historial de evaluaciones</div>
+        {history.length >= 2 ? (() => {
+          const sorted = [...history].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+          const vdots = sorted.map(h => Number(h.vdot) || 0);
+          const dates = sorted.map(h => new Date(h.created_at).toLocaleDateString("es", { day: "numeric", month: "short" }));
+          const minV = Math.max(0, Math.min(...vdots) - 2);
+          const maxV = Math.max(...vdots) + 2;
+          const W = 320, H = 100, padL = 30, padR = 10, padT = 10, padB = 24;
+          const innerW = W - padL - padR;
+          const innerH = H - padT - padB;
+          const toX = (i) => padL + (i / (vdots.length - 1)) * innerW;
+          const toY = (v) => padT + innerH - ((v - minV) / (maxV - minV)) * innerH;
+          const points = vdots.map((v, i) => toX(i) + "," + toY(v)).join(" ");
+          return (
+            <div style={{ marginBottom: 14, padding: "10px 12px", background: "#f8fafc", borderRadius: 10, border: "1px solid #e2e8f0" }}>
+              <div style={{ fontSize: ".68em", color: "#64748b", marginBottom: 6, fontWeight: 700 }}>EVOLUCION VDOT</div>
+              <svg viewBox={"0 0 " + W + " " + H} style={{ width: "100%", height: "auto", display: "block" }}>
+                {[0, 0.5, 1].map((t) => {
+                  const y = padT + innerH * (1 - t);
+                  const v = (minV + (maxV - minV) * t).toFixed(1);
+                  return (
+                    <g key={t}>
+                      <line x1={padL} y1={y} x2={W - padR} y2={y} stroke="#e2e8f0" strokeWidth={1} />
+                      <text x={padL - 4} y={y + 3} textAnchor="end" fontSize={7} fill="#94a3b8">{v}</text>
+                    </g>
+                  );
+                })}
+                <polyline fill="none" stroke="#f59e0b" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" points={points} />
+                {vdots.map((v, i) => (
+                  <g key={i}>
+                    <circle cx={toX(i)} cy={toY(v)} r={4} fill="#f59e0b" stroke="#fff" strokeWidth={1.5} />
+                    <text x={toX(i)} y={toY(v) - 7} textAnchor="middle" fontSize={7} fontWeight="700" fill="#b45309">{v.toFixed(1)}</text>
+                    <text x={toX(i)} y={H - 6} textAnchor="middle" fontSize={6.5} fill="#94a3b8">{dates[i]}</text>
+                  </g>
+                ))}
+              </svg>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: ".68em", marginTop: 6 }}>
+                <span style={{ color: "#64748b" }}>Inicio: <strong style={{ color: "#0f172a" }}>{vdots[0].toFixed(1)}</strong></span>
+                <span style={{ color: vdots[vdots.length-1] >= vdots[0] ? "#16a34a" : "#dc2626", fontWeight: 800 }}>
+                  {vdots[vdots.length-1] >= vdots[0] ? "+" : ""}{(vdots[vdots.length-1] - vdots[0]).toFixed(1)} puntos
+                </span>
+                <span style={{ color: "#64748b" }}>Actual: <strong style={{ color: "#0f172a" }}>{vdots[vdots.length-1].toFixed(1)}</strong></span>
+              </div>
+            </div>
+          );
+        })() : null}
         {history.length === 0 ? (
           <div style={{ color: "#94a3b8", fontSize: ".9em" }}>Sin evaluaciones previas.</div>
         ) : (
