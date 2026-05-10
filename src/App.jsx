@@ -2773,7 +2773,7 @@ const handleSignOut = async () => {
 
       <aside className="pf-sidebar-desktop" style={S.sidebar}>
         <div style={S.logo}>
-          <span style={{ fontSize: "1.5em", color: "#f59e0b", width: 26, textAlign: "center" }} aria-hidden>▲</span>
+          <img src="/pwa-192.png" alt="RunningApexFlow" style={{ width: 36, height: 36, borderRadius: 8, objectFit: "cover", flexShrink: 0 }} />
           <div>
             <div style={S.logoTitle}>
               RUNNING<span style={{ color: "#f59e0b" }}>APEX</span>FLOW
