@@ -21,7 +21,40 @@ import {
   libraryRowToBuilderWorkout,
   normalizeLibraryRow,
   styles,
+  WORKOUT_BLOCK_COLORS,
 } from "./shared/appShared";
+
+const WorkoutStructureTable = ({ structure = [] }) => {
+  const rows = normalizeWorkoutStructure(structure);
+  if (!rows.length) return null;
+  return (
+    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: ".8em" }}>
+      <thead>
+        <tr>
+          {["Fase","Tipo","Dur (min)","Dist (km)","Ritmo","FC","Desc"].map(h => (
+            <th key={h} style={{ padding: "4px 6px", background: "#f1f5f9", fontWeight: 700, textAlign: "left", fontSize: ".85em" }}>{h}</th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((step, idx) => {
+          const c = (WORKOUT_BLOCK_COLORS && WORKOUT_BLOCK_COLORS[step.block_type]) || { bg: "#f8fafc", border: "#e2e8f0", text: "#334155" };
+          return (
+            <tr key={idx} style={{ background: c.bg, borderBottom: "1px solid " + c.border }}>
+              <td style={{ padding: "4px 6px", color: c.text, fontWeight: 700 }}>{idx + 1}</td>
+              <td style={{ padding: "4px 6px", color: c.text }}>{step.block_type || "—"}</td>
+              <td style={{ padding: "4px 6px" }}>{step.duration_min || "—"}</td>
+              <td style={{ padding: "4px 6px" }}>{step.distance_km || "—"}</td>
+              <td style={{ padding: "4px 6px" }}>{step.target_pace || "—"}</td>
+              <td style={{ padding: "4px 6px" }}>{step.target_hr || "—"}</td>
+              <td style={{ padding: "4px 6px", color: "#64748b" }}>{step.description || ""}</td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+};
 
 function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiLoading, setAiLoading, notify, coachUserId, coachPlan, profileRole, onGoToPlans, onWorkoutAssigned, onSavedToLibrary }) {
   const S = styles;
