@@ -239,7 +239,7 @@ function readStoredAthleteNavTab() {
 }
 
 const RAF_ATHLETE_PROFILE_TAB_KEY = "raf_athlete_profile_tab";
-const ATHLETE_PROFILE_TAB_IDS = ["logros", "forma", "config", "pagos"];
+const ATHLETE_PROFILE_TAB_IDS = ["logros", "forma", "mes", "config", "pagos"];
 function readStoredAthleteProfileTab() {
   if (typeof localStorage === "undefined") return "logros";
   const raw = localStorage.getItem(RAF_ATHLETE_PROFILE_TAB_KEY);
@@ -1408,6 +1408,7 @@ closeWorkoutModal();
                 <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
                   <button type="button" onClick={() => setAthleteProfileTab("logros")} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", background: athleteProfileTab === "logros" ? "rgba(245,158,11,.14)" : "#fff", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>🏅 Logros</button>
                   <button type="button" onClick={() => setAthleteProfileTab("forma")} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", background: athleteProfileTab === "forma" ? "rgba(245,158,11,.14)" : "#fff", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>📊 Forma</button>
+                  <button type="button" onClick={() => setAthleteProfileTab("mes")} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", background: athleteProfileTab === "mes" ? "rgba(245,158,11,.14)" : "#fff", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>📅 Mes</button>
                   <button type="button" onClick={() => setAthleteProfileTab("config")} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", background: athleteProfileTab === "config" ? "rgba(245,158,11,.14)" : "#fff", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>⚙️ Config</button>
                   <button type="button" onClick={() => setAthleteProfileTab("pagos")} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", background: athleteProfileTab === "pagos" ? "rgba(245,158,11,.14)" : "#fff", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>💳 Pagos</button>
                 </div>
@@ -1566,6 +1567,77 @@ closeWorkoutModal();
                     )}
                   </div>
                 ) : null}
+
+                {athleteProfileTab === "mes" ? (() => {
+                  const now = new Date();
+                  const y = now.getFullYear();
+                  const m = now.getMonth();
+                  const p2 = (n) => String(n).padStart(2, "0");
+                  const startThisMonth = `${y}-${p2(m + 1)}-01`;
+                  const endThisMonth = `${y}-${p2(m + 1)}-${p2(new Date(y, m + 1, 0).getDate())}`;
+                  const startLastMonth = `${y}-${p2(m === 0 ? 12 : m)}-01`;
+                  const endLastMonth = `${y}-${p2(m === 0 ? 12 : m)}-${p2(new Date(y, m, 0).getDate())}`;
+                  const monthLabel = now.toLocaleDateString("es", { month: "long", year: "numeric" });
+                  const thisMonthWorkouts = workouts.filter((w) => w.scheduled_date >= startThisMonth && w.scheduled_date <= endThisMonth);
+                  const lastMonthWorkouts = workouts.filter((w) => w.scheduled_date >= startLastMonth && w.scheduled_date <= endLastMonth);
+                  const doneThis = thisMonthWorkouts.filter((w) => w.done);
+                  const doneLast = lastMonthWorkouts.filter((w) => w.done);
+                  const kmThis = doneThis.reduce((s, w) => s + (Number(w.total_km) || 0), 0);
+                  const kmLast = doneLast.reduce((s, w) => s + (Number(w.total_km) || 0), 0);
+                  const adherenceThis = thisMonthWorkouts.length ? Math.round((doneThis.length / thisMonthWorkouts.length) * 100) : 0;
+                  const bestSession = doneThis.sort((a, b) => (Number(b.total_km) || 0) - (Number(a.total_km) || 0))[0];
+                  const kmDelta = kmThis - kmLast;
+                  const kmDeltaColor = kmDelta >= 0 ? "#16a34a" : "#dc2626";
+                  return (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                      <div style={{ ...S.card }}>
+                        <div style={{ fontSize: ".68em", color: "#64748b", textTransform: "uppercase", letterSpacing: ".13em", marginBottom: 10 }}>Resumen · {monthLabel}</div>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
+                          <div style={{ background: "#f8fafc", borderRadius: 10, padding: "12px 14px" }}>
+                            <div style={{ fontSize: ".68em", color: "#64748b", marginBottom: 4 }}>Km totales</div>
+                            <div style={{ fontSize: "1.6em", fontWeight: 900, color: "#0f172a", fontFamily: "monospace" }}>{kmThis.toFixed(1)}</div>
+                            <div style={{ fontSize: ".7em", color: kmDeltaColor, fontWeight: 700, marginTop: 2 }}>
+                              {kmDelta >= 0 ? "+" : ""}{kmDelta.toFixed(1)} vs mes anterior
+                            </div>
+                          </div>
+                          <div style={{ background: "#f8fafc", borderRadius: 10, padding: "12px 14px" }}>
+                            <div style={{ fontSize: ".68em", color: "#64748b", marginBottom: 4 }}>Sesiones</div>
+                            <div style={{ fontSize: "1.6em", fontWeight: 900, color: "#0f172a", fontFamily: "monospace" }}>{doneThis.length}/{thisMonthWorkouts.length}</div>
+                            <div style={{ fontSize: ".7em", color: adherenceThis >= 80 ? "#16a34a" : "#f59e0b", fontWeight: 700, marginTop: 2 }}>
+                              {adherenceThis}% adherencia
+                            </div>
+                          </div>
+                        </div>
+                        {bestSession && (
+                          <div style={{ background: "rgba(245,158,11,.06)", border: "1px solid rgba(245,158,11,.25)", borderRadius: 10, padding: "10px 14px" }}>
+                            <div style={{ fontSize: ".68em", color: "#b45309", fontWeight: 700, marginBottom: 4 }}>🏆 Mejor sesión</div>
+                            <div style={{ fontWeight: 800, fontSize: ".88em", color: "#0f172a" }}>{bestSession.title}</div>
+                            <div style={{ fontSize: ".75em", color: "#64748b", marginTop: 2 }}>{Number(bestSession.total_km || 0).toFixed(1)} km · {bestSession.duration_min || 0} min{bestSession.rpe ? " · RPE " + bestSession.rpe : ""}</div>
+                          </div>
+                        )}
+                      </div>
+                      <div style={{ ...S.card }}>
+                        <div style={{ fontSize: ".68em", color: "#64748b", textTransform: "uppercase", letterSpacing: ".13em", marginBottom: 10 }}>Comparativa vs mes anterior</div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                          {[
+                            { label: "Km totales", val: kmThis.toFixed(1), prev: kmLast.toFixed(1), unit: "km" },
+                            { label: "Sesiones completadas", val: doneThis.length, prev: doneLast.length, unit: "" },
+                            { label: "Adherencia", val: adherenceThis + "%", prev: (lastMonthWorkouts.length ? Math.round((doneLast.length / lastMonthWorkouts.length) * 100) : 0) + "%", unit: "" },
+                          ].map((row) => (
+                            <div key={row.label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid #f1f5f9" }}>
+                              <span style={{ fontSize: ".8em", color: "#475569" }}>{row.label}</span>
+                              <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                                <span style={{ fontSize: ".72em", color: "#94a3b8" }}>{row.prev}</span>
+                                <span style={{ fontSize: ".72em", color: "#94a3b8" }}>→</span>
+                                <span style={{ fontWeight: 800, fontSize: ".88em", color: "#0f172a" }}>{row.val}</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })() : null}
 
                 {athleteProfileTab === "pagos" ? (
                   <>
