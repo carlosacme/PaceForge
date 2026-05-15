@@ -1695,11 +1695,37 @@ useEffect(() => {
           throw new Error("No user");
         }
         const coachId = userData.user.id;
-        const { data, error } = await supabase
-          .from("athletes")
-          .select("*")
-          .eq("coach_id", coachId)
-          .order("id", { ascending: true });
+
+        // Verificar si es staff (sub-coach)
+        const { data: staffRow } = await supabase
+          .from("coach_staff")
+          .select("coach_id")
+          .eq("staff_id", coachId)
+          .maybeSingle();
+
+        let data, error;
+        if (staffRow) {
+          // Es staff: cargar solo atletas asignados
+          const { data: assignedRows } = await supabase
+            .from("staff_athletes")
+            .select("athlete_id")
+            .eq("staff_id", coachId)
+            .eq("coach_id", staffRow.coach_id);
+          const athleteIds = (assignedRows || []).map((r) => r.athlete_id);
+          if (athleteIds.length === 0) {
+            setAthletes([]);
+          } else {
+            const res = await supabase.from("athletes").select("*").in("id", athleteIds).order("id", { ascending: true });
+            data = res.data;
+            error = res.error;
+          }
+        } else {
+          // Es coach principal: cargar todos sus atletas
+          const res = await supabase.from("athletes").select("*").eq("coach_id", coachId).order("id", { ascending: true });
+          data = res.data;
+          error = res.error;
+        }
+
         if (error) {
           notify("Error cargando atletas");
           setAthletes([]);
