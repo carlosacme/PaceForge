@@ -3480,9 +3480,14 @@ function Dashboard({
     if (!silent) setDashLoading(true);
     const ws = formatLocalYMD(weekStart);
     const we = formatLocalYMD(weekEnd);
+    // Get staff IDs for this coach
+    const { data: staffRows } = await supabase.from("coach_staff").select("staff_id").eq("coach_id", coachUserId);
+    const staffIds = (staffRows || []).map((s) => s.staff_id);
+    const allCoachIds = [coachUserId, ...staffIds];
+
     const [aRes, wRes] = await Promise.all([
       supabase.from("athletes").select("*").eq("coach_id", coachUserId).order("id", { ascending: true }),
-      supabase.from("workouts").select("*").eq("coach_id", coachUserId).gte("scheduled_date", ws).lte("scheduled_date", we),
+      supabase.from("workouts").select("*").in("coach_id", allCoachIds).gte("scheduled_date", ws).lte("scheduled_date", we),
     ]);
     if (aRes.error) console.error("Dashboard athletes:", aRes.error);
     else setDashAthletes((aRes.data || []).map(normalizeAthlete));
