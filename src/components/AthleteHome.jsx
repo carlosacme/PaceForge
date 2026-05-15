@@ -1,6 +1,6 @@
 import React, { lazy, Suspense, useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { supabase } from "../lib/supabase";
-import WeatherWidget from "./WeatherWidget";
+import WeatherWidget, { useWeather } from "./WeatherWidget";
 import {
   STRAVA_CALLBACK_URL,
   formatLocalYMD,
@@ -368,6 +368,7 @@ export default function AthleteHome({ profile }) {
   const [briefingModal, setBriefingModal] = useState(null);
   const [briefingText, setBriefingText] = useState("");
   const [briefingLoading, setBriefingLoading] = useState(false);
+  const { weather, getWorkoutWeatherNote } = useWeather();
   const [athleteChatClearing, setAthleteChatClearing] = useState(false);
   const [stravaConnection, setStravaConnection] = useState(null);
   const [stravaSyncingCode, setStravaSyncingCode] = useState(false);
@@ -1212,7 +1213,23 @@ closeWorkoutModal();
         </div>
       ) : null}
       <WeatherWidget defaultCity="Bogota,CO" />
-{renderAthleteProgressCard(14)}
+{(() => {
+        const weatherNote = getWorkoutWeatherNote();
+        const todayYmd2 = formatLocalYMD(new Date());
+        const hasTodayWorkout = workouts.some((w) => w.scheduled_date === todayYmd2 && !w.done);
+        if (!weatherNote || !hasTodayWorkout) return null;
+        const isWarning = weather?.intensity === "warning";
+        return (
+          <div style={{ marginBottom: 14, padding: "12px 14px", borderRadius: 12, background: isWarning ? "rgba(239,68,68,.08)" : "rgba(245,158,11,.08)", border: isWarning ? "1px solid rgba(239,68,68,.3)" : "1px solid rgba(245,158,11,.3)" }}>
+            <div style={{ fontWeight: 800, fontSize: ".82em", color: isWarning ? "#991b1b" : "#92400e", marginBottom: 4 }}>
+              {isWarning ? "⚠️ Alerta clima" : "🌡️ Precaucion clima"}
+            </div>
+            <div style={{ fontSize: ".78em", color: isWarning ? "#b91c1c" : "#b45309", lineHeight: 1.5 }}>{weatherNote}</div>
+          </div>
+        );
+      })()}
+
+      {renderAthleteProgressCard(14)}
 
       <div style={{ ...S.card, marginBottom: 14 }}>
         <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 10 }}>
