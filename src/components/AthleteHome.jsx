@@ -847,6 +847,21 @@ closeWorkoutModal();
       }
       openWorkoutSummaryModal({ ...w, done: true, rpe: next ? w.rpe : null });
     }
+    // Notificar coach cuando el atleta desmarca un workout (sesion perdida)
+    if (!next && athleteInfo?.coach_id) {
+      try {
+        const { data: coachProf } = await supabase.from("profiles").select("fcm_token").eq("user_id", athleteInfo.coach_id).maybeSingle();
+        const coachToken = coachProf?.fcm_token ?? null;
+        if (coachToken && String(coachToken).trim() !== "") {
+          await sendChatPushNotification({
+            token: coachToken,
+            title: "⚠️ Sesion no completada",
+            body: `${athleteInfo.name || "Atleta"} no completo: ${w.title || "Workout"} (${w.total_km || 0} km). Puede requerir ajuste de plan.`,
+            logLabel: "workout missed athlete→coach",
+          });
+        }
+      } catch (_) {}
+    }
   };
 
   const saveWorkoutRpe = async (w, rawVal) => {
