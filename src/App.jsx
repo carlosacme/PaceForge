@@ -1160,6 +1160,7 @@ export default function App() {
   );
   const [stravaRefreshTick, setStravaRefreshTick] = useState(0);
   const [inviteCodeFromUrl, setInviteCodeFromUrl] = useState("");
+  const [inviteParentCoachId, setInviteParentCoachId] = useState("");
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteSending, setInviteSending] = useState(false);
@@ -1432,9 +1433,16 @@ export default function App() {
     const params = new URLSearchParams(window.location.search);
     const invite = (params.get("invite") || "").trim();
     if (!invite) return;
+    const inviteType = (params.get("type") || "").trim();
+    const inviteParentCoach = (params.get("coach") || "").trim();
     setInviteCodeFromUrl(invite);
     setAuthMode("register");
-    setAuthRole("athlete");
+    if (inviteType === "staff") {
+      setAuthRole("coach");
+      if (inviteParentCoach) setInviteParentCoachId(inviteParentCoach);
+    } else {
+      setAuthRole("athlete");
+    }
     setAuthLandingStep("register");
     setLandingAuthOpen(true);
   }, []);
@@ -1930,6 +1938,13 @@ useEffect(() => {
             registered_at: new Date().toISOString(),
           };
           const { error: cpErr } = await supabase.from("coach_profiles").insert(cpPayload);
+          // Si es invitacion de staff, registrar en coach_staff
+          if (inviteParentCoachId && newUserId) {
+            await supabase.from("coach_staff").insert({
+              coach_id: inviteParentCoachId,
+              staff_id: newUserId,
+            });
+          }
           if (cpErr) console.error("Error creando coach_profiles en registro:", cpErr);
         }
 
