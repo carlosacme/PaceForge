@@ -96,6 +96,36 @@ function MarketplacePlanWorkoutsAccordion({ previewWorkouts, resetKey, lockAfter
     return <div style={{ color: "#94a3b8", fontSize: ".82em", marginBottom: 12 }}>No hay workouts en este plan.</div>;
   }
 
+  const generateBriefing = async (workout) => {
+    setBriefingLoading(true);
+    setBriefingText("");
+    try {
+      const hrZonesText = athleteInfo?.fc_max
+        ? `FC max: ${athleteInfo.fc_max} lpm`
+        : "FC no configurada";
+      const prompt = `Eres un coach de running experto. El atleta ${athleteInfo?.name || "el atleta"} tiene programado hoy: "${workout.title || workout.type}" (${workout.total_km || 0} km, ${workout.duration_min || 0} min, tipo: ${workout.type || "general"}).
+Objetivo del atleta: ${athleteInfo?.goal || "mejorar rendimiento"}.
+${hrZonesText}.
+Escribe un briefing motivacional de 3-4 oraciones en español. Incluye: 1) qué va a trabajar hoy y por qué es importante, 2) en qué enfocarse durante la sesión (ritmo, respiración, técnica), 3) una frase motivacional final. Sé directo, personal y energético. Sin bullets, solo texto corrido.`;
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 300,
+          messages: [{ role: "user", content: prompt }],
+        }),
+      });
+      const data = await res.json();
+      const text = data?.content?.[0]?.text || "No se pudo generar el briefing.";
+      setBriefingText(text);
+    } catch (e) {
+      setBriefingText("Error generando el briefing. Intenta de nuevo.");
+    } finally {
+      setBriefingLoading(false);
+    }
+  };
+
   const sendNot100Report = async () => {
     if (!not100Modal || !athleteInfo?.coach_id) return;
     setNot100Sending(true);
@@ -335,6 +365,9 @@ export default function AthleteHome({ profile }) {
   const [not100Modal, setNot100Modal] = useState(null);
   const [not100Form, setNot100Form] = useState({ reason: "", level: "medio" });
   const [not100Sending, setNot100Sending] = useState(false);
+  const [briefingModal, setBriefingModal] = useState(null);
+  const [briefingText, setBriefingText] = useState("");
+  const [briefingLoading, setBriefingLoading] = useState(false);
   const [athleteChatClearing, setAthleteChatClearing] = useState(false);
   const [stravaConnection, setStravaConnection] = useState(null);
   const [stravaSyncingCode, setStravaSyncingCode] = useState(false);
@@ -1210,6 +1243,10 @@ closeWorkoutModal();
               😓 No estoy al 100%
             </button>
           )}
+          <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={(e) => { e.stopPropagation(); setBriefingModal(ctxMenuAthleteWorkout); setBriefingText(""); closeAthleteCalendarCtxMenu(); generateBriefing(ctxMenuAthleteWorkout); }}
+            style={{ display: "block", width: "100%", textAlign: "left", background: "transparent", border: "none", borderRadius: 8, padding: "10px 12px", color: "#6366f1", fontWeight: 600, cursor: "pointer", fontFamily: "inherit", fontSize: ".82em" }}>
+            ⚡ Briefing IA
+          </button>
         </div>
       ) : null}
 
@@ -1248,6 +1285,37 @@ closeWorkoutModal();
           })}
         </div>
       </div>
+
+      {briefingModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.55)", zIndex: 10003, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ background: "#fff", borderRadius: 14, padding: 20, width: "100%", maxWidth: 420, boxShadow: "0 20px 60px rgba(0,0,0,.3)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+              <span style={{ fontSize: "1.2em" }}>⚡</span>
+              <div style={{ fontWeight: 900, fontSize: ".95em", color: "#4338ca" }}>Briefing del entreno</div>
+            </div>
+            <div style={{ fontSize: ".78em", color: "#64748b", marginBottom: 14 }}>{briefingModal.title} · {briefingModal.total_km || 0} km · {briefingModal.duration_min || 0} min</div>
+            {briefingLoading ? (
+              <div style={{ padding: "20px 0", textAlign: "center", color: "#6366f1", fontSize: ".85em" }}>Generando briefing con IA...</div>
+            ) : (
+              <div style={{ fontSize: ".88em", color: "#0f172a", lineHeight: 1.65, background: "rgba(99,102,241,.05)", border: "1px solid rgba(99,102,241,.2)", borderRadius: 10, padding: "14px 16px", marginBottom: 16 }}>
+                {briefingText}
+              </div>
+            )}
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              {!briefingLoading && (
+                <button type="button" onClick={() => generateBriefing(briefingModal)}
+                  style={{ padding: "8px 14px", borderRadius: 8, border: "1px solid rgba(99,102,241,.3)", background: "rgba(99,102,241,.08)", color: "#4338ca", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".78em" }}>
+                  Regenerar
+                </button>
+              )}
+              <button type="button" onClick={() => setBriefingModal(null)}
+                style={{ padding: "8px 14px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#475569", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".82em" }}>
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {not100Modal && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.55)", zIndex: 10003, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
