@@ -96,6 +96,32 @@ function MarketplacePlanWorkoutsAccordion({ previewWorkouts, resetKey, lockAfter
     return <div style={{ color: "#94a3b8", fontSize: ".82em", marginBottom: 12 }}>No hay workouts en este plan.</div>;
   }
 
+  const sendNot100Report = async () => {
+    if (!not100Modal || !athleteInfo?.coach_id) return;
+    setNot100Sending(true);
+    try {
+      // Update workout with note
+      const note = `[No estoy al 100% · Nivel: ${not100Form.level}] ${not100Form.reason || "Sin detalle adicional"}`;
+      await supabase.from("workouts").update({ athlete_notes: note }).eq("id", not100Modal.id);
+      // Notify coach via push
+      const { data: coachProf } = await supabase.from("profiles").select("fcm_token").eq("user_id", athleteInfo.coach_id).maybeSingle();
+      if (coachProf?.fcm_token) {
+        await sendChatPushNotification({
+          token: coachProf.fcm_token,
+          title: `😓 ${athleteInfo.name || "Tu atleta"} no está al 100%`,
+          body: `${not100Modal.title || "Entreno"}: ${not100Form.reason || "Nivel " + not100Form.level}`,
+          logLabel: "not100",
+        });
+      }
+      setNot100Modal(null);
+      setMessage("✅ Tu coach fue notificado");
+    } catch (e) {
+      console.error("not100:", e);
+    } finally {
+      setNot100Sending(false);
+    }
+  };
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
       {weekGroups.map(([weekKey, items]) => {
@@ -306,6 +332,9 @@ export default function AthleteHome({ profile }) {
   const athleteChatScrollRef = useRef(null);
   const [athleteCalendarCtxMenu, setAthleteCalendarCtxMenu] = useState(null);
   const athleteCalendarCtxMenuRef = useRef(null);
+  const [not100Modal, setNot100Modal] = useState(null);
+  const [not100Form, setNot100Form] = useState({ reason: "", level: "medio" });
+  const [not100Sending, setNot100Sending] = useState(false);
   const [athleteChatClearing, setAthleteChatClearing] = useState(false);
   const [stravaConnection, setStravaConnection] = useState(null);
   const [stravaSyncingCode, setStravaSyncingCode] = useState(false);
@@ -1175,6 +1204,12 @@ closeWorkoutModal();
           <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={async (e) => { e.stopPropagation(); await toggleDone(ctxMenuAthleteWorkout); closeAthleteCalendarCtxMenu(); }} style={{ display: "block", width: "100%", textAlign: "left", background: "transparent", border: "none", borderRadius: 8, padding: "10px 12px", color: "#0f172a", fontWeight: 600, cursor: "pointer", fontFamily: "inherit", fontSize: ".82em" }}>
             {ctxMenuAthleteWorkout.done ? "✓ Marcar pendiente" : "✓ Marcar hecho"}
           </button>
+          {!ctxMenuAthleteWorkout.done && (
+            <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={(e) => { e.stopPropagation(); setNot100Modal(ctxMenuAthleteWorkout); setNot100Form({ reason: "", level: "medio" }); closeAthleteCalendarCtxMenu(); }}
+              style={{ display: "block", width: "100%", textAlign: "left", background: "transparent", border: "none", borderRadius: 8, padding: "10px 12px", color: "#f59e0b", fontWeight: 600, cursor: "pointer", fontFamily: "inherit", fontSize: ".82em" }}>
+              😓 No estoy al 100%
+            </button>
+          )}
         </div>
       ) : null}
 
@@ -1213,6 +1248,42 @@ closeWorkoutModal();
           })}
         </div>
       </div>
+
+      {not100Modal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.55)", zIndex: 10003, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ background: "#fff", borderRadius: 14, padding: 20, width: "100%", maxWidth: 400, boxShadow: "0 20px 60px rgba(0,0,0,.3)" }}>
+            <div style={{ fontWeight: 900, fontSize: "1em", color: "#0f172a", marginBottom: 4 }}>😓 No estoy al 100%</div>
+            <div style={{ fontSize: ".8em", color: "#64748b", marginBottom: 14 }}>{not100Modal.title} · Cuéntale a tu coach cómo estás</div>
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: ".72em", fontWeight: 700, color: "#475569", marginBottom: 6 }}>Nivel</div>
+              <div style={{ display: "flex", gap: 8 }}>
+                {[["leve","😕 Leve"],["medio","😓 Regular"],["grave","🤒 Mal"]].map(([val, label]) => (
+                  <button key={val} type="button" onClick={() => setNot100Form(f => ({ ...f, level: val }))}
+                    style={{ flex: 1, padding: "8px 6px", borderRadius: 8, border: not100Form.level === val ? "2px solid #f59e0b" : "1px solid #e2e8f0", background: not100Form.level === val ? "rgba(245,158,11,.1)" : "#f8fafc", color: not100Form.level === val ? "#b45309" : "#475569", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".75em" }}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: ".72em", fontWeight: 700, color: "#475569", marginBottom: 6 }}>¿Qué pasa? (opcional)</div>
+              <textarea rows={3} value={not100Form.reason} onChange={(e) => setNot100Form(f => ({ ...f, reason: e.target.value }))}
+                placeholder="Dolor muscular, cansancio, enfermedad..."
+                style={{ width: "100%", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit", fontSize: ".84em", boxSizing: "border-box", resize: "none" }} />
+            </div>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button type="button" onClick={() => setNot100Modal(null)}
+                style={{ padding: "8px 14px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#475569", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".82em" }}>
+                Cancelar
+              </button>
+              <button type="button" onClick={sendNot100Report} disabled={not100Sending}
+                style={{ padding: "8px 14px", borderRadius: 8, border: "none", background: not100Sending ? "#e2e8f0" : "linear-gradient(135deg,#f59e0b,#d97706)", color: not100Sending ? "#94a3b8" : "#fff", fontWeight: 800, cursor: not100Sending ? "not-allowed" : "pointer", fontFamily: "inherit", fontSize: ".82em" }}>
+                {not100Sending ? "Enviando..." : "Notificar coach"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <button type="button" onClick={() => setAthleteChatOpen(true)} style={{ position: "fixed", right: 18, bottom: 104, width: 52, height: 52, borderRadius: "50%", border: "none", background: "linear-gradient(135deg,#f59e0b,#ea580c)", color: "#fff", fontSize: "1.3em", boxShadow: "0 8px 20px rgba(234,88,12,.35)", cursor: "pointer", zIndex: 9000 }}>💬</button>
 
