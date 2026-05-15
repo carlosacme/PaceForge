@@ -36,6 +36,11 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
   const [requestsBusyId, setRequestsBusyId] = useState("");
   const [COROS_MODAL_OPEN, setCorosModalOpen] = useState(false);
   const [GARMIN_MODAL_OPEN, setGarminModalOpen] = useState(false);
+  const [staffList, setStaffList] = useState([]);
+  const [staffEmail, setStaffEmail] = useState("");
+  const [staffInviteSending, setStaffInviteSending] = useState(false);
+  const [assignModal, setAssignModal] = useState(null);
+  const [assignedAthleteIds, setAssignedAthleteIds] = useState(new Set());
 
   const setFormFromProfile = useCallback((nextForm) => {
     skipDirtyMarkRef.current = true;
@@ -276,7 +281,75 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
       setStravaByUserId(map);
       setLoadingStravaByAthlete(false);
     })();
-    return () => {
+    // ── STAFF FUNCTIONS ─────────────────────────────────────────
+  const loadStaff = useCallback(async () => {
+    if (!coachUserId) return;
+    const { data: staffRows } = await supabase.from("coach_staff").select("*, staff_profile:profiles!staff_id(full_name, email)").eq("coach_id", coachUserId);
+    if (!staffRows) return;
+    // Count assigned athletes for each staff
+    const staffWithCounts = await Promise.all((staffRows || []).map(async (s) => {
+      const { count } = await supabase.from("staff_athletes").select("*", { count: "exact", head: true }).eq("staff_id", s.staff_id).eq("coach_id", coachUserId);
+      return { ...s, assignedCount: count || 0 };
+    }));
+    setStaffList(staffWithCounts);
+  }, [coachUserId]);
+
+  useEffect(() => { loadStaff(); }, [loadStaff]);
+
+  const sendStaffInvitation = async () => {
+    const email = staffEmail.trim().toLowerCase();
+    if (!email || !coachUserId) { notify("Completa el email del sub-coach."); return; }
+    if (staffList.length >= 5) { notify("Limite de 5 sub-coaches alcanzado."); return; }
+    setStaffInviteSending(true);
+    try {
+      const code = (typeof crypto !== "undefined" && crypto.randomUUID && crypto.randomUUID()) || Date.now().toString();
+      const inviteLink = `https://www.runningapexflow.com?invite=${encodeURIComponent(code)}&type=staff&coach=${coachUserId}`;
+      await supabase.from("invitations").insert({ coach_id: coachUserId, email, code, status: "pending", type: "staff" });
+      await fetch("/api/send-email", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to: email,
+          subject: "Invitacion para unirte como sub-coach en RunningApexFlow",
+          html: `<div style="font-family:Arial,sans-serif"><h2>Te invitaron como sub-coach en RunningApexFlow</h2><p>Haz clic para registrarte y unirte al equipo:</p><p><a href="${inviteLink}">${inviteLink}</a></p><p style="font-size:14px;color:#64748b">Una vez registrado, el coach principal podra asignarte atletas para gestionar.</p></div>`,
+        }),
+      });
+      notify("Invitacion enviada al sub-coach");
+      setStaffEmail("");
+      loadStaff();
+    } catch (e) {
+      notify("No se pudo enviar la invitacion.");
+    } finally {
+      setStaffInviteSending(false);
+    }
+  };
+
+  const removeStaff = async (staffId) => {
+    if (!window.confirm("Revocar acceso de este sub-coach? Se eliminaran sus asignaciones de atletas.")) return;
+    await supabase.from("staff_athletes").delete().eq("staff_id", staffId).eq("coach_id", coachUserId);
+    await supabase.from("coach_staff").delete().eq("staff_id", staffId).eq("coach_id", coachUserId);
+    notify("Sub-coach removido");
+    loadStaff();
+  };
+
+  const openAssignAthletesModal = async (staffRow) => {
+    setAssignModal(staffRow);
+    const { data } = await supabase.from("staff_athletes").select("athlete_id").eq("staff_id", staffRow.staff_id).eq("coach_id", coachUserId);
+    setAssignedAthleteIds(new Set((data || []).map((r) => String(r.athlete_id))));
+  };
+
+  const toggleAthleteAssignment = async (athleteId, isAssigned) => {
+    if (!assignModal) return;
+    if (isAssigned) {
+      await supabase.from("staff_athletes").delete().eq("staff_id", assignModal.staff_id).eq("athlete_id", athleteId).eq("coach_id", coachUserId);
+      setAssignedAthleteIds((prev) => { const next = new Set(prev); next.delete(String(athleteId)); return next; });
+    } else {
+      await supabase.from("staff_athletes").insert({ staff_id: assignModal.staff_id, athlete_id: athleteId, coach_id: coachUserId });
+      setAssignedAthleteIds((prev) => new Set([...prev, String(athleteId)]));
+    }
+    loadStaff();
+  };
+
+  return () => {
       cancelled = true;
     };
   }, [athletes, stravaRefreshTick]);
@@ -716,6 +789,101 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
           </button>
         </form>
       )}
+
+
+      {/* ── PANEL STAFF ─────────────────────────────────────────── */}
+      <div style={{ ...S.card, marginTop: 8 }}>
+        <div style={{ fontSize: ".72em", letterSpacing: ".13em", color: "#475569", textTransform: "uppercase", marginBottom: 14 }}>
+          Equipo de coaches (Staff)
+        </div>
+        <div style={{ fontSize: ".82em", color: "#64748b", marginBottom: 14, lineHeight: 1.5 }}>
+          Agrega hasta 5 sub-coaches. Podran ver y gestionar solo los atletas que les asignes.
+        </div>
+
+        {/* Lista staff actual */}
+        {staffList.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
+            {staffList.map((s) => (
+              <div key={s.id} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: "10px 12px", background: "#f8fafc" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                  <div>
+                    <div style={{ fontWeight: 800, fontSize: ".88em", color: "#0f172a" }}>{s.staff_profile?.full_name || s.staff_profile?.name || "Sub-coach"}</div>
+                    <div style={{ fontSize: ".72em", color: "#64748b", marginTop: 2 }}>{s.staff_profile?.email || "—"}</div>
+                  </div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <button type="button" onClick={() => openAssignAthletesModal(s)}
+                      style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid rgba(245,158,11,.4)", background: "rgba(245,158,11,.1)", color: "#b45309", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".72em" }}>
+                      Atletas asignados ({s.assignedCount || 0})
+                    </button>
+                    <button type="button" onClick={() => removeStaff(s.staff_id)}
+                      style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #fecaca", background: "#fef2f2", color: "#dc2626", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".72em" }}>
+                      Revocar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {staffList.length === 0 && (
+          <div style={{ color: "#94a3b8", fontSize: ".84em", marginBottom: 14 }}>No tienes sub-coaches todavia.</div>
+        )}
+
+        {/* Invitar nuevo staff */}
+        {staffList.length < 5 && (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <input type="email" value={staffEmail} onChange={(e) => setStaffEmail(e.target.value)}
+              placeholder="Email del sub-coach"
+              style={{ flex: "1 1 200px", padding: "9px 12px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#0f172a", fontFamily: "inherit", fontSize: ".84em", boxSizing: "border-box" }} />
+            <button type="button" onClick={sendStaffInvitation} disabled={staffInviteSending || !staffEmail.trim()}
+              style={{ padding: "9px 16px", borderRadius: 8, border: "none", background: staffInviteSending || !staffEmail.trim() ? "#e2e8f0" : "linear-gradient(135deg,#0d9488,#14b8a6)", color: staffInviteSending || !staffEmail.trim() ? "#94a3b8" : "#fff", fontWeight: 800, cursor: staffInviteSending || !staffEmail.trim() ? "not-allowed" : "pointer", fontFamily: "inherit", fontSize: ".82em", whiteSpace: "nowrap" }}>
+              {staffInviteSending ? "Enviando..." : "Invitar Staff"}
+            </button>
+          </div>
+        )}
+        {staffList.length >= 5 && (
+          <div style={{ fontSize: ".78em", color: "#f59e0b", fontWeight: 700 }}>Limite de 5 sub-coaches alcanzado.</div>
+        )}
+      </div>
+
+      {/* Modal asignar atletas a staff */}
+      {assignModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.5)", zIndex: 10002, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ ...S.card, width: "100%", maxWidth: 480, margin: 0, maxHeight: "80vh", overflowY: "auto" }}>
+            <div style={{ fontWeight: 900, fontSize: ".95em", color: "#0f172a", marginBottom: 6 }}>
+              Atletas de {assignModal.staff_profile?.full_name || "sub-coach"}
+            </div>
+            <div style={{ fontSize: ".78em", color: "#64748b", marginBottom: 14 }}>
+              Selecciona los atletas que puede gestionar este sub-coach.
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
+              {(athletes || []).map((a) => {
+                const assigned = assignedAthleteIds.has(String(a.id));
+                return (
+                  <div key={a.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", borderRadius: 10, border: assigned ? "2px solid rgba(13,148,136,.4)" : "1px solid #e2e8f0", background: assigned ? "rgba(13,148,136,.05)" : "#fafafa" }}>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: ".88em" }}>{a.name}</div>
+                      <div style={{ fontSize: ".7em", color: "#64748b" }}>{a.goal}</div>
+                    </div>
+                    <button type="button" onClick={() => toggleAthleteAssignment(a.id, assigned)}
+                      style={{ padding: "6px 12px", borderRadius: 8, border: "none", background: assigned ? "#fef2f2" : "linear-gradient(135deg,#0d9488,#14b8a6)", color: assigned ? "#dc2626" : "#fff", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".72em" }}>
+                      {assigned ? "Quitar" : "Asignar"}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+              <button type="button" onClick={() => setAssignModal(null)}
+                style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#475569", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".82em" }}>
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
 
       <div style={{ ...S.card, marginTop: 8 }}>
         <button
