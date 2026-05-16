@@ -287,7 +287,7 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
   // ── STAFF FUNCTIONS ─────────────────────────────────────────
   const loadStaff = useCallback(async () => {
     if (!coachUserId) return;
-    const { data: staffRows } = await supabase.from("coach_staff").select("*, staff_profile:profiles!staff_id(full_name, email)").eq("coach_id", coachUserId);
+    const { data: staffRows } = await supabase.from("coach_staff").select("*, staff_profile:profiles!staff_id(name, email)").eq("coach_id", coachUserId);
     if (!staffRows) return;
     // Count assigned athletes for each staff
     const staffWithCounts = await Promise.all((staffRows || []).map(async (s) => {
@@ -800,7 +800,7 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
               <div key={s.id} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: "10px 12px", background: "#f8fafc" }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                   <div>
-                    <div style={{ fontWeight: 800, fontSize: ".88em", color: "#0f172a" }}>{s.staff_profile?.full_name || s.staff_profile?.name || "Sub-coach"}</div>
+                    <div style={{ fontWeight: 800, fontSize: ".88em", color: "#0f172a" }}>{s.staff_profile?.name || "Sub-coach"}</div>
                     <div style={{ fontSize: ".72em", color: "#64748b", marginTop: 2 }}>{s.staff_profile?.email || "—"}</div>
                   </div>
                   <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -845,7 +845,7 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
         <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.5)", zIndex: 10002, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
           <div style={{ ...S.card, width: "100%", maxWidth: 480, margin: 0, maxHeight: "80vh", overflowY: "auto" }}>
             <div style={{ fontWeight: 900, fontSize: ".95em", color: "#0f172a", marginBottom: 6 }}>
-              Atletas de {assignModal.staff_profile?.full_name || "sub-coach"}
+              Atletas de {assignModal.staff_profile?.name || "sub-coach"}
             </div>
             <div style={{ fontSize: ".78em", color: "#64748b", marginBottom: 14 }}>
               Selecciona los atletas que puede gestionar este sub-coach.
@@ -892,7 +892,7 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
             {staffList.map((s) => (
               <div key={s.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", borderRadius: 10, border: "1px solid #e2e8f0", background: "#f8fafc", flexWrap: "wrap", gap: 8 }}>
                 <div>
-                  <div style={{ fontWeight: 800, fontSize: ".88em", color: "#0f172a" }}>{s.staff_profile?.full_name || "Sub-coach"}</div>
+                  <div style={{ fontWeight: 800, fontSize: ".88em", color: "#0f172a" }}>{s.staff_profile?.name || "Sub-coach"}</div>
                   <div style={{ fontSize: ".72em", color: "#64748b", marginTop: 2 }}>{s.staff_profile?.email || "—"} · {s.assignedCount || 0} atletas asignados</div>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
