@@ -352,11 +352,6 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
     loadStaff();
   };
 
-  return () => {
-      cancelled = true;
-    };
-  }, [athletes, stravaRefreshTick]);
-
   const onAvatarChange = async (e) => {
     const file = e.target.files?.[0];
     if (!file || !coachUserId) return;
