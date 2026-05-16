@@ -1423,17 +1423,9 @@ export const formaFatigaStatusFromPoint = (p) => {
 export async function resolveCoachUserIdFromPublicCode(codeInput) {
   const codigoIngresado = String(codeInput || "").trim().toUpperCase();
   if (!codigoIngresado || codigoIngresado.length !== 8) return null;
-  const prefix = codigoIngresado.toLowerCase();
-  // Usar RPC o filtrar con cast a texto
-  const { data, error } = await supabase
-    .from("profiles")
-    .select("user_id, role, name")
-    .in("role", ["coach", "admin"])
-    .filter("user_id::text", "ilike", prefix + "%")
-    .limit(1)
-    .maybeSingle();
+  const { data, error } = await supabase.rpc("find_coach_by_code", { code: codigoIngresado });
   if (error) { console.error("resolveCoachUserIdFromPublicCode:", error); return null; }
-  return data?.user_id ?? null;
+  return data ?? null;
 }
 
 export const TAB_KEY_LIBRARY = "raf_tab_biblioteca";
