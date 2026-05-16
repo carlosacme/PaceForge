@@ -883,6 +883,49 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
       )}
 
 
+
+      {/* ── PANEL BILLING STAFF ──────────────────────────────────── */}
+      {staffList.length > 0 && (
+        <div style={{ ...S.card, marginTop: 8 }}>
+          <div style={{ fontSize: ".72em", letterSpacing: ".13em", color: "#475569", textTransform: "uppercase", marginBottom: 14 }}>
+            Billing del equipo
+          </div>
+          <div style={{ fontSize: ".82em", color: "#64748b", marginBottom: 14, lineHeight: 1.5 }}>
+            Tienes <strong style={{ color: "#0f172a" }}>{staffList.length} de 5</strong> sub-coaches activos. Su acceso va incluido en tu plan.
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {staffList.map((s) => (
+              <div key={s.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", borderRadius: 10, border: "1px solid #e2e8f0", background: "#f8fafc", flexWrap: "wrap", gap: 8 }}>
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: ".88em", color: "#0f172a" }}>{s.staff_profile?.full_name || "Sub-coach"}</div>
+                  <div style={{ fontSize: ".72em", color: "#64748b", marginTop: 2 }}>{s.staff_profile?.email || "—"} · {s.assignedCount || 0} atletas asignados</div>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: ".68em", fontWeight: 800, color: "#166534", background: "#dcfce7", border: "1px solid #86efac", borderRadius: 999, padding: "4px 10px" }}>
+                    Incluido en tu plan
+                  </span>
+                  <select
+                    value={s.billingType || "included"}
+                    onChange={async (e) => {
+                      await supabase.from("coach_staff").update({ billing_type: e.target.value }).eq("id", s.id);
+                      loadStaff();
+                      notify("Billing actualizado");
+                    }}
+                    style={{ padding: "5px 8px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontFamily: "inherit", fontSize: ".72em", color: "#334155", cursor: "pointer" }}
+                  >
+                    <option value="included">Incluido en mi plan</option>
+                    <option value="separate">Pago separado</option>
+                  </select>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div style={{ marginTop: 12, padding: "10px 14px", borderRadius: 10, background: "rgba(245,158,11,.06)", border: "1px solid rgba(245,158,11,.2)", fontSize: ".78em", color: "#92400e", lineHeight: 1.5 }}>
+            💡 <strong>Pago separado:</strong> El sub-coach debe adquirir su propio plan. <strong>Incluido:</strong> Su acceso va cubierto por tu suscripcion actual sin costo adicional.
+          </div>
+        </div>
+      )}
+
       <div style={{ ...S.card, marginTop: 8 }}>
         <button
           type="button"
