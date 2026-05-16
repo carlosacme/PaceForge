@@ -281,7 +281,10 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
       setStravaByUserId(map);
       setLoadingStravaByAthlete(false);
     })();
-    // ── STAFF FUNCTIONS ─────────────────────────────────────────
+    return () => { cancelled = true; };
+  }, [athletes]);
+
+  // ── STAFF FUNCTIONS ─────────────────────────────────────────
   const loadStaff = useCallback(async () => {
     if (!coachUserId) return;
     const { data: staffRows } = await supabase.from("coach_staff").select("*, staff_profile:profiles!staff_id(full_name, email)").eq("coach_id", coachUserId);
