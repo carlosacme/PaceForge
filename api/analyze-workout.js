@@ -65,6 +65,14 @@ export default async function handler(req, res) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return res.status(500).json({ error: "ANTHROPIC_API_KEY no configurada" });
 
+  // ── BRIEFING MODE ──────────────────────────────────────────
+  const { prompt: briefingPrompt, mode } = req.body || {};
+  if (mode === "briefing" && briefingPrompt) {
+    const result = await callClaude(apiKey, briefingPrompt, 300);
+    if (!result) return res.status(500).json({ error: "No se pudo generar el briefing" });
+    return res.status(200).json({ analysis: result.text });
+  }
+
   const {
     action = "analyze",
     workout,

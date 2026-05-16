@@ -1130,13 +1130,13 @@ closeWorkoutModal();
     try {
       const hrZonesText = athleteInfo?.fc_max ? `FC max: ${athleteInfo.fc_max} lpm` : "FC no configurada";
       const prompt = `Eres un coach de running experto. El atleta ${athleteInfo?.name || "el atleta"} tiene programado hoy: "${workout.title || workout.type}" (${workout.total_km || 0} km, ${workout.duration_min || 0} min, tipo: ${workout.type || "general"}). Objetivo: ${athleteInfo?.goal || "mejorar rendimiento"}. ${hrZonesText}. Escribe un briefing motivacional de 3-4 oraciones en español. Incluye: 1) que va a trabajar hoy y por que es importante, 2) en que enfocarse durante la sesion, 3) una frase motivacional final. Sin bullets, solo texto corrido.`;
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
+      const res = await fetch("/api/analyze-workout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 300, messages: [{ role: "user", content: prompt }] }),
+        body: JSON.stringify({ prompt, mode: "briefing" }),
       });
       const data = await res.json();
-      setBriefingText(data?.content?.[0]?.text || "No se pudo generar el briefing.");
+      setBriefingText(data?.analysis || "No se pudo generar el briefing.");
     } catch (e) {
       setBriefingText("Error generando el briefing. Intenta de nuevo.");
     } finally {
