@@ -1423,13 +1423,13 @@ export const formaFatigaStatusFromPoint = (p) => {
 export async function resolveCoachUserIdFromPublicCode(codeInput) {
   const codigoIngresado = String(codeInput || "").trim().toUpperCase();
   if (!codigoIngresado || codigoIngresado.length !== 8) return null;
-  // El codigo es los primeros 8 chars del UUID sin guiones → reconstruir prefijo UUID
   const prefix = codigoIngresado.toLowerCase();
+  // Usar RPC o filtrar con cast a texto
   const { data, error } = await supabase
     .from("profiles")
     .select("user_id, role, name")
-    .ilike("user_id", prefix + "%")
     .in("role", ["coach", "admin"])
+    .filter("user_id::text", "ilike", prefix + "%")
     .limit(1)
     .maybeSingle();
   if (error) { console.error("resolveCoachUserIdFromPublicCode:", error); return null; }

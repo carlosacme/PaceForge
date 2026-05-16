@@ -1346,8 +1346,8 @@ export default function App() {
     const { data, error } = await supabase
       .from("profiles")
       .select("user_id, role, name")
-      .ilike("user_id", prefix + "%")
       .in("role", ["coach", "admin"])
+      .filter("user_id::text", "ilike", prefix + "%")
       .limit(1)
       .maybeSingle();
     if (error) { console.error("resolveCoachIdByCode:", error); return null; }
