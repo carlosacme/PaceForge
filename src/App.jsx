@@ -1340,18 +1340,23 @@ export default function App() {
   }, [profile?.coach_id, session?.user?.id, coachCodeFromId]);
 
   const resolveCoachIdByCode = useCallback(async (codeInput) => {
-    const codigoIngresado = String(codeInput || "").trim();
+    const codigoIngresado = String(codeInput || "").trim().toUpperCase();
     if (!codigoIngresado) return null;
+    // El codigo es los primeros 8 chars del UUID sin guiones
+    // Buscamos todos los coaches y filtramos por codigo derivado
     const { data, error } = await supabase
       .from("profiles")
       .select("user_id, role, name")
-      .eq("coach_id", codigoIngresado.trim().toUpperCase())
-      .maybeSingle();
+      .in("role", ["coach", "admin"]);
     if (error) {
       console.error("Error resolviendo código de coach:", error);
       return null;
     }
-    return data?.user_id || null;
+    const match = (data || []).find((p) => {
+      const code = String(p.user_id || "").replace(/-/g, "").slice(0, 8).toUpperCase();
+      return code === codigoIngresado;
+    });
+    return match?.user_id || null;
   }, []);
 
   const sendAthleteInvitation = useCallback(async () => {
