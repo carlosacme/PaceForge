@@ -406,11 +406,6 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
       ? payload
       : {
           ...payload,
-          trial_start: new Date().toISOString(),
-          trial_days: 10,
-          subscription_status: "trial",
-          approved_by_admin: false,
-          registered_at: new Date().toISOString(),
         };
     const { error } = await supabase.from("coach_profiles").upsert(upsertPayload, { onConflict: "user_id" });
     setSaving(false);
