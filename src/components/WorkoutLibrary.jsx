@@ -31,6 +31,7 @@ function WorkoutLibrary({
   styles,
   MarketplacePlanWorkoutsAccordion,
   sendWorkoutAssignmentPushToAthlete,
+  parentCoachId,
 }) {
   const S = styles;
   const [libraryTab, setLibraryTab] = useState(() => {
@@ -68,10 +69,12 @@ function WorkoutLibrary({
       return;
     }
     setLoading(true);
+    // Load own library + parent coach library if staff
+    const coachIds = [coachUserId, parentCoachId].filter(Boolean);
     const { data, error } = await supabase
       .from("workout_library")
       .select("*")
-      .eq("coach_id", coachUserId)
+      .in("coach_id", coachIds)
       .order("created_at", { ascending: false });
     if (error) {
       console.error("workout_library:", error);

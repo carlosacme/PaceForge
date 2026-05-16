@@ -1161,6 +1161,7 @@ export default function App() {
   const [stravaRefreshTick, setStravaRefreshTick] = useState(0);
   const [inviteCodeFromUrl, setInviteCodeFromUrl] = useState("");
   const [inviteParentCoachId, setInviteParentCoachId] = useState("");
+  const [staffParentCoachId, setStaffParentCoachId] = useState("");
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteSending, setInviteSending] = useState(false);
@@ -1710,6 +1711,7 @@ useEffect(() => {
           .select("coach_id")
           .eq("staff_id", coachId)
           .maybeSingle();
+        if (staffRow?.coach_id) setStaffParentCoachId(staffRow.coach_id);
 
         let data, error;
         if (staffRow) {
@@ -3123,6 +3125,7 @@ const handleSignOut = async () => {
             athletes={athletes}
             profileRole={profile?.role ?? ""}
             adminLibraryOwnerId={PLATFORM_ADMIN_USER_ID}
+            parentCoachId={staffParentCoachId || null}
             onUseWorkout={(row) => {
               setAiWorkout(libraryRowToBuilderWorkout(row));
               setView("builder");
