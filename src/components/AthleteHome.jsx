@@ -96,62 +96,6 @@ function MarketplacePlanWorkoutsAccordion({ previewWorkouts, resetKey, lockAfter
     return <div style={{ color: "#94a3b8", fontSize: ".82em", marginBottom: 12 }}>No hay workouts en este plan.</div>;
   }
 
-  const generateBriefing = async (workout) => {
-    setBriefingLoading(true);
-    setBriefingText("");
-    try {
-      const hrZonesText = athleteInfo?.fc_max
-        ? `FC max: ${athleteInfo.fc_max} lpm`
-        : "FC no configurada";
-      const prompt = `Eres un coach de running experto. El atleta ${athleteInfo?.name || "el atleta"} tiene programado hoy: "${workout.title || workout.type}" (${workout.total_km || 0} km, ${workout.duration_min || 0} min, tipo: ${workout.type || "general"}).
-Objetivo del atleta: ${athleteInfo?.goal || "mejorar rendimiento"}.
-${hrZonesText}.
-Escribe un briefing motivacional de 3-4 oraciones en español. Incluye: 1) qué va a trabajar hoy y por qué es importante, 2) en qué enfocarse durante la sesión (ritmo, respiración, técnica), 3) una frase motivacional final. Sé directo, personal y energético. Sin bullets, solo texto corrido.`;
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 300,
-          messages: [{ role: "user", content: prompt }],
-        }),
-      });
-      const data = await res.json();
-      const text = data?.content?.[0]?.text || "No se pudo generar el briefing.";
-      setBriefingText(text);
-    } catch (e) {
-      setBriefingText("Error generando el briefing. Intenta de nuevo.");
-    } finally {
-      setBriefingLoading(false);
-    }
-  };
-
-  const sendNot100Report = async () => {
-    if (!not100Modal || !athleteInfo?.coach_id) return;
-    setNot100Sending(true);
-    try {
-      // Update workout with note
-      const note = `[No estoy al 100% · Nivel: ${not100Form.level}] ${not100Form.reason || "Sin detalle adicional"}`;
-      await supabase.from("workouts").update({ athlete_notes: note }).eq("id", not100Modal.id);
-      // Notify coach via push
-      const { data: coachProf } = await supabase.from("profiles").select("fcm_token").eq("user_id", athleteInfo.coach_id).maybeSingle();
-      if (coachProf?.fcm_token) {
-        await sendChatPushNotification({
-          token: coachProf.fcm_token,
-          title: `😓 ${athleteInfo.name || "Tu atleta"} no está al 100%`,
-          body: `${not100Modal.title || "Entreno"}: ${not100Form.reason || "Nivel " + not100Form.level}`,
-          logLabel: "not100",
-        });
-      }
-      setNot100Modal(null);
-      setMessage("✅ Tu coach fue notificado");
-    } catch (e) {
-      console.error("not100:", e);
-    } finally {
-      setNot100Sending(false);
-    }
-  };
-
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
       {weekGroups.map(([weekKey, items]) => {
