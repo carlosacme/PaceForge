@@ -1341,22 +1341,17 @@ export default function App() {
 
   const resolveCoachIdByCode = useCallback(async (codeInput) => {
     const codigoIngresado = String(codeInput || "").trim().toUpperCase();
-    if (!codigoIngresado) return null;
-    // El codigo es los primeros 8 chars del UUID sin guiones
-    // Buscamos todos los coaches y filtramos por codigo derivado
+    if (!codigoIngresado || codigoIngresado.length !== 8) return null;
+    const prefix = codigoIngresado.toLowerCase();
     const { data, error } = await supabase
       .from("profiles")
       .select("user_id, role, name")
-      .in("role", ["coach", "admin"]);
-    if (error) {
-      console.error("Error resolviendo código de coach:", error);
-      return null;
-    }
-    const match = (data || []).find((p) => {
-      const code = String(p.user_id || "").replace(/-/g, "").slice(0, 8).toUpperCase();
-      return code === codigoIngresado;
-    });
-    return match?.user_id || null;
+      .ilike("user_id", prefix + "%")
+      .in("role", ["coach", "admin"])
+      .limit(1)
+      .maybeSingle();
+    if (error) { console.error("resolveCoachIdByCode:", error); return null; }
+    return data?.user_id || null;
   }, []);
 
   const sendAthleteInvitation = useCallback(async () => {

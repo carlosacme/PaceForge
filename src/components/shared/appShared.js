@@ -1422,19 +1422,18 @@ export const formaFatigaStatusFromPoint = (p) => {
 
 export async function resolveCoachUserIdFromPublicCode(codeInput) {
   const codigoIngresado = String(codeInput || "").trim().toUpperCase();
-  if (!codigoIngresado) return null;
-  // El codigo publico es los primeros 8 chars del UUID sin guiones
-  // Cargamos todos los coaches y buscamos por codigo derivado
+  if (!codigoIngresado || codigoIngresado.length !== 8) return null;
+  // El codigo es los primeros 8 chars del UUID sin guiones → reconstruir prefijo UUID
+  const prefix = codigoIngresado.toLowerCase();
   const { data, error } = await supabase
     .from("profiles")
     .select("user_id, role, name")
-    .in("role", ["coach", "admin"]);
-  if (error) return null;
-  const match = (data || []).find((p) => {
-    const code = String(p.user_id || "").replace(/-/g, "").slice(0, 8).toUpperCase();
-    return code === codigoIngresado;
-  });
-  return match?.user_id ?? null;
+    .ilike("user_id", prefix + "%")
+    .in("role", ["coach", "admin"])
+    .limit(1)
+    .maybeSingle();
+  if (error) { console.error("resolveCoachUserIdFromPublicCode:", error); return null; }
+  return data?.user_id ?? null;
 }
 
 export const TAB_KEY_LIBRARY = "raf_tab_biblioteca";
