@@ -3489,7 +3489,7 @@ function Dashboard({
     const allCoachIds = [coachUserId, ...staffIds];
 
     const [aRes, wRes] = await Promise.all([
-      supabase.from("athletes").select("*").eq("coach_id", coachUserId).order("id", { ascending: true }),
+      supabase.from("athletes").select("*").in("coach_id", allCoachIds).order("id", { ascending: true }),
       supabase.from("workouts").select("*").in("coach_id", allCoachIds).gte("scheduled_date", ws).lte("scheduled_date", we),
     ]);
     if (aRes.error) console.error("Dashboard athletes:", aRes.error);
