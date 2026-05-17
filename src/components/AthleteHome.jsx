@@ -307,6 +307,7 @@ export default function AthleteHome({ profile }) {
   const [athleteCalendarCtxMenu, setAthleteCalendarCtxMenu] = useState(null);
   const athleteCalendarCtxMenuRef = useRef(null);
   const [not100Modal, setNot100Modal] = useState(null);
+  const [avatarUploading, setAvatarUploading] = useState(false);
   const [not100Form, setNot100Form] = useState({ reason: "", level: "medio" });
   const [not100Sending, setNot100Sending] = useState(false);
   const [briefingModal, setBriefingModal] = useState(null);
@@ -1124,6 +1125,24 @@ closeWorkoutModal();
     setLoadingAnalysis(false);
   };
 
+  const uploadAthleteAvatar = async (file) => {
+    if (!file || !athleteInfo?.id) return;
+    setAvatarUploading(true);
+    try {
+      const ext = (file.name.split(".").pop() || "jpg").replace(/[^a-z0-9]/gi, "").slice(0, 5) || "jpg";
+      const filePath = `${athleteInfo.id}/${Date.now()}.${ext}`;
+      const { error: upErr } = await supabase.storage.from("athlete-avatars").upload(filePath, file, { upsert: true, cacheControl: "3600" });
+      if (upErr) { setMessage("Error subiendo foto: " + upErr.message); return; }
+      const { data: { publicUrl } } = supabase.storage.from("athlete-avatars").getPublicUrl(filePath);
+      await supabase.from("athletes").update({ avatar_url: publicUrl }).eq("id", athleteInfo.id);
+      setMessage("✅ Foto actualizada");
+    } catch (e) {
+      setMessage("Error subiendo foto");
+    } finally {
+      setAvatarUploading(false);
+    }
+  };
+
   const generateBriefing = async (workout) => {
     setBriefingLoading(true);
     setBriefingText("");
@@ -1512,6 +1531,26 @@ closeWorkoutModal();
                   <div style={{ ...S.card }}>
                     <div style={{ fontSize: ".72em", marginBottom: 10, color: "#475569", textTransform: "uppercase", letterSpacing: ".13em" }}>MI CONFIGURACIÓN</div>
                     <div style={{ color: "#64748b", fontSize: ".84em", marginBottom: 8 }}>Gestiona conexiones y preferencias.</div>
+                    {/* FOTO DE PERFIL */}
+                    <div style={{ marginBottom: 20, paddingBottom: 20, borderBottom: "1px solid #e2e8f0" }}>
+                      <div style={{ fontSize: ".72em", fontWeight: 800, color: "#475569", textTransform: "uppercase", letterSpacing: ".1em", marginBottom: 12 }}>FOTO DE PERFIL</div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+                        <div style={{ width: 72, height: 72, borderRadius: "50%", overflow: "hidden", background: "#f1f5f9", border: "2px solid #e2e8f0", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "2em" }}>
+                          {athleteInfo?.avatar_url ? (
+                            <img src={athleteInfo.avatar_url} alt="foto" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                          ) : (
+                            <span>🏃</span>
+                          )}
+                        </div>
+                        <div>
+                          <label style={{ display: "inline-block", padding: "8px 14px", borderRadius: 8, background: avatarUploading ? "#e2e8f0" : "linear-gradient(135deg,#b45309,#f59e0b)", color: avatarUploading ? "#94a3b8" : "#fff", fontWeight: 800, cursor: avatarUploading ? "not-allowed" : "pointer", fontFamily: "inherit", fontSize: ".82em" }}>
+                            {avatarUploading ? "Subiendo..." : "📷 Subir foto"}
+                            <input type="file" accept="image/*" style={{ display: "none" }} disabled={avatarUploading} onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadAthleteAvatar(f); }} />
+                          </label>
+                          <div style={{ fontSize: ".72em", color: "#94a3b8", marginTop: 6 }}>JPG, PNG o GIF · máx 2MB</div>
+                        </div>
+                      </div>
+                    </div>
                     {/* MI COACH */}
                     <div style={{ marginBottom: 20, paddingBottom: 20, borderBottom: "1px solid #e2e8f0" }}>
                       <div style={{ fontSize: ".72em", fontWeight: 800, color: "#475569", textTransform: "uppercase", letterSpacing: ".1em", marginBottom: 12 }}>MI COACH</div>
