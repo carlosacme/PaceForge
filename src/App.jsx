@@ -3487,7 +3487,6 @@ function Dashboard({
     const { data: staffRows } = await supabase.from("coach_staff").select("staff_id").eq("coach_id", coachUserId);
     const staffIds = (staffRows || []).map((s) => s.staff_id);
     const allCoachIds = [coachUserId, ...staffIds];
-    console.log("[DEBUG dashboard] coachUserId:", coachUserId, "staffIds:", staffIds, "allCoachIds:", allCoachIds);
 
     const [aRes, wRes] = await Promise.all([
       supabase.from("athletes").select("*").in("coach_id", allCoachIds).order("id", { ascending: true }),
