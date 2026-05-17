@@ -1708,17 +1708,24 @@ useEffect(() => {
 
         let data, error;
         if (staffRow) {
-          // Es staff: cargar solo atletas asignados
+          // Es staff: cargar atletas asignados por admin + atletas directamente vinculados al staff
           const { data: assignedRows } = await supabase
             .from("staff_athletes")
             .select("athlete_id")
             .eq("staff_id", coachId)
             .eq("coach_id", staffRow.coach_id);
-          const athleteIds = (assignedRows || []).map((r) => r.athlete_id);
-          if (athleteIds.length === 0) {
+          const assignedIds = (assignedRows || []).map((r) => r.athlete_id);
+          // También cargar atletas con coach_id = staff (registrados directamente con el staff)
+          const { data: directAthletes } = await supabase
+            .from("athletes")
+            .select("id")
+            .eq("coach_id", coachId);
+          const directIds = (directAthletes || []).map((a) => a.id);
+          const allIds = [...new Set([...assignedIds, ...directIds])];
+          if (allIds.length === 0) {
             setAthletes([]);
           } else {
-            const res = await supabase.from("athletes").select("*").in("id", athleteIds).order("id", { ascending: true });
+            const res = await supabase.from("athletes").select("*").in("id", allIds).order("id", { ascending: true });
             data = res.data;
             error = res.error;
           }
