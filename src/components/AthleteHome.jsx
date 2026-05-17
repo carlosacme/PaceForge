@@ -1135,6 +1135,7 @@ closeWorkoutModal();
       if (upErr) { setMessage("Error subiendo foto: " + upErr.message); return; }
       const { data: { publicUrl } } = supabase.storage.from("athlete-avatars").getPublicUrl(filePath);
       await supabase.from("athletes").update({ avatar_url: publicUrl }).eq("id", athleteInfo.id);
+      setAthleteInfo((prev) => prev ? { ...prev, avatar_url: publicUrl } : prev);
       setMessage("✅ Foto actualizada");
     } catch (e) {
       setMessage("Error subiendo foto");
