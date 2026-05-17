@@ -41,6 +41,7 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
   const [staffInviteSending, setStaffInviteSending] = useState(false);
   const [assignModal, setAssignModal] = useState(null);
   const [assignedAthleteIds, setAssignedAthleteIds] = useState(new Set());
+  const [allTeamAthletes, setAllTeamAthletes] = useState([]);
 
   const setFormFromProfile = useCallback((nextForm) => {
     skipDirtyMarkRef.current = true;
@@ -338,6 +339,11 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
     setAssignModal(staffRow);
     const { data } = await supabase.from("staff_athletes").select("athlete_id").eq("staff_id", staffRow.staff_id).eq("coach_id", coachUserId);
     setAssignedAthleteIds(new Set((data || []).map((r) => String(r.athlete_id))));
+    // Load all team athletes (admin's + staff's direct athletes)
+    const staffIds = staffList.map((s) => s.staff_id);
+    const allCoachIds = [coachUserId, ...staffIds];
+    const { data: teamAthletes } = await supabase.from("athletes").select("id, name, goal").in("coach_id", allCoachIds).order("id", { ascending: true });
+    setAllTeamAthletes(teamAthletes || []);
   };
 
   const toggleAthleteAssignment = async (athleteId, isAssigned) => {
@@ -851,7 +857,7 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
               Selecciona los atletas que puede gestionar este sub-coach.
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
-              {(athletes || []).map((a) => {
+              {(allTeamAthletes.length > 0 ? allTeamAthletes : (athletes || [])).map((a) => {
                 const assigned = assignedAthleteIds.has(String(a.id));
                 return (
                   <div key={a.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", borderRadius: 10, border: assigned ? "2px solid rgba(13,148,136,.4)" : "1px solid #e2e8f0", background: assigned ? "rgba(13,148,136,.05)" : "#fafafa" }}>
