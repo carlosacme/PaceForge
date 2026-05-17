@@ -84,7 +84,7 @@ function WorkoutLibrary({
       setItems((data || []).map(normalizeLibraryRow));
     }
     setLoading(false);
-  }, [coachUserId, notify]);
+  }, [coachUserId, parentCoachId, notify]);
 
   const isLibraryAdmin = profileRole === "admin";
 
