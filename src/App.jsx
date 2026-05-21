@@ -1433,7 +1433,11 @@ export default function App() {
     setAuthMode("register");
     if (inviteType === "staff") {
       setAuthRole("coach");
-      if (inviteParentCoach) setInviteParentCoachId(inviteParentCoach);
+      if (inviteParentCoach) {
+        setInviteParentCoachId(inviteParentCoach);
+        // Persistir para sobrevivir al email de confirmacion y recargas
+        try { window.localStorage.setItem("pendingStaffInvite", JSON.stringify({ parentCoach: inviteParentCoach, code: invite })); } catch (_) {}
+      }
     } else {
       setAuthRole("athlete");
     }
@@ -1464,6 +1468,42 @@ export default function App() {
         return;
       }
 
+      const processPendingStaffInvite = async (prof) => {
+        if (!prof || prof.role !== "coach") return;
+        let pending = null;
+        try {
+          const raw = window.localStorage.getItem("pendingStaffInvite");
+          if (raw) pending = JSON.parse(raw);
+        } catch (_) {}
+        if (!pending || !pending.parentCoach) return;
+        if (pending.parentCoach === prof.user_id) {
+          try { window.localStorage.removeItem("pendingStaffInvite"); } catch (_) {}
+          return;
+        }
+        // Verificar si ya esta vinculado
+        const { data: existing } = await supabase
+          .from("coach_staff")
+          .select("id")
+          .eq("coach_id", pending.parentCoach)
+          .eq("staff_id", prof.user_id)
+          .maybeSingle();
+        if (existing) {
+          try { window.localStorage.removeItem("pendingStaffInvite"); } catch (_) {}
+          return;
+        }
+        const { error: csErr } = await supabase.from("coach_staff").insert({
+          coach_id: pending.parentCoach,
+          staff_id: prof.user_id,
+          billing_type: "included",
+        });
+        if (csErr) {
+          console.error("Error vinculando staff (pendiente):", csErr);
+        } else {
+          console.log("Staff vinculado al coach principal (pendiente):", pending.parentCoach);
+          try { window.localStorage.removeItem("pendingStaffInvite"); } catch (_) {}
+        }
+      };
+
       const syncCoachPlanIfNeeded = async (prof) => {
         if (!prof || prof.role !== "coach") return prof;
         if (prof.plan_status === "trial" && prof.trial_started_at) {
@@ -1487,6 +1527,7 @@ export default function App() {
         setProfileLoading(false);
         return;
       }
+      await processPendingStaffInvite(data);
 
       const roleMissing = data.role == null || String(data.role).trim() === "";
       if (roleMissing) {
