@@ -1470,13 +1470,32 @@ export default function App() {
 
       const processPendingStaffInvite = async (prof) => {
         if (!prof || prof.role !== "coach") return;
-        let pending = null;
-        try {
-          const raw = window.localStorage.getItem("pendingStaffInvite");
-          if (raw) pending = JSON.parse(raw);
-        } catch (_) {}
-        if (!pending || !pending.parentCoach) return;
-        if (pending.parentCoach === prof.user_id) {
+        // Estrategia confiable: buscar invitacion type='staff' por el email del coach.
+        // No depende de localStorage ni de parametros de URL.
+        let parentCoach = null;
+        const profEmail = (prof.email || "").trim().toLowerCase();
+        if (profEmail) {
+          const { data: inv } = await supabase
+            .from("invitations")
+            .select("coach_id, status, type")
+            .eq("email", profEmail)
+            .eq("type", "staff")
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (inv && inv.coach_id) parentCoach = inv.coach_id;
+        }
+        // Fallback: localStorage por si la invitacion no quedo en la tabla
+        if (!parentCoach) {
+          try {
+            const raw = window.localStorage.getItem("pendingStaffInvite");
+            if (raw) {
+              const pending = JSON.parse(raw);
+              if (pending && pending.parentCoach) parentCoach = pending.parentCoach;
+            }
+          } catch (_) {}
+        }
+        if (!parentCoach || parentCoach === prof.user_id) {
           try { window.localStorage.removeItem("pendingStaffInvite"); } catch (_) {}
           return;
         }
@@ -1484,7 +1503,7 @@ export default function App() {
         const { data: existing } = await supabase
           .from("coach_staff")
           .select("id")
-          .eq("coach_id", pending.parentCoach)
+          .eq("coach_id", parentCoach)
           .eq("staff_id", prof.user_id)
           .maybeSingle();
         if (existing) {
@@ -1492,15 +1511,19 @@ export default function App() {
           return;
         }
         const { error: csErr } = await supabase.from("coach_staff").insert({
-          coach_id: pending.parentCoach,
+          coach_id: parentCoach,
           staff_id: prof.user_id,
           billing_type: "included",
         });
         if (csErr) {
-          console.error("Error vinculando staff (pendiente):", csErr);
+          console.error("Error vinculando staff:", csErr);
         } else {
-          console.log("Staff vinculado al coach principal (pendiente):", pending.parentCoach);
+          console.log("Staff vinculado al coach principal:", parentCoach);
           try { window.localStorage.removeItem("pendingStaffInvite"); } catch (_) {}
+          // Marcar invitacion como aceptada
+          if (profEmail) {
+            await supabase.from("invitations").update({ status: "accepted" }).eq("email", profEmail).eq("type", "staff");
+          }
         }
       };
 
