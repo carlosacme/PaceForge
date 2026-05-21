@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { supabase } from "../lib/supabase";
 import { BRAND_NAME, STRAVA_CALLBACK_URL, formatDurationClock, normalizeStravaActivity } from "./shared/appShared";
 
-function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAthletes, stravaRefreshTick, notify, onSignOut, styles }) {
+function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAthletes, stravaRefreshTick, notify, onSignOut, styles, isStaff = false }) {
   const S = styles;
   const athletesRef = useRef(athletes);
   const isDirtyRef = useRef(false);
@@ -798,7 +798,8 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
       )}
 
 
-      {/* ── PANEL STAFF ─────────────────────────────────────────── */}
+      {/* ── PANEL STAFF (solo coach principal, no sub-coaches) ──── */}
+      {!isStaff && (
       <div style={{ ...S.card, marginTop: 8 }}>
         <div style={{ fontSize: ".72em", letterSpacing: ".13em", color: "#475569", textTransform: "uppercase", marginBottom: 14 }}>
           Equipo de coaches (Staff)
@@ -853,6 +854,7 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
           <div style={{ fontSize: ".78em", color: "#f59e0b", fontWeight: 700 }}>Limite de 5 sub-coaches alcanzado.</div>
         )}
       </div>
+      )}
 
       {/* Modal asignar atletas a staff */}
       {assignModal && (

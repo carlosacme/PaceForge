@@ -3158,6 +3158,7 @@ const handleSignOut = async () => {
             notify={notify}
             onSignOut={handleSignOut}
             styles={styles}
+            isStaff={Boolean(profile?.is_staff || staffParentCoachId)}
           />
         )}
         {view === "admin" && (profile?.role === "admin" || sessionEmailLower === ADMIN_EMAIL) && (
