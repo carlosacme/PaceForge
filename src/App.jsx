@@ -1940,14 +1940,26 @@ useEffect(() => {
             registered_at: new Date().toISOString(),
           };
           const { error: cpErr } = await supabase.from("coach_profiles").insert(cpPayload);
-          // Si es invitacion de staff, registrar en coach_staff
-          if (inviteParentCoachId && newUserId) {
-            await supabase.from("coach_staff").insert({
-              coach_id: inviteParentCoachId,
-              staff_id: newUserId,
-            });
-          }
           if (cpErr) console.error("Error creando coach_profiles en registro:", cpErr);
+          // Si es invitacion de staff, registrar en coach_staff
+          // Leer el parametro coach directamente de la URL para evitar problemas de timing/closure
+          let parentCoachForStaff = inviteParentCoachId;
+          try {
+            if (typeof window !== "undefined") {
+              const urlCoach = new URLSearchParams(window.location.search).get("coach");
+              const urlType = new URLSearchParams(window.location.search).get("type");
+              if (urlType === "staff" && urlCoach) parentCoachForStaff = urlCoach.trim();
+            }
+          } catch (_) {}
+          if (parentCoachForStaff && newUserId && parentCoachForStaff !== newUserId) {
+            const { error: csErr } = await supabase.from("coach_staff").insert({
+              coach_id: parentCoachForStaff,
+              staff_id: newUserId,
+              billing_type: "included",
+            });
+            if (csErr) console.error("Error vinculando staff a coach principal:", csErr);
+            else console.log("Staff vinculado al coach principal:", parentCoachForStaff);
+          }
         }
 
         if (roleForProfile === "athlete" && pendingCoachRequestId) {
