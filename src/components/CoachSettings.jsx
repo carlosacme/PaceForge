@@ -309,7 +309,7 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
       const code = (typeof crypto !== "undefined" && crypto.randomUUID && crypto.randomUUID()) || Date.now().toString();
       const inviteLink = `https://www.runningapexflow.com?invite=${encodeURIComponent(code)}&type=staff&coach=${coachUserId}`;
       await supabase.from("invitations").insert({ coach_id: coachUserId, email, code, status: "pending", type: "staff" });
-      await fetch("/api/send-email", {
+      const emailRes = await fetch("/api/send-email", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           to: email,
@@ -317,6 +317,14 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
           html: `<div style="font-family:Arial,sans-serif"><h2>Te invitaron como sub-coach en RunningApexFlow</h2><p>Haz clic para registrarte y unirte al equipo:</p><p><a href="${inviteLink}">${inviteLink}</a></p><p style="font-size:14px;color:#64748b">Una vez registrado, el coach principal podra asignarte atletas para gestionar.</p></div>`,
         }),
       });
+      if (!emailRes.ok) {
+        let detail = "";
+        try { const ed = await emailRes.json(); detail = ed?.error || ""; } catch (_) {}
+        notify("Invitacion registrada, pero el email no se pudo enviar. " + detail);
+        setStaffEmail("");
+        loadStaff();
+        return;
+      }
       notify("Invitacion enviada al sub-coach");
       setStaffEmail("");
       loadStaff();
