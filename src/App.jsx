@@ -1520,6 +1520,12 @@ export default function App() {
         } else {
           console.log("Staff vinculado al coach principal:", parentCoach);
           try { window.localStorage.removeItem("pendingStaffInvite"); } catch (_) {}
+          // Marcar el perfil como staff para que la UI lo reconozca
+          const { error: profErr } = await supabase
+            .from("profiles")
+            .update({ is_staff: true, parent_coach_id: parentCoach })
+            .eq("user_id", prof.user_id);
+          if (profErr) console.error("Error marcando perfil como staff:", profErr);
           // Marcar invitacion como aceptada
           if (profEmail) {
             await supabase.from("invitations").update({ status: "accepted" }).eq("email", profEmail).eq("type", "staff");
