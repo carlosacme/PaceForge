@@ -42,6 +42,7 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
   const [assignModal, setAssignModal] = useState(null);
   const [assignedAthleteIds, setAssignedAthleteIds] = useState(new Set());
   const [allTeamAthletes, setAllTeamAthletes] = useState([]);
+  const [athleteAssignmentMap, setAthleteAssignmentMap] = useState({});
 
   const setFormFromProfile = useCallback((nextForm) => {
     skipDirtyMarkRef.current = true;
@@ -350,6 +351,14 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
     // Cargar solo los atletas del coach principal (todos le pertenecen)
     const { data: teamAthletes } = await supabase.from("athletes").select("id, name, goal").eq("coach_id", coachUserId).order("id", { ascending: true });
     setAllTeamAthletes(teamAthletes || []);
+    // Cargar TODAS las asignaciones del equipo para saber que atleta esta con que staff
+    const { data: allAssignments } = await supabase
+      .from("staff_athletes")
+      .select("athlete_id, staff_id")
+      .eq("coach_id", coachUserId);
+    const map = {};
+    (allAssignments || []).forEach((r) => { map[String(r.athlete_id)] = r.staff_id; });
+    setAthleteAssignmentMap(map);
   };
 
   const toggleAthleteAssignment = async (athleteId, isAssigned) => {
@@ -357,9 +366,11 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
     if (isAssigned) {
       await supabase.from("staff_athletes").delete().eq("staff_id", assignModal.staff_id).eq("athlete_id", athleteId).eq("coach_id", coachUserId);
       setAssignedAthleteIds((prev) => { const next = new Set(prev); next.delete(String(athleteId)); return next; });
+      setAthleteAssignmentMap((prev) => { const next = { ...prev }; delete next[String(athleteId)]; return next; });
     } else {
       await supabase.from("staff_athletes").insert({ staff_id: assignModal.staff_id, athlete_id: athleteId, coach_id: coachUserId });
       setAssignedAthleteIds((prev) => new Set([...prev, String(athleteId)]));
+      setAthleteAssignmentMap((prev) => ({ ...prev, [String(athleteId)]: assignModal.staff_id }));
     }
     loadStaff();
   };
@@ -867,16 +878,26 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
             <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
               {(allTeamAthletes.length > 0 ? allTeamAthletes : (athletes || [])).map((a) => {
                 const assigned = assignedAthleteIds.has(String(a.id));
+                const assignedToOther = !assigned && athleteAssignmentMap[String(a.id)] && athleteAssignmentMap[String(a.id)] !== assignModal.staff_id;
+                const otherStaffName = assignedToOther
+                  ? (staffList.find((s) => s.staff_id === athleteAssignmentMap[String(a.id)])?.staff_profile?.name || "otro sub-coach")
+                  : "";
                 return (
-                  <div key={a.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", borderRadius: 10, border: assigned ? "2px solid rgba(13,148,136,.4)" : "1px solid #e2e8f0", background: assigned ? "rgba(13,148,136,.05)" : "#fafafa" }}>
+                  <div key={a.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", borderRadius: 10, border: assigned ? "2px solid rgba(13,148,136,.4)" : "1px solid #e2e8f0", background: assignedToOther ? "#f1f5f9" : (assigned ? "rgba(13,148,136,.05)" : "#fafafa"), opacity: assignedToOther ? 0.65 : 1 }}>
                     <div>
                       <div style={{ fontWeight: 700, fontSize: ".88em" }}>{a.name}</div>
-                      <div style={{ fontSize: ".7em", color: "#64748b" }}>{a.goal}</div>
+                      <div style={{ fontSize: ".7em", color: "#64748b" }}>{assignedToOther ? "Asignado a " + otherStaffName : a.goal}</div>
                     </div>
-                    <button type="button" onClick={() => toggleAthleteAssignment(a.id, assigned)}
-                      style={{ padding: "6px 12px", borderRadius: 8, border: "none", background: assigned ? "#fef2f2" : "linear-gradient(135deg,#0d9488,#14b8a6)", color: assigned ? "#dc2626" : "#fff", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".72em" }}>
-                      {assigned ? "Quitar" : "Asignar"}
-                    </button>
+                    {assignedToOther ? (
+                      <span style={{ padding: "6px 12px", borderRadius: 8, background: "#e2e8f0", color: "#94a3b8", fontWeight: 700, fontFamily: "inherit", fontSize: ".72em", whiteSpace: "nowrap" }}>
+                        No disponible
+                      </span>
+                    ) : (
+                      <button type="button" onClick={() => toggleAthleteAssignment(a.id, assigned)}
+                        style={{ padding: "6px 12px", borderRadius: 8, border: "none", background: assigned ? "#fef2f2" : "linear-gradient(135deg,#0d9488,#14b8a6)", color: assigned ? "#dc2626" : "#fff", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".72em" }}>
+                        {assigned ? "Quitar" : "Asignar"}
+                      </button>
+                    )}
                   </div>
                 );
               })}
