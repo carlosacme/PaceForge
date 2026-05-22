@@ -347,10 +347,8 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
     setAssignModal(staffRow);
     const { data } = await supabase.from("staff_athletes").select("athlete_id").eq("staff_id", staffRow.staff_id).eq("coach_id", coachUserId);
     setAssignedAthleteIds(new Set((data || []).map((r) => String(r.athlete_id))));
-    // Load all team athletes (admin's + staff's direct athletes)
-    const staffIds = staffList.map((s) => s.staff_id);
-    const allCoachIds = [coachUserId, ...staffIds];
-    const { data: teamAthletes } = await supabase.from("athletes").select("id, name, goal").in("coach_id", allCoachIds).order("id", { ascending: true });
+    // Cargar solo los atletas del coach principal (todos le pertenecen)
+    const { data: teamAthletes } = await supabase.from("athletes").select("id, name, goal").eq("coach_id", coachUserId).order("id", { ascending: true });
     setAllTeamAthletes(teamAthletes || []);
   };
 
