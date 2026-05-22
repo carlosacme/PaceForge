@@ -755,8 +755,38 @@ export default function AthleteHome({ profile }) {
       return;
     }
     setWorkouts((prev) => prev.map((w) => (String(w.id) === String(workoutRow.id) ? normalizeWorkoutRow({ ...w, ...payload }) : w)));
-closeWorkoutModal();
-  
+
+    // Análisis post-entreno
+    setLoadingAnalysis(true);
+    try {
+      const workoutData = workoutSummaryModal?.workout || {};
+      const res = await fetch("/api/analyze-workout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "analyze",
+          workout: {
+            ...workoutData,
+            manual_distance_km: manualSummaryForm.distanceKm,
+            manual_duration_min: manualSummaryForm.durationMin,
+            rpe: manualSummaryForm.rpe,
+            manual_avg_hr: manualSummaryForm.avgHr,
+            manual_max_hr: manualSummaryForm.maxHr,
+            athlete_notes: manualSummaryForm.notes,
+          },
+          athleteName: athleteInfo?.name,
+          vdot: athleteInfo?.vdot || null,
+          role: "athlete",
+        }),
+      });
+      const data = await res.json();
+      setWorkoutAnalysis(data?.analysis || "");
+    } catch (e) {
+      console.error("analyze post-save error:", e);
+    } finally {
+      setLoadingAnalysis(false);
+    }
+    // NO llamar closeWorkoutModal() aquí — el atleta cierra manualmente después de leer el análisis
   };
 
   const toggleDone = async (w) => {
@@ -1895,7 +1925,17 @@ closeWorkoutModal();
               </div>
             </div>
 
-            
+            {loadingAnalysis && (
+              <div style={{ marginTop: 14, padding: 12, background: "#f0fdf4", borderRadius: 10, color: "#166534", fontSize: ".82em", fontWeight: 600 }}>
+                ⚡ Analizando tu entrenamiento con IA…
+              </div>
+            )}
+            {workoutAnalysis && !loadingAnalysis && (
+              <div style={{ marginTop: 14, padding: 14, background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 10 }}>
+                <div style={{ fontSize: ".72em", fontWeight: 800, color: "#92400e", marginBottom: 6 }}>🤖 ANÁLISIS DE TU COACH IA</div>
+                <div style={{ fontSize: ".83em", color: "#1c1917", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{workoutAnalysis}</div>
+              </div>
+            )}
 
             <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 14 }}>
               <button type="button" onClick={closeWorkoutModal} style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#475569", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".8em" }}>
