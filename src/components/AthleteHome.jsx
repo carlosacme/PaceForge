@@ -339,8 +339,6 @@ export default function AthleteHome({ profile }) {
   });
   const [manualSummarySaving, setManualSummarySaving] = useState(false);
   const [athleteProgressTab, setAthleteProgressTab] = useState(() => readStoredAthleteProgressTab());
-  const [workoutAnalysis, setWorkoutAnalysis] = useState("");
-  const [loadingAnalysis, setLoadingAnalysis] = useState(false);
 
   const profileUserId = profile?.user_id ?? null;
 
@@ -680,8 +678,6 @@ export default function AthleteHome({ profile }) {
       notes: workoutRow.athlete_notes || "",
     };
     setManualSummaryForm(baseManual);
-    setWorkoutAnalysis("");
-    setLoadingAnalysis(false);
     if (isStravaConnected && athleteInfo?.id) {
       setWorkoutSummaryModal({ workout: workoutRow, stravaConnected: true, activity: null, stravaActivityPending: true });
       return;
@@ -1120,40 +1116,6 @@ export default function AthleteHome({ profile }) {
 
   const closeWorkoutModal = () => {
     setWorkoutSummaryModal(null);
-    setWorkoutAnalysis("");
-    setLoadingAnalysis(false);
-  };
-
-  const analyzeAthleteWorkout = async (workout) => {
-    setLoadingAnalysis(true);
-    setWorkoutAnalysis("");
-    try {
-      const res = await fetch("/api/analyze-workout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "analyze",
-          workout: {
-            ...workout,
-            manual_distance_km: manualSummaryForm.distanceKm,
-            manual_duration_min: manualSummaryForm.durationMin,
-            rpe: manualSummaryForm.rpe,
-            manual_avg_hr: manualSummaryForm.avgHr,
-            manual_max_hr: manualSummaryForm.maxHr,
-            athlete_notes: manualSummaryForm.notes,
-          },
-          athleteName: athleteInfo?.name,
-          vdot: athleteInfo?.vdot || null,
-          role: "athlete",
-        }),
-      });
-      const data = await res.json();
-      setWorkoutAnalysis(data?.analysis || "No se pudo generar el análisis.");
-    } catch (e) {
-      setWorkoutAnalysis("Error generando análisis. Intenta de nuevo.");
-    } finally {
-      setLoadingAnalysis(false);
-    }
   };
 
   const uploadAthleteAvatar = async (file) => {
@@ -1939,26 +1901,7 @@ export default function AthleteHome({ profile }) {
                   {manualSummarySaving ? "Guardando…" : workoutSummaryModal.stravaConnected ? "Guardar notas" : "Guardar registro"}
                 </button>
               </div>
-              {workoutSummaryModal?.workout?.done && (
-                <button type="button" onClick={() => analyzeAthleteWorkout(workoutSummaryModal.workout)}
-                  disabled={loadingAnalysis}
-                  style={{ marginTop: 8, width: "100%", padding: "8px 12px", background: loadingAnalysis ? "#cbd5e1" : "linear-gradient(135deg,#6366f1,#8b5cf6)", border: "none", borderRadius: 8, color: "#fff", fontWeight: 800, fontFamily: "inherit", cursor: loadingAnalysis ? "not-allowed" : "pointer", fontSize: ".78em" }}>
-                  {loadingAnalysis ? "⚡ Analizando…" : "🤖 Analizar con IA"}
-                </button>
-              )}
             </div>
-
-            {loadingAnalysis && (
-              <div style={{ marginTop: 10, padding: 12, background: "#f0fdf4", borderRadius: 10, color: "#166534", fontSize: ".82em", fontWeight: 600 }}>
-                ⚡ Analizando tu entrenamiento…
-              </div>
-            )}
-            {workoutAnalysis && !loadingAnalysis && (
-              <div style={{ marginTop: 10, padding: 14, background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 10 }}>
-                <div style={{ fontSize: ".72em", fontWeight: 800, color: "#92400e", marginBottom: 6 }}>🤖 ANÁLISIS DE TU COACH IA</div>
-                <div style={{ fontSize: ".83em", color: "#1c1917", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{workoutAnalysis}</div>
-              </div>
-            )}
 
             <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 14 }}>
               <button type="button" onClick={closeWorkoutModal} style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#475569", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".8em" }}>
