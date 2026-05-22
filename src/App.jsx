@@ -4230,27 +4230,52 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
     const { error } = await supabase.from("workouts").update(chg).eq("id", adjustment.workout_id);
     if (error) { notify("Error aplicando cambio: " + error.message); return; }
 
-    // Si cambió el tipo, reemplazar workout_steps con pasos simples acordes
     if (chg.type != null || chg.total_km != null || chg.duration_min != null) {
-      const finalType = chg.type || workouts.find(w => String(w.id) === String(adjustment.workout_id))?.type;
-      const finalKm = chg.total_km ?? workouts.find(w => String(w.id) === String(adjustment.workout_id))?.total_km ?? 0;
-      const finalDuration = chg.duration_min ?? workouts.find(w => String(w.id) === String(adjustment.workout_id))?.duration_min ?? 30;
+      const originalWorkout = workouts.find(w => String(w.id) === String(adjustment.workout_id));
+      const finalType = chg.type || originalWorkout?.type;
+      const finalKm = chg.total_km ?? originalWorkout?.total_km ?? 0;
+      const finalDuration = chg.duration_min ?? originalWorkout?.duration_min ?? 30;
+      const originalKm = originalWorkout?.total_km || finalKm;
+      const originalDuration = originalWorkout?.duration_min || finalDuration;
 
-      // Borrar steps anteriores
-      await supabase.from("workout_steps").delete().eq("workout_id", adjustment.workout_id);
+      const simpleTypes = ["easy", "long", "recovery", "tempo", "progression"];
+      const isSimple = simpleTypes.includes(finalType);
 
-      // Crear steps simples según el tipo
-      const warmup = Math.round(finalDuration * 0.15);
-      const cooldown = Math.round(finalDuration * 0.15);
-      const main = finalDuration - warmup - cooldown;
+      if (isSimple) {
+        // Borrar steps anteriores e insertar 1 solo paso
+        await supabase.from("workout_steps").delete().eq("workout_id", adjustment.workout_id);
+        await supabase.from("workout_steps").insert([{
+          workout_id: adjustment.workout_id,
+          step_order: 1,
+          type: finalType,
+          duration_min: finalDuration,
+          distance_km: finalKm > 0 ? finalKm : null,
+          target_pace: finalType === "recovery" ? "Very easy pace" : finalType === "easy" ? "Conversational pace" : finalType === "long" ? "Easy to moderate pace" : "Tempo pace",
+          target_hr_zone: finalType === "recovery" ? "Easy" : finalType === "easy" ? "Moderate" : "Hard",
+          description: chg.description || chg.title || "Bloque ajustado por IA",
+        }]);
+      } else {
+        // Intervalos: escalar steps existentes proporcionalmente
+        const { data: existingSteps } = await supabase
+          .from("workout_steps")
+          .select("*")
+          .eq("workout_id", adjustment.workout_id)
+          .order("step_order");
 
-      const simpleSteps = [
-        { workout_id: adjustment.workout_id, step_order: 1, type: "warmup", duration_min: warmup, distance_km: null, target_pace: "Easy jog", target_hr_zone: "Easy", description: "Calentamiento suave" },
-        { workout_id: adjustment.workout_id, step_order: 2, type: finalType === "recovery" ? "recovery" : "main", duration_min: main, distance_km: finalKm > 0 ? finalKm : null, target_pace: finalType === "recovery" ? "Very easy pace" : finalType === "easy" ? "Conversational pace" : "Tempo pace", target_hr_zone: finalType === "recovery" ? "Easy" : finalType === "easy" ? "Moderate" : "Hard", description: chg.description || chg.title || "Bloque principal" },
-        { workout_id: adjustment.workout_id, step_order: 3, type: "cooldown", duration_min: cooldown, distance_km: null, target_pace: "Easy jog", target_hr_zone: "Easy", description: "Vuelta a la calma" },
-      ];
+        if (existingSteps && existingSteps.length > 0) {
+          const kmRatio = originalKm > 0 ? finalKm / originalKm : 1;
+          const durRatio = originalDuration > 0 ? finalDuration / originalDuration : 1;
 
-      await supabase.from("workout_steps").insert(simpleSteps);
+          for (const step of existingSteps) {
+            const stepUpdate = {};
+            if (step.distance_km != null) stepUpdate.distance_km = Math.round(step.distance_km * kmRatio * 100) / 100;
+            if (step.duration_min != null) stepUpdate.duration_min = Math.round(step.duration_min * durRatio * 10) / 10;
+            if (Object.keys(stepUpdate).length > 0) {
+              await supabase.from("workout_steps").update(stepUpdate).eq("id", step.id);
+            }
+          }
+        }
+      }
     }
 
     setWorkouts((prev) => prev.map((w) =>
