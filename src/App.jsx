@@ -4241,37 +4241,48 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
       const simpleTypes = ["easy", "long", "recovery", "tempo", "progression"];
       const isSimple = simpleTypes.includes(finalType);
 
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseKey = import.meta.env.VITE_SUPABASE_KEY;
+
       if (isSimple) {
         // Borrar steps anteriores e insertar 1 solo paso
-        await supabase.from("workout_steps").delete().eq("workout_id", adjustment.workout_id);
-        await supabase.from("workout_steps").insert([{
-          workout_id: adjustment.workout_id,
-          step_order: 1,
-          type: finalType,
-          duration_min: finalDuration,
-          distance_km: finalKm > 0 ? finalKm : null,
-          target_pace: finalType === "recovery" ? "Very easy pace" : finalType === "easy" ? "Conversational pace" : finalType === "long" ? "Easy to moderate pace" : "Tempo pace",
-          target_hr_zone: finalType === "recovery" ? "Easy" : finalType === "easy" ? "Moderate" : "Hard",
-          description: chg.description || chg.title || "Bloque ajustado por IA",
-        }]);
+        await fetch(`${supabaseUrl}/rest/v1/workout_steps?workout_id=eq.${adjustment.workout_id}`, {
+          method: "DELETE",
+          headers: { "apikey": supabaseKey, "Authorization": `Bearer ${supabaseKey}` }
+        });
+        await fetch(`${supabaseUrl}/rest/v1/workout_steps`, {
+          method: "POST",
+          headers: { "apikey": supabaseKey, "Authorization": `Bearer ${supabaseKey}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
+          body: JSON.stringify([{
+            workout_id: Number(adjustment.workout_id),
+            step_order: 1,
+            type: finalType,
+            duration_min: finalDuration,
+            distance_km: finalKm > 0 ? finalKm : null,
+            target_pace: finalType === "recovery" ? "Very easy pace" : finalType === "easy" ? "Conversational pace" : finalType === "long" ? "Easy to moderate pace" : "Tempo pace",
+            target_hr_zone: finalType === "recovery" ? "Easy" : finalType === "easy" ? "Moderate" : "Hard",
+            description: chg.description || chg.title || "Bloque ajustado por IA",
+          }])
+        });
       } else {
-        // Intervalos: escalar steps existentes proporcionalmente
-        const { data: existingSteps } = await supabase
-          .from("workout_steps")
-          .select("*")
-          .eq("workout_id", adjustment.workout_id)
-          .order("step_order");
-
-        if (existingSteps && existingSteps.length > 0) {
+        // Intervalos: obtener steps, escalar y actualizar sin borrar
+        const stepsRes = await fetch(`${supabaseUrl}/rest/v1/workout_steps?workout_id=eq.${adjustment.workout_id}&order=step_order`, {
+          headers: { "apikey": supabaseKey, "Authorization": `Bearer ${supabaseKey}` }
+        });
+        const existingSteps = await stepsRes.json();
+        if (Array.isArray(existingSteps) && existingSteps.length > 0) {
           const kmRatio = originalKm > 0 ? finalKm / originalKm : 1;
           const durRatio = originalDuration > 0 ? finalDuration / originalDuration : 1;
-
           for (const step of existingSteps) {
             const stepUpdate = {};
             if (step.distance_km != null) stepUpdate.distance_km = Math.round(step.distance_km * kmRatio * 100) / 100;
             if (step.duration_min != null) stepUpdate.duration_min = Math.round(step.duration_min * durRatio * 10) / 10;
             if (Object.keys(stepUpdate).length > 0) {
-              await supabase.from("workout_steps").update(stepUpdate).eq("id", step.id);
+              await fetch(`${supabaseUrl}/rest/v1/workout_steps?id=eq.${step.id}`, {
+                method: "PATCH",
+                headers: { "apikey": supabaseKey, "Authorization": `Bearer ${supabaseKey}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
+                body: JSON.stringify(stepUpdate)
+              });
             }
           }
         }
