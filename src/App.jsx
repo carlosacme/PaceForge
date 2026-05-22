@@ -4241,10 +4241,11 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
       const simpleTypes = ["easy", "long", "recovery", "tempo", "progression"];
       const isSimple = simpleTypes.includes(finalType);
 
-      await fetch("/api/adjust-steps", {
+      await fetch("/api/analyze-workout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          action: "adjust-steps",
           workout_id: adjustment.workout_id,
           isSimple,
           finalType,
