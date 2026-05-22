@@ -755,38 +755,7 @@ export default function AthleteHome({ profile }) {
       return;
     }
     setWorkouts((prev) => prev.map((w) => (String(w.id) === String(workoutRow.id) ? normalizeWorkoutRow({ ...w, ...payload }) : w)));
-
-    // Análisis post-entreno
-    setLoadingAnalysis(true);
-    try {
-      const workoutData = workoutSummaryModal?.workout || {};
-      const res = await fetch("/api/analyze-workout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "analyze",
-          workout: {
-            ...workoutData,
-            manual_distance_km: manualSummaryForm.distanceKm,
-            manual_duration_min: manualSummaryForm.durationMin,
-            rpe: manualSummaryForm.rpe,
-            manual_avg_hr: manualSummaryForm.avgHr,
-            manual_max_hr: manualSummaryForm.maxHr,
-            athlete_notes: manualSummaryForm.notes,
-          },
-          athleteName: athleteInfo?.name,
-          vdot: athleteInfo?.vdot || null,
-          role: "athlete",
-        }),
-      });
-      const data = await res.json();
-      setWorkoutAnalysis(data?.analysis || "");
-    } catch (e) {
-      console.error("analyze post-save error:", e);
-    } finally {
-      setLoadingAnalysis(false);
-    }
-    // NO llamar closeWorkoutModal() aquí — el atleta cierra manualmente después de leer el análisis
+    closeWorkoutModal();
   };
 
   const toggleDone = async (w) => {
@@ -1153,6 +1122,38 @@ export default function AthleteHome({ profile }) {
     setWorkoutSummaryModal(null);
     setWorkoutAnalysis("");
     setLoadingAnalysis(false);
+  };
+
+  const analyzeAthleteWorkout = async (workout) => {
+    setLoadingAnalysis(true);
+    setWorkoutAnalysis("");
+    try {
+      const res = await fetch("/api/analyze-workout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "analyze",
+          workout: {
+            ...workout,
+            manual_distance_km: manualSummaryForm.distanceKm,
+            manual_duration_min: manualSummaryForm.durationMin,
+            rpe: manualSummaryForm.rpe,
+            manual_avg_hr: manualSummaryForm.avgHr,
+            manual_max_hr: manualSummaryForm.maxHr,
+            athlete_notes: manualSummaryForm.notes,
+          },
+          athleteName: athleteInfo?.name,
+          vdot: athleteInfo?.vdot || null,
+          role: "athlete",
+        }),
+      });
+      const data = await res.json();
+      setWorkoutAnalysis(data?.analysis || "No se pudo generar el análisis.");
+    } catch (e) {
+      setWorkoutAnalysis("Error generando análisis. Intenta de nuevo.");
+    } finally {
+      setLoadingAnalysis(false);
+    }
   };
 
   const uploadAthleteAvatar = async (file) => {
@@ -1848,6 +1849,21 @@ export default function AthleteHome({ profile }) {
               )
             ) : null}
 
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14, padding: 12, background: "#f8fafc", borderRadius: 10 }}>
+              <div>
+                <div style={{ fontSize: ".7em", fontWeight: 700, color: "#64748b", marginBottom: 6 }}>PROGRAMADO</div>
+                <div style={{ fontSize: ".82em", color: "#0f172a" }}>📏 {workoutSummaryModal?.workout?.total_km || "—"} km</div>
+                <div style={{ fontSize: ".82em", color: "#0f172a" }}>⏱ {workoutSummaryModal?.workout?.duration_min || "—"} min</div>
+                <div style={{ fontSize: ".82em", color: "#0f172a" }}>🏃 {workoutSummaryModal?.workout?.type || "—"}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: ".7em", fontWeight: 700, color: "#0d9488", marginBottom: 6 }}>LO QUE HICISTE</div>
+                <div style={{ fontSize: ".82em", color: "#0f172a" }}>📏 {manualSummaryForm.distanceKm || "—"} km</div>
+                <div style={{ fontSize: ".82em", color: "#0f172a" }}>⏱ {manualSummaryForm.durationMin || "—"} min</div>
+                <div style={{ fontSize: ".82em", color: "#0f172a" }}>RPE {manualSummaryForm.rpe || "—"} / 10</div>
+              </div>
+            </div>
+
             <div style={{ display: "flex", flexDirection: "column", gap: 14, marginBottom: 14 }}>
           {!workoutSummaryModal.stravaConnected ? (
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
@@ -1919,19 +1935,26 @@ export default function AthleteHome({ profile }) {
             <textarea rows={3} value={manualSummaryForm.notes} onChange={(e) => setManualSummaryForm((f) => ({ ...f, notes: e.target.value }))} placeholder="Como fue? Algo importante para tu coach?" style={{ width: "100%", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit", boxSizing: "border-box", resize: "none" }} />
           </div>
               <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                <button type="button" disabled={manualSummarySaving || loadingAnalysis} onClick={saveManualWorkoutSummary} style={{ background: (manualSummarySaving || loadingAnalysis) ? "#cbd5e1" : "linear-gradient(135deg,#0d9488,#14b8a6)", border: "none", borderRadius: 8, padding: "8px 12px", color: "#fff", fontWeight: 800, fontFamily: "inherit", cursor: (manualSummarySaving || loadingAnalysis) ? "not-allowed" : "pointer", fontSize: ".78em" }}>
-                  {manualSummarySaving ? "Guardando…" : loadingAnalysis ? "Analizando…" : workoutSummaryModal.stravaConnected ? "Guardar notas" : "Guardar registro"}
+                <button type="button" disabled={manualSummarySaving} onClick={saveManualWorkoutSummary} style={{ background: manualSummarySaving ? "#cbd5e1" : "linear-gradient(135deg,#0d9488,#14b8a6)", border: "none", borderRadius: 8, padding: "8px 12px", color: "#fff", fontWeight: 800, fontFamily: "inherit", cursor: manualSummarySaving ? "not-allowed" : "pointer", fontSize: ".78em" }}>
+                  {manualSummarySaving ? "Guardando…" : workoutSummaryModal.stravaConnected ? "Guardar notas" : "Guardar registro"}
                 </button>
               </div>
+              {workoutSummaryModal?.workout?.done && (
+                <button type="button" onClick={() => analyzeAthleteWorkout(workoutSummaryModal.workout)}
+                  disabled={loadingAnalysis}
+                  style={{ marginTop: 8, width: "100%", padding: "8px 12px", background: loadingAnalysis ? "#cbd5e1" : "linear-gradient(135deg,#6366f1,#8b5cf6)", border: "none", borderRadius: 8, color: "#fff", fontWeight: 800, fontFamily: "inherit", cursor: loadingAnalysis ? "not-allowed" : "pointer", fontSize: ".78em" }}>
+                  {loadingAnalysis ? "⚡ Analizando…" : "🤖 Analizar con IA"}
+                </button>
+              )}
             </div>
 
             {loadingAnalysis && (
-              <div style={{ marginTop: 14, padding: 12, background: "#f0fdf4", borderRadius: 10, color: "#166534", fontSize: ".82em", fontWeight: 600 }}>
-                ⚡ Analizando tu entrenamiento con IA…
+              <div style={{ marginTop: 10, padding: 12, background: "#f0fdf4", borderRadius: 10, color: "#166534", fontSize: ".82em", fontWeight: 600 }}>
+                ⚡ Analizando tu entrenamiento…
               </div>
             )}
             {workoutAnalysis && !loadingAnalysis && (
-              <div style={{ marginTop: 14, padding: 14, background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 10 }}>
+              <div style={{ marginTop: 10, padding: 14, background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 10 }}>
                 <div style={{ fontSize: ".72em", fontWeight: 800, color: "#92400e", marginBottom: 6 }}>🤖 ANÁLISIS DE TU COACH IA</div>
                 <div style={{ fontSize: ".83em", color: "#1c1917", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{workoutAnalysis}</div>
               </div>
