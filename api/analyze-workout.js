@@ -176,6 +176,7 @@ REGLAS:
 - 3+ workouts con RPE >= 7 → reducir semana siguiente 25-30%
 - FC alta + RPE bajo → solo nota de alerta, no cambiar carga
 - RPE 5-7 y FC normal → no cambiar o ajustes mínimos
+- Siempre incluye un campo "title" en cada adjustment con un título descriptivo que refleje los nuevos valores. Ejemplos: si cambias a 6km tipo easy → "Rodaje suave 6km", si es recovery → "Recuperación activa 5km", si es intervalo → "Intervalos 8x400m".
 
 IMPORTANTE: Responde ÚNICAMENTE con el siguiente JSON, sin texto antes ni después, sin comentarios, sin markdown:
 {"signal":"bien","summary":"texto explicación","adjustments":[{"workout_id":"ID","changes":{"total_km":null,"duration_min":null,"type":null,"description":null},"reason":"razón"}]}

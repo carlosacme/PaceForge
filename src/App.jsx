@@ -4218,6 +4218,7 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
     if (adjustment.changes.duration_min != null) chg.duration_min = adjustment.changes.duration_min;
     if (adjustment.changes.type != null) chg.type = adjustment.changes.type;
     if (adjustment.changes.description != null) chg.description = adjustment.changes.description;
+    if (adjustment.changes.title != null) chg.title = adjustment.changes.title;
     if (Object.keys(chg).length === 0) return;
     const { error } = await supabase.from("workouts").update(chg).eq("id", adjustment.workout_id);
     if (error) { notify("Error aplicando cambio: " + error.message); return; }
