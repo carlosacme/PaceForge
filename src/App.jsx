@@ -4219,6 +4219,13 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
     if (adjustment.changes.type != null) chg.type = adjustment.changes.type;
     if (adjustment.changes.description != null) chg.description = adjustment.changes.description;
     if (adjustment.changes.title != null) chg.title = adjustment.changes.title;
+    // Si la IA no dio título pero cambió km o tipo, generar título automático
+    if (chg.title == null && (chg.total_km != null || chg.type != null)) {
+      const newType = chg.type || (workouts.find(w => String(w.id) === String(adjustment.workout_id))?.type);
+      const newKm = chg.total_km ?? workouts.find(w => String(w.id) === String(adjustment.workout_id))?.total_km;
+      const typeLabel = WORKOUT_TYPES.find(t => t.id === newType)?.label || newType || "Entrenamiento";
+      chg.title = newKm ? `${typeLabel} ${newKm}km` : typeLabel;
+    }
     if (Object.keys(chg).length === 0) return;
     const { error } = await supabase.from("workouts").update(chg).eq("id", adjustment.workout_id);
     if (error) { notify("Error aplicando cambio: " + error.message); return; }
