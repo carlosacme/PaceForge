@@ -218,7 +218,7 @@ Los valores de signal válidos son exactamente: fatiga_alta, fatiga_media, bien,
   // ── ACTION: adjust-steps ─────────────────────────────────────
   if (action === "adjust-steps") {
     const { workout_id, isSimple, finalType, finalKm, finalDuration, originalKm, originalDuration, description, title } = req.body;
-    const supabaseUrl = process.env.VITE_SUPABASE_URL;
+    const supabaseUrl = process.env.SUPABASE_URL;
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     const h = { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}`, "Content-Type": "application/json", "Prefer": "return=minimal" };
     if (isSimple) {
