@@ -215,29 +215,53 @@ Los valores de signal válidos son exactamente: fatiga_alta, fatiga_media, bien,
     return res.status(200).json(safe);
   }
 
-  // ── ACTION: adjust-steps ─────────────────────────────────────
   if (action === "adjust-steps") {
     const { workout_id, isSimple, finalType, finalKm, finalDuration, originalKm, originalDuration, description, title } = req.body;
     const supabaseUrl = process.env.SUPABASE_URL;
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     const h = { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}`, "Content-Type": "application/json", "Prefer": "return=minimal" };
+
+    // Obtener structure actual
+    const getRes = await fetch(`${supabaseUrl}/rest/v1/workouts?id=eq.${workout_id}&select=structure,duration_min,total_km`, { headers: h });
+    const rows = await getRes.json();
+    const currentStructure = rows?.[0]?.structure || [];
+    const origDuration = originalDuration || rows?.[0]?.duration_min || 30;
+    const origKm = originalKm || rows?.[0]?.total_km || 0;
+
+    let newStructure;
+
     if (isSimple) {
-      await fetch(`${supabaseUrl}/rest/v1/workout_steps?workout_id=eq.${workout_id}`, { method: "DELETE", headers: h });
-      await fetch(`${supabaseUrl}/rest/v1/workout_steps`, { method: "POST", headers: h, body: JSON.stringify([{ workout_id: Number(workout_id), step_order: 1, type: finalType, duration_min: finalDuration, distance_km: finalKm > 0 ? finalKm : null, target_pace: finalType === "recovery" ? "Very easy pace" : finalType === "easy" ? "Conversational pace" : finalType === "long" ? "Easy to moderate pace" : "Tempo pace", target_hr_zone: finalType === "recovery" ? "Easy" : finalType === "easy" ? "Moderate" : "Hard", description: description || title || "Bloque ajustado por IA" }]) });
+      // 1 solo paso simple
+      newStructure = [{
+        phase: title || "Bloque principal",
+        duration: `${finalDuration} min`,
+        pace: finalType === "recovery" ? "Muy suave, ritmo de recuperación" : finalType === "easy" ? "Ritmo conversacional suave" : finalType === "long" ? "Ritmo aeróbico base" : "Ritmo tempo",
+        intensity: finalType === "recovery" ? "Z1" : finalType === "easy" ? "Z2" : finalType === "long" ? "Z2-Z3" : "Z3-Z4",
+      }];
     } else {
-      const stepsRes = await fetch(`${supabaseUrl}/rest/v1/workout_steps?workout_id=eq.${workout_id}&order=step_order`, { headers: h });
-      const existingSteps = await stepsRes.json();
-      if (Array.isArray(existingSteps) && existingSteps.length > 0) {
-        const kmRatio = originalKm > 0 ? finalKm / originalKm : 1;
-        const durRatio = originalDuration > 0 ? finalDuration / originalDuration : 1;
-        for (const step of existingSteps) {
-          const stepUpdate = {};
-          if (step.distance_km != null) stepUpdate.distance_km = Math.round(step.distance_km * kmRatio * 100) / 100;
-          if (step.duration_min != null) stepUpdate.duration_min = Math.round(step.duration_min * durRatio * 10) / 10;
-          if (Object.keys(stepUpdate).length > 0) await fetch(`${supabaseUrl}/rest/v1/workout_steps?id=eq.${step.id}`, { method: "PATCH", headers: h, body: JSON.stringify(stepUpdate) });
-        }
+      // Escalar duración de cada fase proporcionalmente
+      if (Array.isArray(currentStructure) && currentStructure.length > 0) {
+        const durRatio = origDuration > 0 ? finalDuration / origDuration : 1;
+        newStructure = currentStructure.map(step => {
+          const match = String(step.duration || "").match(/(\d+(?:\.\d+)?)\s*min/);
+          if (match) {
+            const newMin = Math.round(parseFloat(match[1]) * durRatio);
+            return { ...step, duration: `${newMin} min` };
+          }
+          return step;
+        });
+      } else {
+        newStructure = currentStructure;
       }
     }
+
+    // Actualizar structure en workouts
+    await fetch(`${supabaseUrl}/rest/v1/workouts?id=eq.${workout_id}`, {
+      method: "PATCH",
+      headers: h,
+      body: JSON.stringify({ structure: newStructure })
+    });
+
     return res.status(200).json({ ok: true });
   }
 
