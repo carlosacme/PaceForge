@@ -1157,7 +1157,7 @@ export async function sendChatPushNotification({ token, title, body, data = null
   const tokenOk = token != null && String(token).trim() !== "";
   if (!tokenOk || typeof window === "undefined") return;
   try {
-    const res = await fetch("/api/send-notification", {
+    const res = await fetch("/api/send-push", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1167,9 +1167,9 @@ export async function sendChatPushNotification({ token, title, body, data = null
         data: data && typeof data === "object" ? data : undefined,
       }),
     });
-    if (!res.ok) console.warn(`[${logLabel}] /api/send-notification respuesta no OK`, await res.text());
+    if (!res.ok) console.warn(`[${logLabel}] /api/send-push respuesta no OK`, await res.text());
   } catch (e) {
-    console.warn(`[${logLabel}] /api/send-notification error`, e);
+    console.warn(`[${logLabel}] /api/send-push error`, e);
   }
 }
 
