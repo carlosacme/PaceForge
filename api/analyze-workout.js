@@ -170,13 +170,34 @@ ${recentContext}
 PRÓXIMOS ENTRENAMIENTOS:
 ${futureContext}
 
-REGLAS:
-- RPE >= 8 → reducir km y duration_min 10-15% en próximos 2 workouts; cambiar interval/tempo a recovery
-- RPE <= 3 → aumentar km y duration_min 5-10% en siguiente workout similar
-- 3+ workouts con RPE >= 7 → reducir semana siguiente 25-30%
-- FC alta + RPE bajo → solo nota de alerta, no cambiar carga
-- RPE 5-7 y FC normal → no cambiar o ajustes mínimos
-- Siempre incluye un campo "title" en cada adjustment con un título descriptivo que refleje los nuevos valores. Ejemplos: si cambias a 6km tipo easy → "Rodaje suave 6km", si es recovery → "Recuperación activa 5km", si es intervalo → "Intervalos 8x400m".
+REGLAS DE AJUSTE (respeta la periodización y el propósito de cada sesión):
+
+Primero clasifica el nivel de fatiga según RPE, FC y notas:
+- Fatiga leve/normal: RPE 5-7, FC normal, sin quejas → ajustes mínimos o ninguno
+- Fatiga media: RPE 7-8, o FC elevada con sensación de cansancio
+- Fatiga alta: RPE >= 9, o 3+ workouts recientes con RPE >= 7, o nota explícita de agotamiento/dolor
+
+Según el TIPO de cada workout futuro, ajusta así:
+
+INTERVALOS / FARTLEK / SERIES (interval, fartlek):
+- Fatiga media → MANTÉN el tipo (no cambies a recovery). Reduce el volumen: baja total_km y duration_min 10-15%. La idea es menos repeticiones pero conservar el estímulo de velocidad/VO2max.
+- Fatiga alta → reduce duration_min y total_km 20-25% manteniendo el tipo, O si la fatiga es severa (RPE>=9 o dolor), entonces sí convierte a recovery.
+- No elimines el trabajo de calidad por fatiga moderada; el atleta perdería adaptaciones.
+
+TEMPO / UMBRAL (tempo):
+- Fatiga media → mantén tipo tempo, reduce duración del bloque 10-15% o reduce ligeramente el ritmo objetivo.
+- Fatiga alta → reduce 20% o convierte a easy si es severa.
+
+RODAJES / LARGOS (easy, long, recovery, progression):
+- Fatiga media → reduce total_km y duration_min 10-15%, mantén el tipo.
+- Fatiga alta → reduce 20-25%, mantén el tipo (un largo cansado se acorta, no se elimina).
+
+RECUPERACIÓN A PROGRESIÓN:
+- RPE <= 3 y FC baja → el atleta puede progresar: aumenta total_km y duration_min 5-10% en el siguiente workout similar (signal: puede_progresar).
+
+Solo usa signal "descarga_necesaria" cuando detectes fatiga alta sostenida (3+ sesiones duras seguidas) — en ese caso reduce TODA la semana siguiente 25-30%.
+
+En cada adjustment incluye un campo "title" descriptivo coherente con el ajuste: si reduces un intervalo mantén el formato de intervalo (ej. "Intervalos 5x800m" en vez de 6x800m), si reduces un largo ajusta los km (ej. "Largo 16km"), etc. NO cambies el nombre a "rodaje suave" salvo que realmente conviertas a recovery por fatiga severa.
 
 IMPORTANTE: Responde ÚNICAMENTE con el siguiente JSON, sin texto antes ni después, sin comentarios, sin markdown:
 {"signal":"bien","summary":"texto explicación","adjustments":[{"workout_id":"ID","changes":{"total_km":null,"duration_min":null,"type":null,"description":null},"reason":"razón"}]}
