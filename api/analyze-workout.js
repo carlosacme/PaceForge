@@ -262,7 +262,7 @@ Los valores de signal válidos son exactamente: fatiga_alta, fatiga_media, bien,
       body: JSON.stringify({ structure: newStructure })
     });
 
-    return res.status(200).json({ ok: true });
+    return res.status(200).json({ ok: true, structure: newStructure });
   }
 
   return res.status(400).json({ error: "action debe ser 'analyze' o 'adjust'" });

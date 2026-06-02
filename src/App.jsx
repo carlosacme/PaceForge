@@ -4241,22 +4241,28 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
       const simpleTypes = ["easy", "long", "recovery", "tempo", "progression"];
       const isSimple = simpleTypes.includes(finalType);
 
-      await fetch("/api/analyze-workout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "adjust-steps",
-          workout_id: adjustment.workout_id,
-          isSimple,
-          finalType,
-          finalKm,
-          finalDuration,
-          originalKm,
-          originalDuration,
-          description: chg.description,
-          title: chg.title,
-        })
-      });
+      try {
+        const stepsRes = await fetch("/api/analyze-workout", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "adjust-steps",
+            workout_id: adjustment.workout_id,
+            isSimple,
+            finalType,
+            finalKm,
+            finalDuration,
+            originalKm,
+            originalDuration,
+            description: chg.description,
+            title: chg.title,
+          })
+        });
+        const stepsData = await stepsRes.json();
+        if (stepsData?.structure) chg.structure = stepsData.structure;
+      } catch (e) {
+        console.error("adjust-steps error:", e);
+      }
     }
 
     setWorkouts((prev) => prev.map((w) =>
