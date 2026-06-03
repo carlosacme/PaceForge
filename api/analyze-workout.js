@@ -260,14 +260,38 @@ Los valores de signal válidos son exactamente: fatiga_alta, fatiga_media, bien,
         intensity: finalType === "recovery" ? "Z1" : finalType === "easy" ? "Z2" : finalType === "long" ? "Z2-Z3" : "Z3-Z4",
       }];
     } else {
-      // Escalar duración de cada fase proporcionalmente
+      // Intervalos/Fartlek: escalar duración de cada fase proporcionalmente
       if (Array.isArray(currentStructure) && currentStructure.length > 0) {
         const durRatio = origDuration > 0 ? finalDuration / origDuration : 1;
+
+        const parseToSeconds = (str) => {
+          const s = String(str || "").toLowerCase();
+          let total = 0;
+          const minMatch = s.match(/(\d+(?:\.\d+)?)\s*min/);
+          const secMatch = s.match(/(\d+)\s*sec/);
+          if (minMatch) total += parseFloat(minMatch[1]) * 60;
+          if (secMatch) total += parseInt(secMatch[1], 10);
+          // Si no hay unidad explícita pero hay número, asumir minutos
+          if (!minMatch && !secMatch) {
+            const plain = s.match(/(\d+(?:\.\d+)?)/);
+            if (plain) total += parseFloat(plain[1]) * 60;
+          }
+          return total;
+        };
+
+        const formatFromSeconds = (totalSec) => {
+          const rounded = Math.round(totalSec);
+          if (rounded < 60) return `${rounded} sec`;
+          const mins = Math.floor(rounded / 60);
+          const secs = rounded % 60;
+          return secs === 0 ? `${mins} min` : `${mins} min ${secs} sec`;
+        };
+
         newStructure = currentStructure.map(step => {
-          const match = String(step.duration || "").match(/(\d+(?:\.\d+)?)\s*min/);
-          if (match) {
-            const newMin = Math.round(parseFloat(match[1]) * durRatio);
-            return { ...step, duration: `${newMin} min` };
+          const origSec = parseToSeconds(step.duration);
+          if (origSec > 0) {
+            const newSec = origSec * durRatio;
+            return { ...step, duration: formatFromSeconds(newSec) };
           }
           return step;
         });
