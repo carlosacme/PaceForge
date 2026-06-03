@@ -243,9 +243,9 @@ Los valores de signal válidos son exactamente: fatiga_alta, fatiga_media, bien,
     const h = { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}`, "Content-Type": "application/json", "Prefer": "return=minimal" };
 
     // Obtener structure actual
-    const getRes = await fetch(`${supabaseUrl}/rest/v1/workouts?id=eq.${workout_id}&select=structure,duration_min,total_km`, { headers: h });
+    const getRes = await fetch(`${supabaseUrl}/rest/v1/workouts?id=eq.${workout_id}&select=structure,workout_structure,duration_min,total_km`, { headers: h });
     const rows = await getRes.json();
-    const currentStructure = rows?.[0]?.structure || [];
+    const currentStructure = rows?.[0]?.workout_structure || rows?.[0]?.structure || [];
     const origDuration = originalDuration || rows?.[0]?.duration_min || 30;
     const origKm = originalKm || rows?.[0]?.total_km || 0;
 
@@ -254,10 +254,12 @@ Los valores de signal válidos son exactamente: fatiga_alta, fatiga_media, bien,
     if (isSimple) {
       // 1 solo paso simple
       newStructure = [{
-        phase: title || "Bloque principal",
-        duration: `${finalDuration} min`,
-        pace: finalType === "recovery" ? "Muy suave, ritmo de recuperación" : finalType === "easy" ? "Ritmo conversacional suave" : finalType === "long" ? "Ritmo aeróbico base" : "Ritmo tempo",
-        intensity: finalType === "recovery" ? "Z1" : finalType === "easy" ? "Z2" : finalType === "long" ? "Z2-Z3" : "Z3-Z4",
+        block_type: title || "Bloque principal",
+        duration_min: `${finalDuration} min`,
+        target_pace: finalType === "recovery" ? "Muy suave, ritmo de recuperación" : finalType === "easy" ? "Ritmo conversacional suave" : finalType === "long" ? "Ritmo aeróbico base" : "Ritmo tempo",
+        target_hr: finalType === "recovery" ? "Z1" : finalType === "easy" ? "Z2" : finalType === "long" ? "Z2-Z3" : "Z3-Z4",
+        distance_km: "",
+        description: "",
       }];
     } else {
       // Intervalos/Fartlek: escalar duración de cada fase proporcionalmente
@@ -271,7 +273,6 @@ Los valores de signal válidos son exactamente: fatiga_alta, fatiga_media, bien,
           const secMatch = s.match(/(\d+)\s*sec/);
           if (minMatch) total += parseFloat(minMatch[1]) * 60;
           if (secMatch) total += parseInt(secMatch[1], 10);
-          // Si no hay unidad explícita pero hay número, asumir minutos
           if (!minMatch && !secMatch) {
             const plain = s.match(/(\d+(?:\.\d+)?)/);
             if (plain) total += parseFloat(plain[1]) * 60;
@@ -288,10 +289,9 @@ Los valores de signal válidos son exactamente: fatiga_alta, fatiga_media, bien,
         };
 
         newStructure = currentStructure.map(step => {
-          const origSec = parseToSeconds(step.duration);
+          const origSec = parseToSeconds(step.duration_min);
           if (origSec > 0) {
-            const newSec = origSec * durRatio;
-            return { ...step, duration: formatFromSeconds(newSec) };
+            return { ...step, duration_min: formatFromSeconds(origSec * durRatio) };
           }
           return step;
         });
@@ -300,11 +300,11 @@ Los valores de signal válidos son exactamente: fatiga_alta, fatiga_media, bien,
       }
     }
 
-    // Actualizar structure en workouts
+    // Actualizar ambos campos de structure en workouts
     await fetch(`${supabaseUrl}/rest/v1/workouts?id=eq.${workout_id}`, {
       method: "PATCH",
       headers: h,
-      body: JSON.stringify({ structure: newStructure })
+      body: JSON.stringify({ structure: newStructure, workout_structure: newStructure })
     });
 
     return res.status(200).json({ ok: true, structure: newStructure });
