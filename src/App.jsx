@@ -4035,7 +4035,7 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
     : athletes;
 
   useEffect(() => {
-    if (authLoading || !athlete?.id) {
+    if (!athlete?.id) {
       setWorkouts([]);
       setCoachWorkoutAnalysis({});
       return;
@@ -4059,10 +4059,10 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
     };
     load();
     return () => { cancelled = true; };
-  }, [authLoading, athlete?.id, workoutsRefresh]);
+  }, [athlete?.id, workoutsRefresh]);
 
   useEffect(() => {
-    if (authLoading || !athlete?.id) {
+    if (!athlete?.id) {
       setCoachAthleteEvaluations([]);
       return;
     }
@@ -4080,7 +4080,7 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
     return () => {
       cancelled = true;
     };
-  }, [authLoading, athlete?.id]);
+  }, [athlete?.id]);
 
   // Cargar análisis guardados desde localStorage al cambiar de atleta o workouts
   useEffect(() => {
@@ -4301,7 +4301,7 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
   }, [athlete?.id]);
 
   useEffect(() => {
-    if (authLoading || !athlete?.id) {
+    if (!athlete?.id) {
       setRaces([]);
       return;
     }
@@ -4323,7 +4323,7 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
     return () => {
       cancelled = true;
     };
-  }, [authLoading, athlete?.id, workoutsRefresh]);
+  }, [athlete?.id, workoutsRefresh]);
 
   const racesByDate = useMemo(() => {
     const m = {};
@@ -4487,7 +4487,7 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
-      if (authLoading || !athlete?.id) {
+      if (!athlete?.id) {
         setEarnedAchievements([]);
         return;
       }
@@ -4499,7 +4499,7 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
     return () => {
       cancelled = true;
     };
-  }, [authLoading, athlete?.id, workouts]);
+  }, [athlete?.id, workouts]);
 
   const toggleWorkoutDone = async (w) => {
     const next = !w.done;
@@ -4776,13 +4776,12 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
   };
 
   useEffect(() => {
-    if (authLoading) return;
     let cancelled = false;
     supabase.auth.getUser().then(({ data }) => {
       if (!cancelled) setCoachId(data?.user?.id ?? null);
     });
     return () => { cancelled = true; };
-  }, [authLoading]);
+  }, []);
 
   useEffect(() => {
     if (!athlete?.id) {
