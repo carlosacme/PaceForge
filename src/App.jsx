@@ -1153,7 +1153,12 @@ export default function App() {
   const [authRole, setAuthRole] = useState("");
   const [authName, setAuthName] = useState("");
   const [authCoachCode, setAuthCoachCode] = useState("");
-  const [profile, setProfile] = useState(null);
+  const [profile, setProfile] = useState(() => {
+    try {
+      const cached = localStorage.getItem("raf_cached_profile");
+      return cached ? JSON.parse(cached) : null;
+    } catch { return null; }
+  });
   const [profileLoading, setProfileLoading] = useState(false);
   const [pushInviteDismissed, setPushInviteDismissed] = useState(() =>
     typeof localStorage !== "undefined" && localStorage.getItem("raf_push_invite_dismissed") === "1",
@@ -1450,12 +1455,23 @@ export default function App() {
   }, [session?.user?.id]);
 
   useEffect(() => {
+    const cacheAndSetProfile = (p) => {
+      setProfile(p);
+      try {
+        if (p) localStorage.setItem("raf_cached_profile", JSON.stringify(p));
+        else localStorage.removeItem("raf_cached_profile");
+      } catch {}
+    };
+
     const loadProfile = async () => {
       if (!session?.user) {
         setProfile(null);
+        try { localStorage.removeItem("raf_cached_profile"); } catch {}
         return;
       }
-      setProfileLoading(true);
+      // Solo mostrar loading si NO hay perfil cacheado (primera vez)
+      const hasCached = (() => { try { return !!localStorage.getItem("raf_cached_profile"); } catch { return false; } })();
+      if (!hasCached) setProfileLoading(true);
       const { data, error } = await supabase
         .from("profiles")
         .select("*")
@@ -1588,12 +1604,12 @@ export default function App() {
             status: upErr.status,
             fullError: upErr,
           });
-          setProfile(data ?? null);
+          cacheAndSetProfile(data ?? null);
         } else {
-          setProfile(await syncCoachPlanIfNeeded(saved));
+          cacheAndSetProfile(await syncCoachPlanIfNeeded(saved));
         }
       } else {
-        setProfile(await syncCoachPlanIfNeeded(data));
+        cacheAndSetProfile(await syncCoachPlanIfNeeded(data));
       }
       setProfileLoading(false);
     };
@@ -1612,7 +1628,7 @@ export default function App() {
   }, [session?.user?.id, profile, viewRestored, allowedCoachViews]);
 
   useEffect(() => {
-    if (!session?.user?.id) return;
+    if (authLoading || !session?.user?.id) return;
     let cancelled = false;
     (async () => {
       const tok = await refreshFcmTokenIfGranted();
@@ -1622,7 +1638,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [session?.user?.id]);
+  }, [authLoading, session?.user?.id]);
 
   useEffect(() => {
     if (!session) return undefined;
@@ -1752,7 +1768,7 @@ useEffect(() => {
 }, [notify]);
   useEffect(() => {
     const loadAthletes = async () => {
-      if (!session) {
+      if (authLoading || !session) {
         setAthletes([]);
         setLoadingAthletes(false);
         return;
@@ -1815,7 +1831,7 @@ useEffect(() => {
     };
 
     loadAthletes();
-  }, [session]);
+  }, [authLoading, session]);
 
   useEffect(() => {
     if (typeof localStorage === "undefined") return;
@@ -4019,7 +4035,7 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
     : athletes;
 
   useEffect(() => {
-    if (!athlete?.id) {
+    if (authLoading || !athlete?.id) {
       setWorkouts([]);
       setCoachWorkoutAnalysis({});
       return;
@@ -4043,10 +4059,10 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
     };
     load();
     return () => { cancelled = true; };
-  }, [athlete?.id, workoutsRefresh]);
+  }, [authLoading, athlete?.id, workoutsRefresh]);
 
   useEffect(() => {
-    if (!athlete?.id) {
+    if (authLoading || !athlete?.id) {
       setCoachAthleteEvaluations([]);
       return;
     }
@@ -4064,7 +4080,7 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
     return () => {
       cancelled = true;
     };
-  }, [athlete?.id]);
+  }, [authLoading, athlete?.id]);
 
   // Cargar análisis guardados desde localStorage al cambiar de atleta o workouts
   useEffect(() => {
@@ -4285,7 +4301,7 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
   }, [athlete?.id]);
 
   useEffect(() => {
-    if (!athlete?.id) {
+    if (authLoading || !athlete?.id) {
       setRaces([]);
       return;
     }
@@ -4307,7 +4323,7 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
     return () => {
       cancelled = true;
     };
-  }, [athlete?.id, workoutsRefresh]);
+  }, [authLoading, athlete?.id, workoutsRefresh]);
 
   const racesByDate = useMemo(() => {
     const m = {};
@@ -4471,7 +4487,7 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
-      if (!athlete?.id) {
+      if (authLoading || !athlete?.id) {
         setEarnedAchievements([]);
         return;
       }
@@ -4483,7 +4499,7 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
     return () => {
       cancelled = true;
     };
-  }, [athlete?.id, workouts]);
+  }, [authLoading, athlete?.id, workouts]);
 
   const toggleWorkoutDone = async (w) => {
     const next = !w.done;
@@ -4760,12 +4776,13 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
   };
 
   useEffect(() => {
+    if (authLoading) return;
     let cancelled = false;
     supabase.auth.getUser().then(({ data }) => {
       if (!cancelled) setCoachId(data?.user?.id ?? null);
     });
     return () => { cancelled = true; };
-  }, []);
+  }, [authLoading]);
 
   useEffect(() => {
     if (!athlete?.id) {
