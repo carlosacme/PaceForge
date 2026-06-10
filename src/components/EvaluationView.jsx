@@ -77,6 +77,15 @@ const predictTimeFromVdot = (vdot, distanceMeters) => {
   return hi * 60;
 };
 
+// Corrección de Riegel para distancias largas: parte de un tiempo base confiable
+// (predicción de 10K) y extrapola con exponente de fatiga.
+// Exponente estándar 1.06; se sube a 1.08 para extrapolaciones largas porque
+// un test corto (Cooper/3-5km) sobrestima la resistencia a 21K/42K.
+const riegelPredict = (baseSeconds, baseMeters, targetMeters, exponent) => {
+  if (!Number.isFinite(baseSeconds) || baseSeconds <= 0) return null;
+  return baseSeconds * Math.pow(targetMeters / baseMeters, exponent);
+};
+
 const computeHrZones = (fcMax, fcRest) => {
   const max = Number(fcMax);
   if (!Number.isFinite(max) || max <= 0) return [];
@@ -245,10 +254,17 @@ export default function EvaluationView({ athletes, currentUserId, notify, athlet
       const pace = v ? 1000 / v : null;
       return { ...p, paceMinKm: pace };
     });
-    const predictions = EVAL_DISTANCES.map((d) => ({
-      ...d,
-      seconds: predictTimeFromVdot(vdot, d.meters),
-    }));
+    // 5K y 10K: directo desde VDOT (fiable). 21K y 42K: Riegel desde el 10K
+    // con exponente mayor para no sobrestimar la resistencia.
+    const base10kSec = predictTimeFromVdot(vdot, 10000);
+    // Exponente más agresivo si el test fue corto (cooper/umbral corto)
+    const longExponent = tab === "cooper" ? 1.09 : 1.07;
+    const predictions = EVAL_DISTANCES.map((d) => {
+      if ((d.id === "21k" || d.id === "42k") && Number.isFinite(base10kSec)) {
+        return { ...d, seconds: riegelPredict(base10kSec, 10000, d.meters, longExponent) };
+      }
+      return { ...d, seconds: predictTimeFromVdot(vdot, d.meters) };
+    });
     const zones = computeHrZones(fcMax, fcRest);
     setResults({
       vdot,
@@ -259,6 +275,7 @@ export default function EvaluationView({ athletes, currentUserId, notify, athlet
       fc_max: Number(fcMax) || null,
       fc_reposo: Number(fcRest) || null,
       method: tab,
+      eval_method: tab,
     });
     if (typeof localStorage !== "undefined") {
       localStorage.removeItem(EVAL_FORM_STORAGE_KEY);
@@ -390,6 +407,11 @@ export default function EvaluationView({ athletes, currentUserId, notify, athlet
               );
             })}
           </div>
+          {(dataObj?.method === "cooper" || dataObj?.eval_method === "cooper") && (
+            <div style={{ marginTop: 12, padding: "10px 12px", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 10, fontSize: ".74em", color: "#92400e", lineHeight: 1.5 }}>
+              ⚠️ Las predicciones de 21K y 42K son estimaciones a partir de un test corto. La resistencia real a esas distancias depende del entrenamiento de fondo y puede diferir de estos tiempos.
+            </div>
+          )}
         </div>
       </>
     );
