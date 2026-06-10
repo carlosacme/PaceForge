@@ -6,6 +6,19 @@ caution: { bg: "rgba(245,158,11,.1)", border: "rgba(245,158,11,.4)", color: "#92
 warning: { bg: "rgba(239,68,68,.1)", border: "rgba(239,68,68,.4)", color: "#991b1b", icon: "Alerta:" },
 };
 
+// Coordenadas por defecto (Bogotá) si la geolocalización falla. El clima SIEMPRE
+// se consulta por coordenadas, nunca por nombre de ciudad.
+const DEFAULT_COORDS = { lat: 4.7110, lon: -74.0721 };
+
+const geoOptions = { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 };
+
+const formatLocationLabel = (w) => {
+  if (w && w.lat != null && w.lon != null) {
+    return "Tu ubicacion (" + Number(w.lat).toFixed(4) + ", " + Number(w.lon).toFixed(4) + ")";
+  }
+  return "Tu ubicacion";
+};
+
 export default function WeatherWidget({ defaultCity = "Bogota,CO", compact = false }) {
   const [weather, setWeather] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -15,9 +28,9 @@ export default function WeatherWidget({ defaultCity = "Bogota,CO", compact = fal
     let cancelled = false;
     const fetchWeather = async (lat, lon) => {
       try {
-        const params = lat && lon
-          ? "lat=" + lat + "&lon=" + lon
-          : "city=" + encodeURIComponent(defaultCity);
+        const useLat = Number.isFinite(lat) ? lat : DEFAULT_COORDS.lat;
+        const useLon = Number.isFinite(lon) ? lon : DEFAULT_COORDS.lon;
+        const params = "lat=" + useLat + "&lon=" + useLon;
         const res = await fetch("/api/weather?" + params);
         const data = await res.json();
         if (cancelled) return;
@@ -32,12 +45,17 @@ export default function WeatherWidget({ defaultCity = "Bogota,CO", compact = fal
 
     if (typeof navigator !== "undefined" && navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
-        (pos) => fetchWeather(pos.coords.latitude, pos.coords.longitude),
-        () => fetchWeather(null, null),
-        { timeout: 5000 }
+        (pos) => {
+          if (pos.coords.accuracy > 1000) {
+            console.warn("[clima] Ubicacion de baja precision (" + Math.round(pos.coords.accuracy) + " m) - probablemente por red, no GPS.");
+          }
+          fetchWeather(pos.coords.latitude, pos.coords.longitude);
+        },
+        () => fetchWeather(DEFAULT_COORDS.lat, DEFAULT_COORDS.lon),
+        geoOptions
       );
     } else {
-      fetchWeather(null, null);
+      fetchWeather(DEFAULT_COORDS.lat, DEFAULT_COORDS.lon);
     }
     return () => { cancelled = true; };
   }, [defaultCity]);
@@ -58,7 +76,7 @@ export default function WeatherWidget({ defaultCity = "Bogota,CO", compact = fal
         <img src={"https://openweathermap.org/img/wn/" + weather.icon + ".png"} alt={weather.description} style={{ width: 32, height: 32 }} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: ".78em", fontWeight: 800, color: st.color }}>
-            {weather.city} - {weather.temp}C - {weather.humidity}% hum
+            {formatLocationLabel(weather)} - {weather.temp}C - {weather.humidity}% hum
           </div>
           <div style={{ fontSize: ".72em", color: st.color, marginTop: 2, lineHeight: 1.4 }}>
             {st.icon} {weather.advice}
@@ -74,7 +92,7 @@ export default function WeatherWidget({ defaultCity = "Bogota,CO", compact = fal
         <img src={"https://openweathermap.org/img/wn/" + weather.icon + "@2x.png"} alt={weather.description} style={{ width: 48, height: 48 }} />
         <div>
           <div style={{ fontSize: ".72em", fontWeight: 800, color: st.color, textTransform: "uppercase", letterSpacing: ".1em" }}>
-            {weather.city}
+            {formatLocationLabel(weather)}
           </div>
           <div style={{ fontSize: "1.6em", fontWeight: 900, color: st.color, lineHeight: 1 }}>
             {weather.temp} C
@@ -98,9 +116,9 @@ export function useWeather(defaultCity = "Bogota,CO") {
     let cancelled = false;
     const fetchWeather = async (lat, lon) => {
       try {
-        const params = lat && lon
-          ? "lat=" + lat + "&lon=" + lon
-          : "city=" + encodeURIComponent(defaultCity);
+        const useLat = Number.isFinite(lat) ? lat : DEFAULT_COORDS.lat;
+        const useLon = Number.isFinite(lon) ? lon : DEFAULT_COORDS.lon;
+        const params = "lat=" + useLat + "&lon=" + useLon;
         const res = await fetch("/api/weather?" + params);
         if (!res.ok) return;
         const data = await res.json();
@@ -112,12 +130,17 @@ export function useWeather(defaultCity = "Bogota,CO") {
 
     if (typeof navigator !== "undefined" && navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
-        (pos) => fetchWeather(pos.coords.latitude, pos.coords.longitude),
-        () => fetchWeather(null, null),
-        { timeout: 5000 }
+        (pos) => {
+          if (pos.coords.accuracy > 1000) {
+            console.warn("[clima] Ubicacion de baja precision (" + Math.round(pos.coords.accuracy) + " m) - probablemente por red, no GPS.");
+          }
+          fetchWeather(pos.coords.latitude, pos.coords.longitude);
+        },
+        () => fetchWeather(DEFAULT_COORDS.lat, DEFAULT_COORDS.lon),
+        geoOptions
       );
     } else {
-      fetchWeather(null, null);
+      fetchWeather(DEFAULT_COORDS.lat, DEFAULT_COORDS.lon);
     }
     return () => { cancelled = true; };
   }, [defaultCity]);

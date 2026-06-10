@@ -1,19 +1,19 @@
 export default async function handler(req, res) {
   if (req.method !== "GET") return res.status(405).end();
 
-  const { lat, lon, city } = req.query;
+  const { lat, lon } = req.query;
   const apiKey = process.env.OPENWEATHER_API_KEY;
   if (!apiKey) return res.status(500).json({ error: "OPENWEATHER_API_KEY no configurada" });
 
+  const latNum = Number(lat);
+  const lonNum = Number(lon);
+  if (!Number.isFinite(latNum) || !Number.isFinite(lonNum)) {
+    return res.status(400).json({ error: "Indica lat y lon válidos" });
+  }
+
   try {
-    let url;
-    if (lat && lon) {
-      url = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${apiKey}&units=metric&lang=es`;
-    } else if (city) {
-      url = `https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(city)}&appid=${apiKey}&units=metric&lang=es`;
-    } else {
-      return res.status(400).json({ error: "Indica lat/lon o city" });
-    }
+    // Clima SIEMPRE por coordenadas (nunca por nombre de ciudad)
+    const url = `https://api.openweathermap.org/data/2.5/weather?lat=${latNum}&lon=${lonNum}&units=metric&lang=es&appid=${apiKey}`;
 
     const response = await fetch(url);
     const data = await response.json();
@@ -25,7 +25,6 @@ export default async function handler(req, res) {
     const description = data.weather?.[0]?.description || "";
     const icon = data.weather?.[0]?.icon || "";
     const windSpeed = Math.round((data.wind?.speed || 0) * 3.6); // m/s → km/h
-    const cityName = data.name || city || "";
 
     // Consejo de running adaptado a clima tropical LATAM
     let advice = "";
@@ -63,7 +62,10 @@ export default async function handler(req, res) {
     }
 
     return res.status(200).json({
-      city: cityName,
+      // Devolvemos las coordenadas consultadas, NO el data.name de OpenWeather
+      // (en zonas como Bahía Málaga/Pacífico devuelve una localidad lejana).
+      lat: latNum,
+      lon: lonNum,
       temp,
       feelsLike,
       humidity,
