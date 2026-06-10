@@ -694,7 +694,25 @@ export default function AthleteHome({ profile }) {
     const dayStart = `${workoutRow.scheduled_date}T00:00:00`;
     const dayEnd = `${formatLocalYMD(addDays(new Date(`${workoutRow.scheduled_date}T12:00:00`), 1))}T00:00:00`;
     (async () => {
-      const { data, error } = await supabase.from("strava_activities").select("*").eq("athlete_id", athleteInfo.id).gte("start_date_local", dayStart).lt("start_date_local", dayEnd).order("start_date_local", { ascending: false }).limit(1).maybeSingle();
+      // UUID garantizado del usuario autenticado
+      const { data: authData } = await supabase.auth.getUser();
+      const uid = authData?.user?.id || athleteInfo?.user_id;
+      if (!uid) {
+        setWorkoutSummaryModal((prev) => {
+          if (!prev || String(prev.workout?.id) !== String(workoutRow.id)) return prev;
+          return { ...prev, stravaActivityPending: false, activity: null };
+        });
+        return;
+      }
+      const { data, error } = await supabase
+        .from("strava_activities")
+        .select("*")
+        .eq("user_id", uid)
+        .gte("start_date", dayStart)
+        .lt("start_date", dayEnd)
+        .order("start_date", { ascending: false })
+        .limit(1)
+        .maybeSingle();
       if (cancelled) return;
       if (error) console.warn("No se pudo cargar actividad strava_activities:", error);
       const activity = data || null;
@@ -706,11 +724,10 @@ export default function AthleteHome({ profile }) {
       if (activity) {
         setManualSummaryForm((f) => ({
           ...f,
-          distanceKm: activity.distance != null ? (Number(activity.distance) / 1000).toFixed(2) : f.distanceKm,
-          durationMin: activity.moving_time != null ? String(Math.max(0, Math.round(Number(activity.moving_time) / 60))) : f.durationMin,
+          distanceKm: activity.distance_m != null ? (Number(activity.distance_m) / 1000).toFixed(2) : f.distanceKm,
+          durationMin: activity.moving_time_s != null ? String(Math.max(0, Math.round(Number(activity.moving_time_s) / 60))) : f.durationMin,
           avgHr: activity.average_heartrate != null ? String(Math.round(Number(activity.average_heartrate))) : f.avgHr,
           maxHr: activity.max_heartrate != null ? String(Math.round(Number(activity.max_heartrate))) : f.maxHr,
-          calories: activity.calories != null ? String(Math.round(Number(activity.calories))) : activity.kilojoules != null ? String(Math.round(Number(activity.kilojoules))) : f.calories,
         }));
       }
     })();
@@ -1801,9 +1818,9 @@ export default function AthleteHome({ profile }) {
                 <div style={{ color: "#64748b", fontSize: ".86em", marginBottom: 14 }}>Cargando datos de Strava…</div>
               ) : workoutSummaryModal.activity ? (
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 10, marginBottom: 14 }}>
-                  <div style={{ ...S.card, margin: 0, padding: 12 }}><div style={{ fontSize: ".72em", color: "#64748b" }}>Distancia</div><div style={{ fontWeight: 800 }}>{((Number(workoutSummaryModal.activity.distance) || 0) / 1000).toFixed(2)} km</div></div>
-                  <div style={{ ...S.card, margin: 0, padding: 12 }}><div style={{ fontSize: ".72em", color: "#64748b" }}>Tiempo total</div><div style={{ fontWeight: 800 }}>{formatDurationClock(Number(workoutSummaryModal.activity.elapsed_time || workoutSummaryModal.activity.moving_time || 0))}</div></div>
-                  <div style={{ ...S.card, margin: 0, padding: 12 }}><div style={{ fontSize: ".72em", color: "#64748b" }}>Ritmo promedio</div><div style={{ fontWeight: 800 }}>{formatStravaPace(Number(workoutSummaryModal.activity.distance || 0), Number(workoutSummaryModal.activity.moving_time || 0))}</div></div>
+                  <div style={{ ...S.card, margin: 0, padding: 12 }}><div style={{ fontSize: ".72em", color: "#64748b" }}>Distancia</div><div style={{ fontWeight: 800 }}>{((Number(workoutSummaryModal.activity.distance_m) || 0) / 1000).toFixed(2)} km</div></div>
+                  <div style={{ ...S.card, margin: 0, padding: 12 }}><div style={{ fontSize: ".72em", color: "#64748b" }}>Tiempo total</div><div style={{ fontWeight: 800 }}>{formatDurationClock(Number(workoutSummaryModal.activity.moving_time_s || 0))}</div></div>
+                  <div style={{ ...S.card, margin: 0, padding: 12 }}><div style={{ fontSize: ".72em", color: "#64748b" }}>Ritmo promedio</div><div style={{ fontWeight: 800 }}>{formatStravaPace(Number(workoutSummaryModal.activity.distance_m || 0), Number(workoutSummaryModal.activity.moving_time_s || 0))}</div></div>
                   <div style={{ ...S.card, margin: 0, padding: 12 }}><div style={{ fontSize: ".72em", color: "#64748b" }}>FC prom / máx</div><div style={{ fontWeight: 800 }}>{Number(workoutSummaryModal.activity.average_heartrate || 0) > 0 ? Math.round(Number(workoutSummaryModal.activity.average_heartrate)) : "—"} / {Number(workoutSummaryModal.activity.max_heartrate || 0) > 0 ? Math.round(Number(workoutSummaryModal.activity.max_heartrate)) : "—"} lpm</div></div>
                 </div>
               ) : (
