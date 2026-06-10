@@ -1,3 +1,15 @@
+// Distancia entre dos coordenadas en km (Haversine)
+function distanceKm(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const toRad = (d) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
 export default async function handler(req, res) {
   if (req.method !== "GET") return res.status(405).end();
 
@@ -61,11 +73,43 @@ export default async function handler(req, res) {
       advice += " Lluvia detectada — superficies resbaladizas, cuidado en curvas y descensos.";
     }
 
+    // --- Reverse geocoding: nombre del lugar más cercano ---
+    // OpenStreetMap/Nominatim (gratis, con cobertura de veredas/corregimientos en Colombia,
+    // a diferencia del campo "name" de OpenWeather que devuelve localidades lejanas).
+    let placeName = null;
+    let placeDistanceKm = null;
+    try {
+      const geoUrl =
+        "https://nominatim.openstreetmap.org/reverse?format=jsonv2" +
+        `&lat=${latNum}&lon=${lonNum}&zoom=14&addressdetails=1&accept-language=es`;
+      const geoRes = await fetch(geoUrl, {
+        headers: {
+          // Nominatim exige identificar la app en el User-Agent
+          "User-Agent": "RunningApexFlow/1.0 (https://www.runningapexflow.com)",
+        },
+      });
+      if (geoRes.ok) {
+        const geo = await geoRes.json();
+        const a = geo.address || {};
+        // De más específico (vereda/pueblo) a más general (ciudad)
+        placeName =
+          a.village || a.hamlet || a.locality || a.suburb || a.neighbourhood ||
+          a.town || a.city || a.municipality || a.county || null;
+        if (geo.lat && geo.lon) {
+          placeDistanceKm = distanceKm(latNum, lonNum, Number(geo.lat), Number(geo.lon));
+        }
+      }
+    } catch (e) {
+      console.warn("[weather] reverse geocoding falló:", e.message);
+    }
+
     return res.status(200).json({
       // Devolvemos las coordenadas consultadas, NO el data.name de OpenWeather
       // (en zonas como Bahía Málaga/Pacífico devuelve una localidad lejana).
       lat: latNum,
       lon: lonNum,
+      placeName,          // <-- nuevo
+      placeDistanceKm,    // <-- nuevo
       temp,
       feelsLike,
       humidity,

@@ -6,17 +6,42 @@ caution: { bg: "rgba(245,158,11,.1)", border: "rgba(245,158,11,.4)", color: "#92
 warning: { bg: "rgba(239,68,68,.1)", border: "rgba(239,68,68,.4)", color: "#991b1b", icon: "Alerta:" },
 };
 
-// Coordenadas por defecto (Bogotá) si la geolocalización falla. El clima SIEMPRE
-// se consulta por coordenadas, nunca por nombre de ciudad.
 const DEFAULT_COORDS = { lat: 4.7110, lon: -74.0721 };
-
 const geoOptions = { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 };
 
+// Lugares propios con nombre fijo (override manual)
+const KNOWN_PLACES = [
+  { name: "Base Naval ARC Málaga", lat: 3.9740, lon: -77.3269, radiusKm: 5 },
+];
+const PLACE_RADIUS_KM = 5; // radio para aceptar el nombre automático del geocoder
+
+const distanceKm = (lat1, lon1, lat2, lon2) => {
+  const R = 6371;
+  const toRad = (d) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+};
+
 const formatLocationLabel = (w) => {
-  if (w && w.lat != null && w.lon != null) {
-    return "Tu ubicacion (" + Number(w.lat).toFixed(4) + ", " + Number(w.lon).toFixed(4) + ")";
+  if (!w || w.lat == null || w.lon == null) return "Tu ubicacion";
+  const lat = Number(w.lat);
+  const lon = Number(w.lon);
+
+  // 1) Lugar conocido propio (Málaga)
+  const known = KNOWN_PLACES.find((p) => distanceKm(lat, lon, p.lat, p.lon) <= p.radiusKm);
+  if (known) return known.name;
+
+  // 2) Nombre automático del geocoder, si está dentro del radio
+  if (w.placeName && (w.placeDistanceKm == null || w.placeDistanceKm <= PLACE_RADIUS_KM)) {
+    return w.placeName;
   }
-  return "Tu ubicacion";
+
+  // 3) Nada conocido cerca: coordenadas
+  return "Tu ubicacion (" + lat.toFixed(4) + ", " + lon.toFixed(4) + ")";
 };
 
 export default function WeatherWidget({ defaultCity = "Bogota,CO", compact = false }) {
