@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "../lib/supabase";
+import { pacesLegacyShape } from "../lib/vdot";
 import { EVAL_DISTANCES, formatDurationClock } from "./shared/appShared";
 
 const evalStyles = {
@@ -52,15 +53,6 @@ const vdotFromCooper = (distanceMeters) => {
   const d = Number(distanceMeters);
   if (!Number.isFinite(d) || d <= 0) return null;
   return (d - 504.9) / 44.73;
-};
-
-const velocityFromVo2 = (targetVo2) => {
-  const a = 0.000104;
-  const b = 0.182258;
-  const c = -(targetVo2 + 4.6);
-  const disc = b * b - 4 * a * c;
-  if (disc <= 0) return null;
-  return (-b + Math.sqrt(disc)) / (2 * a);
 };
 
 const predictTimeFromVdot = (vdot, distanceMeters) => {
@@ -242,18 +234,7 @@ export default function EvaluationView({ athletes, currentUserId, notify, athlet
       return;
     }
 
-    const paceFractions = [
-      { key: "Easy", frac: 0.65, color: "#22c55e" },
-      { key: "Maratón", frac: 0.76, color: "#3b82f6" },
-      { key: "Umbral", frac: 0.84, color: "#f59e0b" },
-      { key: "Intervalos", frac: 0.95, color: "#ef4444" },
-      { key: "Repeticiones", frac: 1.0, color: "#8b5cf6" },
-    ];
-    const paces = paceFractions.map((p) => {
-      const v = velocityFromVo2(vdot * p.frac);
-      const pace = v ? 1000 / v : null;
-      return { ...p, paceMinKm: pace };
-    });
+    const paces = pacesLegacyShape(vdot);
     // 5K y 10K: directo desde VDOT (fiable). 21K y 42K: Riegel desde el 10K
     // con exponente mayor para no sobrestimar la resistencia.
     const base10kSec = predictTimeFromVdot(vdot, 10000);

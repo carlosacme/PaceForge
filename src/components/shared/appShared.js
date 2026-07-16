@@ -1,5 +1,6 @@
 import FitParser from "fit-file-parser";
 import { supabase } from "../../lib/supabase";
+import { PACE_RANGES_BY_LEVEL } from "../../lib/vdot";
 
 export const BRAND_NAME = "RunningApexFlow";
 
@@ -28,23 +29,7 @@ export const PLAN_SESSION_TYPE_OPTIONS = [
   { id: "fartlek", label: "Fartlek", color: "#0d9488" },
 ];
 
-export const MARKETPLACE_AI_PACE_RANGES_BY_LEVEL = {
-  principiante: {
-    easy: { desc: "7:00–8:00 min/km", pace_range: "7:00-8:00" },
-    tempo: { desc: "6:00–6:30 min/km", pace_range: "6:00-6:30" },
-    interval: { desc: "5:30–6:00 min/km", pace_range: "5:30-6:00" },
-  },
-  intermedio: {
-    easy: { desc: "6:00–6:45 min/km", pace_range: "6:00-6:45" },
-    tempo: { desc: "5:00–5:30 min/km", pace_range: "5:00-5:30" },
-    interval: { desc: "4:30–5:00 min/km", pace_range: "4:30-5:00" },
-  },
-  avanzado: {
-    easy: { desc: "5:00–5:45 min/km", pace_range: "5:00-5:45" },
-    tempo: { desc: "4:00–4:30 min/km", pace_range: "4:00-4:30" },
-    interval: { desc: "3:30–4:00 min/km", pace_range: "3:30-4:00" },
-  },
-};
+export const MARKETPLACE_AI_PACE_RANGES_BY_LEVEL = PACE_RANGES_BY_LEVEL;
 
 export const marketplacePreviewSessionType = (w) => {
   const id = w?.type;

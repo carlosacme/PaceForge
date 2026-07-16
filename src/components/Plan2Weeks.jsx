@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { supabase } from "../lib/supabase";
+import { paceRangesForPrompt } from "../lib/vdot";
 import {
   BRAND_NAME,
   DAYS,
@@ -24,8 +25,6 @@ import {
   formatCopInt,
   WORKOUT_BLOCK_TYPES,
   STRAVA_CALLBACK_URL,
-  MARKETPLACE_AI_PACE_RANGES_BY_LEVEL,
-  buildMarketplaceAiPacePromptSection,
   styles,
 } from "./shared/appShared";
 
@@ -434,9 +433,8 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, profileRole, onG
   const plan2SystemPrompt = `You are an elite running coach for ${BRAND_NAME} specializing in periodized training plans based on Jack Daniels VDOT methodology. Output ONLY compact valid JSON. No markdown, no code fences, no extra text. weekday: always 1=Monday .. 7=Sunday.`;
 
   const plan2UserPrompt = useMemo(() => {
-    const vdot = Number(nextBlockParams.vdot) || 40;
     const levelKey = String(levelId || "intermedio").toLowerCase();
-    const pr = MARKETPLACE_AI_PACE_RANGES_BY_LEVEL[levelKey] || MARKETPLACE_AI_PACE_RANGES_BY_LEVEL.intermedio;
+    const pr = paceRangesForPrompt(nextBlockParams.vdot, levelKey);
     const blockNumber = Number(currentBlock) || 1;
     const blockStartDate = startDate;
     // Obtener resumen del bloque anterior del historial
@@ -450,12 +448,14 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, profileRole, onG
         })()
       : "This is the first block - start conservative";
 
-    // Ritmos por nivel del atleta (obligatorio; el VDOT solo guía volumen/intensidad relativa, no sustituye estos rangos).
+    // Ritmos derivados del VDOT medido del atleta (o estimado por nivel si aún no hay evaluación).
     const paces = {
       easy: pr.easy.desc,
+      marathon: pr.marathon.desc,
       tempo: pr.tempo.desc,
       interval: pr.interval.desc,
-      recovery: `recuperación activa, ~30–60 s/km más lento que el ritmo fácil del nivel (${pr.easy.desc})`,
+      rep: pr.rep.desc,
+      recovery: pr.recovery.desc,
     };
 
     // Volumen base según distancia objetivo
@@ -482,7 +482,7 @@ IMPORTANT: Respond entirely in Spanish. All fields including plan_title, focus, 
 ATHLETE PROFILE:
 - Goal race: ${competition}
 - Target time: ${targetTime}
-- Current VDOT: ${vdot}
+- Current VDOT: ${pr.vdotUsed}${pr.isEstimated ? " (estimated from level)" : ""}
 - Level: ${levelLabel} (id: ${levelKey})
 - Training days per week: ${daysPerWeek}
 - Block start date: ${blockStartDate}. Week 1 starts on this date, week 2 starts 7 days later.
@@ -509,12 +509,14 @@ VOLUME CAP by level and distance:
 - Intermediate 10K: max 30km/week block 1, +3km per block
 - Advanced 10K: max 40km/week block 1, +3km per block
 
-TRAINING PACES for this athlete level ONLY (use these EXACT ranges in every description; do NOT derive paces from VDOT):
-- Easy / long / warmup-cooldown easy segments: ${paces.easy}
-- Tempo / threshold: ${paces.tempo}
-- Intervals / reps: ${paces.interval}
-- Recovery runs (between hard days): ${paces.recovery}
-Reference pace_range strings for JSON descriptions when helpful: easy=${pr.easy.pace_range}, tempo=${pr.tempo.pace_range}, interval=${pr.interval.pace_range} (min/km, ASCII hyphen).
+TRAINING PACES for this athlete (derived from their measured VDOT ${pr.vdotUsed}${pr.isEstimated ? " — ESTIMATED from level, athlete has no evaluation yet" : ""}). Use these EXACT ranges in every description:
+- Easy / long / warmup-cooldown: ${pr.easy.desc}
+- Marathon pace: ${pr.marathon.desc}
+- Tempo / threshold: ${pr.tempo.desc}
+- Intervals (VO2max): ${pr.interval.desc}
+- Reps / speed: ${pr.rep.desc}
+- Recovery runs: ${pr.recovery.desc}
+Reference pace_range strings for JSON: easy=${pr.easy.pace_range}, tempo=${pr.tempo.pace_range}, interval=${pr.interval.pace_range} (min/km, ASCII hyphen).
 
 PERIODIZATION:
 - Block number: ${blockNumber} of ~10 total blocks
@@ -529,6 +531,7 @@ VOLUME RULES:
 - Tempo runs: 20-25% of weekly km at ${paces.tempo}
 - Intervals: 15-20% of weekly km at ${paces.interval} (e.g. 6x800m, 5x1000m)
 - Recovery runs: remaining km at ${paces.recovery}
+- Marathon-pace segments (when prescribed): ${paces.marathon}; reps/strides: ${paces.rep}
 - NEVER assign 10km to a beginner first session. Start conservative.
 
 SESSION STRUCTURE (fixed weekdays):
