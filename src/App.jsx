@@ -80,6 +80,8 @@ import {
   computeAchievementProgress,
   ATHLETE_ACHIEVEMENT_DISPLAY_LIST,
   computeAthleteAchievementVisualProgress,
+  sendChatPushNotification,
+  sendWorkoutAssignmentPushToAthlete,
 } from "./components/shared/appShared";
 import {
   initMessaging,
@@ -171,48 +173,8 @@ const getRaceMeta = (nextRace) => {
 };
 
 
-const pushBodySnippet = (text, max = 400) => {
-  const s = String(text || "").trim();
-  if (s.length <= max) return s;
-  return `${s.slice(0, max - 1)}…`;
-};
-
-async function sendChatPushNotification({ token, title, body, data = null, logLabel = "chat push" }) {
-  const tokenOk = token != null && String(token).trim() !== "";
-  if (!tokenOk || typeof window === "undefined") return;
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session?.access_token) return;
-    const res = await fetch("/api/send-push", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${session.access_token}`,
-      },
-      body: JSON.stringify({
-        token,
-        title,
-        body: pushBodySnippet(body),
-        data: data && typeof data === "object" ? data : undefined,
-      }),
-    });
-    if (!res.ok) console.warn(`[${logLabel}] /api/send-push respuesta no OK`, await res.text());
-  } catch (e) {
-    console.warn(`[${logLabel}] /api/send-push error`, e);
-  }
-}
-
-async function sendWorkoutAssignmentPushToAthlete({ athleteUserId, workoutTitle, scheduledDate }) {
-  if (!athleteUserId) return;
-  const { data: prof } = await supabase.from("profiles").select("fcm_token").eq("user_id", athleteUserId).maybeSingle();
-  const token = prof?.fcm_token ?? null;
-  await sendChatPushNotification({
-    token,
-    title: "🏃 Nuevo entrenamiento asignado",
-    body: `${workoutTitle || "Entrenamiento"} programado para el ${scheduledDate || "día asignado"}`,
-    logLabel: "workout coach→athlete",
-  });
-}
+// sendChatPushNotification, sendWorkoutAssignmentPushToAthlete y pushBodySnippet
+// viven ahora en src/components/shared/appShared.js (fuente unica) y se importan arriba.
 
 
 
@@ -3240,7 +3202,6 @@ const handleSignOut = async () => {
             notify={notify}
             styles={styles}
             MarketplacePlanWorkoutsAccordion={MarketplacePlanWorkoutsAccordion}
-            sendWorkoutAssignmentPushToAthlete={sendWorkoutAssignmentPushToAthlete}
           />
         )}
         {view === "marketplace" && (

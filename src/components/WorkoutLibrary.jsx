@@ -15,6 +15,7 @@ import {
   structureRowsForFitImportInsert,
   FIT_IMPORT_STEP_TYPES,
   formatCopInt,
+  sendWorkoutAssignmentPushToAthlete,
 } from "./shared/appShared";
 
 function WorkoutLibrary({
@@ -30,7 +31,6 @@ function WorkoutLibrary({
   onAfterLibraryImportSuccess,
   styles,
   MarketplacePlanWorkoutsAccordion,
-  sendWorkoutAssignmentPushToAthlete,
   parentCoachId,
 }) {
   const S = styles;
