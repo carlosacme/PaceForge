@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "../lib/supabase";
+import { readStructure } from "../lib/workoutStructure";
 import {
   PLATFORM_ADMIN_USER_ID,
   PLAN_PREVIEW_FULL_DAYS,
@@ -238,7 +239,7 @@ function AdminMarketplacePanel({ notify, styles }) {
 
   const rowToPlanSessionForm = (row) => {
     const r = row && typeof row === "object" && !Array.isArray(row) ? row : {};
-    const struct = r.workout_structure ?? r.structure;
+    const struct = readStructure(r);
     const baseRows = workoutStructureToEditableRows(struct);
     return {
       week: String(r.week != null && r.week !== "" ? r.week : 1),
@@ -575,8 +576,8 @@ Reglas obligatorias:
                         const cellPad = { padding: "8px 10px", verticalAlign: "top" };
                         const tid = resolvePlanSessionTypeId(w);
                         const tmeta = PLAN_SESSION_TYPE_OPTIONS.find((t) => t.id === tid);
-                        const structPreview = w?.workout_structure ?? w?.structure;
-                        const nStruct = Array.isArray(structPreview) ? normalizeWorkoutStructure(structPreview).length : 0;
+                        const structPreview = readStructure(w);
+                        const nStruct = normalizeWorkoutStructure(structPreview).length;
                         return (
                           <tr key={`plan-row-${idx}`} style={{ borderBottom: "1px solid #f1f5f9", fontSize: ".78em", color: "#334155" }}>
                             <td style={cellPad}>{w?.week != null && w.week !== "" ? w.week : "—"}</td>

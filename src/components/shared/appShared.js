@@ -1,5 +1,6 @@
 import FitParser from "fit-file-parser";
 import { supabase } from "../../lib/supabase";
+import { readStructure } from "../../lib/workoutStructure";
 import { PACE_RANGES_BY_LEVEL } from "../../lib/vdot";
 
 export const BRAND_NAME = "RunningApexFlow";
@@ -581,11 +582,7 @@ export const editableRowsToWorkoutStructure = (rows) => {
 };
 
 export const normalizeLibraryRow = (row) => {
-  let structure = row.workout_structure ?? row.structure;
-  if (typeof structure === "string") {
-    try { structure = JSON.parse(structure); } catch { structure = []; }
-  }
-  structure = normalizeWorkoutStructure(structure);
+  const structure = normalizeWorkoutStructure(readStructure(row));
   const type = row.type && WORKOUT_TYPES.some((t) => t.id === row.type) ? row.type : "easy";
   const totalKm = Number.isFinite(Number(row.total_km)) ? Number(row.total_km) : 0;
   const distKm = Number.isFinite(Number(row.distance_km)) ? Number(row.distance_km) : totalKm;
@@ -1351,9 +1348,7 @@ export const formatMessageTimestamp = (iso) => {
 };
 
 export const normalizeWorkoutRow = (row) => {
-  let structure = row.workout_structure ?? row.structure;
-  if (typeof structure === "string") { try { structure = JSON.parse(structure); } catch { structure = []; } }
-  structure = normalizeWorkoutStructure(structure);
+  const structure = normalizeWorkoutStructure(readStructure(row));
   const scheduled = normalizeScheduledDateYmd(row.scheduled_date);
   const type = row.type && WORKOUT_TYPES.some((t) => t.id === row.type) ? row.type : "easy";
   return {

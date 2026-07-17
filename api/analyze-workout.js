@@ -1,4 +1,5 @@
 import { requireUser, getWorkoutIfAllowed, jsonError } from "../lib/apiAuth.js";
+import { readStructure } from "../src/lib/workoutStructure.js";
 
 const MODELS = [
   "claude-sonnet-4-6",
@@ -255,7 +256,7 @@ Los valores de signal válidos son exactamente: fatiga_alta, fatiga_media, bien,
     // Obtener structure actual
     const getRes = await fetch(`${supabaseUrl}/rest/v1/workouts?id=eq.${workout_id}&select=structure,workout_structure,duration_min,total_km`, { headers: h });
     const rows = await getRes.json();
-    const currentStructure = rows?.[0]?.workout_structure || rows?.[0]?.structure || [];
+    const currentStructure = readStructure(rows?.[0]);
     const origDuration = originalDuration || rows?.[0]?.duration_min || 30;
     const origKm = originalKm || rows?.[0]?.total_km || 0;
 

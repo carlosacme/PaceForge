@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "../lib/supabase";
 import { formatCopInt, getMarketplacePlanWorkoutRows, formatLocalYMD, addDays } from "./shared/appShared";
+import { readStructure } from "../lib/workoutStructure";
 
 function toMonday(date) {
   const d = new Date(date);
@@ -202,12 +203,12 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
         const dayOffset = sortedDays[sessionInWeek % sortedDays.length];
         const mondayOfWeek = addDays(startDate, (week - 1) * 7);
         const scheduledDate = formatLocalYMD(addDays(mondayOfWeek, dayOffset));
-        const structure = Array.isArray(w.workout_structure) ? w.workout_structure : Array.isArray(w.structure) ? w.structure : [];
+        const structure = readStructure(w);
         return {
           athlete_id: athleteId, coach_id: coachIdForWorkout, scheduled_date: scheduledDate,
           title: w.title || `Sesión ${idx + 1}`, type: w.type || "easy",
           total_km: Number(w.distance_km || w.total_km || 0), duration_min: Number(w.duration_min || 0),
-          description: w.description || "", workout_structure: structure, done: false,
+          description: w.description || "", structure, workout_structure: structure, done: false,
         };
       });
       const { error: insertErr } = await supabase.from("workouts").insert(rows);

@@ -20,6 +20,7 @@
  */
 
 import { pacesForVdot, fmtPace } from "./vdot.js";
+import { readStructure } from "./workoutStructure.js";
 
 /**
  * Mapeo de esfuerzos cualitativos -> zona Daniels.
@@ -183,7 +184,7 @@ function groupRepeats(steps) {
  * @returns {string} texto para el campo 'description' del evento
  */
 export function toIntervalsText(workout, vdot = 42.5) {
-  const structure = workout?.structure || workout?.workout_structure || [];
+  const structure = readStructure(workout);
 
   // Sin estructura: sesion simple desde duration_min
   if (!Array.isArray(structure) || structure.length === 0) {
@@ -253,7 +254,7 @@ export function buildIntervalsEvent(workout, vdot = 42.5) {
  * Estructura vacia -> se asume carrera simple (solo hay duracion).
  */
 export function isRunWorkout(workout, vdot = 42.5) {
-  const structure = workout?.structure || workout?.workout_structure || [];
+  const structure = readStructure(workout);
   if (!Array.isArray(structure) || structure.length === 0) return true;
 
   const withPace = structure

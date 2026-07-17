@@ -4,6 +4,7 @@ import FitParser from "fit-file-parser";
 import { supabase } from "./lib/supabase";
 import WeatherWidget from "./components/WeatherWidget";
 import PushToWatchButton from "./components/PushToWatchButton";
+import { readStructure } from "./lib/workoutStructure";
 import {
   BRAND_NAME,
   STRAVA_CALLBACK_URL,
@@ -481,11 +482,7 @@ const WorkoutStructureTable = ({ structure = [] }) => {
 };
 
 const normalizeWorkoutRow = (row) => {
-  let structure = row.workout_structure ?? row.structure;
-  if (typeof structure === "string") {
-    try { structure = JSON.parse(structure); } catch { structure = []; }
-  }
-  structure = normalizeWorkoutStructure(structure);
+  const structure = normalizeWorkoutStructure(readStructure(row));
   const scheduled = normalizeScheduledDateYmd(row.scheduled_date);
   const type = row.type && WORKOUT_TYPES.some(t => t.id === row.type) ? row.type : "easy";
   return {
@@ -6950,8 +6947,8 @@ function MarketplacePlanWorkoutsAccordion({ previewWorkouts, resetKey, lockAfter
   }, [resetKey, previewWorkouts, lockAfterWeek1]);
 
   const renderSessionCard = (w, i, weekKey) => {
-    const struct = w.workout_structure || w.structure;
-    const hasStructure = Array.isArray(struct) && struct.length > 0;
+    const struct = readStructure(w);
+    const hasStructure = struct.length > 0;
     const km =
       w.distance_km != null && w.distance_km !== "" && Number.isFinite(Number(w.distance_km))
         ? Number(w.distance_km)
