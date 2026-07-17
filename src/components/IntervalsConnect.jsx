@@ -24,7 +24,7 @@ export default function IntervalsConnect({ athleteId, onNotify }) {
   /** Llamada autenticada a /api/integrations */
   const call = useCallback(async (body) => {
     const { data: { session } } = await supabase.auth.getSession();
-    if (!session?.access_token) throw new Error("Sesion expirada. Vuelve a entrar.");
+    if (!session?.access_token) throw new Error("Sesión expirada. Vuelve a entrar.");
     const res = await fetch("/api/integrations", {
       method: "POST",
       headers: {
@@ -62,7 +62,7 @@ export default function IntervalsConnect({ athleteId, onNotify }) {
       await call({ action: "connect", api_key: key });
       setApiKey("");
       await loadStatus();
-      onNotify?.("intervals.icu conectado. Tus entrenamientos llegaran al reloj.");
+      onNotify?.("intervals.icu conectado. Tus entrenamientos llegarán al reloj.");
     } catch (e) {
       setError(e.message);
     } finally {
@@ -71,7 +71,7 @@ export default function IntervalsConnect({ athleteId, onNotify }) {
   };
 
   const handleDisconnect = async () => {
-    if (!window.confirm("Desconectar intervals.icu? Dejaras de recibir los entrenamientos en el reloj.")) return;
+    if (!window.confirm("¿Desconectar intervals.icu? Dejarás de recibir los entrenamientos en el reloj.")) return;
     setBusy(true); setError("");
     try {
       await call({ action: "disconnect" });
@@ -116,11 +116,11 @@ export default function IntervalsConnect({ athleteId, onNotify }) {
           <div style={S.pillOk}>✅ intervals.icu conectado</div>
           {status.last_push_at && (
             <div style={{ fontSize: ".74em", color: "#64748b", marginBottom: 8 }}>
-              Ultimo envio: {new Date(status.last_push_at).toLocaleString("es-CO")}
+              Último envío: {new Date(status.last_push_at).toLocaleString("es-CO")}
             </div>
           )}
           {status.last_error && (
-            <div style={S.err}>Ultimo error: {status.last_error}</div>
+            <div style={S.err}>Último error: {status.last_error}</div>
           )}
           <br />
           <button type="button" onClick={handleDisconnect} disabled={busy} style={S.btnDanger}>
@@ -130,7 +130,7 @@ export default function IntervalsConnect({ athleteId, onNotify }) {
       ) : (
         <>
           <button type="button" onClick={() => setGuideOpen((v) => !v)} style={S.btnGhost}>
-            {guideOpen ? "▲ Ocultar pasos" : "▼ Como obtengo mi API key?"}
+            {guideOpen ? "▲ Ocultar pasos" : "▼ ¿Cómo obtengo mi API key?"}
           </button>
 
           {guideOpen && (
@@ -151,11 +151,11 @@ export default function IntervalsConnect({ athleteId, onNotify }) {
                 <strong>4.</strong> Ve a <em>Settings → Developer Settings</em> y copia tu <em>API key</em>.
               </div>
               <div style={S.step}>
-                <strong>5.</strong> Pegala aqui abajo y dale Conectar.
+                <strong>5.</strong> Pégala aquí abajo y dale Conectar.
               </div>
               <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid #e2e8f0", color: "#64748b" }}>
-                Los entrenamientos llegan al reloj la manana del dia programado.
-                Tambien puedes forzarlos desde intervals.icu con “Send to watch”.
+                Los entrenamientos llegan al reloj la mañana del día programado.
+                También puedes forzarlos desde intervals.icu con “Send to watch”.
               </div>
             </div>
           )}
