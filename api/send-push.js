@@ -1,5 +1,6 @@
 import { GoogleAuth } from "google-auth-library";
 import { createClient } from "@supabase/supabase-js";
+import { requireUser, areRelated, userIdByFcmToken, jsonError } from "../lib/apiAuth.js";
 
 const FCM_SEND_URL = "https://fcm.googleapis.com/v1/projects/runningapexflow/messages:send";
 
@@ -82,10 +83,10 @@ async function handleDailyReminders(res) {
 export default async function handler(req, res) {
   // ── CRON: Daily workout reminders ──────────────────────────────
   if (req.method === "GET" && req.query.action === "remind") {
-    const authHeader = req.headers.authorization;
     const cronSecret = process.env.CRON_SECRET;
-    if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-      return res.status(401).json({ error: "Unauthorized" });
+    if (!cronSecret) return jsonError(res, 500, "CRON_SECRET no configurada");
+    if (req.headers.authorization !== `Bearer ${cronSecret}`) {
+      return jsonError(res, 401, "Unauthorized");
     }
     return handleDailyReminders(res);
   }
@@ -95,6 +96,16 @@ export default async function handler(req, res) {
 
   const { token, title, body } = req.body || {};
   if (!token) return res.status(400).json({ error: "No token" });
+
+  const user = await requireUser(req);
+  if (!user) return jsonError(res, 401, "No autenticado");
+
+  const targetUserId = await userIdByFcmToken(token);
+  if (!targetUserId) return jsonError(res, 404, "Token no reconocido");
+
+  if (!(await areRelated(user.id, targetUserId))) {
+    return jsonError(res, 403, "Sin relación con el destinatario");
+  }
 
   const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
   if (!raw) return res.status(500).json({ error: "FIREBASE_SERVICE_ACCOUNT no configurada" });

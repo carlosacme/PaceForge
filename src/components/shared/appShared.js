@@ -1142,9 +1142,14 @@ export async function sendChatPushNotification({ token, title, body, data = null
   const tokenOk = token != null && String(token).trim() !== "";
   if (!tokenOk || typeof window === "undefined") return;
   try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) return;
     const res = await fetch("/api/send-push", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.access_token}`,
+      },
       body: JSON.stringify({
         token,
         title,
