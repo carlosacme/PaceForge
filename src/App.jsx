@@ -4164,9 +4164,13 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
   setCoachWorkoutAnalysisLoading((prev) => ({ ...prev, [w.id]: true }));
   setCoachWorkoutAnalysis((prev) => ({ ...prev, [w.id]: "" }));
   try {
+    const { data: { session } } = await supabase.auth.getSession();
     const response = await fetch("/api/analyze-workout", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session?.access_token}`,
+      },
       body: JSON.stringify({
         workout: w,
         athleteName: athleteName || "el atleta",
@@ -4202,9 +4206,13 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
       const recent = workouts
         .filter((w) => w.done && String(w.id) !== String(completedWorkout.id))
         .slice(-5);
+      const { data: { session } } = await supabase.auth.getSession();
       const response = await fetch("/api/analyze-workout", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token}`,
+        },
         body: JSON.stringify({
           action: "adjust",
           workout: completedWorkout,

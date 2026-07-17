@@ -1161,9 +1161,13 @@ export default function AthleteHome({ profile }) {
     try {
       const hrZonesText = athleteInfo?.fc_max ? `FC max: ${athleteInfo.fc_max} lpm` : "FC no configurada";
       const prompt = `Eres un coach de running experto. El atleta ${athleteInfo?.name || "el atleta"} tiene programado hoy: "${workout.title || workout.type}" (${workout.total_km || 0} km, ${workout.duration_min || 0} min, tipo: ${workout.type || "general"}). Objetivo: ${athleteInfo?.goal || "mejorar rendimiento"}. ${hrZonesText}. Escribe un briefing motivacional de 3-4 oraciones en español. Incluye: 1) que va a trabajar hoy y por que es importante, 2) en que enfocarse durante la sesion, 3) una frase motivacional final. Sin bullets, solo texto corrido.`;
+      const { data: { session } } = await supabase.auth.getSession();
       const res = await fetch("/api/analyze-workout", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token}`,
+        },
         body: JSON.stringify({ prompt, mode: "briefing" }),
       });
       const data = await res.json();

@@ -67,6 +67,10 @@ export default async function handler(req, res) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return res.status(500).json({ error: "ANTHROPIC_API_KEY no configurada" });
 
+  // Todas las acciones consumen cuota de Anthropic: exige identidad.
+  const user = await requireUser(req);
+  if (!user) return jsonError(res, 401, "No autenticado");
+
   // ── BRIEFING MODE ──────────────────────────────────────────
   const { prompt: briefingPrompt, mode } = req.body || {};
   if (mode === "briefing" && briefingPrompt) {
@@ -241,8 +245,6 @@ Los valores de signal válidos son exactamente: fatiga_alta, fatiga_media, bien,
   if (action === "adjust-steps") {
     const { workout_id, isSimple, finalType, finalKm, finalDuration, originalKm, originalDuration, description, title } = req.body;
 
-    const user = await requireUser(req);
-    if (!user) return jsonError(res, 401, "No autenticado");
     const owned = await getWorkoutIfAllowed(user.id, workout_id);
     if (!owned) return jsonError(res, 403, "Sin acceso a ese workout");
 
