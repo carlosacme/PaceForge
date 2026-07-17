@@ -209,7 +209,13 @@ async function actionPushWorkout(res, athleteId, workoutId) {
     return jsonError(res, 403, "Ese workout no pertenece al atleta");
   }
 
-  const vdot = (await getLatestVdot(athleteId)) ?? 42.5;
+  // Sin evaluacion no hay ritmos reales: mandar un VDOT inventado
+  // al reloj de un atleta es peor que no mandar nada.
+  const vdot = await getLatestVdot(athleteId);
+  if (!vdot) {
+    return jsonError(res, 400,
+      "El atleta no tiene evaluacion VDOT. Evaluelo antes de enviar entrenamientos al reloj.");
+  }
   const results = await pushWorkouts(conn, [w], vdot);
   await finishPush(athleteId, conn.id, results);
 
@@ -233,7 +239,13 @@ async function actionPushRange(res, athleteId, from, to) {
     return res.status(200).json({ ok: true, pushed: 0, results: [] });
   }
 
-  const vdot = (await getLatestVdot(athleteId)) ?? 42.5;
+  // Sin evaluacion no hay ritmos reales: mandar un VDOT inventado
+  // al reloj de un atleta es peor que no mandar nada.
+  const vdot = await getLatestVdot(athleteId);
+  if (!vdot) {
+    return jsonError(res, 400,
+      "El atleta no tiene evaluacion VDOT. Evaluelo antes de enviar entrenamientos al reloj.");
+  }
   const results = await pushWorkouts(conn, workouts, vdot);
   await finishPush(athleteId, conn.id, results);
 
