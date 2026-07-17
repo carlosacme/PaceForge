@@ -4258,9 +4258,13 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
       const isSimple = simpleTypes.includes(finalType);
 
       try {
+        const { data: { session } } = await supabase.auth.getSession();
         const stepsRes = await fetch("/api/analyze-workout", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session?.access_token}`,
+          },
           body: JSON.stringify({
             action: "adjust-steps",
             workout_id: adjustment.workout_id,

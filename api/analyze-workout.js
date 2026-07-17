@@ -1,3 +1,5 @@
+import { requireUser, getWorkoutIfAllowed, jsonError } from "../lib/apiAuth.js";
+
 const MODELS = [
   "claude-sonnet-4-6",
   "claude-opus-4-6",
@@ -238,6 +240,12 @@ Los valores de signal válidos son exactamente: fatiga_alta, fatiga_media, bien,
 
   if (action === "adjust-steps") {
     const { workout_id, isSimple, finalType, finalKm, finalDuration, originalKm, originalDuration, description, title } = req.body;
+
+    const user = await requireUser(req);
+    if (!user) return jsonError(res, 401, "No autenticado");
+    const owned = await getWorkoutIfAllowed(user.id, workout_id);
+    if (!owned) return jsonError(res, 403, "Sin acceso a ese workout");
+
     const supabaseUrl = process.env.SUPABASE_URL;
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     const h = { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}`, "Content-Type": "application/json", "Prefer": "return=minimal" };
