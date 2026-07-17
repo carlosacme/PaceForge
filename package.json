@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "postbuild": "node scripts/stamp-sw.cjs",
     "lint": "eslint .",
     "preview": "vite preview",
     "version:bump": "node scripts/bump-version.js"

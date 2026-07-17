@@ -25,7 +25,7 @@ try {
   /* Messaging no disponible en este contexto */
 }
 
-const CACHE_NAME = "runningapexflow-v1";
+const CACHE_NAME = "runningapexflow-__BUILD_ID__";
 const PRECACHE_URLS = [
   "/",
   "/manifest.json",
@@ -69,7 +69,11 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
 
-  if (request.mode === "navigate") {
+  // Nunca cachear la API: siempre a red.
+  if (url.pathname.startsWith("/api/")) return;
+
+  // Navegacion / index.html: network-first estricto (cache solo si no hay red).
+  if (request.mode === "navigate" || url.pathname === "/" || url.pathname === "/index.html") {
     event.respondWith(
       fetch(request).catch(() =>
         caches.match("/").then((r) => r || caches.match("/index.html")),
@@ -78,16 +82,36 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  // Assets hasheados de Vite (inmutables): cache-first.
+  if (url.pathname.startsWith("/assets/")) {
+    event.respondWith(
+      caches.match(request).then((cached) =>
+        cached ||
+        fetch(request).then((response) => {
+          if (response.ok && response.type === "basic") {
+            const copy = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+          }
+          return response;
+        }),
+      ),
+    );
+    return;
+  }
+
+  // Resto de estaticos (iconos, manifest): stale-while-revalidate suave.
   event.respondWith(
     caches.match(request).then((cached) => {
-      if (cached) return cached;
-      return fetch(request).then((response) => {
-        if (response.ok && response.type === "basic") {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
-        }
-        return response;
-      });
+      const network = fetch(request)
+        .then((response) => {
+          if (response.ok && response.type === "basic") {
+            const copy = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+          }
+          return response;
+        })
+        .catch(() => cached);
+      return cached || network;
     }),
   );
 });
