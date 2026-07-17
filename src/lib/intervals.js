@@ -117,9 +117,11 @@ function normalizeBlock(b, vdot) {
   if (isB) {
     const secs = durationToSecs(b.duration_min);
     if (!secs) return null;
-    let pace = parseNumericPace(b.target_pace)
-            || qualitativeToPace(b.target_pace, vdot)
-            || qualitativeToPace(b.target_hr, vdot);
+    // OJO: no usar target_hr como fallback. Es un descriptor de pulso
+    // ("moderada", "baja"), no de ritmo. Usarlo hace que sesiones de
+    // gimnasio ("Sentadillas...") obtengan ritmos inventados.
+    const pace = parseNumericPace(b.target_pace)
+              || qualitativeToPace(b.target_pace, vdot);
     return { label: b.block_type || "", secs, pace };
   }
   // Formato A (builder manual): phase / pace / duration
@@ -235,4 +237,28 @@ export function buildIntervalsEvent(workout, vdot = 42.5) {
     external_id: `raf-${workout.id}`,
     description: toIntervalsText(workout, vdot),
   };
+}
+
+/**
+ * ¿Es un entrenamiento de CARRERA?
+ *
+ * No se puede confiar en workout.type: las sesiones de gimnasio se
+ * catalogan como 'recovery', igual que los trotes suaves. Y no existe
+ * un tipo 'strength' en la base.
+ *
+ * Regla: si ningun bloque produce un ritmo valido, no es carrera.
+ * Una sesion de pesas tiene target_pace descriptivo ("Sentadillas,
+ * peso muerto, 3 series x 12") que no mapea a ninguna zona.
+ *
+ * Estructura vacia -> se asume carrera simple (solo hay duracion).
+ */
+export function isRunWorkout(workout, vdot = 42.5) {
+  const structure = workout?.structure || workout?.workout_structure || [];
+  if (!Array.isArray(structure) || structure.length === 0) return true;
+
+  const withPace = structure
+    .map((b) => normalizeBlock(b, vdot))
+    .filter((s) => s && s.pace);
+
+  return withPace.length > 0;
 }

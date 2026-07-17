@@ -22,7 +22,7 @@
  */
 
 import { requireUser, canAccessAthlete, jsonError } from "../lib/apiAuth.js";
-import { buildIntervalsEvent } from "../src/lib/intervals.js";
+import { buildIntervalsEvent, isRunWorkout } from "../src/lib/intervals.js";
 
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 const SERVICE_KEY  = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -216,6 +216,12 @@ async function actionPushWorkout(res, athleteId, workoutId) {
     return jsonError(res, 400,
       "El atleta no tiene evaluacion VDOT. Evaluelo antes de enviar entrenamientos al reloj.");
   }
+
+  if (!isRunWorkout(w, vdot)) {
+    return jsonError(res, 400,
+      `"${w.title}" no es un entrenamiento de carrera (no tiene ritmos). No se envia al reloj.`);
+  }
+
   const results = await pushWorkouts(conn, [w], vdot);
   await finishPush(athleteId, conn.id, results);
 
@@ -246,7 +252,13 @@ async function actionPushRange(res, athleteId, from, to) {
     return jsonError(res, 400,
       "El atleta no tiene evaluacion VDOT. Evaluelo antes de enviar entrenamientos al reloj.");
   }
-  const results = await pushWorkouts(conn, workouts, vdot);
+
+  // Omitir sesiones que no son de carrera (gimnasio, fuerza, etc.):
+  // no tienen ritmos y no deben ir al reloj.
+  const runnable = workouts.filter((w) => isRunWorkout(w, vdot));
+  const skipped = workouts.length - runnable.length;
+
+  const results = await pushWorkouts(conn, runnable, vdot);
   await finishPush(athleteId, conn.id, results);
 
   return res.status(200).json({
@@ -254,6 +266,7 @@ async function actionPushRange(res, athleteId, from, to) {
     vdot_used: vdot,
     pushed: results.filter((r) => r.ok).length,
     failed: results.filter((r) => !r.ok).length,
+    skipped,
     results,
   });
 }
