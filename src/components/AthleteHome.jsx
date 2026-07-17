@@ -1,6 +1,7 @@
 import React, { lazy, Suspense, useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { supabase } from "../lib/supabase";
 import WeatherWidget, { useWeather } from "./WeatherWidget";
+import IntervalsConnect from "./IntervalsConnect";
 import {
   STRAVA_CALLBACK_URL,
   formatLocalYMD,
@@ -1635,6 +1636,10 @@ export default function AthleteHome({ profile }) {
                     ) : (
                       <button type="button" onClick={openAthleteStravaOAuth} style={{ background: "linear-gradient(135deg,#ea580c,#f97316)", border: "none", borderRadius: 8, padding: "8px 12px", color: "#fff", fontWeight: 800, fontFamily: "inherit", cursor: "pointer" }}>Conectar Strava</button>
                     )}
+
+                    <div style={{ marginTop: 20, paddingTop: 20, borderTop: "1px solid #e2e8f0" }}>
+                      <IntervalsConnect athleteId={athleteInfo?.id} onNotify={setMessage} />
+                    </div>
                   </div>
                 ) : null}
 

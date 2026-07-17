@@ -222,6 +222,15 @@ async function actionPushWorkout(res, athleteId, workoutId) {
       `"${w.title}" no es un entrenamiento de carrera (no tiene ritmos). No se envia al reloj.`);
   }
 
+  // Empujar al pasado no sirve: intervals.icu solo envia al reloj
+  // los planificados de hoy/manana. Un workout viejo se crea en el
+  // calendario pero nunca llega al dispositivo.
+  const hoy = new Date().toISOString().slice(0, 10);
+  if (w.scheduled_date < hoy) {
+    return jsonError(res, 400,
+      `"${w.title}" esta programado para ${w.scheduled_date}, en el pasado. No se envia al reloj.`);
+  }
+
   const results = await pushWorkouts(conn, [w], vdot);
   await finishPush(athleteId, conn.id, results);
 
@@ -253,9 +262,12 @@ async function actionPushRange(res, athleteId, from, to) {
       "El atleta no tiene evaluacion VDOT. Evaluelo antes de enviar entrenamientos al reloj.");
   }
 
-  // Omitir sesiones que no son de carrera (gimnasio, fuerza, etc.):
-  // no tienen ritmos y no deben ir al reloj.
-  const runnable = workouts.filter((w) => isRunWorkout(w, vdot));
+  // Omitir sesiones que no son de carrera (gimnasio, fuerza, etc.) y
+  // las que estan en el pasado: no tienen ritmos o nunca llegan al reloj.
+  const hoy = new Date().toISOString().slice(0, 10);
+  const runnable = workouts.filter(
+    (w) => isRunWorkout(w, vdot) && w.scheduled_date >= hoy
+  );
   const skipped = workouts.length - runnable.length;
 
   const results = await pushWorkouts(conn, runnable, vdot);
