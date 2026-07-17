@@ -31,7 +31,7 @@
     </div>
 
     <h1>Política de Privacidad</h1>
-    <p class="updated">Última actualización: 29 de abril de 2026</p>
+    <p class="updated">Última actualización: 17 de julio de 2026</p>
 
     <div class="card">
       <h2>1. Información que recopilamos</h2>
@@ -42,7 +42,7 @@
         <li><strong>Datos de rendimiento:</strong> evaluaciones VDOT, zonas de FC y métricas de carga de entrenamiento.</li>
         <li><strong>Datos de pago:</strong> procesados de forma segura por Wompi. No almacenamos datos de tarjetas de crédito.</li>
         <li><strong>Datos de dispositivo:</strong> token de notificaciones push (FCM) para envío de alertas.</li>
-        <li><strong>Integraciones opcionales:</strong> datos de Strava, Garmin y COROS cuando el usuario los conecta voluntariamente.</li>
+        <li><strong>Integraciones opcionales:</strong> datos de Strava, Garmin, COROS e intervals.icu cuando el usuario los conecta voluntariamente. Si conectas intervals.icu, almacenamos la clave de API que nos proporcionas para poder enviar tus entrenamientos planificados a tu reloj.</li>
       </ul>
     </div>
 
@@ -68,6 +68,7 @@
         <li><strong>Supabase:</strong> proveedor de base de datos y autenticación con cifrado en reposo.</li>
         <li><strong>Anthropic:</strong> proveedor de IA para generación de entrenamientos. Los datos enviados no se usan para entrenar modelos.</li>
         <li><strong>Firebase (Google):</strong> servicio de notificaciones push.</li>
+        <li><strong>intervals.icu:</strong> si conectas esta integración, enviamos tus entrenamientos planificados a tu cuenta de intervals.icu, que a su vez los transfiere a tu reloj Garmin o COROS. Su política de privacidad aplica para esos datos.</li>
       </ul>
     </div>
 
@@ -78,7 +79,8 @@
         <li>Contraseñas cifradas con bcrypt a través de Supabase Auth.</li>
         <li>Comunicaciones cifradas con TLS/HTTPS en todo momento.</li>
         <li>Políticas de seguridad a nivel de fila (RLS) en la base de datos.</li>
-        <li>Claves de API almacenadas como variables de entorno seguras en Vercel.</li>
+        <li>Claves de API de la plataforma almacenadas como variables de entorno seguras en Vercel.</li>
+        <li>Las claves de integraciones que tú nos proporcionas (como la de intervals.icu) se almacenan en nuestra base de datos con acceso restringido por políticas de seguridad a nivel de fila, y solo se usan para enviar tus entrenamientos a tu reloj. Puedes revocarlas en cualquier momento desde Configuración.</li>
         <li>Tokens de pago manejados exclusivamente por Wompi, nunca almacenados en nuestros servidores.</li>
       </ul>
     </div>
@@ -115,7 +117,7 @@
       <p>Si tienes preguntas sobre esta política de privacidad o quieres ejercer tus derechos, contáctanos:</p>
       <ul>
         <li><strong>Email:</strong> <a href="mailto:acostamerlano87@gmail.com">acostamerlano87@gmail.com</a></li>
-        <li><strong>Plataforma:</strong> <a href="https://pace-forge-eta.vercel.app">pace-forge-eta.vercel.app</a></li>
+        <li><strong>Plataforma:</strong> <a href="https://runningapexflow.com">runningapexflow.com</a></li>
       </ul>
     </div>
 
