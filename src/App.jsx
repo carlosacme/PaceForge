@@ -3,6 +3,7 @@ import { jsPDF } from "jspdf";
 import FitParser from "fit-file-parser";
 import { supabase } from "./lib/supabase";
 import WeatherWidget from "./components/WeatherWidget";
+import PushToWatchButton from "./components/PushToWatchButton";
 import {
   BRAND_NAME,
   STRAVA_CALLBACK_URL,
@@ -5099,6 +5100,7 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
             >
               📄 Exportar PDF
             </button>
+            <PushToWatchButton athleteId={athlete?.id} athleteName={athlete?.name} />
             <StatusBadge status={athlete.status} />
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12, marginBottom: 24 }}>

@@ -93,14 +93,14 @@ async function getLatestVdot(athleteId) {
 
 async function actionConnect(res, athleteId, apiKey) {
   if (!apiKey || String(apiKey).trim().length < 8) {
-    return jsonError(res, 400, "API key invalida");
+    return jsonError(res, 400, "API key inválida");
   }
   const key = String(apiKey).trim();
 
   // Validar la key contra intervals.icu antes de guardarla.
   const probe = await icuFetch(key, "/athlete/0/profile");
   if (probe.status === 401 || probe.status === 403) {
-    return jsonError(res, 401, "La API key no es valida en intervals.icu");
+    return jsonError(res, 401, "La API key no es válida en intervals.icu");
   }
   // Otros estados (404, etc.) no invalidan la key: el endpoint de perfil
   // puede variar. Si no fue 401/403, la aceptamos.
@@ -214,12 +214,12 @@ async function actionPushWorkout(res, athleteId, workoutId) {
   const vdot = await getLatestVdot(athleteId);
   if (!vdot) {
     return jsonError(res, 400,
-      "El atleta no tiene evaluacion VDOT. Evaluelo antes de enviar entrenamientos al reloj.");
+      "El atleta no tiene evaluación VDOT. Evalúalo antes de enviar entrenamientos al reloj.");
   }
 
   if (!isRunWorkout(w, vdot)) {
     return jsonError(res, 400,
-      `"${w.title}" no es un entrenamiento de carrera (no tiene ritmos). No se envia al reloj.`);
+      `"${w.title}" no es un entrenamiento de carrera (no tiene ritmos). No se envía al reloj.`);
   }
 
   // Empujar al pasado no sirve: intervals.icu solo envia al reloj
@@ -228,14 +228,14 @@ async function actionPushWorkout(res, athleteId, workoutId) {
   const hoy = new Date().toISOString().slice(0, 10);
   if (w.scheduled_date < hoy) {
     return jsonError(res, 400,
-      `"${w.title}" esta programado para ${w.scheduled_date}, en el pasado. No se envia al reloj.`);
+      `"${w.title}" está programado para ${w.scheduled_date}, en el pasado. No se envía al reloj.`);
   }
 
   const results = await pushWorkouts(conn, [w], vdot);
   await finishPush(athleteId, conn.id, results);
 
   const r = results[0];
-  if (!r.ok) return jsonError(res, 502, `intervals.icu rechazo el envio: ${r.error}`);
+  if (!r.ok) return jsonError(res, 502, `intervals.icu rechazó el envío: ${r.error}`);
   return res.status(200).json({ ok: true, vdot_used: vdot, result: r });
 }
 
@@ -259,7 +259,7 @@ async function actionPushRange(res, athleteId, from, to) {
   const vdot = await getLatestVdot(athleteId);
   if (!vdot) {
     return jsonError(res, 400,
-      "El atleta no tiene evaluacion VDOT. Evaluelo antes de enviar entrenamientos al reloj.");
+      "El atleta no tiene evaluación VDOT. Evalúalo antes de enviar entrenamientos al reloj.");
   }
 
   // Omitir sesiones que no son de carrera (gimnasio, fuerza, etc.) y
@@ -312,7 +312,7 @@ export default async function handler(req, res) {
       case "status":       return await actionStatus(res, athlete_id);
       case "push-workout": return await actionPushWorkout(res, athlete_id, body.workout_id);
       case "push-range":   return await actionPushRange(res, athlete_id, body.from, body.to);
-      default:             return jsonError(res, 400, `Accion no soportada: ${action}`);
+      default:             return jsonError(res, 400, `Acción no soportada: ${action}`);
     }
   } catch (err) {
     console.error("[integrations]", err);
