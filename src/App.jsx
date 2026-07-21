@@ -5564,6 +5564,10 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
                       const notesText = String(w.athlete_notes || "")
                         .replace(/^Cómo me sentí:\s*.+$/m, "")
                         .trim();
+                      const hasManualNumbers =
+                        w.manual_distance_km != null || w.manual_duration_min != null ||
+                        w.manual_avg_hr != null || w.manual_max_hr != null ||
+                        w.manual_calories != null;
                       return (
                         <div key={w.id} style={{ display: "flex", flexDirection: "column", gap: 4, width: "100%" }}>
                           <button
@@ -5627,13 +5631,17 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
 </button>
 {expanded ? (
   <div style={{ border: "1px solid #e2e8f0", borderRadius: 7, background: "#fff", padding: "6px 7px", fontSize: ".54em", color: "#334155", textAlign: "left", lineHeight: 1.35 }}>
-    <div><strong>Distancia:</strong> {w.manual_distance_km != null ? `${w.manual_distance_km} km` : "—"}</div>
-    <div><strong>Duración:</strong> {w.manual_duration_min != null ? `${w.manual_duration_min} min` : "—"}</div>
-    <div><strong>FC prom/máx:</strong> {w.manual_avg_hr != null ? w.manual_avg_hr : "—"} / {w.manual_max_hr != null ? w.manual_max_hr : "—"} lpm</div>
-    <div><strong>Calorías:</strong> {w.manual_calories != null ? w.manual_calories : "—"}</div>
-    <div><strong>Cómo se sintió:</strong> {feelingText || "—"}</div>
-    <div><strong>Notas:</strong> {notesText || "—"}</div>
-    <div><strong>Completado:</strong> {w.completed_at ? new Date(w.completed_at).toLocaleString("es-CO") : "—"}</div>
+    {hasManualNumbers && (
+      <>
+        <div><strong>Distancia:</strong> {w.manual_distance_km != null ? `${w.manual_distance_km} km` : "—"}</div>
+        <div><strong>Duración:</strong> {w.manual_duration_min != null ? `${w.manual_duration_min} min` : "—"}</div>
+        <div><strong>FC prom/máx:</strong> {w.manual_avg_hr != null ? w.manual_avg_hr : "—"} / {w.manual_max_hr != null ? w.manual_max_hr : "—"} lpm</div>
+        <div><strong>Calorías:</strong> {w.manual_calories != null ? w.manual_calories : "—"}</div>
+      </>
+    )}
+    {feelingText ? <div><strong>Cómo se sintió:</strong> {feelingText}</div> : null}
+    {notesText ? <div><strong>Notas:</strong> {notesText}</div> : null}
+    {w.completed_at ? <div><strong>Completado:</strong> {new Date(w.completed_at).toLocaleString("es-CO")}</div> : null}
     {w.actual_synced_at ? (
       <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px solid #e2e8f0" }}>
         <div style={{ fontWeight: 800, color: "#0f172a", marginBottom: 3 }}>⌚ Datos del reloj</div>
