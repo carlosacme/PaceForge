@@ -14,6 +14,7 @@
  *   status         { athlete_id }            ¿conectado?
  *   push-workout   { athlete_id, workout_id }
  *   push-range     { athlete_id, from, to }  empuja un rango de fechas
+ *   pull-activity  { athlete_id, workout_id } trae lo ejecutado del reloj
  *
  * SEGURIDAD: todas exigen JWT de Supabase (Authorization: Bearer <token>)
  * y validan que el usuario sea el atleta o su coach. Sin esto, cualquiera
@@ -87,6 +88,41 @@ async function getLatestVdot(athleteId) {
   );
   const v = Number(rows?.[0]?.vdot);
   return Number.isFinite(v) && v > 0 ? v : null;
+}
+
+// --- helper: extrae los campos actual_* de una actividad de intervals.icu ---
+function mapActivityToActual(act) {
+  const distM = act.distance ?? act.icu_distance ?? null;
+  const movS  = act.moving_time ?? act.elapsed_time ?? null;
+  const spd   = act.average_speed ?? null;   // m/s
+
+  // Ritmo en seg/km calculado desde velocidad (mas fiable que act.pace).
+  let avgPaceS = null;
+  if (spd && spd > 0) avgPaceS = Math.round(1000 / spd);
+  else if (distM && movS && distM > 0) avgPaceS = Math.round(movS / (distM / 1000));
+
+  return {
+    actual_distance_km:  distM != null ? Math.round((distM / 1000) * 100) / 100 : null,
+    actual_duration_min: movS != null ? Math.round(movS / 60) : null,
+    actual_avg_pace_s:   avgPaceS,
+    actual_avg_hr:       act.average_heartrate ?? null,
+    actual_max_hr:       act.max_heartrate ?? null,
+    actual_elevation_m:  act.total_elevation_gain != null ? Math.round(act.total_elevation_gain) : null,
+    intervals_activity_id: act.id ?? null,
+    actual_synced_at:    new Date().toISOString(),
+  };
+}
+
+// --- elige la mejor actividad de un dia: Run con mayor distancia ---
+function pickBestActivity(activities) {
+  const runs = activities.filter((a) => {
+    const t = String(a.type || "").toLowerCase();
+    return t === "run" || t.includes("run");
+  });
+  const pool = runs.length ? runs : activities;
+  if (!pool.length) return null;
+  return pool.reduce((best, a) =>
+    (a.distance ?? 0) > (best.distance ?? 0) ? a : best, pool[0]);
 }
 
 /* ---------- Acciones ---------- */
@@ -283,6 +319,52 @@ async function actionPushRange(res, athleteId, from, to) {
   });
 }
 
+async function actionPullActivity(res, athleteId, workoutId) {
+  const conn = await getConnection(athleteId);
+  if (!conn) return jsonError(res, 400, "El atleta no tiene intervals.icu conectado");
+
+  const rows = await sb(`workouts?id=eq.${workoutId}&select=*`);
+  const w = rows?.[0];
+  if (!w) return jsonError(res, 404, "Workout no encontrado");
+  if (String(w.athlete_id) !== String(athleteId)) {
+    return jsonError(res, 403, "Ese workout no pertenece al atleta");
+  }
+  if (!w.scheduled_date) return jsonError(res, 400, "El workout no tiene fecha");
+
+  // Trae actividades del dia del workout (intervals usa oldest/newest por fecha).
+  const day = w.scheduled_date;
+  const r = await icuFetch(
+    conn.api_key,
+    `/athlete/0/activities?oldest=${day}&newest=${day}`
+  );
+  if (!r.ok) {
+    return jsonError(res, 502, `intervals.icu no respondio (${r.status})`);
+  }
+  const activities = Array.isArray(r.data) ? r.data : [];
+  if (!activities.length) {
+    return res.status(200).json({ ok: true, found: false,
+      message: "Aun no hay actividad registrada para ese dia" });
+  }
+
+  const best = pickBestActivity(activities);
+  if (!best) {
+    return res.status(200).json({ ok: true, found: false,
+      message: "No se encontro una actividad de carrera ese dia" });
+  }
+
+  const patch = mapActivityToActual(best);
+  await sb(`workouts?id=eq.${workoutId}`, {
+    method: "PATCH", body: patch, prefer: "return=minimal",
+  });
+
+  return res.status(200).json({
+    ok: true,
+    found: true,
+    activity_name: best.name,
+    actual: patch,
+  });
+}
+
 /* ---------- Handler ---------- */
 export default async function handler(req, res) {
   if (req.method !== "POST") return jsonError(res, 405, "Method not allowed");
@@ -312,6 +394,7 @@ export default async function handler(req, res) {
       case "status":       return await actionStatus(res, athlete_id);
       case "push-workout": return await actionPushWorkout(res, athlete_id, body.workout_id);
       case "push-range":   return await actionPushRange(res, athlete_id, body.from, body.to);
+      case "pull-activity": return await actionPullActivity(res, athlete_id, body.workout_id);
       default:             return jsonError(res, 400, `Acción no soportada: ${action}`);
     }
   } catch (err) {
