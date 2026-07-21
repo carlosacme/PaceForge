@@ -473,6 +473,14 @@ const normalizeWorkoutRow = (row) => {
     manual_calories: Number.isFinite(Number(row.manual_calories)) ? Math.round(Number(row.manual_calories)) : null,
     athlete_notes: typeof row.athlete_notes === "string" ? row.athlete_notes : "",
     completed_at: row.completed_at || null,
+    actual_distance_km: row.actual_distance_km ?? null,
+    actual_duration_min: row.actual_duration_min ?? null,
+    actual_avg_pace_s: row.actual_avg_pace_s ?? null,
+    actual_avg_hr: row.actual_avg_hr ?? null,
+    actual_max_hr: row.actual_max_hr ?? null,
+    actual_elevation_m: row.actual_elevation_m ?? null,
+    actual_synced_at: row.actual_synced_at ?? null,
+    intervals_activity_id: row.intervals_activity_id ?? null,
   };
 };
 
@@ -5626,6 +5634,21 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
     <div><strong>Cómo se sintió:</strong> {feelingText || "—"}</div>
     <div><strong>Notas:</strong> {notesText || "—"}</div>
     <div><strong>Completado:</strong> {w.completed_at ? new Date(w.completed_at).toLocaleString("es-CO") : "—"}</div>
+    {w.actual_synced_at ? (
+      <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px solid #e2e8f0" }}>
+        <div style={{ fontWeight: 800, color: "#0f172a", marginBottom: 3 }}>⌚ Datos del reloj</div>
+        <div><strong>Distancia:</strong> {w.total_km != null ? `${w.total_km} km plan` : "—"} → {w.actual_distance_km != null ? `${w.actual_distance_km} km real` : "—"}</div>
+        <div><strong>Duración:</strong> {w.duration_min != null ? `${w.duration_min} min plan` : "—"} → {w.actual_duration_min != null ? `${w.actual_duration_min} min real` : "—"}</div>
+        <div><strong>Ritmo medio real:</strong> {w.actual_avg_pace_s != null ? `${Math.floor(w.actual_avg_pace_s/60)}:${String(w.actual_avg_pace_s%60).padStart(2,"0")}/km` : "—"}</div>
+        <div><strong>FC prom/máx real:</strong> {w.actual_avg_hr ?? "—"} / {w.actual_max_hr ?? "—"} lpm</div>
+        <div><strong>Desnivel:</strong> {w.actual_elevation_m != null ? `${w.actual_elevation_m} m` : "—"}</div>
+        <div style={{ color: "#94a3b8", marginTop: 3 }}>Sincronizado del reloj: {new Date(w.actual_synced_at).toLocaleString("es-CO")}</div>
+      </div>
+    ) : (w.done ? (
+      <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px solid #e2e8f0", color: "#94a3b8" }}>
+        ⌚ Sin datos del reloj (el atleta no conectó intervals.icu o el reloj no había sincronizado al marcar hecho)
+      </div>
+    ) : null)}
   </div>
 ) : null}
 {coachWorkoutAnalysis[w.id] ? (

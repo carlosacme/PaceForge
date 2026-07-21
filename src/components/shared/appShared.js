@@ -1365,6 +1365,14 @@ export const normalizeWorkoutRow = (row) => {
     manual_max_hr: Number.isFinite(Number(row.manual_max_hr)) ? Math.round(Number(row.manual_max_hr)) : null,
     manual_calories: Number.isFinite(Number(row.manual_calories)) ? Math.round(Number(row.manual_calories)) : null,
     athlete_notes: typeof row.athlete_notes === "string" ? row.athlete_notes : "", completed_at: row.completed_at || null,
+    actual_distance_km: row.actual_distance_km ?? null,
+    actual_duration_min: row.actual_duration_min ?? null,
+    actual_avg_pace_s: row.actual_avg_pace_s ?? null,
+    actual_avg_hr: row.actual_avg_hr ?? null,
+    actual_max_hr: row.actual_max_hr ?? null,
+    actual_elevation_m: row.actual_elevation_m ?? null,
+    actual_synced_at: row.actual_synced_at ?? null,
+    intervals_activity_id: row.intervals_activity_id ?? null,
   };
 };
 
