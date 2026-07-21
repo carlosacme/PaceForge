@@ -794,6 +794,26 @@ export default function AthleteHome({ profile }) {
           }
         }
       } catch (_) {}
+      // Fire and forget: intenta traer lo ejecutado del reloj (intervals.icu).
+      // Si el atleta no lo tiene conectado o aun no sincronizo, falla en
+      // silencio y NO debe romper el marcado ni el modal de resumen.
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.access_token) {
+          fetch("/api/integrations", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${session.access_token}`,
+            },
+            body: JSON.stringify({
+              action: "pull-activity",
+              athlete_id: athleteInfo.id,
+              workout_id: w.id,
+            }),
+          }).catch(() => {});
+        }
+      } catch {}
       const { newAwards, snapshot, progress } = await evaluateAndAwardAthleteAchievements(athleteInfo.id);
       if (progress) void progress;
       setAchievementsCatalog(snapshot.achievements || []);
