@@ -7,7 +7,6 @@ import PushToWatchButton from "./components/PushToWatchButton";
 import { readStructure } from "./lib/workoutStructure";
 import {
   BRAND_NAME,
-  STRAVA_CALLBACK_URL,
   WORKOUT_TYPES,
   EVAL_DISTANCES,
   PLAN_PREVIEW_FULL_DAYS,
@@ -51,7 +50,6 @@ import {
   extractJsonFromAnthropicText,
   formatDurationClock,
   formatStravaPace,
-  normalizeStravaActivity,
   normalizeWorkoutStructure,
   emptyWorkoutStructureRow,
   workoutStructureToEditableRows,
@@ -1669,63 +1667,6 @@ export default function App() {
     }
   }, [view, writeStoredTab, getAthletesTabFromView, getTrainingTabFromView]);
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const params = new URLSearchParams(window.location.search);
-    const code = params.get("strava_code");
-    const athleteIdFromState = params.get("state");
-    if (!code) return;
-    const currentAthlete =
-      (athleteIdFromState
-        ? (athletes || []).find((a) => String(a.id) === String(athleteIdFromState))
-        : null) ||
-      selectedAthlete ||
-      (athletes || [])[0] ||
-      null;
-    if (!currentAthlete?.id) {
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      try {
-        const r = await fetch(`/api/strava?code=${encodeURIComponent(code)}`);
-        const data = await r.json();
-        if (!r.ok || !data?.access_token) {
-          notify("No se pudo conectar Strava.");
-          return;
-        }
-        const payload = {
-          athlete_id: currentAthlete.id,
-          athlete_id_strava: data.athlete?.id ?? null,
-          access_token: data.access_token ?? null,
-          refresh_token: data.refresh_token ?? null,
-          expires_at: data.expires_at ?? null,
-          strava_athlete_name:
-            (typeof data.athlete?.name === "string" && data.athlete.name.trim()) ||
-            `${data.athlete?.firstname || ""} ${data.athlete?.lastname || ""}`.trim() ||
-            null,
-        };
-        const { error } = await supabase.from("strava_connections").upsert(payload, { onConflict: "athlete_id" });
-        if (error) {
-          console.error("Error guardando conexión Strava:", error);
-          notify(error.message || "No se pudo guardar la conexión Strava.");
-          return;
-        }
-        setStravaRefreshTick((n) => n + 1);
-        notify("✅ Strava conectado exitosamente");
-      } catch (e) {
-        console.error("Error conectando Strava en App:", e);
-        notify("No se pudo completar la conexión de Strava.");
-      } finally {
-        if (!cancelled) {
-          window.history.replaceState({}, "", "/");
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedAthlete?.id, athletes, notify]);
 // Detectar retorno de OAuth Strava (flujo nuevo vía /api/strava-callback)
 useEffect(() => {
   if (typeof window === "undefined") return;

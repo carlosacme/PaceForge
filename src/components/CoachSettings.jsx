@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { supabase } from "../lib/supabase";
-import { BRAND_NAME, STRAVA_CALLBACK_URL, formatDurationClock, normalizeStravaActivity } from "./shared/appShared";
+import { BRAND_NAME } from "./shared/appShared";
 
 function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAthletes, stravaRefreshTick, notify, onSignOut, styles, isStaff = false }) {
   const S = styles;
@@ -30,8 +30,6 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
   const [stravaByUserId, setStravaByUserId] = useState({});
   const [loadingStravaByAthlete, setLoadingStravaByAthlete] = useState(false);
   const [deviceOverrides, setDeviceOverrides] = useState({});
-  const [stravaActivitiesByAthlete, setStravaActivitiesByAthlete] = useState({});
-  const [loadingActivitiesByAthlete, setLoadingActivitiesByAthlete] = useState({});
   const [coachRequests, setCoachRequests] = useState([]);
   const [requestsBusyId, setRequestsBusyId] = useState("");
   const [COROS_MODAL_OPEN, setCorosModalOpen] = useState(false);
@@ -231,34 +229,6 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
       return next;
     });
     notify("Strava desconectado");
-  };
-
-  const loadStravaActivitiesForAthlete = async (athleteId, accessToken) => {
-    if (!athleteId || !accessToken) return;
-    setLoadingActivitiesByAthlete((prev) => ({ ...prev, [athleteId]: true }));
-    try {
-      const r = await fetch("/api/strava?action=activities", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ access_token: accessToken }),
-      });
-      const data = await r.json();
-      if (!r.ok || !Array.isArray(data)) {
-        notify("No se pudieron cargar actividades de Strava");
-        setStravaActivitiesByAthlete((prev) => ({ ...prev, [athleteId]: [] }));
-        return;
-      }
-      setStravaActivitiesByAthlete((prev) => ({
-        ...prev,
-        [athleteId]: data.slice(0, 10).map(normalizeStravaActivity).filter(Boolean),
-      }));
-    } catch (e) {
-      console.error("Error cargando actividades Strava en settings:", e);
-      notify("No se pudieron cargar actividades de Strava");
-      setStravaActivitiesByAthlete((prev) => ({ ...prev, [athleteId]: [] }));
-    } finally {
-      setLoadingActivitiesByAthlete((prev) => ({ ...prev, [athleteId]: false }));
-    }
   };
 
   useEffect(() => {
@@ -711,13 +681,6 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
                               <span style={{ background: "rgba(34,197,94,.14)", border: "1px solid rgba(34,197,94,.35)", borderRadius: 999, padding: "4px 9px", color: "#15803d", fontSize: ".72em", fontWeight: 700 }}>
                                 ✅ Conectado
                               </span>
-                              <button
-                                type="button"
-                                onClick={() => loadStravaActivitiesForAthlete(a.id, stravaConn.access_token)}
-                                style={{ background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 8, padding: "6px 9px", color: "#1d4ed8", fontSize: ".72em", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}
-                              >
-                                {loadingActivitiesByAthlete[a.id] ? "Cargando..." : "Ver actividades"}
-                              </button>
                               <button type="button" onClick={() => disconnectStravaForAthlete(a.id)} style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "6px 9px", color: "#b91c1c", fontSize: ".72em", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Desconectar</button>
                             </div>
                           ) : (
@@ -731,21 +694,6 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
                         </div>
                         <div style={{ color: "#94a3b8", fontSize: ".72em" }}>Atleta ID: {a.id}</div>
                       </div>
-                      {Array.isArray(stravaActivitiesByAthlete[a.id]) && stravaActivitiesByAthlete[a.id].length > 0 ? (
-                        <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
-                          {stravaActivitiesByAthlete[a.id].map((act) => (
-                            <div key={act.id} style={{ border: "1px solid #fed7aa", borderRadius: 8, padding: "8px 10px", background: "#fff7ed" }}>
-                              <div style={{ color: "#9a3412", fontWeight: 700, fontSize: ".76em" }}>{act.name}</div>
-                              <div style={{ color: "#7c2d12", fontSize: ".72em", marginTop: 2 }}>
-                                {act.distanceKm.toFixed(2)} km · {formatDurationClock(act.movingTime)} · {act.pace}
-                              </div>
-                              <div style={{ color: "#9a3412", fontSize: ".7em", marginTop: 2 }}>
-                                {act.dateIso ? new Date(act.dateIso).toLocaleDateString("es-CO", { day: "numeric", month: "short", year: "numeric" }) : "Fecha no disponible"}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      ) : null}
                     </div>
                   );
                 })}

@@ -31,7 +31,6 @@ import {
   formatDurationMinutesTotal,
   formatDurationClock,
   formatStravaPace,
-  normalizeStravaActivity,
   normalizeWorkoutStructure,
   emptyWorkoutStructureRow,
   workoutStructureToEditableRows,
@@ -51,7 +50,6 @@ import {
   extractJsonFromAnthropicText,
   RACE_DISTANCE_PRESETS,
   raceDistanceToFormFields,
-  STRAVA_ACTIVITY_ICONS,
   TAB_KEY_LIBRARY,
   CHALLENGE_TYPE_OPTIONS,
   normalizeChallengeType,
@@ -320,8 +318,6 @@ export default function AthleteHome({ profile }) {
   const [intervalsConnected, setIntervalsConnected] = useState(false);
   const [forceManualFields, setForceManualFields] = useState(false);
   const [stravaSyncingCode, setStravaSyncingCode] = useState(false);
-  const [stravaActivities, setStravaActivities] = useState([]);
-  const [stravaLoadingActivities, setStravaLoadingActivities] = useState(false);
   const [stravaDisconnecting, setStravaDisconnecting] = useState(false);
   const [findCoachCodeInput, setFindCoachCodeInput] = useState("");
   const [findCoachCodeBusy, setFindCoachCodeBusy] = useState(false);
@@ -584,16 +580,6 @@ export default function AthleteHome({ profile }) {
     }
     return m;
   }, [races]);
-
-  const stravaActivitiesByDate = useMemo(() => {
-    const grouped = {};
-    for (const a of stravaActivities) {
-      if (!a?.ymd) continue;
-      if (!grouped[a.ymd]) grouped[a.ymd] = [];
-      grouped[a.ymd].push(a);
-    }
-    return grouped;
-  }, [stravaActivities]);
 
   const athleteTodayYmd = calendarCellToIsoYmd(new Date());
   const nextRaceCountdownAthlete = useMemo(() => getNextRaceCountdown(races, athleteTodayYmd), [races, athleteTodayYmd]);
@@ -998,23 +984,10 @@ export default function AthleteHome({ profile }) {
     } catch { setIntervalsConnected(false); }
   }, [athleteInfo?.id]);
 
-  const loadStravaActivities = useCallback(async () => {
-    const userId = profile?.user_id;
-    if (!userId || !stravaConnection?.access_token) { setStravaActivities([]); return; }
-    setStravaLoadingActivities(true);
-    try {
-      const { data, error } = await supabase.from("strava_activities").select("*").eq("user_id", userId).order("start_date", { ascending: false }).limit(10);
-      if (error) { console.warn("Error cargando actividades Strava:", error); setStravaActivities([]); return; }
-      setStravaActivities((data || []).map(normalizeStravaActivity).filter(Boolean));
-    } catch (e) { console.error("Error consultando strava_activities:", e); setStravaActivities([]); }
-    finally { setStravaLoadingActivities(false); }
-  }, [profile?.user_id, stravaConnection?.access_token]);
-
   useEffect(() => { loadAthleteChat(); }, [loadAthleteChat]);
   useEffect(() => { loadMyPayments(); }, [loadMyPayments]);
   useEffect(() => { loadStravaConnection(); }, [loadStravaConnection]);
   useEffect(() => { loadIntervalsConnected(); }, [loadIntervalsConnected]);
-  useEffect(() => { loadStravaActivities(); }, [loadStravaActivities]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1067,7 +1040,7 @@ export default function AthleteHome({ profile }) {
     try {
       const { error } = await supabase.from("strava_tokens").delete().eq("user_id", userId);
       if (error) { console.error(error); setMessage(error.message || "No se pudo desconectar Strava"); return; }
-      setStravaConnection(null); setStravaActivities([]);
+      setStravaConnection(null);
       setMessage("✅ Strava desconectado correctamente.");
     } finally { setStravaDisconnecting(false); }
   };
