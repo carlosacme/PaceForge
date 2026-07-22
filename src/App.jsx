@@ -2519,7 +2519,7 @@ const handleSignOut = async () => {
               Entrena con datos. Mejora con inteligencia.
             </h1>
             <p style={{ color: "#64748b", fontSize: "1.05em", margin: "0 0 26px", lineHeight: 1.6 }}>
-              {BRAND_NAME} conecta coaches y atletas con IA, evaluaciones VDOT, zonas de FC y sincronización con Strava para llevar el rendimiento al siguiente nivel.
+              {BRAND_NAME} conecta coaches y atletas con IA, evaluaciones VDOT, zonas de FC y sincronización con tu reloj para llevar el rendimiento al siguiente nivel.
             </p>
             <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
               <button
@@ -2595,7 +2595,7 @@ const handleSignOut = async () => {
                 },
                 {
                   title: "Sincronización",
-                  body: "Conecta Strava para sincronizar actividades de Garmin, COROS y Apple Watch automáticamente.",
+                  body: "Conecta tu reloj Garmin o COROS para recibir los entrenamientos y sincronizar tus actividades automáticamente.",
                 },
                 {
                   title: "Chat en tiempo real",
