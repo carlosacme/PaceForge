@@ -45,6 +45,9 @@ const REDIRECT_URI      = `${APP_URL}/oauth/intervals/callback`;
 // y escribir calendario (para empujar los workouts planificados).
 const ICU_SCOPES = "ACTIVITY:READ,CALENDAR:WRITE";
 
+// Webhook de intervals.icu (fase 4). Aun no se verifica; solo descubrimos payload.
+const ICU_WEBHOOK_SECRET = process.env.INTERVALS_WEBHOOK_SECRET;
+
 /* ---------- Supabase REST (el cliente JS cuelga en serverless) ---------- */
 function sbHeaders(extra = {}) {
   return {
@@ -511,6 +514,18 @@ async function handleOauthCallback(req, res) {
   return redirectToApp(res, { intervals: "connected" });
 }
 
+/* ---------- Webhook intervals.icu (fase 4: descubrir payload) ---------- */
+async function handleIcuWebhook(req, res) {
+  // Registrar TODO lo que llega para conocer la forma real del payload.
+  console.log("[icu-webhook] method:", req.method);
+  console.log("[icu-webhook] headers:", JSON.stringify(req.headers));
+  console.log("[icu-webhook] query:", JSON.stringify(req.query));
+  console.log("[icu-webhook] body:", JSON.stringify(req.body));
+
+  // Responder 200 rapido: los webhooks se reintentan si tardas o fallas.
+  return res.status(200).json({ ok: true });
+}
+
 /* ---------- Handler ---------- */
 export default async function handler(req, res) {
   if (!SUPABASE_URL || !SERVICE_KEY) {
@@ -523,6 +538,12 @@ export default async function handler(req, res) {
   // Se asegura con el 'state' anti-CSRF, no con sesion.
   if (qAction === "oauth-callback") {
     return handleOauthCallback(req, res);
+  }
+
+  // Webhook de intervals.icu (servidores de David, sin sesion).
+  // TEMPORAL: aun NO verifica el secret; solo descubrimos el payload.
+  if (qAction === "icu-webhook") {
+    return handleIcuWebhook(req, res);
   }
 
   // A partir de aqui, todo exige POST + JWT (como hoy)
