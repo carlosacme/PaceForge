@@ -67,19 +67,27 @@ async function sb(path, { method = "GET", body, prefer } = {}) {
 }
 
 /* ---------- intervals.icu ---------- */
-// Auth basica: usuario literal "API_KEY", password = la key del atleta.
-function icuAuth(apiKey) {
-  return `Basic ${Buffer.from(`API_KEY:${apiKey}`).toString("base64")}`;
+// Basic con API key, o Bearer con access_token si la conexion es OAuth.
+function icuAuthHeader(conn) {
+  if (conn?.auth_type === "oauth" && conn.access_token) {
+    return `Bearer ${conn.access_token}`;
+  }
+  if (conn?.api_key) {
+    return `Basic ${Buffer.from(`API_KEY:${conn.api_key}`).toString("base64")}`;
+  }
+  return null;
 }
 
-// athlete id "0" = auto-resolver desde la API key (validado en pruebas).
-async function icuFetch(apiKey, path, { method = "GET", body } = {}) {
+// Recibe la CONEXION completa y resuelve el header segun auth_type.
+// athlete id "0" = auto-resolver desde las credenciales (validado en pruebas).
+async function icuFetch(conn, path, { method = "GET", body } = {}) {
+  const auth = icuAuthHeader(conn);
+  if (!auth) {
+    return { ok: false, status: 401, data: null, text: "Conexion sin credenciales" };
+  }
   const r = await fetch(`${ICU_BASE}${path}`, {
     method,
-    headers: {
-      Authorization: icuAuth(apiKey),
-      "Content-Type": "application/json",
-    },
+    headers: { Authorization: auth, "Content-Type": "application/json" },
     body: body ? JSON.stringify(body) : undefined,
   });
   const text = await r.text();
@@ -150,7 +158,8 @@ async function actionConnect(res, athleteId, apiKey) {
   const key = String(apiKey).trim();
 
   // Validar la key contra intervals.icu antes de guardarla.
-  const probe = await icuFetch(key, "/athlete/0/profile");
+  // Aun no existe conexion: se pasa un objeto temporal con la key.
+  const probe = await icuFetch({ auth_type: "api_key", api_key: key }, "/athlete/0/profile");
   if (probe.status === 401 || probe.status === 403) {
     return jsonError(res, 401, "La API key no es válida en intervals.icu");
   }
@@ -204,6 +213,7 @@ async function actionStatus(res, athleteId) {
     ok: true,
     connected: c.status === "active",
     provider: c.provider,
+    auth_type: c.auth_type,
     last_push_at: c.last_push_at,
     last_error: c.last_error,
     // Nunca devolvemos la api_key al cliente.
@@ -221,7 +231,7 @@ async function pushWorkouts(conn, workouts, vdot) {
     const event = buildIntervalsEvent(w, vdot);
     // upsertOnUid + external_id 'raf-<id>' evita duplicados al reenviar.
     const r = await icuFetch(
-      conn.api_key,
+      conn,
       "/athlete/0/events?upsertOnUid=true",
       { method: "POST", body: event }
     );
@@ -350,7 +360,7 @@ async function actionPullActivity(res, athleteId, workoutId) {
   // Trae actividades del dia del workout (intervals usa oldest/newest por fecha).
   const day = w.scheduled_date;
   const r = await icuFetch(
-    conn.api_key,
+    conn,
     `/athlete/0/activities?oldest=${day}&newest=${day}`
   );
   if (!r.ok) {
