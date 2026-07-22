@@ -317,6 +317,8 @@ export default function AthleteHome({ profile }) {
   const { weather, getWorkoutWeatherNote } = useWeather();
   const [athleteChatClearing, setAthleteChatClearing] = useState(false);
   const [stravaConnection, setStravaConnection] = useState(null);
+  const [intervalsConnected, setIntervalsConnected] = useState(false);
+  const [forceManualFields, setForceManualFields] = useState(false);
   const [stravaSyncingCode, setStravaSyncingCode] = useState(false);
   const [stravaActivities, setStravaActivities] = useState([]);
   const [stravaLoadingActivities, setStravaLoadingActivities] = useState(false);
@@ -667,10 +669,11 @@ export default function AthleteHome({ profile }) {
 
   const openWorkoutSummaryModal = (workoutRow) => {
     if (!workoutRow?.scheduled_date) return;
+    void loadIntervalsConnected();
     const isStravaConnected = Boolean(stravaConnection?.access_token);
     const baseManual = {
-      distanceKm: workoutRow.total_km ? String(workoutRow.total_km) : "",
-      durationMin: workoutRow.duration_min ? String(workoutRow.duration_min) : "",
+      distanceKm: (!intervalsConnected && workoutRow.total_km) ? String(workoutRow.total_km) : "",
+      durationMin: (!intervalsConnected && workoutRow.duration_min) ? String(workoutRow.duration_min) : "",
       rpe: workoutRow.rpe != null ? String(workoutRow.rpe) : "",
       avgHr: workoutRow.manual_avg_hr != null ? String(workoutRow.manual_avg_hr) : "",
       maxHr: workoutRow.manual_max_hr != null ? String(workoutRow.manual_max_hr) : "",
@@ -980,6 +983,21 @@ export default function AthleteHome({ profile }) {
     setStravaConnection(data || null);
   }, [profile?.user_id]);
 
+  const loadIntervalsConnected = useCallback(async () => {
+    if (!athleteInfo?.id) { setIntervalsConnected(false); return; }
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) { setIntervalsConnected(false); return; }
+      const res = await fetch("/api/integrations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ action: "status", athlete_id: athleteInfo.id }),
+      });
+      const d = await res.json().catch(() => ({}));
+      setIntervalsConnected(Boolean(res.ok && d?.connected));
+    } catch { setIntervalsConnected(false); }
+  }, [athleteInfo?.id]);
+
   const loadStravaActivities = useCallback(async () => {
     const userId = profile?.user_id;
     if (!userId || !stravaConnection?.access_token) { setStravaActivities([]); return; }
@@ -995,6 +1013,7 @@ export default function AthleteHome({ profile }) {
   useEffect(() => { loadAthleteChat(); }, [loadAthleteChat]);
   useEffect(() => { loadMyPayments(); }, [loadMyPayments]);
   useEffect(() => { loadStravaConnection(); }, [loadStravaConnection]);
+  useEffect(() => { loadIntervalsConnected(); }, [loadIntervalsConnected]);
   useEffect(() => { loadStravaActivities(); }, [loadStravaActivities]);
 
   useEffect(() => {
@@ -1154,6 +1173,7 @@ export default function AthleteHome({ profile }) {
 
   const closeWorkoutModal = () => {
     setWorkoutSummaryModal(null);
+    setForceManualFields(false);
   };
 
   const uploadAthleteAvatar = async (file) => {
@@ -1873,7 +1893,23 @@ export default function AthleteHome({ profile }) {
             </div>
 
             <div style={{ display: "flex", flexDirection: "column", gap: 14, marginBottom: 14 }}>
-          {!workoutSummaryModal.stravaConnected ? (
+          {intervalsConnected && !workoutSummaryModal.stravaConnected ? (
+            <div style={{ fontSize: ".8em", color: "#0d9488", background: "rgba(13,148,136,.08)", border: "1px solid rgba(13,148,136,.25)", borderRadius: 8, padding: "9px 11px" }}>
+              ⌚ Los datos de tu carrera (distancia, tiempo, FC) llegan automáticamente desde tu reloj. Solo cuéntanos cómo te sentiste.
+              {!forceManualFields ? (
+                <div style={{ marginTop: 6 }}>
+                  <button
+                    type="button"
+                    onClick={() => setForceManualFields(true)}
+                    style={{ background: "none", border: "none", color: "#64748b", fontSize: ".74em", textDecoration: "underline", cursor: "pointer", fontFamily: "inherit", padding: 0 }}
+                  >
+                    ¿No llegaron los datos? Escríbelos a mano
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+          {(!workoutSummaryModal.stravaConnected && (!intervalsConnected || forceManualFields)) ? (
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               <div>
                 <div style={{ fontSize: ".72em", fontWeight: 700, color: "#475569", marginBottom: 4 }}>Distancia (km)</div>
@@ -1921,7 +1957,7 @@ export default function AthleteHome({ profile }) {
             </div>
           </div>
 
-          {!workoutSummaryModal.stravaConnected ? (
+          {(!workoutSummaryModal.stravaConnected && (!intervalsConnected || forceManualFields)) ? (
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
               <div>
                 <div style={{ fontSize: ".68em", fontWeight: 700, color: "#94a3b8", marginBottom: 4 }}>FC prom (lpm)</div>
@@ -1944,7 +1980,7 @@ export default function AthleteHome({ profile }) {
           </div>
               <div style={{ display: "flex", justifyContent: "flex-end" }}>
                 <button type="button" disabled={manualSummarySaving} onClick={saveManualWorkoutSummary} style={{ background: manualSummarySaving ? "#cbd5e1" : "linear-gradient(135deg,#0d9488,#14b8a6)", border: "none", borderRadius: 8, padding: "8px 12px", color: "#fff", fontWeight: 800, fontFamily: "inherit", cursor: manualSummarySaving ? "not-allowed" : "pointer", fontSize: ".78em" }}>
-                  {manualSummarySaving ? "Guardando…" : workoutSummaryModal.stravaConnected ? "Guardar notas" : "Guardar registro"}
+                  {manualSummarySaving ? "Guardando…" : (workoutSummaryModal.stravaConnected || intervalsConnected) ? "Guardar notas" : "Guardar registro"}
                 </button>
               </div>
             </div>
