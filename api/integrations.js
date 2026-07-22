@@ -37,13 +37,13 @@ const ICU_BASE     = "https://intervals.icu/api/v1";
 const ICU_CLIENT_ID     = process.env.INTERVALS_CLIENT_ID;
 const ICU_CLIENT_SECRET = process.env.INTERVALS_CLIENT_SECRET;
 const ICU_OAUTH_AUTH    = "https://intervals.icu/oauth/authorize";
-const ICU_OAUTH_TOKEN   = "https://intervals.icu/api/v1/oauth/token";
+const ICU_OAUTH_TOKEN   = "https://intervals.icu/api/oauth/token";
 const APP_URL           = process.env.APP_URL || "https://www.runningapexflow.com";
 const REDIRECT_URI      = `${APP_URL}/oauth/intervals/callback`;
 
 // Permisos que pedimos: leer actividades (para traer lo ejecutado)
 // y escribir calendario (para empujar los workouts planificados).
-const ICU_SCOPES = "ACTIVITY:READ CALENDAR:WRITE";
+const ICU_SCOPES = "ACTIVITY:READ,CALENDAR:WRITE";
 
 /* ---------- Supabase REST (el cliente JS cuelga en serverless) ---------- */
 function sbHeaders(extra = {}) {
@@ -390,15 +390,11 @@ async function actionOauthStart(res, athleteId, userId) {
 
   const state = crypto.randomBytes(32).toString("hex");
 
-  const inserted = await sb("oauth_states", {
+  await sb("oauth_states", {
     method: "POST",
-    prefer: "return=representation",
+    prefer: "return=minimal",
     body: { state, athlete_id: athleteId, user_id: userId },
   });
-  console.log("[oauth-start] insert result:", JSON.stringify(inserted));
-  if (!Array.isArray(inserted) || inserted.length === 0) {
-    return jsonError(res, 500, "No se pudo guardar el state OAuth");
-  }
 
   const url = new URL(ICU_OAUTH_AUTH);
   url.searchParams.set("client_id", ICU_CLIENT_ID);
@@ -441,19 +437,18 @@ async function handleOauthCallback(req, res) {
     return redirectToApp(res, { intervals: "expired" });
   }
 
-  // 2) Canjear el code por tokens
+  // 2) Canjear el code por tokens (form-encoded, sin redirect_uri)
   let tok;
   try {
+    const form = new URLSearchParams();
+    form.set("client_id", ICU_CLIENT_ID);
+    form.set("client_secret", ICU_CLIENT_SECRET);
+    form.set("code", code);
+
     const r = await fetch(ICU_OAUTH_TOKEN, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        grant_type: "authorization_code",
-        code,
-        client_id: ICU_CLIENT_ID,
-        client_secret: ICU_CLIENT_SECRET,
-        redirect_uri: REDIRECT_URI,
-      }),
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: form.toString(),
     });
     tok = await r.json();
     if (!r.ok || !tok.access_token) {
@@ -465,30 +460,18 @@ async function handleOauthCallback(req, res) {
     return redirectToApp(res, { intervals: "token_error" });
   }
 
-  // 3) Resolver el athlete id de intervals.icu con el token nuevo
-  let providerAthleteId = null;
-  try {
-    const p = await fetch("https://intervals.icu/api/v1/athlete/0/profile", {
-      headers: { Authorization: `Bearer ${tok.access_token}` },
-    });
-    if (p.ok) {
-      const prof = await p.json();
-      providerAthleteId = prof?.id || prof?.athlete?.id || null;
-    }
-  } catch { /* no critico */ }
+  // 3) La respuesta trae el athlete directamente: { token_type, access_token, scope, athlete: { id, name } }
+  const providerAthleteId = tok.athlete?.id || null;
 
-  // 4) Guardar la conexion (upsert por athlete_id + provider)
-  const expiresAt = tok.expires_in
-    ? new Date(Date.now() + Number(tok.expires_in) * 1000).toISOString()
-    : null;
-
+  // 4) Guardar la conexion (upsert por athlete_id + provider).
+  // intervals.icu no emite refresh tokens ni expiracion (confirmado por David).
   const payload = {
     athlete_id: st.athlete_id,
     provider: "intervals_icu",
     auth_type: "oauth",
     access_token: tok.access_token,
-    refresh_token: tok.refresh_token || null,
-    expires_at: expiresAt,
+    refresh_token: null,
+    expires_at: null,
     scope: tok.scope || ICU_SCOPES,
     provider_athlete_id: providerAthleteId,
     api_key: null,              // en OAuth no hay api_key
