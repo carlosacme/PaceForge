@@ -390,11 +390,15 @@ async function actionOauthStart(res, athleteId, userId) {
 
   const state = crypto.randomBytes(32).toString("hex");
 
-  await sb("oauth_states", {
+  const inserted = await sb("oauth_states", {
     method: "POST",
-    prefer: "return=minimal",
+    prefer: "return=representation",
     body: { state, athlete_id: athleteId, user_id: userId },
   });
+  console.log("[oauth-start] insert result:", JSON.stringify(inserted));
+  if (!Array.isArray(inserted) || inserted.length === 0) {
+    return jsonError(res, 500, "No se pudo guardar el state OAuth");
+  }
 
   const url = new URL(ICU_OAUTH_AUTH);
   url.searchParams.set("client_id", ICU_CLIENT_ID);
