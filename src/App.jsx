@@ -21,7 +21,6 @@ import {
   PAYMENT_METHOD_OPTIONS,
   PAYMENT_PLAN_OPTIONS,
   defaultPaymentAmountStringForPlan,
-  STRAVA_ACTIVITY_ICONS,
   WORKOUT_BLOCK_TYPES,
   WORKOUT_BLOCK_COLORS,
   FIT_IMPORT_STEP_TYPES,
@@ -49,7 +48,6 @@ import {
   getNextRaceCountdown,
   extractJsonFromAnthropicText,
   formatDurationClock,
-  formatStravaPace,
   normalizeWorkoutStructure,
   emptyWorkoutStructureRow,
   workoutStructureToEditableRows,
@@ -1134,7 +1132,6 @@ export default function App() {
   const [pushInviteDismissed, setPushInviteDismissed] = useState(() =>
     typeof localStorage !== "undefined" && localStorage.getItem("raf_push_invite_dismissed") === "1",
   );
-  const [stravaRefreshTick, setStravaRefreshTick] = useState(0);
   const [inviteCodeFromUrl, setInviteCodeFromUrl] = useState("");
   const [inviteParentCoachId, setInviteParentCoachId] = useState("");
   const [staffParentCoachId, setStaffParentCoachId] = useState("");
@@ -1667,19 +1664,6 @@ export default function App() {
     }
   }, [view, writeStoredTab, getAthletesTabFromView, getTrainingTabFromView]);
 
-// Detectar retorno de OAuth Strava (flujo nuevo vía /api/strava-callback)
-useEffect(() => {
-  if (typeof window === "undefined") return;
-  const params = new URLSearchParams(window.location.search);
-  if (params.get("strava_connected") === "true") {
-    notify("✅ ¡Strava conectado exitosamente! Tus actividades se sincronizarán automáticamente.");
-    window.history.replaceState({}, "", window.location.pathname);
-  }
-  if (params.get("strava_error")) {
-    notify(`Error conectando Strava: ${params.get("strava_error")}`);
-    window.history.replaceState({}, "", window.location.pathname);
-  }
-}, [notify]);
   useEffect(() => {
     const loadAthletes = async () => {
       if (authLoading || !session) {
@@ -3077,7 +3061,6 @@ const handleSignOut = async () => {
             profileName={profile?.name ?? ""}
             athletes={athletes}
             setAthletes={setAthletes}
-            stravaRefreshTick={stravaRefreshTick}
             notify={notify}
             onSignOut={handleSignOut}
             styles={styles}

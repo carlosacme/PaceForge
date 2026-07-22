@@ -3,7 +3,6 @@ import { supabase } from "../lib/supabase";
 import WeatherWidget, { useWeather } from "./WeatherWidget";
 import IntervalsConnect from "./IntervalsConnect";
 import {
-  STRAVA_CALLBACK_URL,
   formatLocalYMD,
   calendarCellToIsoYmd,
   startOfWeekMonday,
@@ -29,8 +28,6 @@ import {
   sendChatPushNotification,
   normalizeScheduledDateYmd,
   formatDurationMinutesTotal,
-  formatDurationClock,
-  formatStravaPace,
   normalizeWorkoutStructure,
   emptyWorkoutStructureRow,
   workoutStructureToEditableRows,
@@ -314,11 +311,8 @@ export default function AthleteHome({ profile }) {
   const [briefingLoading, setBriefingLoading] = useState(false);
   const { weather, getWorkoutWeatherNote } = useWeather();
   const [athleteChatClearing, setAthleteChatClearing] = useState(false);
-  const [stravaConnection, setStravaConnection] = useState(null);
   const [intervalsConnected, setIntervalsConnected] = useState(false);
   const [forceManualFields, setForceManualFields] = useState(false);
-  const [stravaSyncingCode, setStravaSyncingCode] = useState(false);
-  const [stravaDisconnecting, setStravaDisconnecting] = useState(false);
   const [findCoachCodeInput, setFindCoachCodeInput] = useState("");
   const [findCoachCodeBusy, setFindCoachCodeBusy] = useState(false);
   const [publicCoachesAthlete, setPublicCoachesAthlete] = useState([]);
@@ -340,20 +334,6 @@ export default function AthleteHome({ profile }) {
   const [athleteProgressTab, setAthleteProgressTab] = useState(() => readStoredAthleteProgressTab());
 
   const profileUserId = profile?.user_id ?? null;
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("strava_connected") === "true") {
-      window.history.replaceState({}, "", window.location.pathname);
-      sessionStorage.setItem("raf_strava_success", "1");
-    }
-    if (params.get("strava_error")) {
-      const err = params.get("strava_error");
-      window.history.replaceState({}, "", window.location.pathname);
-      sessionStorage.setItem("raf_strava_error", err);
-    }
-  }, []);
 
   useEffect(() => {
     if (typeof localStorage === "undefined") {
@@ -484,22 +464,6 @@ export default function AthleteHome({ profile }) {
       }
       setLoading(false);
       markInitialLoadFinished();
-      if (typeof sessionStorage !== "undefined") {
-        const stravaSuccess = sessionStorage.getItem("raf_strava_success");
-        const stravaErr = sessionStorage.getItem("raf_strava_error");
-        if (stravaSuccess === "1") {
-          sessionStorage.removeItem("raf_strava_success");
-          setTimeout(() => {
-            if (cancelled) return;
-            setAthleteActiveTab("profile");
-            setAthleteProfileTab("config");
-            setMessage("✅ ¡Strava conectado! Tus actividades se sincronizarán automáticamente.");
-          }, 300);
-        } else if (stravaErr) {
-          sessionStorage.removeItem("raf_strava_error");
-          setTimeout(() => { if (cancelled) return; setMessage(`Error conectando Strava: ${stravaErr}`); }, 300);
-        }
-      }
     };
     load();
     return () => { cancelled = true; };
@@ -656,7 +620,6 @@ export default function AthleteHome({ profile }) {
   const openWorkoutSummaryModal = (workoutRow) => {
     if (!workoutRow?.scheduled_date) return;
     void loadIntervalsConnected();
-    const isStravaConnected = Boolean(stravaConnection?.access_token);
     const baseManual = {
       distanceKm: (!intervalsConnected && workoutRow.total_km) ? String(workoutRow.total_km) : "",
       durationMin: (!intervalsConnected && workoutRow.duration_min) ? String(workoutRow.duration_min) : "",
@@ -668,61 +631,8 @@ export default function AthleteHome({ profile }) {
       notes: workoutRow.athlete_notes || "",
     };
     setManualSummaryForm(baseManual);
-    if (isStravaConnected && athleteInfo?.id) {
-      setWorkoutSummaryModal({ workout: workoutRow, stravaConnected: true, activity: null, stravaActivityPending: true });
-      return;
-    }
-    setWorkoutSummaryModal({ workout: workoutRow, stravaConnected: false, activity: null, stravaActivityPending: false });
+    setWorkoutSummaryModal({ workout: workoutRow });
   };
-
-  useEffect(() => {
-    const modal = workoutSummaryModal;
-    if (!modal?.stravaActivityPending || !modal.stravaConnected || !athleteInfo?.id || !stravaConnection?.access_token) return undefined;
-    const workoutRow = modal.workout;
-    if (!workoutRow?.scheduled_date) return undefined;
-    let cancelled = false;
-    const dayStart = `${workoutRow.scheduled_date}T00:00:00`;
-    const dayEnd = `${formatLocalYMD(addDays(new Date(`${workoutRow.scheduled_date}T12:00:00`), 1))}T00:00:00`;
-    (async () => {
-      // UUID garantizado del usuario autenticado
-      const { data: authData } = await supabase.auth.getUser();
-      const uid = authData?.user?.id || athleteInfo?.user_id;
-      if (!uid) {
-        setWorkoutSummaryModal((prev) => {
-          if (!prev || String(prev.workout?.id) !== String(workoutRow.id)) return prev;
-          return { ...prev, stravaActivityPending: false, activity: null };
-        });
-        return;
-      }
-      const { data, error } = await supabase
-        .from("strava_activities")
-        .select("*")
-        .eq("user_id", uid)
-        .gte("start_date", dayStart)
-        .lt("start_date", dayEnd)
-        .order("start_date", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (cancelled) return;
-      if (error) console.warn("No se pudo cargar actividad strava_activities:", error);
-      const activity = data || null;
-      setWorkoutSummaryModal((prev) => {
-        if (!prev || String(prev.workout?.id) !== String(workoutRow.id)) return prev;
-        if (!prev.stravaActivityPending) return prev;
-        return { ...prev, stravaActivityPending: false, activity };
-      });
-      if (activity) {
-        setManualSummaryForm((f) => ({
-          ...f,
-          distanceKm: activity.distance_m != null ? (Number(activity.distance_m) / 1000).toFixed(2) : f.distanceKm,
-          durationMin: activity.moving_time_s != null ? String(Math.max(0, Math.round(Number(activity.moving_time_s) / 60))) : f.durationMin,
-          avgHr: activity.average_heartrate != null ? String(Math.round(Number(activity.average_heartrate))) : f.avgHr,
-          maxHr: activity.max_heartrate != null ? String(Math.round(Number(activity.max_heartrate))) : f.maxHr,
-        }));
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [workoutSummaryModal?.workout?.id, workoutSummaryModal?.workout?.scheduled_date, workoutSummaryModal?.stravaActivityPending, workoutSummaryModal?.stravaConnected, athleteInfo?.id, stravaConnection?.access_token]);
 
   const saveManualWorkoutSummary = async () => {
     const workoutRow = workoutSummaryModal?.workout;
@@ -961,14 +871,6 @@ export default function AthleteHome({ profile }) {
     setAthletePayments(data || []);
   }, [athleteInfo?.id]);
 
-  const loadStravaConnection = useCallback(async () => {
-    const userId = profile?.user_id;
-    if (!userId) { setStravaConnection(null); return; }
-    const { data, error } = await supabase.from("strava_tokens").select("*").eq("user_id", userId).maybeSingle();
-    if (error) { console.error("Error cargando conexión Strava:", error); setStravaConnection(null); return; }
-    setStravaConnection(data || null);
-  }, [profile?.user_id]);
-
   const loadIntervalsConnected = useCallback(async () => {
     if (!athleteInfo?.id) { setIntervalsConnected(false); return; }
     try {
@@ -986,7 +888,6 @@ export default function AthleteHome({ profile }) {
 
   useEffect(() => { loadAthleteChat(); }, [loadAthleteChat]);
   useEffect(() => { loadMyPayments(); }, [loadMyPayments]);
-  useEffect(() => { loadStravaConnection(); }, [loadStravaConnection]);
   useEffect(() => { loadIntervalsConnected(); }, [loadIntervalsConnected]);
 
   useEffect(() => {
@@ -1031,28 +932,6 @@ export default function AthleteHome({ profile }) {
       setAthleteChatMessages([]);
     } finally { setAthleteChatClearing(false); }
   };
-
-  const disconnectStrava = async () => {
-    const userId = profile?.user_id;
-    if (!userId) { setMessage("No se pudo obtener tu usuario. Intenta recargar."); return; }
-    if (!window.confirm("¿Desconectar Strava de tu cuenta?")) return;
-    setStravaDisconnecting(true);
-    try {
-      const { error } = await supabase.from("strava_tokens").delete().eq("user_id", userId);
-      if (error) { console.error(error); setMessage(error.message || "No se pudo desconectar Strava"); return; }
-      setStravaConnection(null);
-      setMessage("✅ Strava desconectado correctamente.");
-    } finally { setStravaDisconnecting(false); }
-  };
-
-  const openAthleteStravaOAuth = useCallback(async () => {
-    let userId = profile?.user_id || "";
-    if (!userId) { const { data } = await supabase.auth.getUser(); userId = data?.user?.id || ""; }
-    if (!userId) { setMessage("Tu sesión expiró. Vuelve a iniciar sesión."); return; }
-    const params = new URLSearchParams({ client_id: "218467", redirect_uri: "https://www.runningapexflow.com/api/strava-callback", response_type: "code", approval_prompt: "force", scope: "read,activity:read_all", state: userId });
-    if (typeof sessionStorage !== "undefined") sessionStorage.setItem("raf_strava_success", "1");
-    window.location.href = `https://www.strava.com/oauth/authorize?${params.toString()}`;
-  }, [profile?.user_id]);
 
   const setAthleteDeviceConnection = async (deviceValue) => {
     if (!athleteInfo?.id) return;
@@ -1640,20 +1519,6 @@ export default function AthleteHome({ profile }) {
                         <div style={{ fontSize: ".82em", color: "#94a3b8" }}>Haz clic en "Ver coaches" para explorar el directorio.</div>
                       ) : null}
                     </div>
-                    {stravaConnection ? (
-                      <div style={{ marginBottom: 12 }}>
-                        <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "rgba(34,197,94,.12)", border: "1px solid rgba(34,197,94,.4)", color: "#166534", borderRadius: 8, padding: "8px 14px", fontWeight: 700, fontSize: ".84em", marginBottom: 10 }}>
-                          ✅ Strava conectado · ID {stravaConnection.athlete_strava_id}
-                        </div>
-                        <br />
-                        <button type="button" onClick={disconnectStrava} disabled={stravaDisconnecting} style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "8px 12px", color: "#b91c1c", fontWeight: 700, fontFamily: "inherit", cursor: "pointer", fontSize: ".82em" }}>
-                          {stravaDisconnecting ? "Desconectando…" : "Desconectar Strava"}
-                        </button>
-                      </div>
-                    ) : (
-                      <button type="button" onClick={openAthleteStravaOAuth} style={{ background: "linear-gradient(135deg,#ea580c,#f97316)", border: "none", borderRadius: 8, padding: "8px 12px", color: "#fff", fontWeight: 800, fontFamily: "inherit", cursor: "pointer" }}>Conectar Strava</button>
-                    )}
-
                     <div style={{ marginTop: 20, paddingTop: 20, borderTop: "1px solid #e2e8f0" }}>
                       <IntervalsConnect athleteId={athleteInfo?.id} onNotify={setMessage} />
                     </div>
@@ -1835,21 +1700,6 @@ export default function AthleteHome({ profile }) {
               {(workoutSummaryModal.workout?.title || "Workout")} · {workoutSummaryModal.workout?.scheduled_date || "—"}
             </div>
 
-            {workoutSummaryModal.stravaConnected ? (
-              workoutSummaryModal.stravaActivityPending ? (
-                <div style={{ color: "#64748b", fontSize: ".86em", marginBottom: 14 }}>Cargando datos de Strava…</div>
-              ) : workoutSummaryModal.activity ? (
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 10, marginBottom: 14 }}>
-                  <div style={{ ...S.card, margin: 0, padding: 12 }}><div style={{ fontSize: ".72em", color: "#64748b" }}>Distancia</div><div style={{ fontWeight: 800 }}>{((Number(workoutSummaryModal.activity.distance_m) || 0) / 1000).toFixed(2)} km</div></div>
-                  <div style={{ ...S.card, margin: 0, padding: 12 }}><div style={{ fontSize: ".72em", color: "#64748b" }}>Tiempo total</div><div style={{ fontWeight: 800 }}>{formatDurationClock(Number(workoutSummaryModal.activity.moving_time_s || 0))}</div></div>
-                  <div style={{ ...S.card, margin: 0, padding: 12 }}><div style={{ fontSize: ".72em", color: "#64748b" }}>Ritmo promedio</div><div style={{ fontWeight: 800 }}>{formatStravaPace(Number(workoutSummaryModal.activity.distance_m || 0), Number(workoutSummaryModal.activity.moving_time_s || 0))}</div></div>
-                  <div style={{ ...S.card, margin: 0, padding: 12 }}><div style={{ fontSize: ".72em", color: "#64748b" }}>FC prom / máx</div><div style={{ fontWeight: 800 }}>{Number(workoutSummaryModal.activity.average_heartrate || 0) > 0 ? Math.round(Number(workoutSummaryModal.activity.average_heartrate)) : "—"} / {Number(workoutSummaryModal.activity.max_heartrate || 0) > 0 ? Math.round(Number(workoutSummaryModal.activity.max_heartrate)) : "—"} lpm</div></div>
-                </div>
-              ) : (
-                <div style={{ color: "#64748b", fontSize: ".86em", marginBottom: 14 }}>No encontramos una actividad de Strava para ese día.</div>
-              )
-            ) : null}
-
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14, padding: 12, background: "#f8fafc", borderRadius: 10 }}>
               <div>
                 <div style={{ fontSize: ".7em", fontWeight: 700, color: "#64748b", marginBottom: 6 }}>PROGRAMADO</div>
@@ -1866,7 +1716,7 @@ export default function AthleteHome({ profile }) {
             </div>
 
             <div style={{ display: "flex", flexDirection: "column", gap: 14, marginBottom: 14 }}>
-          {intervalsConnected && !workoutSummaryModal.stravaConnected ? (
+          {intervalsConnected ? (
             <div style={{ fontSize: ".8em", color: "#0d9488", background: "rgba(13,148,136,.08)", border: "1px solid rgba(13,148,136,.25)", borderRadius: 8, padding: "9px 11px" }}>
               ⌚ Los datos de tu carrera (distancia, tiempo, FC) llegan automáticamente desde tu reloj. Solo cuéntanos cómo te sentiste.
               {!forceManualFields ? (
@@ -1882,7 +1732,7 @@ export default function AthleteHome({ profile }) {
               ) : null}
             </div>
           ) : null}
-          {(!workoutSummaryModal.stravaConnected && (!intervalsConnected || forceManualFields)) ? (
+          {(!intervalsConnected || forceManualFields) ? (
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               <div>
                 <div style={{ fontSize: ".72em", fontWeight: 700, color: "#475569", marginBottom: 4 }}>Distancia (km)</div>
@@ -1930,7 +1780,7 @@ export default function AthleteHome({ profile }) {
             </div>
           </div>
 
-          {(!workoutSummaryModal.stravaConnected && (!intervalsConnected || forceManualFields)) ? (
+          {(!intervalsConnected || forceManualFields) ? (
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
               <div>
                 <div style={{ fontSize: ".68em", fontWeight: 700, color: "#94a3b8", marginBottom: 4 }}>FC prom (lpm)</div>
@@ -1953,7 +1803,7 @@ export default function AthleteHome({ profile }) {
           </div>
               <div style={{ display: "flex", justifyContent: "flex-end" }}>
                 <button type="button" disabled={manualSummarySaving} onClick={saveManualWorkoutSummary} style={{ background: manualSummarySaving ? "#cbd5e1" : "linear-gradient(135deg,#0d9488,#14b8a6)", border: "none", borderRadius: 8, padding: "8px 12px", color: "#fff", fontWeight: 800, fontFamily: "inherit", cursor: manualSummarySaving ? "not-allowed" : "pointer", fontSize: ".78em" }}>
-                  {manualSummarySaving ? "Guardando…" : (workoutSummaryModal.stravaConnected || intervalsConnected) ? "Guardar notas" : "Guardar registro"}
+                  {manualSummarySaving ? "Guardando…" : intervalsConnected ? "Guardar notas" : "Guardar registro"}
                 </button>
               </div>
             </div>

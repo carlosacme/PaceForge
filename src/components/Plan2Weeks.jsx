@@ -24,7 +24,6 @@ import {
   formatDurationClock,
   formatCopInt,
   WORKOUT_BLOCK_TYPES,
-  STRAVA_CALLBACK_URL,
   styles,
 } from "./shared/appShared";
 

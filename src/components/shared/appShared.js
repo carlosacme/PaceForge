@@ -5,8 +5,6 @@ import { PACE_RANGES_BY_LEVEL } from "../../lib/vdot";
 
 export const BRAND_NAME = "RunningApexFlow";
 
-export const STRAVA_CALLBACK_URL = "https://pace-forge-eta.vercel.app/api/strava/callback";
-
 export const WORKOUT_TYPES = [
   { id: "easy", label: "Rodaje Suave", color: "#22c55e" },
   { id: "tempo", label: "Tempo", color: "#f59e0b" },
@@ -142,15 +140,6 @@ export const ATHLETE_SUBSCRIPTION_PLAN_CATALOG = [
     description: "Básico + marketplace + retos + evaluaciones",
   },
 ];
-
-export const STRAVA_ACTIVITY_ICONS = {
-  Run: "🏃",
-  Ride: "🚴",
-  Swim: "🏊",
-  Walk: "🚶",
-  Hike: "🥾",
-  Workout: "🏋️",
-};
 
 export const WORKOUT_BLOCK_TYPES = ["Calentamiento", "Intervalo", "Recuperación", "Enfriamiento", "Rodaje"];
 
@@ -488,34 +477,6 @@ export const formatDurationClock = (seconds) => {
   const s = total % 60;
   if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
   return `${m}:${String(s).padStart(2, "0")}`;
-};
-
-export const formatStravaPace = (distanceM, movingTimeSec) => {
-  const d = Number(distanceM) || 0;
-  const t = Number(movingTimeSec) || 0;
-  if (d <= 0 || t <= 0) return "—";
-  const secPerKm = t / (d / 1000);
-  const m = Math.floor(secPerKm / 60);
-  const s = Math.round(secPerKm % 60);
-  return `${m}:${String(s).padStart(2, "0")} /km`;
-};
-
-export const normalizeStravaActivity = (row) => {
-  if (!row) return null;
-  const distanceKm = Number(row.distance || 0) / 1000;
-  const dateIso = row.start_date_local || row.start_date || null;
-  const ymd = dateIso ? formatLocalYMD(new Date(dateIso)) : null;
-  return {
-    id: row.id,
-    name: row.name || "Actividad",
-    type: row.type || "Workout",
-    icon: STRAVA_ACTIVITY_ICONS[row.type] || "🟠",
-    distanceKm: Number.isFinite(distanceKm) ? distanceKm : 0,
-    movingTime: Number(row.moving_time || 0),
-    pace: formatStravaPace(row.distance, row.moving_time),
-    dateIso,
-    ymd,
-  };
 };
 
 export const normalizeWorkoutStructure = (rawStructure) => {

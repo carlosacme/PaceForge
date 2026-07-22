@@ -14,7 +14,6 @@ import {
   editableRowsToWorkoutStructure,
   extractJsonFromAnthropicText,
   formatDurationClock,
-  STRAVA_CALLBACK_URL,
   buildAthleteHrZonesPromptText,
   sendWorkoutAssignmentPushToAthlete,
   normalizeAthlete,
