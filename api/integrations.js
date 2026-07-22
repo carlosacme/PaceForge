@@ -514,16 +514,58 @@ async function handleOauthCallback(req, res) {
   return redirectToApp(res, { intervals: "connected" });
 }
 
-/* ---------- Webhook intervals.icu (fase 4: descubrir payload) ---------- */
+/* ---------- Webhook intervals.icu (fase 4: logica) ---------- */
 async function handleIcuWebhook(req, res) {
-  // Registrar TODO lo que llega para conocer la forma real del payload.
-  console.log("[icu-webhook] method:", req.method);
-  console.log("[icu-webhook] headers:", JSON.stringify(req.headers));
-  console.log("[icu-webhook] query:", JSON.stringify(req.query));
-  console.log("[icu-webhook] body:", JSON.stringify(req.body));
+  const body = typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {});
 
-  // Responder 200 rapido: los webhooks se reintentan si tardas o fallas.
-  return res.status(200).json({ ok: true });
+  // 1) Verificar el secret (viene en el body, no en headers)
+  if (!ICU_WEBHOOK_SECRET || body.secret !== ICU_WEBHOOK_SECRET) {
+    console.warn("[icu-webhook] secret invalido");
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  const events = Array.isArray(body.events) ? body.events : [];
+
+  // 2) Responder 200 YA: intervals.icu reintenta si tardamos o fallamos.
+  //    El procesamiento va despues, sin bloquear la respuesta.
+  res.status(200).json({ ok: true, received: events.length });
+
+  // 3) Procesar los eventos de actividad
+  for (const ev of events) {
+    if (ev.type !== "ACTIVITY_UPLOADED") continue;   // TEST y otros: ignorar
+    try {
+      // El evento NO trae activity_id, solo el atleta. Buscamos su conexion
+      // por provider_athlete_id y disparamos el pull del workout de hoy.
+      const rows = await sb(
+        `device_connections?provider_athlete_id=eq.${encodeURIComponent(ev.athlete_id)}` +
+        `&provider=eq.intervals_icu&select=athlete_id`
+      );
+      const conn = rows?.[0];
+      if (!conn) {
+        console.warn("[icu-webhook] sin conexion para", ev.athlete_id);
+        continue;
+      }
+
+      // Workout de hoy de ese atleta (el pull matchea por fecha)
+      const hoy = new Date().toISOString().slice(0, 10);
+      const ws = await sb(
+        `workouts?athlete_id=eq.${conn.athlete_id}&scheduled_date=eq.${hoy}` +
+        `&select=id&limit=1`
+      );
+      const w = ws?.[0];
+      if (!w) {
+        console.log("[icu-webhook] atleta", conn.athlete_id, "sin workout hoy");
+        continue;
+      }
+
+      // Reusar la logica ya probada de pull-activity
+      const fakeRes = { status: () => ({ json: () => {} }), json: () => {} };
+      await actionPullActivity(fakeRes, conn.athlete_id, w.id);
+      console.log("[icu-webhook] pull disparado para workout", w.id);
+    } catch (e) {
+      console.error("[icu-webhook] error procesando evento:", e.message);
+    }
+  }
 }
 
 /* ---------- Handler ---------- */
