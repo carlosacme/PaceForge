@@ -15,19 +15,35 @@
  *   push-workout   { athlete_id, workout_id }
  *   push-range     { athlete_id, from, to }  empuja un rango de fechas
  *   pull-activity  { athlete_id, workout_id } trae lo ejecutado del reloj
+ *   oauth-start    { athlete_id }            inicia OAuth (JWT); devuelve authorize_url
+ *   oauth-callback (GET ?action=oauth-callback&code&state)  SIN JWT; verificado por state
  *
- * SEGURIDAD: todas exigen JWT de Supabase (Authorization: Bearer <token>)
- * y validan que el usuario sea el atleta o su coach. Sin esto, cualquiera
- * podria leerse las API keys de todos los atletas pasando otro athlete_id.
+ * SEGURIDAD: casi todas exigen JWT de Supabase (Authorization: Bearer <token>)
+ * y validan que el usuario sea el atleta o su coach. Excepcion: oauth-callback
+ * llega como GET desde el navegador (redirigido por intervals.icu) sin sesion;
+ * se asegura con el 'state' anti-CSRF guardado en oauth_states.
  * -----------------------------------------------------------
  */
 
+import crypto from "crypto";
 import { requireUser, canAccessAthlete, jsonError } from "../lib/apiAuth.js";
 import { buildIntervalsEvent, isRunWorkout } from "../src/lib/intervals.js";
 
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 const SERVICE_KEY  = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const ICU_BASE     = "https://intervals.icu/api/v1";
+
+/* ---------- OAuth intervals.icu (client 605) ---------- */
+const ICU_CLIENT_ID     = process.env.INTERVALS_CLIENT_ID;
+const ICU_CLIENT_SECRET = process.env.INTERVALS_CLIENT_SECRET;
+const ICU_OAUTH_AUTH    = "https://intervals.icu/oauth/authorize";
+const ICU_OAUTH_TOKEN   = "https://intervals.icu/api/v1/oauth/token";
+const APP_URL           = process.env.APP_URL || "https://www.runningapexflow.com";
+const REDIRECT_URI      = `${APP_URL}/oauth/intervals/callback`;
+
+// Permisos que pedimos: leer actividades (para traer lo ejecutado)
+// y escribir calendario (para empujar los workouts planificados).
+const ICU_SCOPES = "ACTIVITY:READ CALENDAR:WRITE";
 
 /* ---------- Supabase REST (el cliente JS cuelga en serverless) ---------- */
 function sbHeaders(extra = {}) {
@@ -365,13 +381,155 @@ async function actionPullActivity(res, athleteId, workoutId) {
   });
 }
 
+/* ---------- OAuth: autorizacion + callback ---------- */
+
+// El frontend llama a esto con JWT; devolvemos la URL a la que
+// hay que redirigir al atleta.
+async function actionOauthStart(res, athleteId, userId) {
+  if (!ICU_CLIENT_ID) return jsonError(res, 500, "Falta INTERVALS_CLIENT_ID");
+
+  const state = crypto.randomBytes(32).toString("hex");
+
+  await sb("oauth_states", {
+    method: "POST",
+    prefer: "return=minimal",
+    body: { state, athlete_id: athleteId, user_id: userId },
+  });
+
+  const url = new URL(ICU_OAUTH_AUTH);
+  url.searchParams.set("client_id", ICU_CLIENT_ID);
+  url.searchParams.set("redirect_uri", REDIRECT_URI);
+  url.searchParams.set("response_type", "code");
+  url.searchParams.set("scope", ICU_SCOPES);
+  url.searchParams.set("state", state);
+
+  return res.status(200).json({ ok: true, authorize_url: url.toString() });
+}
+
+// Callback: SIN JWT, verificado por 'state' anti-CSRF.
+function redirectToApp(res, params) {
+  const url = new URL(`${APP_URL}/`);
+  for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
+  res.writeHead(302, { Location: url.toString() });
+  return res.end();
+}
+
+async function handleOauthCallback(req, res) {
+  const { code, state, error } = req.query || {};
+
+  // El atleta cancelo en intervals.icu
+  if (error) return redirectToApp(res, { intervals: "cancelled" });
+  if (!code || !state) return redirectToApp(res, { intervals: "error" });
+
+  // 1) Validar el state (anti-CSRF) y que no haya expirado
+  const rows = await sb(
+    `oauth_states?state=eq.${encodeURIComponent(state)}&select=*`
+  );
+  const st = rows?.[0];
+  if (!st) return redirectToApp(res, { intervals: "invalid_state" });
+
+  // Consumir el state siempre (un solo uso)
+  await sb(`oauth_states?state=eq.${encodeURIComponent(state)}`, {
+    method: "DELETE", prefer: "return=minimal",
+  });
+
+  if (new Date(st.expires_at) < new Date()) {
+    return redirectToApp(res, { intervals: "expired" });
+  }
+
+  // 2) Canjear el code por tokens
+  let tok;
+  try {
+    const r = await fetch(ICU_OAUTH_TOKEN, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        grant_type: "authorization_code",
+        code,
+        client_id: ICU_CLIENT_ID,
+        client_secret: ICU_CLIENT_SECRET,
+        redirect_uri: REDIRECT_URI,
+      }),
+    });
+    tok = await r.json();
+    if (!r.ok || !tok.access_token) {
+      console.error("[oauth] token exchange fallo:", r.status, JSON.stringify(tok));
+      return redirectToApp(res, { intervals: "token_error" });
+    }
+  } catch (e) {
+    console.error("[oauth] token exchange error:", e.message);
+    return redirectToApp(res, { intervals: "token_error" });
+  }
+
+  // 3) Resolver el athlete id de intervals.icu con el token nuevo
+  let providerAthleteId = null;
+  try {
+    const p = await fetch("https://intervals.icu/api/v1/athlete/0/profile", {
+      headers: { Authorization: `Bearer ${tok.access_token}` },
+    });
+    if (p.ok) {
+      const prof = await p.json();
+      providerAthleteId = prof?.id || prof?.athlete?.id || null;
+    }
+  } catch { /* no critico */ }
+
+  // 4) Guardar la conexion (upsert por athlete_id + provider)
+  const expiresAt = tok.expires_in
+    ? new Date(Date.now() + Number(tok.expires_in) * 1000).toISOString()
+    : null;
+
+  const payload = {
+    athlete_id: st.athlete_id,
+    provider: "intervals_icu",
+    auth_type: "oauth",
+    access_token: tok.access_token,
+    refresh_token: tok.refresh_token || null,
+    expires_at: expiresAt,
+    scope: tok.scope || ICU_SCOPES,
+    provider_athlete_id: providerAthleteId,
+    api_key: null,              // en OAuth no hay api_key
+    status: "active",
+    last_error: null,
+    updated_at: new Date().toISOString(),
+  };
+
+  const existing = await getConnection(st.athlete_id);
+  if (existing) {
+    await sb(`device_connections?id=eq.${existing.id}`, {
+      method: "PATCH", body: payload, prefer: "return=minimal",
+    });
+  } else {
+    await sb("device_connections", {
+      method: "POST", body: payload, prefer: "return=minimal",
+    });
+  }
+
+  // Limpieza oportunista de states caducados
+  try {
+    await sb(`oauth_states?expires_at=lt.${new Date().toISOString()}`, {
+      method: "DELETE", prefer: "return=minimal",
+    });
+  } catch { /* no critico */ }
+
+  return redirectToApp(res, { intervals: "connected" });
+}
+
 /* ---------- Handler ---------- */
 export default async function handler(req, res) {
-  if (req.method !== "POST") return jsonError(res, 405, "Method not allowed");
-
   if (!SUPABASE_URL || !SERVICE_KEY) {
     return jsonError(res, 500, "Faltan SUPABASE_URL o SUPABASE_SERVICE_ROLE_KEY");
   }
+
+  const qAction = req.query?.action;
+
+  // Ruta SIN JWT: viene de intervals.icu redirigiendo al navegador.
+  // Se asegura con el 'state' anti-CSRF, no con sesion.
+  if (qAction === "oauth-callback") {
+    return handleOauthCallback(req, res);
+  }
+
+  // A partir de aqui, todo exige POST + JWT (como hoy)
+  if (req.method !== "POST") return jsonError(res, 405, "Method not allowed");
 
   // 1) Identidad verificada (JWT de Supabase)
   const user = await requireUser(req);
@@ -389,13 +547,14 @@ export default async function handler(req, res) {
 
   try {
     switch (action) {
-      case "connect":      return await actionConnect(res, athlete_id, body.api_key);
-      case "disconnect":   return await actionDisconnect(res, athlete_id);
-      case "status":       return await actionStatus(res, athlete_id);
-      case "push-workout": return await actionPushWorkout(res, athlete_id, body.workout_id);
-      case "push-range":   return await actionPushRange(res, athlete_id, body.from, body.to);
+      case "connect":       return await actionConnect(res, athlete_id, body.api_key);
+      case "disconnect":    return await actionDisconnect(res, athlete_id);
+      case "status":        return await actionStatus(res, athlete_id);
+      case "push-workout":  return await actionPushWorkout(res, athlete_id, body.workout_id);
+      case "push-range":    return await actionPushRange(res, athlete_id, body.from, body.to);
       case "pull-activity": return await actionPullActivity(res, athlete_id, body.workout_id);
-      default:             return jsonError(res, 400, `Acción no soportada: ${action}`);
+      case "oauth-start":   return await actionOauthStart(res, athlete_id, user.id);
+      default:              return jsonError(res, 400, `Acción no soportada: ${action}`);
     }
   } catch (err) {
     console.error("[integrations]", err);

@@ -1,1 +1,14 @@
-{ "rewrites": [{ "source": "/privacy", "destination": "/privacy.html" },{ "source": "/api/privacy", "destination": "/privacy.html" },{ "source": "/(.*)", "destination": "/index.html" }], "crons": [{ "path": "/api/send-push?action=remind", "schedule": "0 12 * * *" }], "headers": [{ "source": "/sw.js", "headers": [{ "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }] }] }
+{
+  "rewrites": [
+    { "source": "/privacy", "destination": "/privacy.html" },
+    { "source": "/api/privacy", "destination": "/privacy.html" },
+    { "source": "/oauth/intervals/callback", "destination": "/api/integrations?action=oauth-callback" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ],
+  "crons": [
+    { "path": "/api/send-push?action=remind", "schedule": "0 12 * * *" }
+  ],
+  "headers": [
+    { "source": "/sw.js", "headers": [{ "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }] }
+  ]
+}
