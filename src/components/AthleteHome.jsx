@@ -686,7 +686,7 @@ export default function AthleteHome({ profile }) {
     if (next && athleteInfo?.id) {
       try {
         if (athleteInfo?.coach_id) {
-          await sendChatPushNotification({ toUserId: athleteInfo.coach_id, title: "✅ Workout completado", body: `${athleteInfo.name || "Atleta"} completó: ${w.title || "Workout"}`, data: { type: "workout_done", athlete_id: athleteInfo.id, workout_id: w.id }, logLabel: "workout done athlete→coach" });
+          await sendChatPushNotification({ toUserId: athleteInfo.coach_id, title: "✅ Workout completado", body: `${athleteInfo.name || "Atleta"} completó: ${w.title || "Workout"}`, data: { type: "coach_athlete", athlete_id: athleteInfo.id }, logLabel: "workout done athlete→coach" });
         }
       } catch (_) {}
       // Fire and forget: intenta traer lo ejecutado del reloj (intervals.icu).
@@ -728,6 +728,7 @@ export default function AthleteHome({ profile }) {
           toUserId: athleteInfo.coach_id,
           title: "⚠️ Sesion no completada",
           body: `${athleteInfo.name || "Atleta"} no completo: ${w.title || "Workout"} (${w.total_km || 0} km). Puede requerir ajuste de plan.`,
+          data: { type: "coach_athlete", athlete_id: athleteInfo.id },
           logLabel: "workout missed athlete→coach",
         });
       } catch (_) {}
@@ -844,6 +845,27 @@ export default function AthleteHome({ profile }) {
     setAthleteActiveTab(tabId);
     if (typeof localStorage !== "undefined") localStorage.setItem(RAF_ATHLETE_NAV_TAB_KEY, tabId);
   };
+
+  // Deep link desde notificaciones push (tipos athlete_*). Usa
+  // handleAthleteNavTabChange para que persista el tab igual que un cambio
+  // manual. Consume el parametro para no reprocesarlo en recargas.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const open = params.get("open");
+    if (!open || !open.startsWith("athlete_")) return;
+
+    if (open === "athlete_calendar") {
+      handleAthleteNavTabChange("home");
+    } else if (open === "athlete_chat") {
+      handleAthleteNavTabChange("home");
+      setAthleteChatOpen(true);
+    }
+
+    params.delete("open"); params.delete("athlete_id"); params.delete("workout_id");
+    const qs = params.toString();
+    window.history.replaceState({}, "", window.location.pathname + (qs ? `?${qs}` : ""));
+  }, []);
   const nextRaceText = athleteInfo?.next_race ? `🏁 ${getRaceCountdownText(athleteInfo.next_race)}` : "🏁 Próxima carrera · fecha pendiente";
   const coachIdForChat = athleteInfo?.coach_id || null;
 
@@ -906,7 +928,7 @@ export default function AthleteHome({ profile }) {
     try {
       const { error } = await supabase.from("messages").insert({ athlete_id: athleteInfo.id, coach_id: coachIdForChat, sender_role: "athlete", body });
       if (error) { console.error(error); setMessage(`Error al enviar mensaje: ${error.message}`); return; }
-      await sendChatPushNotification({ toUserId: coachIdForChat, title: `Tu atleta ${athleteName} respondió`, body, logLabel: "chat atleta→coach" });
+      await sendChatPushNotification({ toUserId: coachIdForChat, title: `Tu atleta ${athleteName} respondió`, body, data: { type: "coach_chat", athlete_id: athleteInfo.id }, logLabel: "chat atleta→coach" });
       setAthleteChatDraft("");
       await loadAthleteChat();
     } finally { setAthleteChatSending(false); }
@@ -1070,6 +1092,7 @@ export default function AthleteHome({ profile }) {
         toUserId: athleteInfo.coach_id,
         title: `😣 ${athleteInfo.name || "Tu atleta"} no esta al 100%`,
         body: `${not100Modal.title || "Entreno"}: ${not100Form.reason || "Nivel " + not100Form.level}`,
+        data: { type: "coach_athlete", athlete_id: athleteInfo.id },
         logLabel: "not100",
       });
       setNot100Modal(null);

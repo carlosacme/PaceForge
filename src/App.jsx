@@ -1654,6 +1654,34 @@ export default function App() {
     };
   }, [session?.user?.id, profile?.role, allowedCoachViews]);
 
+  // Deep link desde notificaciones push (tipos coach_*). Requiere que el
+  // perfil y la lista de atletas ya esten cargados; si el athlete_id aun no
+  // esta en `athletes`, el efecto reintenta cuando llegue (dep [athletes]).
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!profile || profile.role === "athlete") return;
+    const params = new URLSearchParams(window.location.search);
+    const open = params.get("open");
+    if (!open || !open.startsWith("coach_")) return;
+
+    const athleteId = params.get("athlete_id");
+    if (athleteId) {
+      const found = (athletes || []).find((a) => String(a.id) === String(athleteId));
+      if (!found) return; // aun no cargaron; el efecto reintenta al llegar
+      setSelectedAthlete(found);
+    }
+    setView("athletes");
+    // Persistir: el efecto de visibilitychange re-aplica raf_lastView al
+    // volver a foco y pisaria el destino del deep link.
+    try { localStorage.setItem("raf_lastView", "athletes"); } catch {}
+    setViewRestored(true); // evita que el efecto de restauracion lo pise
+
+    // Consumir el parametro para que no se reprocese en recargas.
+    params.delete("open"); params.delete("athlete_id"); params.delete("workout_id");
+    const qs = params.toString();
+    window.history.replaceState({}, "", window.location.pathname + (qs ? `?${qs}` : ""));
+  }, [profile, athletes]);
+
   useEffect(() => {
     if (view === "athletes" || view === "evaluation" || view === "challenges") {
       writeStoredTab(TAB_KEY_ATHLETES, getAthletesTabFromView(view));
@@ -4845,6 +4873,7 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
         toUserId: athleteUserId,
         title: "Nuevo mensaje de tu coach",
         body,
+        data: { type: "athlete_chat" },
         logLabel: "chat coach→atleta",
       });
       setChatDraft("");

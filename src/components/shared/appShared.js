@@ -1062,6 +1062,7 @@ export async function sendWorkoutAssignmentPushToAthlete({ athleteUserId, workou
     toUserId: athleteUserId,
     title: "🏃 Nuevo entrenamiento asignado",
     body: `${workoutTitle || "Entrenamiento"} programado para el ${scheduledDate || "día asignado"}`,
+    data: { type: "athlete_calendar" },
     logLabel: "workout coach→athlete",
   });
 }
