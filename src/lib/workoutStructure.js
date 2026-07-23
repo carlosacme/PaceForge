@@ -30,9 +30,11 @@ function coerceArray(v) {
 }
 
 export function readStructure(row) {
-  const a = coerceArray(row?.workout_structure);
+  const a = coerceArray(row?.structure);
   if (a && a.length) return a;
-  const b = coerceArray(row?.structure);
+  // Fallback solo para blobs JSON antiguos de plan_marketplace, que aun
+  // traen la clave workout_structure. Las COLUMNAS ya no la tienen.
+  const b = coerceArray(row?.workout_structure);
   if (b && b.length) return b;
   return [];
 }
