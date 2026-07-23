@@ -4841,16 +4841,8 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
         return;
       }
       const athleteUserId = athlete.user_id;
-      let recipientFcmToken = null;
-      if (athleteUserId) {
-        const { data: prow } = await supabase.from("profiles").select("fcm_token").eq("user_id", athleteUserId).maybeSingle();
-        recipientFcmToken = prow?.fcm_token ?? null;
-      } else {
-      }
-      if (recipientFcmToken == null || String(recipientFcmToken).trim() === "") {
-      }
       await sendChatPushNotification({
-        token: recipientFcmToken,
+        toUserId: athleteUserId,
         title: "Nuevo mensaje de tu coach",
         body,
         logLabel: "chat coach→atleta",

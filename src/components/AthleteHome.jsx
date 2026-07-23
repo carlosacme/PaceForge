@@ -686,11 +686,7 @@ export default function AthleteHome({ profile }) {
     if (next && athleteInfo?.id) {
       try {
         if (athleteInfo?.coach_id) {
-          const { data: coachProf } = await supabase.from("profiles").select("fcm_token").eq("user_id", athleteInfo.coach_id).maybeSingle();
-          const coachToken = coachProf?.fcm_token ?? null;
-          if (coachToken && String(coachToken).trim() !== "") {
-            await sendChatPushNotification({ token: coachToken, title: "✅ Workout completado", body: `${athleteInfo.name || "Atleta"} completó: ${w.title || "Workout"}`, data: { type: "workout_done", athlete_id: athleteInfo.id, workout_id: w.id }, logLabel: "workout done athlete→coach" });
-          }
+          await sendChatPushNotification({ toUserId: athleteInfo.coach_id, title: "✅ Workout completado", body: `${athleteInfo.name || "Atleta"} completó: ${w.title || "Workout"}`, data: { type: "workout_done", athlete_id: athleteInfo.id, workout_id: w.id }, logLabel: "workout done athlete→coach" });
         }
       } catch (_) {}
       // Fire and forget: intenta traer lo ejecutado del reloj (intervals.icu).
@@ -728,16 +724,12 @@ export default function AthleteHome({ profile }) {
     // Notificar coach cuando el atleta desmarca un workout (sesion perdida)
     if (!next && athleteInfo?.coach_id) {
       try {
-        const { data: coachProf } = await supabase.from("profiles").select("fcm_token").eq("user_id", athleteInfo.coach_id).maybeSingle();
-        const coachToken = coachProf?.fcm_token ?? null;
-        if (coachToken && String(coachToken).trim() !== "") {
-          await sendChatPushNotification({
-            token: coachToken,
-            title: "⚠️ Sesion no completada",
-            body: `${athleteInfo.name || "Atleta"} no completo: ${w.title || "Workout"} (${w.total_km || 0} km). Puede requerir ajuste de plan.`,
-            logLabel: "workout missed athlete→coach",
-          });
-        }
+        await sendChatPushNotification({
+          toUserId: athleteInfo.coach_id,
+          title: "⚠️ Sesion no completada",
+          body: `${athleteInfo.name || "Atleta"} no completo: ${w.title || "Workout"} (${w.total_km || 0} km). Puede requerir ajuste de plan.`,
+          logLabel: "workout missed athlete→coach",
+        });
       } catch (_) {}
     }
   };
@@ -914,9 +906,7 @@ export default function AthleteHome({ profile }) {
     try {
       const { error } = await supabase.from("messages").insert({ athlete_id: athleteInfo.id, coach_id: coachIdForChat, sender_role: "athlete", body });
       if (error) { console.error(error); setMessage(`Error al enviar mensaje: ${error.message}`); return; }
-      const { data: coachProf } = await supabase.from("profiles").select("fcm_token").eq("user_id", coachIdForChat).maybeSingle();
-      const recipientFcmToken = coachProf?.fcm_token ?? null;
-      await sendChatPushNotification({ token: recipientFcmToken, title: `Tu atleta ${athleteName} respondió`, body, logLabel: "chat atleta→coach" });
+      await sendChatPushNotification({ toUserId: coachIdForChat, title: `Tu atleta ${athleteName} respondió`, body, logLabel: "chat atleta→coach" });
       setAthleteChatDraft("");
       await loadAthleteChat();
     } finally { setAthleteChatSending(false); }
@@ -1077,15 +1067,12 @@ export default function AthleteHome({ profile }) {
     try {
       const note = `[No estoy al 100% · Nivel: ${not100Form.level}] ${not100Form.reason || "Sin detalle adicional"}`;
       await supabase.from("workouts").update({ athlete_notes: note }).eq("id", not100Modal.id);
-      const { data: coachProf } = await supabase.from("profiles").select("fcm_token").eq("user_id", athleteInfo.coach_id).maybeSingle();
-      if (coachProf?.fcm_token) {
-        await sendChatPushNotification({
-          token: coachProf.fcm_token,
-          title: `😣 ${athleteInfo.name || "Tu atleta"} no esta al 100%`,
-          body: `${not100Modal.title || "Entreno"}: ${not100Form.reason || "Nivel " + not100Form.level}`,
-          logLabel: "not100",
-        });
-      }
+      await sendChatPushNotification({
+        toUserId: athleteInfo.coach_id,
+        title: `😣 ${athleteInfo.name || "Tu atleta"} no esta al 100%`,
+        body: `${not100Modal.title || "Entreno"}: ${not100Form.reason || "Nivel " + not100Form.level}`,
+        logLabel: "not100",
+      });
       setNot100Modal(null);
       setMessage("✅ Tu coach fue notificado");
     } catch (e) {

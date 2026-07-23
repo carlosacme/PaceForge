@@ -1058,10 +1058,8 @@ export const buildAthleteHrZonesPromptText = (athlete) => {
 
 export async function sendWorkoutAssignmentPushToAthlete({ athleteUserId, workoutTitle, scheduledDate }) {
   if (!athleteUserId) return;
-  const { data: prof } = await supabase.from("profiles").select("fcm_token").eq("user_id", athleteUserId).maybeSingle();
-  const token = prof?.fcm_token ?? null;
   await sendChatPushNotification({
-    token,
+    toUserId: athleteUserId,
     title: "🏃 Nuevo entrenamiento asignado",
     body: `${workoutTitle || "Entrenamiento"} programado para el ${scheduledDate || "día asignado"}`,
     logLabel: "workout coach→athlete",
@@ -1095,9 +1093,8 @@ const pushBodySnippet = (text, max = 400) => {
   return `${s.slice(0, max - 1)}…`;
 };
 
-export async function sendChatPushNotification({ token, title, body, data = null, logLabel = "chat push" }) {
-  const tokenOk = token != null && String(token).trim() !== "";
-  if (!tokenOk || typeof window === "undefined") return;
+export async function sendChatPushNotification({ toUserId, title, body, data = null, logLabel = "chat push" }) {
+  if (!toUserId || typeof window === "undefined") return;
   try {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.access_token) return;
@@ -1108,7 +1105,7 @@ export async function sendChatPushNotification({ token, title, body, data = null
         Authorization: `Bearer ${session.access_token}`,
       },
       body: JSON.stringify({
-        token,
+        to_user_id: toUserId,
         title,
         body: pushBodySnippet(body),
         data: data && typeof data === "object" ? data : undefined,

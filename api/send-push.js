@@ -1,6 +1,6 @@
 import { GoogleAuth } from "google-auth-library";
 import { createClient } from "@supabase/supabase-js";
-import { requireUser, areRelated, userIdByFcmToken, jsonError } from "../lib/apiAuth.js";
+import { requireUser, areRelated, userIdByFcmToken, fcmTokenByUserId, jsonError } from "../lib/apiAuth.js";
 
 const FCM_SEND_URL = "https://fcm.googleapis.com/v1/projects/runningapexflow/messages:send";
 
@@ -94,11 +94,39 @@ export default async function handler(req, res) {
   // ── PUSH: Send single push notification ────────────────────────
   if (req.method !== "POST") return res.status(405).end();
 
-  const { token, title, body } = req.body || {};
-  if (!token) return res.status(400).json({ error: "No token" });
+  const { token, to_user_id, title, body } = req.body || {};
 
   const user = await requireUser(req);
   if (!user) return jsonError(res, 401, "No autenticado");
+
+  const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
+  if (!raw) return res.status(500).json({ error: "FIREBASE_SERVICE_ACCOUNT no configurada" });
+
+  // ── Ruta nueva: el cliente solo declara A QUIEN notifica. El token
+  // nunca sale de la base: lo resolvemos aqui con service_role tras
+  // validar la relacion coach<->atleta. ─────────────────────────────
+  if (to_user_id) {
+    if (!(await areRelated(user.id, to_user_id))) {
+      return jsonError(res, 403, "Sin relación con el destinatario");
+    }
+    const destToken = await fcmTokenByUserId(to_user_id);
+    if (!destToken) {
+      // No es error: el destinatario simplemente no tiene push activo.
+      return res.status(200).json({ ok: true, sent: false, reason: "sin token" });
+    }
+    try {
+      const data = await sendFCM(destToken, title, body);
+      return res.status(200).json({ ok: true, sent: true, ...data });
+    } catch (err) {
+      console.error("send-push:", err);
+      const status = err?.data ? 502 : 500;
+      return res.status(status).json({ error: err?.message || "Error enviando push", ...(err?.data || {}) });
+    }
+  }
+
+  // ── Ruta legacy (compat temporal): el cliente manda el token directo.
+  // La quitamos cuando el frontend migre por completo a to_user_id. ──
+  if (!token) return res.status(400).json({ error: "No token ni to_user_id" });
 
   const targetUserId = await userIdByFcmToken(token);
   if (!targetUserId) return jsonError(res, 404, "Token no reconocido");
@@ -106,9 +134,6 @@ export default async function handler(req, res) {
   if (!(await areRelated(user.id, targetUserId))) {
     return jsonError(res, 403, "Sin relación con el destinatario");
   }
-
-  const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
-  if (!raw) return res.status(500).json({ error: "FIREBASE_SERVICE_ACCOUNT no configurada" });
 
   try {
     const data = await sendFCM(token, title, body);
