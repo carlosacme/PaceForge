@@ -925,12 +925,32 @@ export default function AthleteHome({ profile }) {
     const body = athleteChatDraft.trim();
     if (!body || !athleteInfo?.id || !coachIdForChat || athleteChatSending) return;
     setAthleteChatSending(true);
+    // Optimistic: limpiar el input y mostrar el mensaje al instante.
+    setAthleteChatDraft("");
+    const optimistic = {
+      id: `tmp-${Date.now()}`,
+      athlete_id: athleteInfo.id,
+      coach_id: coachIdForChat,
+      sender_role: "athlete",
+      body,
+      created_at: new Date().toISOString(),
+      _pending: true,
+    };
+    setAthleteChatMessages((prev) => [...prev, optimistic]);
     try {
       const { error } = await supabase.from("messages").insert({ athlete_id: athleteInfo.id, coach_id: coachIdForChat, sender_role: "athlete", body });
-      if (error) { console.error(error); setMessage(`Error al enviar mensaje: ${error.message}`); return; }
-      await sendChatPushNotification({ toUserId: coachIdForChat, title: `Tu atleta ${athleteName} respondió`, body, data: { type: "coach_chat", athlete_id: athleteInfo.id }, logLabel: "chat atleta→coach" });
-      setAthleteChatDraft("");
-      await loadAthleteChat();
+      if (error) {
+        console.error(error);
+        // Revertir el optimista y restaurar el texto en el input.
+        setAthleteChatMessages((prev) => prev.filter((m) => m.id !== optimistic.id));
+        setAthleteChatDraft(body);
+        setMessage(`Error al enviar mensaje: ${error.message}`);
+        return;
+      }
+      // Notificar sin bloquear la UI (fire and forget).
+      sendChatPushNotification({ toUserId: coachIdForChat, title: `Tu atleta ${athleteName} respondió`, body, data: { type: "coach_chat", athlete_id: athleteInfo.id }, logLabel: "chat atleta→coach" }).catch(() => {});
+      // Reconciliar el id real del mensaje optimista, sin await bloqueante.
+      loadAthleteChat();
     } finally { setAthleteChatSending(false); }
   };
 

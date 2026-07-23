@@ -4856,6 +4856,18 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
     const body = chatDraft.trim();
     if (!body || !athlete?.id || !coachId || chatSending) return;
     setChatSending(true);
+    // Optimistic: limpiar el input y mostrar el mensaje al instante.
+    setChatDraft("");
+    const optimistic = {
+      id: `tmp-${Date.now()}`,
+      athlete_id: athlete.id,
+      coach_id: coachId,
+      sender_role: "coach",
+      body,
+      created_at: new Date().toISOString(),
+      _pending: true,
+    };
+    setChatMessages((prev) => [...prev, optimistic]);
     try {
       const { error } = await supabase.from("messages").insert({
         athlete_id: athlete.id,
@@ -4865,19 +4877,22 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
       });
       if (error) {
         console.error(error);
+        // Revertir el optimista y restaurar el texto en el input.
+        setChatMessages((prev) => prev.filter((m) => m.id !== optimistic.id));
+        setChatDraft(body);
         alert(`No se pudo enviar: ${error.message}`);
         return;
       }
-      const athleteUserId = athlete.user_id;
-      await sendChatPushNotification({
-        toUserId: athleteUserId,
+      // Notificar sin bloquear la UI (fire and forget).
+      sendChatPushNotification({
+        toUserId: athlete.user_id,
         title: "Nuevo mensaje de tu coach",
         body,
         data: { type: "athlete_chat" },
         logLabel: "chat coach→atleta",
-      });
-      setChatDraft("");
-      await loadCoachChat();
+      }).catch(() => {});
+      // Reconciliar el id real del mensaje optimista, sin await bloqueante.
+      loadCoachChat();
     } finally {
       setChatSending(false);
     }
