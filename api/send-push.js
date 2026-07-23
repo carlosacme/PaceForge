@@ -4,7 +4,20 @@ import { requireUser, areRelated, fcmTokenByUserId, jsonError } from "../lib/api
 
 const FCM_SEND_URL = "https://fcm.googleapis.com/v1/projects/runningapexflow/messages:send";
 
-async function sendFCM(token, title, body) {
+const APP_URL = process.env.APP_URL || "https://www.runningapexflow.com";
+
+// Traduce el `data` de la notificacion a una URL de la app. El SW/navegador
+// abre esta URL al tocar la notificacion (via webpush.fcm_options.link).
+function buildDeepLink(data) {
+  if (!data || !data.type) return `${APP_URL}/`;
+  const p = new URLSearchParams();
+  p.set("open", String(data.type));
+  if (data.athlete_id) p.set("athlete_id", String(data.athlete_id));
+  if (data.workout_id) p.set("workout_id", String(data.workout_id));
+  return `${APP_URL}/?${p.toString()}`;
+}
+
+async function sendFCM(token, title, body, data) {
   const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
   if (!raw) throw new Error("FIREBASE_SERVICE_ACCOUNT no configurada");
   const credentials = typeof raw === "string" ? JSON.parse(raw) : raw;
@@ -16,22 +29,39 @@ async function sendFCM(token, title, body) {
   const access = await client.getAccessToken();
   const bearer = access?.token;
   if (!bearer) throw new Error("No se pudo obtener access token de Google");
+
+  // FCM respeta webpush.fcm_options.link de forma nativa: al tocar la
+  // notificacion abre esa URL sin depender de onBackgroundMessage, que
+  // no se dispara de forma fiable cuando el mensaje trae bloque `notification`.
+  const link = buildDeepLink(data);
+
+  const message = {
+    token,
+    notification: { title: title ?? "RunningApexFlow", body: body ?? "" },
+  };
+  // FCM exige que todos los valores de `data` sean strings.
+  if (data && typeof data === "object") {
+    message.data = Object.fromEntries(
+      Object.entries(data)
+        .filter(([, v]) => v != null)
+        .map(([k, v]) => [k, String(v)])
+    );
+  }
+  if (link) {
+    message.webpush = { fcm_options: { link } };
+  }
+
   const response = await fetch(FCM_SEND_URL, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${bearer}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      message: {
-        token,
-        notification: { title: title ?? "RunningApexFlow", body: body ?? "" },
-      },
-    }),
+    body: JSON.stringify({ message }),
   });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw Object.assign(new Error("FCM error"), { data });
-  return data;
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) throw Object.assign(new Error("FCM error"), { data: result });
+  return result;
 }
 
 async function handleDailyReminders(res) {
@@ -94,7 +124,7 @@ export default async function handler(req, res) {
   // ── PUSH: Send single push notification ────────────────────────
   if (req.method !== "POST") return res.status(405).end();
 
-  const { to_user_id, title, body } = req.body || {};
+  const { to_user_id, title, body, data: pushData } = req.body || {};
   if (!to_user_id) return res.status(400).json({ error: "Falta to_user_id" });
 
   const user = await requireUser(req);
@@ -115,8 +145,8 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true, sent: false, reason: "sin token" });
   }
   try {
-    const data = await sendFCM(destToken, title, body);
-    return res.status(200).json({ ok: true, sent: true, ...data });
+    const result = await sendFCM(destToken, title, body, pushData);
+    return res.status(200).json({ ok: true, sent: true, ...result });
   } catch (err) {
     console.error("send-push:", err);
     const status = err?.data ? 502 : 500;
