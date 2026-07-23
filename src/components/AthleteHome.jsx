@@ -795,7 +795,7 @@ export default function AthleteHome({ profile }) {
     let cancelled = false;
     (async () => {
       const { data } = await supabase
-        .from("profiles")
+        .from("coach_public")
         .select("name")
         .eq("user_id", profile.coach_id)
         .maybeSingle();
@@ -957,7 +957,7 @@ export default function AthleteHome({ profile }) {
       if (!coachId) { setCoachCodeMsg("No encontramos un coach con ese codigo. Verifica e intenta de nuevo."); return; }
       await linkAthleteToCoach(coachId);
       const { data: coachProf } = await supabase
-        .from("profiles")
+        .from("coach_public")
         .select("name")
         .eq("user_id", coachId)
         .maybeSingle();
@@ -972,9 +972,8 @@ export default function AthleteHome({ profile }) {
   const loadCoachDirectory = async () => {
     setCoachDirLoading(true);
     const { data, error } = await supabase
-      .from("profiles")
+      .from("coach_public")
       .select("user_id, name, coach_id")
-      .in("role", ["coach", "admin"])
       .order("name", { ascending: true })
       .limit(20);
     setCoachDirLoading(false);

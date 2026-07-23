@@ -122,7 +122,7 @@ function WorkoutLibrary({
       setGlobalLoading(false);
       return;
     }
-    const { data: profs, error: pErr } = await supabase.from("profiles").select("user_id,name,email").in("user_id", ids);
+    const { data: profs, error: pErr } = await supabase.from("user_names").select("user_id,name").in("user_id", ids);
     if (pErr) console.warn("profiles names global library:", pErr);
     const nm = {};
     for (const p of profs || []) {
@@ -164,11 +164,11 @@ function WorkoutLibrary({
       setMarketplacePlansAdminLoading(false);
       return;
     }
-    const { data: profs, error: pErr } = await supabase.from("profiles").select("user_id,name,email").in("user_id", ids);
+    const { data: profs, error: pErr } = await supabase.from("user_names").select("user_id,name").in("user_id", ids);
     if (pErr) console.warn("profiles for marketplace plans:", pErr);
     const nm = {};
     for (const p of profs || []) {
-      nm[String(p.user_id)] = (p.name && String(p.name).trim()) || p.email || String(p.user_id);
+      nm[String(p.user_id)] = (p.name && String(p.name).trim()) || String(p.user_id);
     }
     setMarketplaceCoachLabelById(nm);
     setMarketplacePlansAdminLoading(false);

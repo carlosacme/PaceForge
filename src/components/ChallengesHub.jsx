@@ -139,7 +139,7 @@ function ChallengesHub({
           : workoutsQueryBase;
     const profilesPromise =
       userIds.length > 0
-        ? supabase.from("profiles").select("user_id,name").in("user_id", userIds)
+        ? supabase.from("user_names").select("user_id,name").in("user_id", userIds)
         : Promise.resolve({ data: [], error: null });
     const athletesPromise =
       athleteIds.length > 0
