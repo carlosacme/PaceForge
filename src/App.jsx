@@ -4616,7 +4616,16 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
       console.error("Error cargando mensajes:", error);
       return;
     }
-    setChatMessages(data || []);
+    const rows = data || [];
+    // Fusiona: conserva los optimistas que aun NO tienen su fila real en la BD
+    // (evita el parpadeo de duplicado entre el optimista y el reload).
+    setChatMessages((prev) => {
+      const pendientes = prev.filter((m) => {
+        if (!m._pending) return false;
+        return !rows.some((r) => r.body === m.body && r.sender_role === m.sender_role);
+      });
+      return [...rows, ...pendientes];
+    });
   }, [athlete?.id, coachId]);
 
   const loadAthletePayments = useCallback(async () => {

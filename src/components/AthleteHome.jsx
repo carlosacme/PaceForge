@@ -873,7 +873,16 @@ export default function AthleteHome({ profile }) {
     if (!athleteInfo?.id || !coachIdForChat) { setAthleteChatMessages([]); return; }
     const { data, error } = await supabase.from("messages").select("*").eq("athlete_id", athleteInfo.id).eq("coach_id", coachIdForChat).order("created_at", { ascending: true });
     if (error) { console.error("Error cargando chat atleta:", error); return; }
-    setAthleteChatMessages(data || []);
+    const rows = data || [];
+    // Fusiona: conserva los optimistas que aun NO tienen su fila real en la BD
+    // (evita el parpadeo de duplicado entre el optimista y el reload).
+    setAthleteChatMessages((prev) => {
+      const pendientes = prev.filter((m) => {
+        if (!m._pending) return false;
+        return !rows.some((r) => r.body === m.body && r.sender_role === m.sender_role);
+      });
+      return [...rows, ...pendientes];
+    });
   }, [athleteInfo?.id, coachIdForChat]);
 
   const loadMyPayments = useCallback(async () => {
