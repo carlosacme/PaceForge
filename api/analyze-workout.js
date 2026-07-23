@@ -315,7 +315,7 @@ Los valores de signal válidos son exactamente: fatiga_alta, fatiga_media, bien,
     await fetch(`${supabaseUrl}/rest/v1/workouts?id=eq.${workout_id}`, {
       method: "PATCH",
       headers: h,
-      body: JSON.stringify({ structure: newStructure, workout_structure: newStructure })
+      body: JSON.stringify({ structure: newStructure })
     });
 
     return res.status(200).json({ ok: true, structure: newStructure });

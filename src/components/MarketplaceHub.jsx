@@ -208,7 +208,7 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
           athlete_id: athleteId, coach_id: coachIdForWorkout, scheduled_date: scheduledDate,
           title: w.title || `Sesión ${idx + 1}`, type: w.type || "easy",
           total_km: Number(w.distance_km || w.total_km || 0), duration_min: Number(w.duration_min || 0),
-          description: w.description || "", structure, workout_structure: structure, done: false,
+          description: w.description || "", structure, done: false,
         };
       });
       const { error: insertErr } = await supabase.from("workouts").insert(rows);
@@ -291,7 +291,7 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
     const sessionsPerWeek = Math.max(1, Math.round(Number(planForm.sessions_per_week) || 0));
     const priceCop = Math.max(0, Math.round(Number(String(planForm.price_cop).replace(/[^\d]/g, "")) || 0));
     const selectedPreview = (coachLibraryRows || []).filter((w) => planForm.preview_workouts.includes(String(w.id)));
-    const previewWorkouts = selectedPreview.map((w) => ({ id: w.id, title: w.title, type: w.type, total_km: Number(w.total_km || 0), duration_min: Number(w.duration_min || 0), description: w.description || "", workout_structure: Array.isArray(w.workout_structure) ? w.workout_structure : Array.isArray(w.structure) ? w.structure : [] }));
+    const previewWorkouts = selectedPreview.map((w) => ({ id: w.id, title: w.title, type: w.type, total_km: Number(w.total_km || 0), duration_min: Number(w.duration_min || 0), description: w.description || "", structure: Array.isArray(w.structure) ? w.structure : Array.isArray(w.workout_structure) ? w.workout_structure : [] }));
     const fallbackPreview = editingPlanSnapshot && Array.isArray(editingPlanSnapshot.preview_workouts) ? editingPlanSnapshot.preview_workouts : [];
     const fallbackSessions = editingPlanSnapshot ? getMarketplacePlanWorkoutRows(editingPlanSnapshot) : [];
     const outPreview = previewWorkouts.length > 0 ? previewWorkouts : fallbackPreview;

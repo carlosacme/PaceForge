@@ -672,7 +672,6 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
           duration_min: Number.isFinite(Number(wo.duration_min)) ? Number(wo.duration_min) : 0,
           description: String(wo.description || ""),
           structure,
-          workout_structure: structure,
           scheduled_date,
           done: false,
         });

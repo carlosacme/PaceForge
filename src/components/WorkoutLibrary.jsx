@@ -363,7 +363,6 @@ function WorkoutLibrary({
         duration_min: Number.isFinite(Number(w.duration_min)) ? Math.max(0, Math.round(Number(w.duration_min))) : 0,
         description: baseDescription || importSourceDescription,
         structure: structureRowsForFitImportInsert(w.structure),
-        workout_structure: structureRowsForFitImportInsert(w.structure),
       };
     });
     setFitImportSaving(true);
@@ -408,7 +407,6 @@ function WorkoutLibrary({
       duration_min: Number(row.duration_min) || 0,
       description: row.description || "",
       structure: Array.isArray(row.structure) ? row.structure : [],
-      workout_structure: Array.isArray(row.structure) ? row.structure : [],
       done: false,
       scheduled_date: assignDate,
     }));
@@ -481,7 +479,6 @@ function WorkoutLibrary({
       duration_min: Number.isFinite(Number(row.duration_min)) ? Math.round(Number(row.duration_min)) : 0,
       description: row.description != null ? String(row.description) : "",
       structure,
-      workout_structure: structure,
     };
     if (row.intensity) ins.intensity = String(row.intensity);
     if (row.notes) ins.notes = String(row.notes);

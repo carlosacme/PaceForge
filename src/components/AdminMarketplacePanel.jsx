@@ -303,7 +303,7 @@ function AdminMarketplacePanel({ notify, styles }) {
       duration_min,
       distance_km,
     };
-    if (st.length) row.workout_structure = st;
+    if (st.length) row.structure = st;
     const next = [...previewRows];
     if (planSessionModalIndex == null) next.push(row);
     else next[planSessionModalIndex] = row;

@@ -190,7 +190,7 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
     try {
       const payload = selectedAthletes.map((selectedAthlete) => ({
         ...w,
-        workout_structure: Array.isArray(w.structure) ? w.structure : [],
+        structure: Array.isArray(w.structure) ? w.structure : [],
         athlete_id: selectedAthlete.id,
         coach_id: userData.user.id,
         scheduled_date: assignDate,
@@ -325,7 +325,6 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
       duration_min: Number.isFinite(Number(w.duration_min)) ? Math.round(Number(w.duration_min)) : 0,
       description: w.description != null ? String(w.description) : "",
       structure: Array.isArray(w.structure) ? w.structure : [],
-      workout_structure: Array.isArray(w.structure) ? w.structure : [],
     };
     setSavingLibrary(true);
     try {

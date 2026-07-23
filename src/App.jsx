@@ -459,7 +459,6 @@ const normalizeWorkoutRow = (row) => {
     duration_min: Number.isFinite(Number(row.duration_min)) ? Number(row.duration_min) : 0,
     description: row.description || "",
     structure: Array.isArray(structure) ? structure : [],
-    workout_structure: Array.isArray(structure) ? structure : [],
     done: Boolean(row.done),
     rpe: clampWorkoutRpe(row.rpe),
     manual_distance_km: Number.isFinite(Number(row.manual_distance_km)) ? Number(row.manual_distance_km) : null,
@@ -4537,7 +4536,6 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
       duration_min: Math.round(Number(workoutEditForm.duration_min) || 0),
       description: workoutEditForm.description || "",
       structure,
-      workout_structure: structure,
     };
     setWorkoutFormSaving(true);
     const prev = workouts;
