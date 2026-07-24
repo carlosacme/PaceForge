@@ -48,7 +48,10 @@ async function sendFCM(token, title, body, data) {
     );
   }
   if (link) {
-    message.webpush = { fcm_options: { link } };
+    message.webpush = {
+      notification: { icon: "/pwa-192.png", badge: "/pwa-192.png" },
+      fcm_options: { link },
+    };
   }
 
   const response = await fetch(FCM_SEND_URL, {

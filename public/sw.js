@@ -15,11 +15,9 @@ if (!firebase.apps.length) {
 try {
   const messaging = firebase.messaging();
   messaging.onBackgroundMessage((payload) => {
-    const { title, body } = payload.notification || {};
-    self.registration.showNotification(title || "RunningApexFlow", {
-      body: body || "",
-      icon: "/pwa-192.png",
-    });
+    // FCM ya muestra la notificacion por su cuenta cuando el mensaje trae
+    // bloque `notification`. Si la mostramos aqui tambien, sale duplicada.
+    console.log("[fcm] background message", payload?.data);
   });
 } catch {
   /* Messaging no disponible en este contexto */
