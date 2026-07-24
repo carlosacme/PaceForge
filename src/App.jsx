@@ -78,12 +78,14 @@ import {
   computeAthleteAchievementVisualProgress,
   sendChatPushNotification,
   sendWorkoutAssignmentPushToAthlete,
+  registerFcmToken,
 } from "./components/shared/appShared";
 import {
   initMessaging,
   onMessage,
   refreshFcmTokenIfGranted,
   requestNotificationPermission,
+  clearFcmToken,
 } from "./firebase.js";
 const CoachSettings = React.lazy(() => import("./components/CoachSettings"));
 const WorkoutLibrary = React.lazy(() => import("./components/WorkoutLibrary"));
@@ -1181,26 +1183,12 @@ export default function App() {
       if (!token) {
         return;
       }
-      const { data: updated, error } = await supabase
-        .from("profiles")
-        .update({ fcm_token: token })
-        .eq("user_id", uid)
-        .limit(1)
-        .select("user_id, fcm_token")
-        .maybeSingle();
-      if (error) {
-        console.error("[FCM] Error al guardar fcm_token en profiles:", {
-          message: error.message,
-          details: error.details,
-          hint: error.hint,
-          code: error.code,
-          fullError: error,
-        });
-        return;
-      }
-      if (!updated) {
-        console.warn("[FCM] UPDATE profiles no devolvió fila: ¿existe perfil para user_id?", uid);
-        return;
+      // El backend (service_role) limpia el token de otros perfiles antes de
+      // asignarlo al actual: dos usuarios del mismo navegador no pueden
+      // compartir token.
+      const ok = await registerFcmToken(token);
+      if (!ok) {
+        console.warn("[FCM] No se pudo registrar el token en el backend");
       }
     } catch (e) {
       console.warn("syncFcmTokenToProfile", e);
@@ -1600,7 +1588,7 @@ export default function App() {
     (async () => {
       const tok = await refreshFcmTokenIfGranted();
       if (cancelled || !tok) return;
-      await supabase.from("profiles").update({ fcm_token: tok }).eq("user_id", session.user.id).limit(1);
+      await registerFcmToken(tok);
     })();
     return () => {
       cancelled = true;
@@ -2005,6 +1993,16 @@ export default function App() {
 
 const handleSignOut = async () => {
   if (typeof window !== "undefined" && window.posthog) window.posthog.reset();
+    // Limpiar el token FCM de este navegador ANTES de salir, para que el
+    // proximo usuario no herede las notificaciones del que se va. Nunca debe
+    // impedir el logout si algo falla.
+    try {
+      const uid = session?.user?.id;
+      if (uid) await supabase.from("profiles").update({ fcm_token: null }).eq("user_id", uid);
+      await clearFcmToken();
+    } catch (e) {
+      console.warn("[FCM] limpieza en logout:", e);
+    }
     const { error } = await supabase.auth.signOut();
     if (error) {
       console.error("Error al cerrar sesión:", error);

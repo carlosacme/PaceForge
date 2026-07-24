@@ -1094,6 +1094,35 @@ const pushBodySnippet = (text, max = 400) => {
   return `${s.slice(0, max - 1)}…`;
 };
 
+/**
+ * Registra el fcm_token de este navegador en el backend (service_role).
+ * El endpoint lo limpia de cualquier otro perfil antes de asignarlo al usuario
+ * actual, evitando que varios usuarios del mismo navegador compartan token.
+ */
+export async function registerFcmToken(token) {
+  if (!token || typeof window === "undefined") return false;
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) return false;
+    const res = await fetch("/api/register-fcm-token", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({ token }),
+    });
+    if (!res.ok) {
+      console.warn("[fcm] register-fcm-token respuesta no OK", await res.text());
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.warn("[fcm] register-fcm-token error", e);
+    return false;
+  }
+}
+
 export async function sendChatPushNotification({ toUserId, title, body, data = null, logLabel = "chat push" }) {
   if (!toUserId || typeof window === "undefined") return;
   try {

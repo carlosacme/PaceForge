@@ -26,6 +26,7 @@ import {
   formaFatigaStatusFromPoint,
   resolveCoachUserIdFromPublicCode,
   sendChatPushNotification,
+  registerFcmToken,
   normalizeScheduledDateYmd,
   formatDurationMinutesTotal,
   normalizeWorkoutStructure,
@@ -63,7 +64,7 @@ function normalizeSoloAthletePlanKey(athletePlan, subscriptionPeriod) {
 
 const SOLO_PLAN_MONTHLY_COP = 25000;
 const SOLO_PLAN_ANNUAL_COP = 250000;
-import { refreshFcmTokenIfGranted } from "../firebase.js";
+import { refreshFcmTokenIfGranted, clearFcmToken } from "../firebase.js";
 
 function MarketplacePlanWorkoutsAccordion({ previewWorkouts, resetKey, lockAfterWeek1 = false }) {
   const list = Array.isArray(previewWorkouts) ? previewWorkouts : [];
@@ -429,7 +430,8 @@ export default function AthleteHome({ profile }) {
         const { error: linkErr } = await supabase.from("athletes").update({ user_id: authData.user.id }).eq("id", athleteRow.id);
         if (linkErr) console.warn("[AthleteHome] link user_id:", linkErr);
         const tok = await refreshFcmTokenIfGranted();
-        if (tok) await supabase.from("profiles").update({ fcm_token: tok }).eq("user_id", authData.user.id).limit(1);
+        // El backend limpia el token de otros perfiles antes de asignarlo.
+        if (tok) await registerFcmToken(tok);
       }
       const [wRes, eRes] = await Promise.all([
         supabase.from("workouts").select("*").eq("athlete_id", athleteRow.id).order("scheduled_date", { ascending: true }),
@@ -1704,6 +1706,16 @@ export default function AthleteHome({ profile }) {
                     localStorage.removeItem("raf_athlete_profile_tab");
                     localStorage.removeItem("raf_athlete_progress_tab");
                     localStorage.removeItem("raf_lastView");
+                  }
+                  // Limpiar el token FCM de este navegador ANTES de salir, para
+                  // que el proximo usuario no herede las notificaciones. No debe
+                  // impedir el logout si falla.
+                  try {
+                    const { data: { user } } = await supabase.auth.getUser();
+                    if (user?.id) await supabase.from("profiles").update({ fcm_token: null }).eq("user_id", user.id);
+                    await clearFcmToken();
+                  } catch (e) {
+                    console.warn("[FCM] limpieza en logout:", e);
                   }
                   const { error } = await supabase.auth.signOut();
                   if (error) { console.error("Error al cerrar sesión:", error); alert(`Error al cerrar sesión: ${error.message}`); }

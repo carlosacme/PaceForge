@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app";
-import { getMessaging, getToken, onMessage, isSupported } from "firebase/messaging";
+import { getMessaging, getToken, deleteToken, onMessage, isSupported } from "firebase/messaging";
 
 const firebaseConfig = {
   apiKey: "AIzaSyD1HwMxCRP-dmmyA89EJ3z22HXXaAVm6jo",
@@ -55,6 +55,23 @@ export async function refreshFcmTokenIfGranted() {
     vapidKey: VAPID_KEY,
     serviceWorkerRegistration: reg,
   });
+}
+
+/**
+ * Borra el token FCM de este navegador en Firebase. Se usa al cerrar sesion
+ * para que el proximo usuario que entre en el mismo navegador obtenga un token
+ * NUEVO y no herede el del anterior. Nunca debe romper el logout: si falla,
+ * se ignora.
+ */
+export async function clearFcmToken() {
+  try {
+    const m = await initMessaging();
+    if (!m) return false;
+    return await deleteToken(m);
+  } catch (e) {
+    console.warn("clearFcmToken", e);
+    return false;
+  }
 }
 
 /** Mensajes en primer plano: `const m = await initMessaging(); if (m) onMessage(m, (payload) => { ... });` */
