@@ -1,15 +1,22 @@
--- Policies reales de `messages`, que nunca se versionaron.
+-- Policies de `messages`: versionar las reales y cerrar el INSERT abierto.
 --
+-- CONTEXTO 1 — repo vs produccion:
 -- El repo tenia (0003_create_messages.sql) una policy de SELECT rota:
 --     using (auth.uid() = coach_id or auth.uid() = athlete_id)
 -- El segundo termino nunca se cumple: `athlete_id` es athletes.id (integer),
--- no el user_id del atleta. Segun el repo, un atleta no podria leer sus
--- propios mensajes — pero en produccion el chat funciona, porque alguien
--- corrigio la policy directo en el dashboard sin versionarla.
+-- no el user_id del atleta. Segun el repo un atleta no podria leer sus
+-- mensajes, pero en produccion el chat funciona porque alguien corrigio la
+-- policy en el dashboard sin versionarla. Esto lo alinea.
 --
--- Esta migracion refleja el estado real de produccion. Importa especialmente
--- ahora que el chat usa Supabase Realtime: Realtime respeta RLS, asi que una
--- policy mal escrita hace que los eventos no lleguen, en silencio.
+-- CONTEXTO 2 — el INSERT estaba abierto:
+-- La policy de INSERT era WITH CHECK (true): cualquier usuario autenticado
+-- podia escribir en CUALQUIER conversacion, y ademas elegir el sender_role.
+-- Es decir, un usuario podia hacerse pasar por el coach de otro atleta.
+-- Ahora se exige ser participante de la conversacion Y que el sender_role
+-- corresponda al rol real de quien escribe.
+--
+-- Importa especialmente porque el chat usa Supabase Realtime, que respeta
+-- RLS: una policy mal escrita hace que los eventos no lleguen, en silencio.
 
 ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
 
@@ -20,8 +27,10 @@ DROP POLICY IF EXISTS "Usuario ve sus mensajes"         ON public.messages;
 DROP POLICY IF EXISTS "Usuario inserta mensajes"        ON public.messages;
 DROP POLICY IF EXISTS "Usuario actualiza sus mensajes"  ON public.messages;
 
--- Participantes de la conversacion: el coach dueño, el atleta (resuelto
--- contra athletes.user_id, que es lo correcto) o un admin.
+-- ---------------------------------------------------------------
+-- SELECT: participantes de la conversacion o admin.
+-- El atleta se resuelve contra athletes.user_id (lo correcto).
+-- ---------------------------------------------------------------
 CREATE POLICY "Usuario ve sus mensajes"
   ON public.messages FOR SELECT
   USING (
@@ -34,6 +43,9 @@ CREATE POLICY "Usuario ve sus mensajes"
     )
   );
 
+-- ---------------------------------------------------------------
+-- UPDATE: mismo criterio.
+-- ---------------------------------------------------------------
 CREATE POLICY "Usuario actualiza sus mensajes"
   ON public.messages FOR UPDATE
   USING (
@@ -46,10 +58,26 @@ CREATE POLICY "Usuario actualiza sus mensajes"
     )
   );
 
--- INSERT sin restriccion adicional (el cliente solo puede escribir en
--- conversaciones que ve, y sender_role lo define la app).
+-- ---------------------------------------------------------------
+-- INSERT: solo participantes, y el sender_role debe coincidir con
+-- quien realmente escribe. Antes era WITH CHECK (true).
+-- ---------------------------------------------------------------
 CREATE POLICY "Usuario inserta mensajes"
   ON public.messages FOR INSERT
-  WITH CHECK (true);
+  WITH CHECK (
+    -- El coach dueño de la conversacion escribiendo como coach
+    (coach_id = auth.uid() AND sender_role = 'coach')
+    -- El atleta de esa conversacion escribiendo como atleta
+    OR (
+      sender_role = 'athlete'
+      AND EXISTS (
+        SELECT 1 FROM public.athletes a
+        WHERE a.id = messages.athlete_id
+          AND a.user_id = auth.uid()
+      )
+    )
+    -- Admin: puede escribir en cualquier conversacion (soporte)
+    OR public.is_admin()
+  );
 
 NOTIFY pgrst, 'reload schema';
