@@ -927,7 +927,21 @@ export default function AthleteHome({ profile }) {
     return () => { cancelled = true; };
   }, [athleteInfo?.id, workoutsAchSyncKey]);
 
-  useEffect(() => { const t = setInterval(() => loadAthleteChat(), 10000); return () => clearInterval(t); }, [loadAthleteChat]);
+  useEffect(() => {
+    if (!athleteInfo?.id || !coachIdForChat) return undefined;
+    const channel = supabase
+      .channel(`chat-athlete-${athleteInfo.id}`)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "messages", filter: `athlete_id=eq.${athleteInfo.id}` },
+        () => loadAthleteChat(),
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [athleteInfo?.id, coachIdForChat, loadAthleteChat]);
+
+  // Respaldo por si Realtime se cae o el navegador suspende la conexion.
+  useEffect(() => { const t = setInterval(() => loadAthleteChat(), 60000); return () => clearInterval(t); }, [loadAthleteChat]);
   useEffect(() => { if (!athleteChatScrollRef.current) return; athleteChatScrollRef.current.scrollTop = athleteChatScrollRef.current.scrollHeight; }, [athleteChatMessages]);
 
   const sendAthleteChat = async () => {

@@ -4745,7 +4745,21 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
   }, [loadAthletePayments]);
 
   useEffect(() => {
-    const t = setInterval(() => loadCoachChat(), 10000);
+    if (!athlete?.id || !coachId) return undefined;
+    const channel = supabase
+      .channel(`chat-coach-${coachId}-${athlete.id}`)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "messages", filter: `athlete_id=eq.${athlete.id}` },
+        () => loadCoachChat(),
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [athlete?.id, coachId, loadCoachChat]);
+
+  // Respaldo por si Realtime se cae o el navegador suspende la conexion.
+  useEffect(() => {
+    const t = setInterval(() => loadCoachChat(), 60000);
     return () => clearInterval(t);
   }, [loadCoachChat]);
 
