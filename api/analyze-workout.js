@@ -95,11 +95,22 @@ export default async function handler(req, res) {
     if (!workout) return res.status(400).json({ error: "No workout data" });
 
     const isCoach = role === "coach";
+
+    // Valores efectivos de lo EJECUTADO, priorizando reloj > manual > plan.
+    const hasWatch = !!workout.actual_synced_at;
+    const realDist = workout.actual_distance_km ?? workout.manual_distance_km ?? null;
+    const realDur  = workout.actual_duration_min ?? workout.manual_duration_min ?? null;
+    const realHrAvg = workout.actual_avg_hr ?? workout.manual_avg_hr ?? null;
+    const realHrMax = workout.actual_max_hr ?? workout.manual_max_hr ?? null;
+    const paceS = workout.actual_avg_pace_s ?? null;
+    const paceStr = paceS ? `${Math.floor(paceS/60)}:${String(paceS%60).padStart(2,"0")}/km` : null;
+    const fuente = hasWatch ? "datos reales del reloj (Garmin/COROS)" : "datos ingresados manualmente";
+
     const recentContext =
       Array.isArray(recentWorkouts) && recentWorkouts.length > 0
         ? `\nÚltimos ${recentWorkouts.length} entrenamientos completados:\n${recentWorkouts
             .map((w, i) =>
-              `${i + 1}. ${w.title || w.type} — ${w.total_km || 0}km, ${w.duration_min || 0}min, RPE ${w.rpe ?? "N/R"}, FC prom ${w.manual_avg_hr ?? "N/R"}`
+              `${i + 1}. ${w.title || w.type} — ${w.actual_distance_km ?? w.manual_distance_km ?? w.total_km ?? 0}km, ${w.actual_duration_min ?? w.manual_duration_min ?? w.duration_min ?? 0}min, RPE ${w.rpe ?? "N/R"}, FC prom ${w.actual_avg_hr ?? w.manual_avg_hr ?? "N/R"}`
             )
             .join("\n")}`
         : "";
@@ -107,32 +118,36 @@ export default async function handler(req, res) {
     const prompt = isCoach
       ? `Eres un coach de running experto analizando el entrenamiento de ${athleteName || "tu atleta"} (VDOT ${vdot || "N/A"}).
 
-Workout analizado:
-- Tipo: ${workout.type || "N/A"}
-- Título: ${workout.title || "N/A"}
-- Distancia: ${workout.manual_distance_km ?? workout.total_km ?? "N/A"} km
-- Duración: ${workout.manual_duration_min ?? workout.duration_min ?? "N/A"} min
-- RPE registrado: ${workout.rpe ?? "N/R"}
-- FC promedio: ${workout.manual_avg_hr ?? "N/R"} lpm
-- FC máxima: ${workout.manual_max_hr ?? "N/R"} lpm
-- Notas del atleta: ${workout.athlete_notes || "Sin notas"}
+PLANIFICADO:
+- Distancia: ${workout.total_km ?? "N/A"} km
+- Duración: ${workout.duration_min ?? "N/A"} min
+- Tipo: ${workout.type ?? "N/A"}
+- Título: ${workout.title ?? "N/A"}
+
+EJECUTADO (${fuente}):
+- Distancia: ${realDist ?? "N/R"} km
+- Duración: ${realDur ?? "N/R"} min
+- Ritmo medio: ${paceStr ?? "N/R"}
+- FC promedio/máxima: ${realHrAvg ?? "N/R"} / ${realHrMax ?? "N/R"} lpm
+- Desnivel: ${workout.actual_elevation_m ?? "N/R"} m
+- RPE: ${workout.rpe ?? "N/R"}
+- Sensación: ${workout.feeling ?? workout.athlete_notes ?? "N/R"}
 ${recentContext}
 
 Responde en español con 4 secciones cortas (sin markdown, sin asteriscos, sin tablas):
-1. Rendimiento — ¿Ejecutó bien el workout según el objetivo?
-2. Señales fisiológicas — ¿Qué indican RPE y FC sobre su estado?
+1. Rendimiento — Compara lo EJECUTADO contra lo PLANIFICADO (distancia completada, ritmo real vs objetivo, duración). ¿Cumplió el objetivo del workout?
+2. Señales fisiológicas — ¿Qué indican RPE, FC y ritmo sobre su estado?
 3. Tendencia — Basado en los entrenamientos recientes, ¿está progresando, estancado o acumulando fatiga?
 4. Ajuste recomendado — ¿Qué ajustar en los próximos 2-3 entrenamientos? (respuesta en texto plano, no tabla)`
       : `Eres un coach de running experto. Analiza este entrenamiento de ${athleteName || "el atleta"} (VDOT ${vdot || "N/A"}) y da retroalimentación motivadora en español.
 
-Datos:
-- ${workout.title || workout.type} — ${workout.manual_distance_km ?? workout.total_km ?? "N/A"} km, ${workout.manual_duration_min ?? workout.duration_min ?? "N/A"} min
-- RPE: ${workout.rpe ?? "N/R"} | FC prom: ${workout.manual_avg_hr ?? "N/R"} lpm
-- Notas: ${workout.athlete_notes || "Sin notas"}
+PLANIFICADO: ${workout.total_km ?? "N/A"} km, ${workout.duration_min ?? "N/A"} min (${workout.type ?? "N/A"})
+EJECUTADO (${fuente}): ${realDist ?? "N/R"} km, ${realDur ?? "N/R"} min, ritmo ${paceStr ?? "N/R"}, FC prom/máx ${realHrAvg ?? "N/R"}/${realHrMax ?? "N/R"} lpm
+RPE: ${workout.rpe ?? "N/R"} | Sensación: ${workout.feeling ?? workout.athlete_notes ?? "N/R"}
 ${recentContext}
 
 Responde en 3 párrafos cortos (sin markdown, sin asteriscos):
-1. Qué hiciste bien hoy
+1. Qué hiciste bien hoy (compara lo que hiciste con lo planificado)
 2. Cómo estás progresando
 3. Consejo para el próximo entrenamiento`;
 
