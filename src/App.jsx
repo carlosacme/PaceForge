@@ -87,6 +87,7 @@ import {
   requestNotificationPermission,
   clearFcmToken,
 } from "./firebase.js";
+import InstallAppButton from "./components/InstallAppButton";
 const CoachSettings = React.lazy(() => import("./components/CoachSettings"));
 const WorkoutLibrary = React.lazy(() => import("./components/WorkoutLibrary"));
 const MarketplaceHub = React.lazy(() => import("./components/MarketplaceHub"));
@@ -2890,6 +2891,9 @@ const handleSignOut = async () => {
         className="pf-main-mobile-pad"
         style={{ flex: 1, overflowY: "auto", background: "#f8fafc", position: "relative" }}
       >
+        <div style={{ padding: "12px 16px 0" }}>
+          <InstallAppButton />
+        </div>
         {typeof Notification !== "undefined" &&
           session &&
           Notification.permission !== "granted" &&

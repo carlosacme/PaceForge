@@ -2,6 +2,7 @@ import React, { lazy, Suspense, useState, useEffect, useMemo, useCallback, useRe
 import { supabase } from "../lib/supabase";
 import WeatherWidget, { useWeather } from "./WeatherWidget";
 import IntervalsConnect from "./IntervalsConnect";
+import InstallAppButton from "./InstallAppButton";
 import {
   formatLocalYMD,
   calendarCellToIsoYmd,
@@ -1160,6 +1161,7 @@ export default function AthleteHome({ profile }) {
         <h1 style={{ ...S.pageTitle, marginBottom: 0 }}>Hola, {athleteName}</h1>
         <img src="/pwa-192.png" alt="RAF" style={{ width: 38, height: 38, borderRadius: 10, objectFit: "cover", flexShrink: 0 }} />
       </div>
+      <InstallAppButton />
 {coachName ? (
         <div
           id="banner-coach-name"

@@ -31,10 +31,16 @@ function InstallPwaBanner() {
     const onBeforeInstallPrompt = (e) => {
       e.preventDefault();
       setDeferredPrompt(e);
+      // Exponer el evento globalmente para que <InstallAppButton /> (montado
+      // en las pantallas de bienvenida) pueda usarlo, ya sea que llegue antes
+      // o despues de que el boton se monte.
+      window.__deferredInstallPrompt = e;
+      window.dispatchEvent(new CustomEvent("raf:install-available", { detail: e }));
       if (isInstallBannerTarget()) setVisible(true);
     };
     const onAppInstalled = () => {
       setDeferredPrompt(null);
+      window.__deferredInstallPrompt = null;
       setVisible(false);
     };
     window.addEventListener("beforeinstallprompt", onBeforeInstallPrompt);
