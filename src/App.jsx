@@ -1309,29 +1309,52 @@ export default function App() {
     return data || null;
   }, []);
 
+  // Crea la invitacion (fila en invitations) y expone su link, SIN depender del
+  // email. El email es opcional: si el coach lo escribio, se guarda; si no, la
+  // fila queda con email null y el coach comparte el link directo.
+  const createInviteLink = useCallback(async () => {
+    if (!session?.user?.id) {
+      notify("No hay sesión activa.");
+      return null;
+    }
+    const code =
+      (typeof crypto !== "undefined" && crypto.randomUUID && crypto.randomUUID()) ||
+      `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const inviteLink = `https://www.runningapexflow.com?invite=${encodeURIComponent(code)}`;
+    const { error: insError } = await supabase.from("invitations").insert({
+      coach_id: session.user.id,
+      email: inviteEmail?.trim() || null,
+      code,
+      status: "pending",
+    });
+    if (insError) {
+      console.error("Error guardando invitación:", insError);
+      notify(insError.message || "No se pudo guardar la invitación.");
+      return null;
+    }
+    setLastInviteLink(inviteLink);
+    return inviteLink;
+  }, [inviteEmail, notify, session?.user?.id]);
+
+  const generateInviteLink = useCallback(async () => {
+    setInviteSending(true);
+    try {
+      await createInviteLink();
+    } finally {
+      setInviteSending(false);
+    }
+  }, [createInviteLink]);
+
   const sendAthleteInvitation = useCallback(async () => {
     const email = inviteEmail.trim().toLowerCase();
     if (!email || !session?.user?.id) {
-      notify("Completa el email del atleta.");
+      notify("Escribe un email o usa el link directo.");
       return;
     }
     setInviteSending(true);
     try {
-      const code =
-        (typeof crypto !== "undefined" && crypto.randomUUID && crypto.randomUUID()) ||
-        `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-      const inviteLink = `https://www.runningapexflow.com?invite=${encodeURIComponent(code)}`;
-      const { error: insError } = await supabase.from("invitations").insert({
-        coach_id: session.user.id,
-        email,
-        code,
-        status: "pending",
-      });
-      if (insError) {
-        console.error("Error guardando invitación:", insError);
-        notify(insError.message || "No se pudo guardar la invitación.");
-        return;
-      }
+      const inviteLink = await createInviteLink();
+      if (!inviteLink) return;
       const codeHtml = `<p style="margin:12px 0"><strong>Tu código de coach</strong> (si te registras sin abrir el enlace): <code style="background:#f1f5f9;padding:4px 8px;border-radius:6px">${inviteCoachPublicCode}</code></p><p style="font-size:14px;color:#64748b">El atleta usará este código al registrarse.</p>`;
       await fetch("/api/send-email", {
         method: "POST",
@@ -1343,16 +1366,13 @@ export default function App() {
         }),
       });
       notify("Invitación enviada ✓");
-      // No cerramos el modal: dejamos que el coach vea el link y lo comparta.
-      setLastInviteLink(inviteLink);
-      setInviteEmail("");
     } catch (e) {
       console.error("sendAthleteInvitation:", e);
       notify("No se pudo enviar la invitación.");
     } finally {
       setInviteSending(false);
     }
-  }, [inviteEmail, inviteCoachPublicCode, notify, session?.user?.id]);
+  }, [inviteEmail, inviteCoachPublicCode, notify, session?.user?.id, createInviteLink]);
 
   useEffect(() => {
     let mounted = true;
@@ -2799,7 +2819,7 @@ const handleSignOut = async () => {
         <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 500, padding: 16 }}>
           <div style={{ ...S.card, width: "100%", maxWidth: 460, margin: 0 }}>
             <div style={{ fontSize: ".95em", fontWeight: 800, color: "#0f172a", marginBottom: 10 }}>📧 Invitar Atleta</div>
-            <div style={{ fontSize: ".8em", color: "#64748b", marginBottom: 8 }}>Email del atleta</div>
+            <div style={{ fontSize: ".8em", color: "#64748b", marginBottom: 8 }}>Email del atleta (opcional)</div>
             <input
               type="email"
               value={inviteEmail}
@@ -2816,7 +2836,7 @@ const handleSignOut = async () => {
               style={{ width: "100%", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", color: "#0f172a", fontFamily: "ui-monospace,monospace", fontSize: ".9em", fontWeight: 700, boxSizing: "border-box" }}
             />
             <div style={{ fontSize: ".72em", color: "#94a3b8", marginTop: 6, lineHeight: 1.45 }}>El atleta usará este código al registrarse.</div>
-            <div style={{ marginTop: 12, display: "flex", justifyContent: "flex-end", gap: 8 }}>
+            <div style={{ marginTop: 12, display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
               <button type="button" onClick={() => { setInviteModalOpen(false); setLastInviteLink(""); }} style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 12px", color: "#64748b", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: ".8em" }}>Cerrar</button>
               <button
                 type="button"
@@ -2824,7 +2844,15 @@ const handleSignOut = async () => {
                 disabled={inviteSending}
                 style={{ background: inviteSending ? "#e2e8f0" : "linear-gradient(135deg,#0d9488,#14b8a6)", border: "none", borderRadius: 8, padding: "8px 12px", color: inviteSending ? "#64748b" : "#fff", cursor: inviteSending ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 800, fontSize: ".8em" }}
               >
-                {inviteSending ? "Enviando..." : "Enviar invitación"}
+                {inviteSending ? "Enviando..." : "📧 Enviar por correo"}
+              </button>
+              <button
+                type="button"
+                onClick={generateInviteLink}
+                disabled={inviteSending}
+                style={{ background: inviteSending ? "#e2e8f0" : "#0f172a", border: "none", borderRadius: 8, padding: "8px 12px", color: inviteSending ? "#64748b" : "#fff", cursor: inviteSending ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 800, fontSize: ".8em" }}
+              >
+                🔗 Generar link
               </button>
             </div>
             {lastInviteLink && (
