@@ -5602,6 +5602,10 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
                         w.manual_distance_km != null || w.manual_duration_min != null ||
                         w.manual_avg_hr != null || w.manual_max_hr != null ||
                         w.manual_calories != null;
+                      // Si hay datos del reloj (actual_*), no mostramos los
+                      // manual numericos: saldrian en 0 y confunden. Los reales
+                      // ya se ven en el bloque "⌚ Datos del reloj".
+                      const hasWatchData = !!w.actual_synced_at;
                       return (
                         <div key={w.id} style={{ display: "flex", flexDirection: "column", gap: 4, width: "100%" }}>
                           <button
@@ -5665,7 +5669,7 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
 </button>
 {expanded ? (
   <div style={{ border: "1px solid #e2e8f0", borderRadius: 7, background: "#fff", padding: "6px 7px", fontSize: ".54em", color: "#334155", textAlign: "left", lineHeight: 1.35 }}>
-    {hasManualNumbers && (
+    {!hasWatchData && hasManualNumbers && (
       <>
         <div><strong>Distancia:</strong> {w.manual_distance_km != null ? `${w.manual_distance_km} km` : "—"}</div>
         <div><strong>Duración:</strong> {w.manual_duration_min != null ? `${w.manual_duration_min} min` : "—"}</div>
