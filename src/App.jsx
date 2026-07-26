@@ -4125,6 +4125,7 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
   const [chatClearing, setChatClearing] = useState(false);
 const [expandedWorkoutLogs, setExpandedWorkoutLogs] = useState({});
 const [coachAnalysisModal, setCoachAnalysisModal] = useState(null);
+const [registroModal, setRegistroModal] = useState(null);
 const [adjustProposalModal, setAdjustProposalModal] = useState(null);
 const [adjustLoading, setAdjustLoading] = useState(false);
 const [coachWorkoutAnalysis, setCoachWorkoutAnalysis] = useState({});
@@ -5592,20 +5593,6 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
                     ))}
                     {dayWorkouts.map(w => {
                       const wt = WORKOUT_TYPES.find(t => t.id === w.type) || WORKOUT_TYPES[0];
-                      const expanded = Boolean(expandedWorkoutLogs[w.id]);
-                      const feelingMatch = String(w.athlete_notes || "").match(/^Cómo me sentí:\s*(.+)$/m);
-                      const feelingText = feelingMatch ? feelingMatch[1] : "";
-                      const notesText = String(w.athlete_notes || "")
-                        .replace(/^Cómo me sentí:\s*.+$/m, "")
-                        .trim();
-                      const hasManualNumbers =
-                        w.manual_distance_km != null || w.manual_duration_min != null ||
-                        w.manual_avg_hr != null || w.manual_max_hr != null ||
-                        w.manual_calories != null;
-                      // Si hay datos del reloj (actual_*), no mostramos los
-                      // manual numericos: saldrian en 0 y confunden. Los reales
-                      // ya se ven en el bloque "⌚ Datos del reloj".
-                      const hasWatchData = !!w.actual_synced_at;
                       return (
                         <div key={w.id} style={{ display: "flex", flexDirection: "column", gap: 4, width: "100%" }}>
                           <button
@@ -5654,10 +5641,10 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
                             <>
                               <button
                                 type="button"
-                                onClick={() => setExpandedWorkoutLogs((prev) => ({ ...prev, [w.id]: !prev[w.id] }))}
+                                onClick={() => setRegistroModal(w)}
                                 style={{ border: "1px solid #cbd5e1", borderRadius: 6, background: "#fff", color: "#334155", padding: "3px 6px", fontSize: ".56em", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}
                               >
-                                {expanded ? "Ocultar registro" : "Ver registro"}
+                                Ver registro
 </button>
 <button
   type="button"
@@ -5667,36 +5654,6 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
 >
   {coachWorkoutAnalysisLoading[w.id] ? "Analizando…" : "🤖 Analizar IA"}
 </button>
-{expanded ? (
-  <div style={{ border: "1px solid #e2e8f0", borderRadius: 7, background: "#fff", padding: "6px 7px", fontSize: ".54em", color: "#334155", textAlign: "left", lineHeight: 1.35 }}>
-    {!hasWatchData && hasManualNumbers && (
-      <>
-        <div><strong>Distancia:</strong> {w.manual_distance_km != null ? `${w.manual_distance_km} km` : "—"}</div>
-        <div><strong>Duración:</strong> {w.manual_duration_min != null ? `${w.manual_duration_min} min` : "—"}</div>
-        <div><strong>FC prom/máx:</strong> {w.manual_avg_hr != null ? w.manual_avg_hr : "—"} / {w.manual_max_hr != null ? w.manual_max_hr : "—"} lpm</div>
-        <div><strong>Calorías:</strong> {w.manual_calories != null ? w.manual_calories : "—"}</div>
-      </>
-    )}
-    {feelingText ? <div><strong>Cómo se sintió:</strong> {feelingText}</div> : null}
-    {notesText ? <div><strong>Notas:</strong> {notesText}</div> : null}
-    {w.completed_at ? <div><strong>Completado:</strong> {new Date(w.completed_at).toLocaleString("es-CO")}</div> : null}
-    {w.actual_synced_at ? (
-      <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px solid #e2e8f0" }}>
-        <div style={{ fontWeight: 800, color: "#0f172a", marginBottom: 3 }}>⌚ Datos del reloj</div>
-        <div><strong>Distancia:</strong> {w.total_km != null ? `${w.total_km} km plan` : "—"} → {w.actual_distance_km != null ? `${w.actual_distance_km} km real` : "—"}</div>
-        <div><strong>Duración:</strong> {w.duration_min != null ? `${w.duration_min} min plan` : "—"} → {w.actual_duration_min != null ? `${w.actual_duration_min} min real` : "—"}</div>
-        <div><strong>Ritmo medio real:</strong> {w.actual_avg_pace_s != null ? `${Math.floor(w.actual_avg_pace_s/60)}:${String(w.actual_avg_pace_s%60).padStart(2,"0")}/km` : "—"}</div>
-        <div><strong>FC prom/máx real:</strong> {w.actual_avg_hr ?? "—"} / {w.actual_max_hr ?? "—"} lpm</div>
-        <div><strong>Desnivel:</strong> {w.actual_elevation_m != null ? `${w.actual_elevation_m} m` : "—"}</div>
-        <div style={{ color: "#94a3b8", marginTop: 3 }}>Sincronizado del reloj: {new Date(w.actual_synced_at).toLocaleString("es-CO")}</div>
-      </div>
-    ) : (w.done ? (
-      <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px solid #e2e8f0", color: "#94a3b8" }}>
-        ⌚ Sin datos del reloj (el atleta no conectó intervals.icu o el reloj no había sincronizado al marcar hecho)
-      </div>
-    ) : null)}
-  </div>
-) : null}
 {coachWorkoutAnalysis[w.id] ? (
   <button
     type="button"
@@ -6458,6 +6415,64 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
           </div>
         </div>
       )}
+      {registroModal && (() => {
+        const w = registroModal;
+        const feelingMatch = String(w.athlete_notes || "").match(/^Cómo me sentí:\s*(.+)$/m);
+        const feelingText = feelingMatch ? feelingMatch[1] : "";
+        const notesText = String(w.athlete_notes || "")
+          .replace(/^Cómo me sentí:\s*.+$/m, "")
+          .trim();
+        const hasManualNumbers =
+          w.manual_distance_km != null || w.manual_duration_min != null ||
+          w.manual_avg_hr != null || w.manual_max_hr != null ||
+          w.manual_calories != null;
+        // Si hay datos del reloj (actual_*), no mostramos los manual numericos:
+        // saldrian en 0 y confunden. Los reales ya se ven en "⌚ Datos del reloj".
+        const hasWatchData = !!w.actual_synced_at;
+        return (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.6)", zIndex: 10010, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+            <div style={{ background: "#fff", borderRadius: 16, padding: 24, maxWidth: 560, width: "100%", maxHeight: "80vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,.3)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+                <div>
+                  <div style={{ fontSize: ".7em", fontWeight: 800, color: "#0369a1", textTransform: "uppercase", letterSpacing: ".1em" }}>📋 Registro</div>
+                  <div style={{ fontWeight: 800, color: "#0f172a", marginTop: 4 }}>{w.title}</div>
+                  {w.scheduled_date ? <div style={{ fontSize: ".82em", color: "#64748b", marginTop: 2 }}>{w.scheduled_date}</div> : null}
+                </div>
+                <button type="button" onClick={() => setRegistroModal(null)} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "6px 10px", background: "#fff", color: "#475569", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".85em" }}>✕</button>
+              </div>
+              <div style={{ fontSize: ".92em", color: "#334155", lineHeight: 1.6, borderTop: "1px solid #f1f5f9", paddingTop: 14 }}>
+                {!hasWatchData && hasManualNumbers && (
+                  <>
+                    <div><strong>Distancia:</strong> {w.manual_distance_km != null ? `${w.manual_distance_km} km` : "—"}</div>
+                    <div><strong>Duración:</strong> {w.manual_duration_min != null ? `${w.manual_duration_min} min` : "—"}</div>
+                    <div><strong>FC prom/máx:</strong> {w.manual_avg_hr != null ? w.manual_avg_hr : "—"} / {w.manual_max_hr != null ? w.manual_max_hr : "—"} lpm</div>
+                    <div><strong>Calorías:</strong> {w.manual_calories != null ? w.manual_calories : "—"}</div>
+                  </>
+                )}
+                {feelingText ? <div><strong>Cómo se sintió:</strong> {feelingText}</div> : null}
+                {notesText ? <div><strong>Notas:</strong> {notesText}</div> : null}
+                {w.completed_at ? <div><strong>Completado:</strong> {new Date(w.completed_at).toLocaleString("es-CO")}</div> : null}
+                {w.actual_synced_at ? (
+                  <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid #e2e8f0" }}>
+                    <div style={{ fontWeight: 800, color: "#0f172a", marginBottom: 5 }}>⌚ Datos del reloj</div>
+                    <div><strong>Distancia:</strong> {w.total_km != null ? `${w.total_km} km plan` : "—"} → {w.actual_distance_km != null ? `${w.actual_distance_km} km real` : "—"}</div>
+                    <div><strong>Duración:</strong> {w.duration_min != null ? `${w.duration_min} min plan` : "—"} → {w.actual_duration_min != null ? `${w.actual_duration_min} min real` : "—"}</div>
+                    <div><strong>Ritmo medio real:</strong> {w.actual_avg_pace_s != null ? `${Math.floor(w.actual_avg_pace_s/60)}:${String(w.actual_avg_pace_s%60).padStart(2,"0")}/km` : "—"}</div>
+                    <div><strong>FC prom/máx real:</strong> {w.actual_avg_hr ?? "—"} / {w.actual_max_hr ?? "—"} lpm</div>
+                    <div><strong>Desnivel:</strong> {w.actual_elevation_m != null ? `${w.actual_elevation_m} m` : "—"}</div>
+                    <div style={{ color: "#94a3b8", marginTop: 4 }}>Sincronizado del reloj: {new Date(w.actual_synced_at).toLocaleString("es-CO")}</div>
+                    {/* AQUI ira la comparacion por bloque */}
+                  </div>
+                ) : (w.done ? (
+                  <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid #e2e8f0", color: "#94a3b8" }}>
+                    ⌚ Sin datos del reloj (el atleta no conectó intervals.icu o el reloj no había sincronizado al marcar hecho)
+                  </div>
+                ) : null)}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
       {paymentModalOpen && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 210, padding: 16 }}>
           <div style={{ ...S.card, width: "100%", maxWidth: 520, margin: 0 }}>
