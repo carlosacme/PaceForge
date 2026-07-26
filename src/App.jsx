@@ -1140,6 +1140,7 @@ export default function App() {
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteSending, setInviteSending] = useState(false);
+  const [lastInviteLink, setLastInviteLink] = useState("");
   const [pendingCoachRequestId, setPendingCoachRequestId] = useState("");
   const [viewRestored, setViewRestored] = useState(false);
   const [coachPlanPickerVoluntary, setCoachPlanPickerVoluntary] = useState(false);
@@ -1319,7 +1320,7 @@ export default function App() {
       const code =
         (typeof crypto !== "undefined" && crypto.randomUUID && crypto.randomUUID()) ||
         `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-      const inviteLink = `https://pace-forge-eta.vercel.app?invite=${encodeURIComponent(code)}`;
+      const inviteLink = `https://www.runningapexflow.com?invite=${encodeURIComponent(code)}`;
       const { error: insError } = await supabase.from("invitations").insert({
         coach_id: session.user.id,
         email,
@@ -1342,7 +1343,8 @@ export default function App() {
         }),
       });
       notify("Invitación enviada ✓");
-      setInviteModalOpen(false);
+      // No cerramos el modal: dejamos que el coach vea el link y lo comparta.
+      setLastInviteLink(inviteLink);
       setInviteEmail("");
     } catch (e) {
       console.error("sendAthleteInvitation:", e);
@@ -2815,7 +2817,7 @@ const handleSignOut = async () => {
             />
             <div style={{ fontSize: ".72em", color: "#94a3b8", marginTop: 6, lineHeight: 1.45 }}>El atleta usará este código al registrarse.</div>
             <div style={{ marginTop: 12, display: "flex", justifyContent: "flex-end", gap: 8 }}>
-              <button type="button" onClick={() => setInviteModalOpen(false)} style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 12px", color: "#64748b", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: ".8em" }}>Cancelar</button>
+              <button type="button" onClick={() => { setInviteModalOpen(false); setLastInviteLink(""); }} style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 12px", color: "#64748b", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: ".8em" }}>Cerrar</button>
               <button
                 type="button"
                 onClick={sendAthleteInvitation}
@@ -2825,6 +2827,27 @@ const handleSignOut = async () => {
                 {inviteSending ? "Enviando..." : "Enviar invitación"}
               </button>
             </div>
+            {lastInviteLink && (
+              <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid #e2e8f0" }}>
+                <div style={{ fontSize: ".82em", color: "#166534", fontWeight: 700, marginBottom: 8 }}>
+                  ✅ Invitación enviada por correo. También puedes compartir el link:
+                </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button type="button" onClick={() => {
+                    const msg = `¡Te invito a entrenar conmigo en RunningApexFlow! 🏃 Regístrate aquí y recibe tus entrenamientos directo en tu reloj: ${lastInviteLink}`;
+                    window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, "_blank");
+                  }} style={{ background:"#25D366", color:"#fff", border:"none", borderRadius:8, padding:"10px 16px", fontWeight:800, fontFamily:"inherit", cursor:"pointer", fontSize:".85em" }}>
+                    💬 Compartir por WhatsApp
+                  </button>
+                  <button type="button" onClick={async () => {
+                    try { await navigator.clipboard.writeText(lastInviteLink); alert("Link copiado"); }
+                    catch { alert("No se pudo copiar"); }
+                  }} style={{ background:"#f1f5f9", color:"#334155", border:"1px solid #cbd5e1", borderRadius:8, padding:"10px 16px", fontWeight:700, fontFamily:"inherit", cursor:"pointer", fontSize:".85em" }}>
+                    📋 Copiar link
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       ) : null}
@@ -3016,7 +3039,7 @@ const handleSignOut = async () => {
               setView("athletes");
               setShowAddAthleteForm(false);
             }}
-            onRequestAddAthlete={() => setInviteModalOpen(true)}
+            onRequestAddAthlete={() => { setLastInviteLink(""); setInviteModalOpen(true); }}
             showAddAthleteForm={showAddAthleteForm}
             planLimitWarning={planLimitWarning}
             onGoToPlans={() => setView("plans")}
@@ -3060,7 +3083,7 @@ const handleSignOut = async () => {
                 }
                 onDeleteAthlete={handleDeleteAthlete}
                 notify={notify}
-                onOpenInviteModal={() => setInviteModalOpen(true)}
+                onOpenInviteModal={() => { setLastInviteLink(""); setInviteModalOpen(true); }}
               />
             )}
             {view === "evaluation" && (
