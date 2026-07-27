@@ -532,7 +532,10 @@ async function handleIcuWebhook(req, res) {
 
   // 3) Procesar los eventos de actividad
   for (const ev of events) {
-    if (ev.type !== "ACTIVITY_UPLOADED") continue;   // TEST y otros: ignorar
+    // ACTIVITY_UPLOADED llega enseguida pero a veces sin datos procesados;
+    // ACTIVITY_ANALYZED llega ~60s despues con los datos completos. Aceptamos
+    // ambos para que el pull no falle por llegar demasiado pronto.
+    if (ev.type !== "ACTIVITY_UPLOADED" && ev.type !== "ACTIVITY_ANALYZED") continue;   // TEST y otros: ignorar
     try {
       // El evento NO trae activity_id, solo el atleta. Buscamos su conexion
       // por provider_athlete_id y disparamos el pull del workout de hoy.
