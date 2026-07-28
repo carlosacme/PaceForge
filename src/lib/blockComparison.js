@@ -31,8 +31,10 @@ export const EFFORT_TO_ZONE = {
   // ganarle a "marathon"; se resuelve iterando por clave mas larga primero.
   "half marathon": "T", "hm effort": "T",
   "threshold": "T", "tempo": "T", "10k": "T",
+  // Umbral: "comfortably hard" = umbral (Daniels), igual que intervals.js.
+  "comfortably hard": "T",
   // Intervalo / VO2max
-  "5k": "I", "3k": "I", "comfortably hard": "I", "vo2": "I",
+  "5k": "I", "3k": "I", "vo2": "I",
   // Repeticion / velocidad
   "mile": "R", "1500": "R", "800m": "R", "400m": "R", "sprint": "R",
 };
