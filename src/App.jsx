@@ -5,6 +5,8 @@ import { supabase } from "./lib/supabase";
 import WeatherWidget from "./components/WeatherWidget";
 import PushToWatchButton from "./components/PushToWatchButton";
 import { readStructure } from "./lib/workoutStructure";
+import { compareBlocks } from "./lib/blockComparison";
+import { fmtPace } from "./lib/vdot";
 import {
   BRAND_NAME,
   WORKOUT_TYPES,
@@ -4126,6 +4128,59 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
 const [expandedWorkoutLogs, setExpandedWorkoutLogs] = useState({});
 const [coachAnalysisModal, setCoachAnalysisModal] = useState(null);
 const [registroModal, setRegistroModal] = useState(null);
+const [registroLaps, setRegistroLaps] = useState(null);       // array de laps | null
+const [registroLapsLoading, setRegistroLapsLoading] = useState(false);
+const [registroLapsError, setRegistroLapsError] = useState(false);
+// Al abrir el modal, si el workout tiene actividad de intervals.icu y
+// estructura, traemos los laps para la comparacion por bloque.
+useEffect(() => {
+  const w = registroModal;
+  setRegistroLaps(null);
+  setRegistroLapsError(false);
+  setRegistroLapsLoading(false);
+  if (!w || !w.intervals_activity_id) return;
+  const structure = readStructure(w);
+  if (!Array.isArray(structure) || structure.length === 0) return;
+
+  let cancelled = false;
+  (async () => {
+    setRegistroLapsLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const resp = await fetch("/api/integrations", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({
+          action: "activity-intervals",
+          athlete_id: w.athlete_id,
+          activity_id: w.intervals_activity_id,
+        }),
+      });
+      const data = await resp.json();
+      if (cancelled) return;
+      setRegistroLaps(resp.ok && Array.isArray(data.icu_intervals) ? data.icu_intervals : []);
+    } catch (e) {
+      if (!cancelled) { setRegistroLaps([]); setRegistroLapsError(true); }
+    } finally {
+      if (!cancelled) setRegistroLapsLoading(false);
+    }
+  })();
+  return () => { cancelled = true; };
+}, [registroModal]);
+
+// Comparacion plan vs ejecutado por bloque (null si aun no hay laps).
+const registroBlocks = useMemo(() => {
+  const w = registroModal;
+  if (!w || !Array.isArray(registroLaps) || registroLaps.length === 0) return null;
+  const structure = readStructure(w);
+  if (!Array.isArray(structure) || structure.length === 0) return null;
+  try {
+    return compareBlocks({ structure, laps: registroLaps, vdot: athlete?.vdot });
+  } catch { return null; }
+}, [registroModal, registroLaps, athlete]);
 const [adjustProposalModal, setAdjustProposalModal] = useState(null);
 const [adjustLoading, setAdjustLoading] = useState(false);
 const [coachWorkoutAnalysis, setCoachWorkoutAnalysis] = useState({});
@@ -6461,7 +6516,51 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
                     <div><strong>FC prom/máx real:</strong> {w.actual_avg_hr ?? "—"} / {w.actual_max_hr ?? "—"} lpm</div>
                     <div><strong>Desnivel:</strong> {w.actual_elevation_m != null ? `${w.actual_elevation_m} m` : "—"}</div>
                     <div style={{ color: "#94a3b8", marginTop: 4 }}>Sincronizado del reloj: {new Date(w.actual_synced_at).toLocaleString("es-CO")}</div>
-                    {/* AQUI ira la comparacion por bloque */}
+                    {w.intervals_activity_id ? (
+                      <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px dashed #e2e8f0" }}>
+                        <div style={{ fontWeight: 800, color: "#0f172a", marginBottom: 6 }}>📊 Comparación por bloque</div>
+                        <div style={{ fontSize: ".82em", color: "#64748b", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", marginBottom: 8, lineHeight: 1.5 }}>
+                          El ritmo planificado se deriva del esfuerzo objetivo de cada bloque y del VDOT actual del atleta{athlete?.vdot ? ` (VDOT ${athlete.vdot})` : ""}. Es una referencia para interpretar la ejecución, no un objetivo exacto que se haya prescrito en tiempo.
+                        </div>
+                        {registroLapsLoading ? (
+                          <div style={{ color: "#64748b" }}>Cargando bloques…</div>
+                        ) : (registroBlocks && registroBlocks.length ? (
+                          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: ".9em" }}>
+                            <thead>
+                              <tr style={{ textAlign: "left", color: "#64748b", fontSize: ".85em" }}>
+                                <th style={{ padding: "4px 6px" }}>Bloque</th>
+                                <th style={{ padding: "4px 6px" }}>Objetivo</th>
+                                <th style={{ padding: "4px 6px", textAlign: "right" }}>Plan</th>
+                                <th style={{ padding: "4px 6px", textAlign: "right" }}>Real</th>
+                                <th style={{ padding: "4px 6px", textAlign: "right" }}>Δ</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {registroBlocks.map((b, i) => {
+                                const faster = b.delta_s != null && b.delta_s <= 0;
+                                const deltaColor = b.delta_s == null ? "#94a3b8" : (faster ? "#16a34a" : "#ea580c");
+                                const deltaTxt = b.delta_s == null ? "—" : `${b.delta_s <= 0 ? "" : "+"}${Math.round(b.delta_s)}s`;
+                                return (
+                                  <tr key={i} style={{ borderTop: "1px solid #f1f5f9", opacity: b.dur_mismatch && !b.incomplete ? 0.55 : 1 }}>
+                                    <td style={{ padding: "4px 6px", fontWeight: 600 }}>
+                                      {b.step_name || `Bloque ${i + 1}`}
+                                      {b.incomplete ? <span style={{ color: "#b45309", fontWeight: 700 }}> · no completado</span> : null}
+                                      {b.dur_mismatch && !b.incomplete ? <span title="Duración muy distinta a la planeada"> ⚠️</span> : null}
+                                    </td>
+                                    <td style={{ padding: "4px 6px", color: "#475569" }}>{b.target_effort || "—"}</td>
+                                    <td style={{ padding: "4px 6px", textAlign: "right" }}>{b.planned_pace_s != null ? `${fmtPace(b.planned_pace_s)}/km` : "—"}</td>
+                                    <td style={{ padding: "4px 6px", textAlign: "right" }}>{b.actual_pace_s != null ? `${fmtPace(b.actual_pace_s)}/km` : "—"}</td>
+                                    <td style={{ padding: "4px 6px", textAlign: "right", color: deltaColor, fontWeight: 700 }}>{deltaTxt}</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        ) : (
+                          <div style={{ color: "#94a3b8" }}>No hay datos por bloque para esta actividad</div>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
                 ) : (w.done ? (
                   <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid #e2e8f0", color: "#94a3b8" }}>

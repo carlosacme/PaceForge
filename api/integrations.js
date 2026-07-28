@@ -15,6 +15,7 @@
  *   push-workout   { athlete_id, workout_id }
  *   push-range     { athlete_id, from, to }  empuja un rango de fechas
  *   pull-activity  { athlete_id, workout_id } trae lo ejecutado del reloj
+ *   activity-intervals { athlete_id, activity_id } laps crudos (comparacion por bloque)
  *   oauth-start    { athlete_id }            inicia OAuth (JWT); devuelve authorize_url
  *   oauth-callback (GET ?action=oauth-callback&code&state)  SIN JWT; verificado por state
  *
@@ -394,6 +395,30 @@ async function actionPullActivity(res, athleteId, workoutId) {
   });
 }
 
+// Trae los intervalos/laps crudos de una actividad para la comparacion por
+// bloque del coach (plan vs ejecutado). No escribe nada; solo lee.
+async function actionActivityIntervals(res, athleteId, activityId) {
+  if (!activityId) return jsonError(res, 400, "Falta 'activity_id'");
+
+  const conn = await getConnection(athleteId);
+  if (!conn) return jsonError(res, 400, "El atleta no tiene intervals.icu conectado");
+
+  const r = await icuFetch(conn, `/activity/${activityId}/intervals`);
+  if (!r.ok) {
+    return jsonError(res, 502, `intervals.icu no respondio (${r.status})`);
+  }
+
+  const raw = Array.isArray(r.data?.icu_intervals) ? r.data.icu_intervals : [];
+  const laps = raw.map((it) => ({
+    moving_time: it.moving_time,
+    distance: it.distance,
+    average_speed: it.average_speed,
+    average_heartrate: it.average_heartrate,
+  }));
+
+  return res.status(200).json({ ok: true, count: laps.length, icu_intervals: laps });
+}
+
 /* ---------- OAuth: autorizacion + callback ---------- */
 
 // El frontend llama a esto con JWT; devolvemos la URL a la que
@@ -616,6 +641,7 @@ export default async function handler(req, res) {
       case "push-workout":  return await actionPushWorkout(res, athlete_id, body.workout_id);
       case "push-range":    return await actionPushRange(res, athlete_id, body.from, body.to);
       case "pull-activity": return await actionPullActivity(res, athlete_id, body.workout_id);
+      case "activity-intervals": return await actionActivityIntervals(res, athlete_id, body.activity_id);
       case "oauth-start":   return await actionOauthStart(res, athlete_id, user.id);
       default:              return jsonError(res, 400, `Acción no soportada: ${action}`);
     }
