@@ -4171,6 +4171,19 @@ useEffect(() => {
   return () => { cancelled = true; };
 }, [registroModal]);
 
+// VDOT del atleta desde la evaluacion mas reciente (normalizeAthlete no lo
+// arrastra, por eso athlete.vdot es undefined). coachAthleteEvaluations solo
+// trae { vdot, created_at }, asi que ordenamos por test_date||created_at.
+const athleteVdot = useMemo(() => {
+  const evals = coachAthleteEvaluations || [];
+  if (!evals.length) return null;
+  const latest = [...evals].sort(
+    (a, b) => new Date(b.test_date || b.created_at) - new Date(a.test_date || a.created_at)
+  )[0];
+  const v = Number(latest?.vdot);
+  return Number.isFinite(v) && v > 0 ? v : null;
+}, [coachAthleteEvaluations]);
+
 // Comparacion plan vs ejecutado por bloque (null si aun no hay laps).
 const registroBlocks = useMemo(() => {
   const w = registroModal;
@@ -4178,9 +4191,9 @@ const registroBlocks = useMemo(() => {
   const structure = readStructure(w);
   if (!Array.isArray(structure) || structure.length === 0) return null;
   try {
-    return compareBlocks({ structure, laps: registroLaps, vdot: athlete?.vdot });
+    return compareBlocks({ structure, laps: registroLaps, vdot: athleteVdot });
   } catch { return null; }
-}, [registroModal, registroLaps, athlete]);
+}, [registroModal, registroLaps, athleteVdot]);
 const [adjustProposalModal, setAdjustProposalModal] = useState(null);
 const [adjustLoading, setAdjustLoading] = useState(false);
 const [coachWorkoutAnalysis, setCoachWorkoutAnalysis] = useState({});
@@ -6520,7 +6533,7 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
                       <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px dashed #e2e8f0" }}>
                         <div style={{ fontWeight: 800, color: "#0f172a", marginBottom: 6 }}>📊 Comparación por bloque</div>
                         <div style={{ fontSize: ".82em", color: "#64748b", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", marginBottom: 8, lineHeight: 1.5 }}>
-                          El ritmo planificado se deriva del esfuerzo objetivo de cada bloque y del VDOT actual del atleta{athlete?.vdot ? ` (VDOT ${athlete.vdot})` : ""}. Es una referencia para interpretar la ejecución, no un objetivo exacto que se haya prescrito en tiempo.
+                          El ritmo planificado se deriva del esfuerzo objetivo de cada bloque y del VDOT actual del atleta{athleteVdot ? ` (VDOT ${athleteVdot})` : ""}. Es una referencia para interpretar la ejecución, no un objetivo exacto que se haya prescrito en tiempo.
                         </div>
                         {registroLapsLoading ? (
                           <div style={{ color: "#64748b" }}>Cargando bloques…</div>
