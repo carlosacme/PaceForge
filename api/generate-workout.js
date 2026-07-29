@@ -16,5 +16,10 @@ export default async function handler(req, res) {
     body: JSON.stringify(payload),
   });
   const data = await response.json();
+  // LOGGING TEMPORAL: ver el error real de Anthropic en los logs de Vercel
+  // (invalid model, auth, etc.). El handler responde 200 igual, asi que sin
+  // esto el error queda tragado (data.error nunca se leia).
+  console.log("[generate-workout] anthropic status:", response.status);
+  console.log("[generate-workout] anthropic body:", JSON.stringify(data));
   res.status(200).json(data);
 }
