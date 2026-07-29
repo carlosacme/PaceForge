@@ -388,6 +388,69 @@ async function actionPullActivity(res, athleteId, workoutId) {
   return res.status(200).json(result);
 }
 
+// Fecha (YYYY-MM-DD) en que ocurrio la actividad de intervals.icu.
+function activityDate(act) {
+  const s = act?.start_date_local || act?.start_date || null;
+  return s ? String(s).slice(0, 10) : null;
+}
+
+// Flujo AUTOMATICO del webhook: trae la actividad reciente del atleta, la valida,
+// la empareja con el workout PLANEADO y PENDIENTE del dia y lo marca hecho con
+// los actual_*. Devuelve un objeto describiendo el resultado (para logs). No usa
+// res; el caller responde 200 igualmente.
+//
+// Requiere la conexion COMPLETA (con access_token/api_key) para icuFetch.
+async function autoCompleteFromWebhook(conn) {
+  const athleteId = conn.athlete_id;
+  const hoy   = new Date().toISOString().slice(0, 10);
+  const ayer  = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+
+  // Paso 1: traer actividades del rango [ayer, hoy] y tomar la mas reciente.
+  const r = await icuFetch(conn, `/athlete/0/activities?oldest=${ayer}&newest=${hoy}`);
+  if (!r.ok) return { ok: false, reason: `icu ${r.status}` };
+  const activities = Array.isArray(r.data) ? r.data : [];
+  if (!activities.length) return { ok: true, reason: "sin actividades" };
+
+  const act = activities.reduce((best, a) => {
+    const ka = String(a.start_date_local || a.start_date || "");
+    const kb = String(best.start_date_local || best.start_date || "");
+    return ka > kb ? a : best;
+  }, activities[0]);
+
+  // Paso 2: guard de validez. Descarta pruebas cortas (evita el falso
+  // positivo de los 47s que contaminaba los actual_* / marcaba hecho).
+  const movS  = Number(act.moving_time ?? act.elapsed_time ?? 0);
+  const distM = Number(act.distance ?? act.icu_distance ?? 0);
+  if (movS < 300 || distM < 500) {
+    return { ok: true, discarded: true, activity_id: act.id ?? null,
+      reason: `muy corta (${movS}s / ${Math.round(distM)}m)` };
+  }
+
+  // Paso 3: emparejar por FECHA de la actividad y solo si esta PENDIENTE
+  // (done=false). Esto da idempotencia: si el webhook llega dos veces, la
+  // segunda ya no encuentra pendiente y no re-marca.
+  const fecha = activityDate(act) || hoy;
+  const ws = await sb(
+    `workouts?athlete_id=eq.${athleteId}&scheduled_date=eq.${fecha}` +
+    `&done=is.false&select=id&order=id.asc&limit=1`
+  );
+  const w = ws?.[0];
+  if (!w) return { ok: true, activity_id: act.id ?? null,
+    reason: `sin workout planeado pendiente para ${fecha}` };
+
+  // Paso 4: marcar hecho + llenar actual_* (mismos campos que el flujo manual).
+  const patch = {
+    ...mapActivityToActual(act),
+    done: true,
+    completed_at: new Date().toISOString(),
+  };
+  await sb(`workouts?id=eq.${w.id}`, {
+    method: "PATCH", body: patch, prefer: "return=minimal",
+  });
+
+  return { ok: true, marked: true, workout_id: w.id, activity_id: act.id ?? null, fecha };
+}
+
 // Trae los intervalos/laps crudos de una actividad para la comparacion por
 // bloque del coach (plan vs ejecutado). No escribe nada; solo lee.
 async function actionActivityIntervals(res, athleteId, activityId) {
@@ -560,10 +623,10 @@ async function handleIcuWebhook(req, res) {
     console.log("[icu-webhook] procesando", ev.type, "athlete", ev.athlete_id);
     try {
       // El evento NO trae activity_id, solo el atleta. Buscamos su conexion
-      // por provider_athlete_id y disparamos el pull del workout de hoy.
+      // COMPLETA por provider_athlete_id (necesitamos el token para icuFetch).
       const rows = await sb(
         `device_connections?provider_athlete_id=eq.${encodeURIComponent(ev.athlete_id)}` +
-        `&provider=eq.intervals_icu&select=athlete_id`
+        `&provider=eq.intervals_icu&select=*`
       );
       const conn = rows?.[0];
       if (!conn) {
@@ -572,21 +635,12 @@ async function handleIcuWebhook(req, res) {
       }
       console.log("[icu-webhook] conexion athlete_id", conn.athlete_id);
 
-      // Workout de hoy de ese atleta (el pull matchea por fecha)
-      const hoy = new Date().toISOString().slice(0, 10);
-      const ws = await sb(
-        `workouts?athlete_id=eq.${conn.athlete_id}&scheduled_date=eq.${hoy}` +
-        `&select=id&limit=1`
-      );
-      const w = ws?.[0];
-      if (!w) {
-        console.log("[icu-webhook] sin workout hoy para athlete", conn.athlete_id);
-        continue;
+      // Trae la actividad reciente, valida, empareja y marca hecho.
+      const pr = await autoCompleteFromWebhook(conn);
+      console.log("[icu-webhook] resultado:", JSON.stringify(pr));
+      if (pr.marked) {
+        console.log(`[icu-webhook] workout ${pr.workout_id} marcado hecho athlete ${conn.athlete_id}`);
       }
-
-      // Reusar la logica PURA de pull-activity (sin res).
-      const pr = await pullActivityCore(conn.athlete_id, w.id);
-      console.log("[icu-webhook] pull result:", JSON.stringify(pr));
     } catch (e) {
       console.error("[icu-webhook] error evento:", e.message);
     }
