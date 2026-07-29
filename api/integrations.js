@@ -389,9 +389,16 @@ async function actionPullActivity(res, athleteId, workoutId) {
 }
 
 // Fecha (YYYY-MM-DD) en que ocurrio la actividad de intervals.icu.
+// start_date_local ya viene en la hora local del atleta, asi que basta cortar.
 function activityDate(act) {
   const s = act?.start_date_local || act?.start_date || null;
   return s ? String(s).slice(0, 10) : null;
+}
+
+// Fecha YYYY-MM-DD en la zona del atleta (UTC-5). Los scheduled_date del plan
+// estan en local; si usaramos toISOString() (UTC) de noche se correria el dia.
+function localDateStr(offsetHours = -5, base = Date.now()) {
+  return new Date(base + offsetHours * 3600000).toISOString().slice(0, 10);
 }
 
 // Flujo AUTOMATICO del webhook: trae la actividad reciente del atleta, la valida,
@@ -402,23 +409,30 @@ function activityDate(act) {
 // Requiere la conexion COMPLETA (con access_token/api_key) para icuFetch.
 async function autoCompleteFromWebhook(conn) {
   const athleteId = conn.athlete_id;
-  const hoy   = new Date().toISOString().slice(0, 10);
-  const ayer  = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  // Fechas en la zona del atleta (UTC-5), no en UTC.
+  const hoy  = localDateStr(-5);
+  const ayer = localDateStr(-5, Date.now() - 86400000);
+
+  // athlete id explicito (i473586) en vez de "0": el token es per-atleta y "0"
+  // ya resuelve al dueno, pero el id evita ambiguedad si el scope fuera amplio.
+  const icuAth = conn.provider_athlete_id || "0";
 
   // Paso 1: traer actividades del rango [ayer, hoy] y tomar la mas reciente.
-  const r = await icuFetch(conn, `/athlete/0/activities?oldest=${ayer}&newest=${hoy}`);
+  const r = await icuFetch(conn, `/athlete/${icuAth}/activities?oldest=${ayer}&newest=${hoy}`);
   if (!r.ok) return { ok: false, reason: `icu ${r.status}` };
   const activities = Array.isArray(r.data) ? r.data : [];
   if (!activities.length) return { ok: true, reason: "sin actividades" };
 
+  // El payload del webhook no trae activity_id, asi que tomamos la mas reciente
+  // del rango. Guard + idempotencia + fecha cubren el caso de re-subidas.
   const act = activities.reduce((best, a) => {
     const ka = String(a.start_date_local || a.start_date || "");
     const kb = String(best.start_date_local || best.start_date || "");
     return ka > kb ? a : best;
   }, activities[0]);
 
-  // Paso 2: guard de validez. Descarta pruebas cortas (evita el falso
-  // positivo de los 47s que contaminaba los actual_* / marcaba hecho).
+  // Paso 2 (candado 1): guard de validez sobre CRUDOS (metros/segundos), antes
+  // de mapear. Descarta pruebas cortas (el falso positivo de los 47s).
   const movS  = Number(act.moving_time ?? act.elapsed_time ?? 0);
   const distM = Number(act.distance ?? act.icu_distance ?? 0);
   if (movS < 300 || distM < 500) {
@@ -426,9 +440,20 @@ async function autoCompleteFromWebhook(conn) {
       reason: `muy corta (${movS}s / ${Math.round(distM)}m)` };
   }
 
-  // Paso 3: emparejar por FECHA de la actividad y solo si esta PENDIENTE
-  // (done=false). Esto da idempotencia: si el webhook llega dos veces, la
-  // segunda ya no encuentra pendiente y no re-marca.
+  // Candado 2a: idempotencia por actividad. Si CUALQUIER workout ya tiene este
+  // intervals_activity_id, la actividad ya se proceso. Esto cierra el caso de
+  // reintento con dos workouts pendientes el mismo dia (evita marcar dos).
+  if (act.id != null) {
+    const dup = await sb(
+      `workouts?intervals_activity_id=eq.${encodeURIComponent(act.id)}&select=id&limit=1`
+    );
+    if (dup?.[0]) {
+      return { ok: true, activity_id: act.id, workout_id: dup[0].id, reason: "ya procesada" };
+    }
+  }
+
+  // Paso 3 (candado 2b): emparejar por FECHA de la actividad y solo si esta
+  // PENDIENTE (done=false). No confiar en el nombre, solo la fecha.
   const fecha = activityDate(act) || hoy;
   const ws = await sb(
     `workouts?athlete_id=eq.${athleteId}&scheduled_date=eq.${fecha}` +
@@ -438,7 +463,8 @@ async function autoCompleteFromWebhook(conn) {
   if (!w) return { ok: true, activity_id: act.id ?? null,
     reason: `sin workout planeado pendiente para ${fecha}` };
 
-  // Paso 4: marcar hecho + llenar actual_* (mismos campos que el flujo manual).
+  // Paso 4: marcar hecho + llenar actual_* (mapActivityToActual ya incluye
+  // intervals_activity_id, que persistimos para el candado de idempotencia).
   const patch = {
     ...mapActivityToActual(act),
     done: true,
