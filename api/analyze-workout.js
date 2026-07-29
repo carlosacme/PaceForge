@@ -2,7 +2,7 @@ import { requireUser, getWorkoutIfAllowed, jsonError } from "../lib/apiAuth.js";
 import { readStructure } from "../src/lib/workoutStructure.js";
 
 const MODELS = [
-  "claude-sonnet-latest",
+  "claude-sonnet-5",
 ];
 
 async function callClaude(apiKey, prompt, maxTokens = 800) {
