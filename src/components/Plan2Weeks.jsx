@@ -576,7 +576,9 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           model: "claude-sonnet-latest",
-          max_tokens: 3000,
+          // 2 semanas x hasta 5 sesiones con descripciones detalladas: 3000
+          // truncaba el JSON y el parseo fallaba. 8000 da margen de sobra.
+          max_tokens: 8000,
           system: plan2SystemPrompt,
           messages: [{ role: "user", content: plan2UserPrompt }],
         }),
@@ -592,7 +594,13 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
       const byWeek = new Map((parsed?.weeks || []).map((w) => [Number(w.week_number) || 0, w]));
       const orderedWeeks = [1, 2].map((n) => byWeek.get(n)).filter(Boolean);
       if (!parsed || orderedWeeks.length < 2) {
-        console.error("Plan JSON inválido:", text?.slice?.(0, 500));
+        // stop_reason "max_tokens" => se trunco; loguear el texto COMPLETO
+        // (no un slice) para poder diagnosticar el corte real.
+        console.error(
+          "Plan JSON inválido. stop_reason:", data?.stop_reason,
+          "| longitud texto:", text.length
+        );
+        console.log("Plan2 texto crudo recibido de la IA:", text);
         notify("La IA no devolvió un plan válido (semanas 1–2). Intenta de nuevo.");
         return;
       }
