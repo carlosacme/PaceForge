@@ -575,7 +575,7 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: "claude-sonnet-5-20260630",
+          model: "claude-sonnet-latest",
           max_tokens: 3000,
           system: plan2SystemPrompt,
           messages: [{ role: "user", content: plan2UserPrompt }],

@@ -277,7 +277,7 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: "claude-sonnet-5-20260630",
+          model: "claude-sonnet-latest",
           max_tokens: 2000,
           system,
           messages: [{ role: "user", content: aiPrompt }],
