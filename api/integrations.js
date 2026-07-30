@@ -624,7 +624,6 @@ async function handleOauthCallback(req, res) {
 /* ---------- Webhook intervals.icu (fase 4: logica) ---------- */
 async function handleIcuWebhook(req, res) {
   const body = typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {});
-
   console.log("[icu-webhook] recibido:", JSON.stringify(body?.events?.map(e => ({ type: e.type, athlete_id: e.athlete_id }))));
 
   // 1) Verificar el secret (viene en el body, no en headers)
@@ -632,20 +631,18 @@ async function handleIcuWebhook(req, res) {
     console.warn("[icu-webhook] secret invalido");
     return res.status(401).json({ error: "Unauthorized" });
   }
-
   const events = Array.isArray(body.events) ? body.events : [];
   console.log("[icu-webhook] secret OK, eventos:", events.length);
 
-  // 2) Responder 200 YA: intervals.icu reintenta si tardamos o fallamos.
-  //    El procesamiento va despues, sin bloquear la respuesta.
-  res.status(200).json({ ok: true, received: events.length });
-
-  // 3) Procesar los eventos de actividad
+  // 2) Procesar ANTES de responder. En serverless, el trabajo que queda pendiente
+  //    despues de enviar la respuesta puede quedar congelado por el runtime. El
+  //    procesamiento es corto y la idempotencia (intervals_activity_id) cubre los
+  //    reintentos si tardamos, asi que es seguro procesar y luego responder 200.
+  const results = [];
   for (const ev of events) {
-    // ACTIVITY_UPLOADED llega enseguida pero a veces sin datos procesados;
-    // ACTIVITY_ANALYZED llega ~60s despues con los datos completos. Aceptamos
-    // ambos para que el pull no falle por llegar demasiado pronto.
-    if (ev.type !== "ACTIVITY_UPLOADED" && ev.type !== "ACTIVITY_ANALYZED") continue;   // TEST y otros: ignorar
+    // ACTIVITY_UPLOADED llega enseguida (a veces sin datos); ACTIVITY_ANALYZED
+    // llega ~60s despues con los datos completos. Aceptamos ambos.
+    if (ev.type !== "ACTIVITY_UPLOADED" && ev.type !== "ACTIVITY_ANALYZED") continue;
     console.log("[icu-webhook] procesando", ev.type, "athlete", ev.athlete_id);
     try {
       // El evento NO trae activity_id, solo el atleta. Buscamos su conexion
@@ -660,17 +657,19 @@ async function handleIcuWebhook(req, res) {
         continue;
       }
       console.log("[icu-webhook] conexion athlete_id", conn.athlete_id);
-
-      // Trae la actividad reciente, valida, empareja y marca hecho.
       const pr = await autoCompleteFromWebhook(conn);
       console.log("[icu-webhook] resultado:", JSON.stringify(pr));
       if (pr.marked) {
         console.log(`[icu-webhook] workout ${pr.workout_id} marcado hecho athlete ${conn.athlete_id}`);
       }
+      results.push(pr);
     } catch (e) {
       console.error("[icu-webhook] error evento:", e.message);
     }
   }
+
+  // 3) Responder 200 una vez terminado TODO el procesamiento.
+  return res.status(200).json({ ok: true, received: events.length, results });
 }
 
 /* ---------- Handler ---------- */
