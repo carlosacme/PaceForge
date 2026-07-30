@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { supabase } from "../lib/supabase";
 import { paceRangesForPrompt } from "../lib/vdot";
+import { usePersistedState } from "../hooks/usePersistedState";
 import {
   BRAND_NAME,
   DAYS,
@@ -33,11 +34,11 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, profileRole, onG
     if (typeof window === "undefined") return "";
     return localStorage.getItem("raf_plan2_athlete") || "";
   });
-  const [competition, setCompetition] = useState("Maratón");
-  const [targetTime, setTargetTime] = useState("");
-  const [levelId, setLevelId] = useState("intermedio");
-  const [daysPerWeek, setDaysPerWeek] = useState(3);
-  const [startDate, setStartDate] = useState(() => formatLocalYMD(addDays(new Date(), 14)));
+  const [competition, setCompetition] = usePersistedState("raf_plan2_competition", "Maratón");
+  const [targetTime, setTargetTime] = usePersistedState("raf_plan2_targetTime", "");
+  const [levelId, setLevelId] = usePersistedState("raf_plan2_levelId", "intermedio");
+  const [daysPerWeek, setDaysPerWeek] = usePersistedState("raf_plan2_daysPerWeek", 3);
+  const [startDate, setStartDate] = usePersistedState("raf_plan2_startDate", formatLocalYMD(addDays(new Date(), 14)));
   const startDateRef = useRef(startDate);
   const [generatedPlan, setGeneratedPlan] = useState(null);
   const [planLoading, setPlanLoading] = useState(false);
@@ -62,7 +63,7 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, profileRole, onG
   const [openHistoryRows, setOpenHistoryRows] = useState(() => new Set());
   const [showNextBlockPanel, setShowNextBlockPanel] = useState(false);
   const [currentBlock, setCurrentBlock] = useState(1);
-  const [nextBlockParams, setNextBlockParams] = useState({
+  const [nextBlockParams, setNextBlockParams] = usePersistedState("raf_plan2_nextBlockParams", {
     vdot: "",
     trainingDays: [2, 3, 6],
     focus: PLAN2_NEXT_BLOCK_FOCUSES[0],

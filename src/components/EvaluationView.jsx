@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "../lib/supabase";
 import { pacesLegacyShape } from "../lib/vdot";
 import { EVAL_DISTANCES, formatDurationClock } from "./shared/appShared";
+import { usePersistedState } from "../hooks/usePersistedState";
 
 const evalStyles = {
   page: { padding: "28px 32px", maxWidth: 1120, width: "100%" },
@@ -116,14 +117,14 @@ export default function EvaluationView({ athletes, currentUserId, notify, athlet
     [athletes, athleteOnlyId],
   );
   const [athleteId, setAthleteId] = useState(athleteOnlyId ? String(athleteOnlyId) : String(athleteOptions[0]?.id || ""));
-  const [tab, setTab] = useState("race");
-  const [raceDistance, setRaceDistance] = useState("10k");
-  const [raceTime, setRaceTime] = useState("00:45:00");
-  const [cooperDistance, setCooperDistance] = useState("2800");
-  const [thresholdTime, setThresholdTime] = useState("00:30:00");
-  const [thresholdDistance, setThresholdDistance] = useState("7000");
-  const [fcMax, setFcMax] = useState("");
-  const [fcRest, setFcRest] = useState("");
+  const [tab, setTab] = usePersistedState("raf_eval_tab", "race");
+  const [raceDistance, setRaceDistance] = usePersistedState("raf_eval_raceDistance", "10k");
+  const [raceTime, setRaceTime] = usePersistedState("raf_eval_raceTime", "00:45:00");
+  const [cooperDistance, setCooperDistance] = usePersistedState("raf_eval_cooperDistance", "2800");
+  const [thresholdTime, setThresholdTime] = usePersistedState("raf_eval_thresholdTime", "00:30:00");
+  const [thresholdDistance, setThresholdDistance] = usePersistedState("raf_eval_thresholdDistance", "7000");
+  const [fcMax, setFcMax] = usePersistedState("raf_eval_fcMax", "");
+  const [fcRest, setFcRest] = usePersistedState("raf_eval_fcRest", "");
   const [results, setResults] = useState(null);
   const [saving, setSaving] = useState(false);
   const [history, setHistory] = useState([]);

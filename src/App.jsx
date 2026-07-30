@@ -7,6 +7,7 @@ import PushToWatchButton from "./components/PushToWatchButton";
 import { readStructure } from "./lib/workoutStructure";
 import { compareBlocks } from "./lib/blockComparison";
 import { fmtPace } from "./lib/vdot";
+import { usePersistedState } from "./hooks/usePersistedState";
 import {
   BRAND_NAME,
   WORKOUT_TYPES,
@@ -1102,7 +1103,7 @@ export default function App() {
   const [view, setView] = useState("dashboard");
   const [selectedAthlete, setSelectedAthlete] = useState(null);
   const [workoutsRefresh, setWorkoutsRefresh] = useState(0);
-  const [aiPrompt, setAiPrompt] = useState("");
+  const [aiPrompt, setAiPrompt] = usePersistedState("raf_gen_prompt", "");
   const [aiWorkout, setAiWorkout] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [libraryRefresh, setLibraryRefresh] = useState(0);
