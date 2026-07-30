@@ -38,30 +38,33 @@ export default async function handler(req, res) {
     const icon = data.weather?.[0]?.icon || "";
     const windSpeed = Math.round((data.wind?.speed || 0) * 3.6); // m/s → km/h
 
-    // Consejo de running adaptado a clima tropical LATAM
+    // Consejo de running adaptado a clima tropical LATAM.
+    // Driver principal: feels_like (sensacion termica), no temp del aire.
+    // En el tropico humedo la sensacion supera la temperatura real y es lo
+    // que determina el riesgo de calor para el corredor.
     let advice = "";
     let intensity = "normal"; // normal | caution | warning
-
-    if (temp >= 35) {
-      advice = "Calor extremo. Evita correr entre 10am-5pm. Hidratación cada 15 min, reduce ritmo 15-20%.";
+    if (feelsLike >= 40) {
+      advice = "Sensación de calor extremo. Evita correr entre 10am-5pm. Hidratación cada 15 min, reduce ritmo 15-20%.";
       intensity = "warning";
-    } else if (temp >= 30) {
-      advice = "Calor alto. Hidratación extra cada 20 min. Reduce ritmo 8-12% y prefiere zonas con sombra.";
+    } else if (feelsLike >= 33) {
+      advice = "Sensación de calor alto. Hidratación extra cada 20 min. Reduce ritmo 8-12% y prefiere zonas con sombra.";
       intensity = "caution";
-    } else if (temp >= 25) {
+    } else if (feelsLike >= 27) {
       advice = "Clima cálido típico tropical. Hidratación constante. Ritmo normal con percepción de esfuerzo.";
       intensity = "normal";
-    } else if (temp >= 18) {
+    } else if (feelsLike >= 18) {
       advice = "Condiciones ideales para correr. Aprovecha el entrenamiento.";
       intensity = "normal";
-    } else if (temp < 10) {
+    } else if (feelsLike < 10) {
       advice = "Frío inusual. Calienta 10 min extra y usa capas livianas.";
       intensity = "caution";
     } else {
       advice = "Buenas condiciones. Entrena según plan.";
       intensity = "normal";
     }
-
+    // La humedad ya influye en feels_like, pero >=85% agrava la evaporacion
+    // del sudor: refuerzo adicional cuando aun no estamos en warning.
     if (humidity >= 85 && intensity !== "warning") {
       advice += " Humedad muy alta — el sudor no enfría bien, reduce esfuerzo adicional 5%.";
       intensity = intensity === "normal" ? "caution" : intensity;
