@@ -27,11 +27,8 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
     subscription_plan: "",
     subscription_renews_at: "",
   });
-  const [deviceOverrides, setDeviceOverrides] = useState({});
   const [coachRequests, setCoachRequests] = useState([]);
   const [requestsBusyId, setRequestsBusyId] = useState("");
-  const [COROS_MODAL_OPEN, setCorosModalOpen] = useState(false);
-  const [GARMIN_MODAL_OPEN, setGarminModalOpen] = useState(false);
   const [staffList, setStaffList] = useState([]);
   const [staffEmail, setStaffEmail] = useState("");
   const [staffInviteSending, setStaffInviteSending] = useState(false);
@@ -150,10 +147,6 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
     loadProfile();
   }, [loadProfile]);
 
-  useEffect(() => {
-    setDeviceOverrides({});
-  }, [athletes]);
-
   const coachCode = useMemo(() => String(coachUserId || "").replace(/-/g, "").slice(0, 8).toUpperCase(), [coachUserId]);
 
   const loadCoachRequests = useCallback(async () => {
@@ -201,17 +194,6 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
     }
     await loadCoachRequests();
     setRequestsBusyId("");
-  };
-
-  const setAthleteDeviceConnection = async (athleteId, deviceValue) => {
-    const { error } = await supabase.from("athletes").update({ device: deviceValue }).eq("id", athleteId);
-    if (error) {
-      console.error("Error actualizando dispositivo:", error);
-      notify(error.message || "No se pudo actualizar el dispositivo");
-      return;
-    }
-    setDeviceOverrides((prev) => ({ ...prev, [athleteId]: deviceValue || "" }));
-    notify("Dispositivo actualizado");
   };
 
   // ── STAFF FUNCTIONS ─────────────────────────────────────────
@@ -582,63 +564,6 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
                       </div>
                     );
                   })}
-              </div>
-            )}
-          </div>
-
-          <div style={{ ...S.card, marginBottom: 18 }}>
-            <div style={{ fontSize: ".72em", letterSpacing: ".12em", color: "#64748b", fontWeight: 700, marginBottom: 16 }}>
-              INTEGRACIONES
-            </div>
-            {!athletes || athletes.length === 0 ? (
-              <div style={{ color: "#94a3b8", fontSize: ".86em" }}>Aún no tienes atletas registrados.</div>
-            ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {athletes.map((a) => {
-                  const currentDeviceRaw = deviceOverrides[a.id] ?? a?.device ?? "";
-                  const device = String(currentDeviceRaw).trim();
-                  const corosConnected = device.toLowerCase() === "coros";
-                  const garminConnected = device.toLowerCase() === "garmin";
-                  return (
-                    <div key={a.id} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: "10px 12px", background: "#f8fafc" }}>
-                      <div style={{ color: "#0f172a", fontSize: ".84em", fontWeight: 700, marginBottom: 8 }}>{a.name || "Atleta"}</div>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 8 }}>
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
-                          <div style={{ fontSize: ".74em", color: "#0f172a", fontWeight: 700 }}>COROS</div>
-                          {corosConnected ? (
-                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                              <span style={{ background: "rgba(34,197,94,.14)", border: "1px solid rgba(34,197,94,.35)", borderRadius: 999, padding: "4px 9px", color: "#15803d", fontSize: ".72em", fontWeight: 700 }}>
-                                ✅ Conectado
-                              </span>
-                              <button type="button" onClick={() => setAthleteDeviceConnection(a.id, null)} style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "6px 9px", color: "#b91c1c", fontSize: ".72em", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Desconectar</button>
-                            </div>
-                          ) : (
-                            <span style={{ background: "#f1f5f9", border: "1px solid #e2e8f0", borderRadius: 999, padding: "4px 9px", color: "#94a3b8", fontSize: ".72em", fontWeight: 700 }}>— Sin conexión</span>
-                          )}
-                        </div>
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
-                          <div style={{ fontSize: ".74em", color: "#0f172a", fontWeight: 700 }}>Garmin</div>
-                          {garminConnected ? (
-                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                              <span style={{ background: "rgba(34,197,94,.14)", border: "1px solid rgba(34,197,94,.35)", borderRadius: 999, padding: "4px 9px", color: "#15803d", fontSize: ".72em", fontWeight: 700 }}>
-                                ✅ Conectado
-                              </span>
-                              <button type="button" onClick={() => setAthleteDeviceConnection(a.id, null)} style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "6px 9px", color: "#b91c1c", fontSize: ".72em", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Desconectar</button>
-                            </div>
-                          ) : (
-                            <span style={{ background: "#f1f5f9", border: "1px solid #e2e8f0", borderRadius: 999, padding: "4px 9px", color: "#94a3b8", fontSize: ".72em", fontWeight: 700 }}>— Sin conexión</span>
-                          )}
-                        </div>
-                      </div>
-                      <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                        <div style={{ color: "#64748b", fontSize: ".75em" }}>
-                          El atleta conecta sus dispositivos desde su perfil
-                        </div>
-                        <div style={{ color: "#94a3b8", fontSize: ".72em" }}>Atleta ID: {a.id}</div>
-                      </div>
-                    </div>
-                  );
-                })}
               </div>
             )}
           </div>

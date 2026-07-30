@@ -281,8 +281,6 @@ export default function AthleteHome({ profile }) {
   const [athleteChatMessages, setAthleteChatMessages] = useState([]);
   const [athleteChatDraft, setAthleteChatDraft] = useState("");
   const [athleteChatSending, setAthleteChatSending] = useState(false);
-  const [corosModalOpen, setCorosModalOpen] = useState(false);
-  const [garminModalOpen, setGarminModalOpen] = useState(false);
   const [showPlanModal, setShowPlanModal] = useState(false);
   const [soloPayInstructions, setSoloPayInstructions] = useState(null);
   const [athleteNotRegistered, setAthleteNotRegistered] = useState(false);
@@ -989,13 +987,6 @@ export default function AthleteHome({ profile }) {
       if (error) { console.error(error); setMessage(error.message || "No se pudo limpiar el chat"); return; }
       setAthleteChatMessages([]);
     } finally { setAthleteChatClearing(false); }
-  };
-
-  const setAthleteDeviceConnection = async (deviceValue) => {
-    if (!athleteInfo?.id) return;
-    const { error } = await supabase.from("athletes").update({ device: deviceValue }).eq("id", athleteInfo.id);
-    if (error) { console.error("Error actualizando dispositivo atleta:", error); setMessage(error.message || "No se pudo actualizar el dispositivo"); return; }
-    setAthleteInfo((prev) => (prev ? { ...prev, device: deviceValue } : prev));
   };
 
   const athleteNeedsCoachLink = Boolean(athleteInfo) && !athleteNotRegistered && (athleteInfo.coach_id == null || athleteInfo.coach_id === "");
