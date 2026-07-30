@@ -757,12 +757,13 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
         }
       }
       notify(`Plan asignado: ${rows.length} workouts guardados.`);
-      for (const wk of rows) {
-        await sendWorkoutAssignmentPushToAthlete({
-          athleteUserId: selectedAthlete?.user_id,
-          workoutTitle: wk.title,
-          scheduledDate: wk.scheduled_date,
-        });
+      // Un solo push agrupado en vez de uno por workout (fire-and-forget).
+      if (selectedAthlete?.user_id) {
+        sendWorkoutAssignmentPushToAthlete({
+          athleteUserId: selectedAthlete.user_id,
+          workoutTitle: `Plan de 2 semanas · ${rows.length} sesiones`,
+          scheduledDate: rows[0]?.scheduled_date,  // primer día del bloque
+        }).catch((e) => console.error("push plan12:", e));
       }
     } finally {
       setAssignLoading(false);
