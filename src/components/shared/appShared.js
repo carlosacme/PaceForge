@@ -103,7 +103,6 @@ export const normalizeAthlete = (athlete) => ({
   next_race: athlete?.next_race || "Próxima carrera - Dec 31",
   workouts_done: Number.isFinite(Number(athlete?.workouts_done)) ? Number(athlete.workouts_done) : 0,
   workouts_total: Number.isFinite(Number(athlete?.workouts_total)) ? Number(athlete.workouts_total) : 18,
-  device: typeof athlete?.device === "string" ? athlete.device : "",
   plan: typeof athlete?.plan === "string" ? athlete.plan : "",
   coach_id: athlete?.coach_id ?? "",
   user_id: athlete?.user_id ?? null,
