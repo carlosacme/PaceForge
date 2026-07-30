@@ -758,11 +758,13 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
       }
       notify(`Plan asignado: ${rows.length} workouts guardados.`);
       // Un solo push agrupado en vez de uno por workout (fire-and-forget).
+      // El deep-link es athlete_calendar (generico), asi que un push abre el
+      // calendario igual; scheduledDate apunta al primer dia del bloque.
       if (selectedAthlete?.user_id) {
         sendWorkoutAssignmentPushToAthlete({
           athleteUserId: selectedAthlete.user_id,
           workoutTitle: `Plan de 2 semanas · ${rows.length} sesiones`,
-          scheduledDate: rows[0]?.scheduled_date,  // primer día del bloque
+          scheduledDate: rows[0]?.scheduled_date,
         }).catch((e) => console.error("push plan12:", e));
       }
     } finally {
