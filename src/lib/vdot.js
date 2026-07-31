@@ -8,7 +8,7 @@
  * Usar desde el frontend (evaluacion, UI) y desde api/ (serverless).
  * NO duplicar porcentajes ni ritmos en ningun otro archivo.
  *
- * Validado: VDOT 42.5 -> E 6:30-5:55 | M 5:03 | T 4:45 | I 4:23 | R 4:03
+ * Validado: VDOT 42.5 -> E 6:30-5:55 | M 5:08 | T 4:49 | I 4:32 | R 4:03
  * -----------------------------------------------------------
  */
 
@@ -32,10 +32,13 @@ export const ZONE_PCT = {
   E_slow: 0.6094,
   E_fast: 0.6865,
   E_mid:  0.6480,  // punto medio del rango facil (para UI de valor unico)
-  M:      0.8369,  // antes 0.76  -> daba ~19 s/km de mas
-  T:      0.9030,  // antes 0.84  -> daba ~14 s/km de mas
-  I:      0.9975,  // antes 0.95  -> daba ~8 s/km de mas
-  R:      1.0998,  // antes 1.00  -> daba ~16 s/km de mas (R casi pegado a I)
+  // Recalibrados contra los tiempos de carrera equivalentes de Daniels
+  // (ancla estable entre fuentes). Los valores previos corrian ~4-13 s/km
+  // rapidos, con sesgo mayor a VDOT bajo (justo el rango de los atletas).
+  M:      0.8201,  // antes 0.8369 -> M = ritmo maraton exacto
+  T:      0.8889,  // antes 0.9030 -> techo textbook de Daniels (88% VO2max)
+  I:      0.9579,  // antes 0.9975 -> I anclado a ritmo 5K
+  R:      1.0998,  // ritmo de repeticiones (~milla); sin ancla en carrera, se deja
 };
 
 /** Etiquetas en español para la UI */
