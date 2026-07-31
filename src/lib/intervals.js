@@ -155,13 +155,25 @@ function qualitativeToPace(effort, vdot) {
  * Clave: NO confundir "min" con metros. La unidad debe ser exactamente
  * "m" o "km"; el lookahead (?![a-z]) descarta "min" (la "i" tras la "m").
  */
-function distKmFromLabel(label) {
+export function distKmFromLabel(label) {
   const s = String(label || "").toLowerCase();
   const m = s.match(/(\d+(?:\.\d+)?)\s*(km|m)(?![a-z])/);
   if (!m) return null;
   const n = parseFloat(m[1]);
   if (!Number.isFinite(n) || n <= 0) return null;
   return m[2] === "km" ? n : n / 1000;
+}
+
+// Distancia (km) desde el campo distance_km del bloque. Acepta "0.4", "0.4km",
+// "400m" o numero. Devuelve null si vacio/invalido.
+function parseDistKm(val) {
+  if (val == null) return null;
+  const s = String(val).trim();
+  if (s === "") return null;
+  const fromLabel = distKmFromLabel(s);        // "400m" | "0.4km"
+  if (fromLabel != null) return fromLabel;
+  const num = parseFloat(s);                    // "0.4" | 0.4
+  return Number.isFinite(num) && num > 0 ? num : null;
 }
 
 /** Normaliza un bloque de cualquier formato a {label, secs, pace, distKm} */
@@ -171,7 +183,8 @@ function normalizeBlock(b, vdot) {
   if (isB) {
     const label = b.block_type || "";
     const secs = durationToSecs(b.duration_min);
-    const distKm = distKmFromLabel(label);
+    // El dato distance_km manda; el nombre ("400m") queda como red de seguridad.
+    const distKm = parseDistKm(b.distance_km) ?? distKmFromLabel(label);
     // Un bloque por distancia sobrevive aunque no tenga duracion parseable.
     if (!secs && distKm == null) return null;
     // OJO: no usar target_hr como fallback. Es un descriptor de pulso
@@ -184,7 +197,7 @@ function normalizeBlock(b, vdot) {
   // Formato A (builder manual): phase / pace / duration
   const label = b.phase || "";
   const secs = durationToSecs(b.duration);
-  const distKm = distKmFromLabel(label);
+  const distKm = parseDistKm(b.distance_km) ?? distKmFromLabel(label);
   if (!secs && distKm == null) return null;
   const pace = parseNumericPace(b.pace) || qualitativeToPace(b.intensity, vdot);
   return { label, secs, pace, distKm };

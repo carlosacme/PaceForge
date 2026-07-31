@@ -2,6 +2,7 @@ import FitParser from "fit-file-parser";
 import { supabase } from "../../lib/supabase";
 import { readStructure } from "../../lib/workoutStructure";
 import { PACE_RANGES_BY_LEVEL } from "../../lib/vdot";
+import { distKmFromLabel } from "../../lib/intervals";
 
 export const BRAND_NAME = "RunningApexFlow";
 
@@ -490,7 +491,7 @@ export const normalizeWorkoutStructure = (rawStructure) => {
         s?.duration_min != null && String(s.duration_min).trim() !== ""
           ? String(s.duration_min).trim()
           : String(s?.duration || "").trim();
-      const distance_km =
+      let distance_km =
         s?.distance_km != null && String(s.distance_km).trim() !== "" ? String(s.distance_km).trim() : "";
       const target_pace =
         s?.target_pace != null && String(s.target_pace).trim() !== ""
@@ -502,6 +503,14 @@ export const normalizeWorkoutStructure = (rawStructure) => {
           : String(s?.intensity || "").trim();
       const description =
         s?.description != null && String(s.description).trim() !== "" ? String(s.description).trim() : "";
+      // Auto-rellena distance_km desde el nombre/descripcion ("400m" -> "0.4")
+      // solo si el bloque no lo trae ya. Deja el dato explicito, no solo en el
+      // nombre; el export usa el nombre como red de seguridad (misma fuente:
+      // distKmFromLabel en intervals.js). No sobrescribe valores existentes.
+      if (!distance_km) {
+        const km = distKmFromLabel(block_type) ?? distKmFromLabel(description);
+        if (km != null) distance_km = String(km);
+      }
       if (!block_type && !duration_min && !distance_km && !target_pace && !target_hr && !description) return null;
       return { block_type, duration_min, distance_km, target_pace, target_hr, description };
     })
