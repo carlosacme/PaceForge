@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { supabase } from "../lib/supabase";
+import { enrichStructureWithPaces } from "../lib/enrichPace";
 import {
   TAB_KEY_LIBRARY,
   formatLocalYMD,
@@ -398,6 +399,19 @@ function WorkoutLibrary({
       return;
     }
     setAssignSaving(true);
+    // Resolver VDOT por atleta ANTES del map (multi-atleta, y el map no puede ser
+    // async). Con el VDOT + fc_max enriquecemos target_pace desde target_hr para
+    // que el workout no llegue "sin ritmos" al reloj.
+    const vdotByAthlete = {};
+    await Promise.all(athleteRows.map(async (a) => {
+      const { data } = await supabase
+        .from("athlete_evaluations")
+        .select("vdot, test_date")
+        .eq("athlete_id", a.id)
+        .order("test_date", { ascending: false })
+        .limit(1);
+      vdotByAthlete[a.id] = Number(data?.[0]?.vdot) || null;
+    }));
     const payload = athleteRows.map((a) => ({
       athlete_id: a.id,
       coach_id: coachUserId,
@@ -406,7 +420,11 @@ function WorkoutLibrary({
       total_km: Number(row.total_km) || 0,
       duration_min: Number(row.duration_min) || 0,
       description: row.description || "",
-      structure: Array.isArray(row.structure) ? row.structure : [],
+      structure: enrichStructureWithPaces(
+        Array.isArray(row.structure) ? row.structure : [],
+        vdotByAthlete[a.id],
+        a.fc_max
+      ),
       done: false,
       scheduled_date: assignDate,
     }));

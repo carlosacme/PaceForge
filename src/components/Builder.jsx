@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { supabase } from "../lib/supabase";
+import { enrichStructureWithPaces } from "../lib/enrichPace";
 import {
   BRAND_NAME,
   WORKOUT_TYPES,
@@ -188,9 +189,27 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
     }
     setAssignSaving(true);
     try {
+      // Resolver VDOT por atleta ANTES del map (multi-atleta, y el map no puede
+      // ser async). Con el VDOT + fc_max enriquecemos target_pace desde target_hr
+      // para que el workout no llegue "sin ritmos" al reloj.
+      const vdotByAthlete = {};
+      await Promise.all(selectedAthletes.map(async (a) => {
+        const { data } = await supabase
+          .from("athlete_evaluations")
+          .select("vdot, test_date")
+          .eq("athlete_id", a.id)
+          .order("test_date", { ascending: false })
+          .limit(1);
+        vdotByAthlete[a.id] = Number(data?.[0]?.vdot) || null;
+      }));
+
       const payload = selectedAthletes.map((selectedAthlete) => ({
         ...w,
-        structure: Array.isArray(w.structure) ? w.structure : [],
+        structure: enrichStructureWithPaces(
+          Array.isArray(w.structure) ? w.structure : [],
+          vdotByAthlete[selectedAthlete.id],
+          selectedAthlete.fc_max
+        ),
         athlete_id: selectedAthlete.id,
         coach_id: userData.user.id,
         scheduled_date: assignDate,
