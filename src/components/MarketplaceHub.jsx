@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "../lib/supabase";
 import { formatCopInt, getMarketplacePlanWorkoutRows, formatLocalYMD, addDays } from "./shared/appShared";
 import { readStructure } from "../lib/workoutStructure";
+import { enrichStructureWithPaces } from "../lib/enrichPace";
 
 function toMonday(date) {
   const d = new Date(date);
@@ -187,10 +188,20 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
       const { data: authData } = await supabase.auth.getUser();
       const userEmail = authData?.user?.email?.trim();
       if (!userEmail) { notify?.("No se pudo obtener tu cuenta. Intenta recargar."); return; }
-      const { data: athleteRows, error: athErr } = await supabase.from("athletes").select("id, coach_id").ilike("email", userEmail).limit(1);
+      const { data: athleteRows, error: athErr } = await supabase.from("athletes").select("id, coach_id, fc_max").ilike("email", userEmail).limit(1);
       if (athErr || !athleteRows?.length) { notify?.("No encontramos tu perfil de atleta. Contacta a tu coach."); return; }
       const athleteId = athleteRows[0].id;
+      const athleteFcMax = athleteRows[0].fc_max;
       const coachIdForWorkout = athleteRows[0].coach_id || startDatePlan.coach_user_id || null;
+      // VDOT del atleta (mas reciente) para enriquecer target_pace desde target_hr
+      // antes de cargar el plan a su calendario y evitar el "sin ritmos" en el reloj.
+      const { data: evalRows } = await supabase
+        .from("athlete_evaluations")
+        .select("vdot, test_date")
+        .eq("athlete_id", athleteId)
+        .order("test_date", { ascending: false })
+        .limit(1);
+      const athleteVdot = Number(evalRows?.[0]?.vdot) || null;
       const planWorkouts = getMarketplacePlanWorkoutRows(startDatePlan);
       if (!planWorkouts.length) { notify?.("Este plan no tiene workouts configurados."); return; }
       const startDate = toMonday(new Date(`${startDateValue}T12:00:00`));
@@ -203,7 +214,7 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
         const dayOffset = sortedDays[sessionInWeek % sortedDays.length];
         const mondayOfWeek = addDays(startDate, (week - 1) * 7);
         const scheduledDate = formatLocalYMD(addDays(mondayOfWeek, dayOffset));
-        const structure = readStructure(w);
+        const structure = enrichStructureWithPaces(readStructure(w), athleteVdot, athleteFcMax);
         return {
           athlete_id: athleteId, coach_id: coachIdForWorkout, scheduled_date: scheduledDate,
           title: w.title || `Sesión ${idx + 1}`, type: w.type || "easy",
