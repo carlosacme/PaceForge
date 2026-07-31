@@ -17,6 +17,7 @@
  * -----------------------------------------------------------
  */
 import { pacesForVdot, fmtPace } from "./vdot";
+import { EFFORT_TO_ZONE } from "./intervals";
 
 // Zona FC (Z1-Z5) -> zona Daniels de ritmo (E/M/T/I).
 // Z3="Aerobico tempo" mapea a M (maraton/steady), NO a T: a 70-80% FCmax
@@ -66,18 +67,25 @@ function zoneToPaceStr(zone, vdot) {
   return `${fmtPace(v + 3)}-${fmtPace(v - 3)}`; // ±3s, igual que qualitativeToPace
 }
 
-// Enriquece un structure con paces numericos derivados de target_hr.
-// - Si target_pace ya es numerico (trae digitos), no lo toca.
-// - Si no, deriva zona desde target_hr y escribe pace numerico en target_pace,
-//   preservando la prosa original en description (para la UI).
-// - Si no hay VDOT o no reconoce la zona, deja el bloque igual (no inventa).
+// Enriquece un structure con paces numericos. Orden de resolucion:
+//   0) Si target_pace ya es un pace numerico REAL (m:ss), no lo toca. Ojo:
+//      NO basta con "trae digitos" -> "5k pace" / "10k pace" son etiquetas de
+//      ritmo legitimas con digito incidental y deben pasar al enriquecido.
+//   1) Etiqueta cualitativa conocida en target_pace ("5k pace", "tempo") via
+//      EFFORT_TO_ZONE (misma fuente que qualitativeToPace en el envio al reloj).
+//   2) Si no, deriva la zona desde target_hr (zona FC, "- X pace", o bpm crudos).
+// Preserva la prosa original en description (para la UI). Si no hay VDOT o no
+// reconoce la zona, deja el bloque igual (no inventa ritmos en gym).
 export function enrichStructureWithPaces(structure, vdot, fcMax) {
   const arr = Array.isArray(structure) ? structure : [];
   if (!vdot) return arr; // sin VDOT no derivamos ritmos (igual que el envio)
   return arr.map((b) => {
     const rawPace = String(b?.target_pace || "").trim();
-    if (/\d/.test(rawPace)) return b; // ya numerico
-    const zone = zoneFromHrLabel(b?.target_hr, fcMax);
+    if (/\d+:\d{2}/.test(rawPace)) return b; // ya es pace numerico real
+    // 1) etiqueta cualitativa conocida en target_pace ("5k pace", "tempo")
+    let zone = EFFORT_TO_ZONE[rawPace.toLowerCase()] || null;
+    // 2) si no, derivar de target_hr (zona FC, "- X pace", o bpm crudos)
+    if (!zone) zone = zoneFromHrLabel(b?.target_hr, fcMax);
     if (!zone) return b;
     const paceStr = zoneToPaceStr(zone, vdot);
     if (!paceStr) return b;
