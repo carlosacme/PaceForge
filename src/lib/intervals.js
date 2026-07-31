@@ -52,11 +52,41 @@ export const EFFORT_TO_ZONE = {
   "very hard": "R", "sprint": "R", "repetition": "R", "repeticiones": "R",
 };
 
-/** "10 min" | "8 min 30 sec" | "26 sec" | "1:30" -> segundos */
+// Parsea UN extremo de duracion: "1:30" (reloj mm:ss) o "2" / "8.5" (numero
+// plano, interpretado con la unidad del rango: min por defecto, o sec).
+// El reloj (mm:ss) SIEMPRE gana: no se le aplica unidad, ya trae segundos.
+function parseDurationToken(tok, unit) {
+  const clock = tok.match(/^(\d+):(\d{2})$/);
+  if (clock) return parseInt(clock[1], 10) * 60 + parseInt(clock[2], 10);
+  const num = tok.match(/^(\d+(?:\.\d+)?)$/);
+  if (num) {
+    const val = parseFloat(num[1]);
+    return Math.round(unit === "sec" ? val : val * 60); // por defecto minutos
+  }
+  return null;
+}
+
+/**
+ * "10 min" | "8 min 30 sec" | "26 sec" | "1:30" -> segundos.
+ * Tambien RANGOS ("1:30-2:00 min", "90-120 sec", "2-3 min"): se toma el
+ * PUNTO MEDIO. Sin esto, un 400m con duracion "1:30-2:00 min" devolvia 0
+ * (el regex de "min" enganchaba el "00" de "2:00") y normalizeBlock lo
+ * descartaba -> los intervalos nunca llegaban al reloj.
+ */
 function durationToSecs(str) {
   if (str == null) return null;
   if (typeof str === "number") return str > 300 ? str : str * 60;
   const s = String(str).toLowerCase().trim();
+
+  // Rango primero: "1:30-2:00 min" | "90-120 sec" | "2-3 min" -> punto medio.
+  const range = s.match(/^([\d.:]+)\s*[-–]\s*([\d.:]+)/);
+  if (range) {
+    const unitMatch = s.match(/(min|sec)\s*$/);
+    const unit = unitMatch ? unitMatch[1] : "";
+    const a = parseDurationToken(range[1], unit);
+    const b = parseDurationToken(range[2], unit);
+    if (a != null && b != null) return Math.round((a + b) / 2);
+  }
 
   const min = s.match(/(\d+)\s*min/);
   const sec = s.match(/(\d+)\s*sec/);
