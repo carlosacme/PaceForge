@@ -88,6 +88,14 @@ function durationToSecs(str) {
     if (a != null && b != null) return Math.round((a + b) / 2);
   }
 
+  // Reloj mm:ss con sufijo OPCIONAL ("1:30", "1:30 min", "2:00 min"). DEBE ir
+  // antes del regex laxo de "min": sin esto, /(\d+)\s*min/ engancha el "30" de
+  // "1:30 min" y devuelve 30 min (1800s) -> el reloj mostraba "30m".
+  const clockSuffixed = s.match(/^(\d+):(\d{2})(?:\s*(?:min|sec))?$/);
+  if (clockSuffixed) {
+    return parseInt(clockSuffixed[1], 10) * 60 + parseInt(clockSuffixed[2], 10);
+  }
+
   const min = s.match(/(\d+)\s*min/);
   const sec = s.match(/(\d+)\s*sec/);
   if (min || sec) {
@@ -141,25 +149,45 @@ function qualitativeToPace(effort, vdot) {
   return `${fmtPace(v + 3)}-${fmtPace(v - 3)}`;
 }
 
-/** Normaliza un bloque de cualquiera de los formatos a {label, secs, pace} */
+/**
+ * Extrae la distancia del NOMBRE del bloque: "400m fuerte" -> 0.4 km,
+ * "800m" -> 0.8, "1km"/"1.5 km" -> n. Devuelve null si no hay distancia.
+ * Clave: NO confundir "min" con metros. La unidad debe ser exactamente
+ * "m" o "km"; el lookahead (?![a-z]) descarta "min" (la "i" tras la "m").
+ */
+function distKmFromLabel(label) {
+  const s = String(label || "").toLowerCase();
+  const m = s.match(/(\d+(?:\.\d+)?)\s*(km|m)(?![a-z])/);
+  if (!m) return null;
+  const n = parseFloat(m[1]);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return m[2] === "km" ? n : n / 1000;
+}
+
+/** Normaliza un bloque de cualquier formato a {label, secs, pace, distKm} */
 function normalizeBlock(b, vdot) {
   // Formato B (generado por IA): block_type / target_pace / duration_min
   const isB = "block_type" in b || "target_pace" in b || "duration_min" in b;
   if (isB) {
+    const label = b.block_type || "";
     const secs = durationToSecs(b.duration_min);
-    if (!secs) return null;
+    const distKm = distKmFromLabel(label);
+    // Un bloque por distancia sobrevive aunque no tenga duracion parseable.
+    if (!secs && distKm == null) return null;
     // OJO: no usar target_hr como fallback. Es un descriptor de pulso
     // ("moderada", "baja"), no de ritmo. Usarlo hace que sesiones de
     // gimnasio ("Sentadillas...") obtengan ritmos inventados.
     const pace = parseNumericPace(b.target_pace)
               || qualitativeToPace(b.target_pace, vdot);
-    return { label: b.block_type || "", secs, pace };
+    return { label, secs, pace, distKm };
   }
   // Formato A (builder manual): phase / pace / duration
+  const label = b.phase || "";
   const secs = durationToSecs(b.duration);
-  if (!secs) return null;
+  const distKm = distKmFromLabel(label);
+  if (!secs && distKm == null) return null;
   const pace = parseNumericPace(b.pace) || qualitativeToPace(b.intensity, vdot);
-  return { label: b.phase || "", secs, pace };
+  return { label, secs, pace, distKm };
 }
 
 const sectionOf = (label) => {
@@ -172,9 +200,14 @@ const sectionOf = (label) => {
 const isRecovery = (label) =>
   /recovery|recuperaci|descanso|rest|jog/.test(String(label).toLowerCase());
 
-const stepLine = (s) =>
-  s.pace ? `- ${secsToIcuDuration(s.secs)} ${s.pace}/km Pace`
-         : `- ${secsToIcuDuration(s.secs)}`;
+// Un bloque con distancia en el nombre ("400m") se exporta POR DISTANCIA
+// ("0.4km"): el reloj marca la vuelta al cumplir los metros, como se corren
+// los intervalos de verdad. Si no hay distancia, va por tiempo (comportamiento
+// previo). Formato ICU de distancia: 400 m -> "0.4km" (ver encabezado, regla 4).
+const stepLine = (s) => {
+  const amount = s.distKm != null ? `${s.distKm}km` : secsToIcuDuration(s.secs);
+  return s.pace ? `- ${amount} ${s.pace}/km Pace` : `- ${amount}`;
+};
 
 /**
  * Agrupa pares (trabajo + recuperacion) repetidos en "Main Set Nx".
@@ -187,7 +220,8 @@ function groupRepeats(steps) {
     if (i + 3 < steps.length) {
       const a = steps[i], b = steps[i + 1];
       if (isRecovery(b.label) && !isRecovery(a.label)) {
-        const sig = (x, y) => `${x.secs}|${x.pace}|${y.secs}|${y.pace}`;
+        const sig = (x, y) =>
+          `${x.secs}|${x.distKm}|${x.pace}|${y.secs}|${y.distKm}|${y.pace}`;
         const base = sig(a, b);
         let reps = 1, j = i + 2;
         while (j + 1 < steps.length && sig(steps[j], steps[j + 1]) === base) {
