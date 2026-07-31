@@ -183,8 +183,12 @@ function normalizeBlock(b, vdot) {
   if (isB) {
     const label = b.block_type || "";
     const secs = durationToSecs(b.duration_min);
+    // Las recuperaciones van SIEMPRE por tiempo, aunque el nombre mencione
+    // metros ("Recuperacion (400m trote)"): no son un intervalo de distancia.
     // El dato distance_km manda; el nombre ("400m") queda como red de seguridad.
-    const distKm = parseDistKm(b.distance_km) ?? distKmFromLabel(label);
+    const distKm = isRecovery(label)
+      ? null
+      : (parseDistKm(b.distance_km) ?? distKmFromLabel(label));
     // Un bloque por distancia sobrevive aunque no tenga duracion parseable.
     if (!secs && distKm == null) return null;
     // OJO: no usar target_hr como fallback. Es un descriptor de pulso
@@ -197,7 +201,9 @@ function normalizeBlock(b, vdot) {
   // Formato A (builder manual): phase / pace / duration
   const label = b.phase || "";
   const secs = durationToSecs(b.duration);
-  const distKm = parseDistKm(b.distance_km) ?? distKmFromLabel(label);
+  const distKm = isRecovery(label)
+    ? null
+    : (parseDistKm(b.distance_km) ?? distKmFromLabel(label));
   if (!secs && distKm == null) return null;
   const pace = parseNumericPace(b.pace) || qualitativeToPace(b.intensity, vdot);
   return { label, secs, pace, distKm };
@@ -210,8 +216,9 @@ const sectionOf = (label) => {
   return null;
 };
 
-const isRecovery = (label) =>
-  /recovery|recuperaci|descanso|rest|jog/.test(String(label).toLowerCase());
+function isRecovery(label) {
+  return /recovery|recuperaci|descanso|rest|trote|jog/.test(String(label).toLowerCase());
+}
 
 // Un bloque con distancia en el nombre ("400m") se exporta POR DISTANCIA
 // ("0.4km"): el reloj marca la vuelta al cumplir los metros, como se corren
@@ -254,6 +261,50 @@ function groupRepeats(steps) {
 }
 
 /**
+ * Expande bloques colapsados "Nx<dist>" ("8x400m", "4x100m", "6 x 800m") en N
+ * bloques de trabajo individuales, cada uno por distancia. Si el bloque
+ * SIGUIENTE es una recuperacion, la intercala entre repeticiones (N-1 copias) y
+ * consume el bloque original, de modo que "8x400m + recuperacion" salga como los
+ * intervalos separados que la IA deberia haber generado.
+ *
+ * Solo actua ante el patron "Nx" explicito (N>=2). Un bloque ya individual
+ * ("Repeticion 1 - 400m", sin "Nx") NO se toca -> no duplica lo que ya funciona.
+ */
+function expandRepeatBlocks(structure) {
+  const arr = Array.isArray(structure) ? structure : [];
+  const out = [];
+  for (let i = 0; i < arr.length; i++) {
+    const b = arr[i] || {};
+    const name = String(b.phase ?? b.block_type ?? "");
+    const m = name.match(/(\d+)\s*[x×]\s*(\d+(?:\.\d+)?)\s*(km|m)(?![a-z])/i);
+    const reps = m ? parseInt(m[1], 10) : 0;
+    if (!m || reps < 2) { out.push(b); continue; }
+
+    const unit = m[3].toLowerCase();
+    const distKmVal = unit === "km" ? parseFloat(m[2]) : parseFloat(m[2]) / 1000;
+    const distLabel = `${m[2]}${unit}`; // "400m"
+    const isB = "block_type" in b || "target_pace" in b || "duration_min" in b;
+
+    // ¿Recuperacion inmediatamente despues? Se intercala y se consume.
+    const next = arr[i + 1];
+    const recovery =
+      next && isRecovery(String(next.phase ?? next.block_type ?? "")) ? next : null;
+
+    for (let r = 1; r <= reps; r++) {
+      const rep = { ...b };
+      const repName = `Repetición ${r} - ${distLabel}`;
+      if (isB) { rep.block_type = repName; delete rep.duration_min; }
+      else { rep.phase = repName; delete rep.duration; }
+      rep.distance_km = String(distKmVal); // dato explicito (nombre = respaldo)
+      out.push(rep);
+      if (recovery && r < reps) out.push({ ...recovery });
+    }
+    if (recovery) i++; // consumir el bloque de recuperacion original colapsado
+  }
+  return out;
+}
+
+/**
  * Convierte una fila de la tabla workouts al texto de intervals.icu.
  *
  * @param {object} workout - fila de workouts (usa structure o workout_structure)
@@ -261,7 +312,7 @@ function groupRepeats(steps) {
  * @returns {string} texto para el campo 'description' del evento
  */
 export function toIntervalsText(workout, vdot = 42.5) {
-  const structure = readStructure(workout);
+  const structure = expandRepeatBlocks(readStructure(workout));
 
   // Sin estructura: sesion simple desde duration_min
   if (!Array.isArray(structure) || structure.length === 0) {
