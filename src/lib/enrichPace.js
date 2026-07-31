@@ -80,18 +80,25 @@ export function enrichStructureWithPaces(structure, vdot, fcMax) {
   const arr = Array.isArray(structure) ? structure : [];
   if (!vdot) return arr; // sin VDOT no derivamos ritmos (igual que el envio)
   return arr.map((b) => {
-    const rawPace = String(b?.target_pace || "").trim();
+    // Detectar formato: A usa pace/intensity, B usa target_pace/target_hr.
+    const bPace = String(b?.target_pace ?? "").trim();
+    const aPace = String(b?.pace ?? "").trim();
+    const rawPace = bPace || aPace;
+    const hrLabel = String(b?.target_hr ?? b?.intensity ?? "").trim();
+    // Escribir de vuelta en el mismo campo que trae el pace (preserva formato).
+    const paceField = bPace ? "target_pace" : aPace ? "pace" : "target_pace";
+
     if (/\d+:\d{2}/.test(rawPace)) return b; // ya es pace numerico real
-    // 1) etiqueta cualitativa conocida en target_pace ("5k pace", "tempo")
+    // 1) etiqueta cualitativa conocida en el pace ("5k pace", "tempo")
     let zone = EFFORT_TO_ZONE[rawPace.toLowerCase()] || null;
-    // 2) si no, derivar de target_hr (zona FC, "- X pace", o bpm crudos)
-    if (!zone) zone = zoneFromHrLabel(b?.target_hr, fcMax);
-    if (!zone) return b;
+    // 2) si no, derivar de la zona de FC (target_hr o intensity)
+    if (!zone) zone = zoneFromHrLabel(hrLabel, fcMax);
+    if (!zone) return b; // no reconocido: no inventar
     const paceStr = zoneToPaceStr(zone, vdot);
     if (!paceStr) return b;
     return {
       ...b,
-      target_pace: paceStr,
+      [paceField]: paceStr,
       description: b?.description?.trim() ? b.description : rawPace,
     };
   });
