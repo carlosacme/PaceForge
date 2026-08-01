@@ -403,7 +403,7 @@ function AdminMarketplacePanel({ notify, styles }) {
   "sessions_per_week": ${sessionsFixed},
   "price_cop": precio sugerido entre 50000 y 300000,
   "preview_workouts": [
-    {"week": 1, "day": "Martes", "type": "easy", "title": "título sesión", "description": "Rodaje suave a 6:00–6:45 min/km (texto con rango numérico obligatorio)", "pace_range": "6:00-6:45", "duration_min": número, "distance_km": número}
+    {"week": 1, "day": "Martes", "type": "easy", "title": "título sesión", "description": "Rodaje suave a 6:00–6:45 min/km (texto con rango numérico obligatorio)", "pace_range": "6:00-6:45", "duration_min": número, "distance_km": número, "structure": [{"phase": "Calentamiento", "duration": "10 min", "intensity": "Z2 (120-140 bpm)", "pace": "6:00-6:45"}, {"phase": "Rodaje", "duration": "30 min", "intensity": "Z2 (120-140 bpm)", "pace": "6:00-6:45"}, {"phase": "Enfriamiento", "duration": "5 min", "intensity": "Z1 (110-125 bpm)", "pace": "6:30-7:00"}]}
   ]
 }
 ${pacePromptBlock}
@@ -411,8 +411,16 @@ Reglas obligatorias:
 - El campo "duration_weeks" en tu respuesta JSON debe ser exactamente ${duracionSemanas}.
 - El campo "sessions_per_week" en tu respuesta JSON debe ser exactamente el número ${sessionsFixed} (valor fijo; no uses otro número).
 - En preview_workouts incluye TODAS las sesiones de TODAS las semanas: ${duracionSemanas} semanas × ${sessionsFixed} sesiones = ${totalPreviewEntries} entradas en total. Cada semana debe tener exactamente ${sessionsFixed} sesiones en días no consecutivos.
-- Cada elemento de preview_workouts debe incluir: week (del 1 al ${duracionSemanas}), day, type, title, description (con min/km numéricos según nivel y type), pace_range (formato H:MM-H:MM con guión ASCII, coherente con type y level), duration_min, distance_km.
-- preview_workouts debe tener exactamente ${totalPreviewEntries} objetos: ordena por semana creciente (1…${duracionSemanas}); dentro de cada semana, ${sessionsFixed} filas con el mismo "week" y días no consecutivos.`;
+- Cada elemento de preview_workouts debe incluir: week (del 1 al ${duracionSemanas}), day, type, title, description (con min/km numéricos según nivel y type), pace_range (formato H:MM-H:MM con guión ASCII, coherente con type y level), duration_min, distance_km, y structure (array de bloques ejecutables — ver reglas de estructura).
+- preview_workouts debe tener exactamente ${totalPreviewEntries} objetos: ordena por semana creciente (1…${duracionSemanas}); dentro de cada semana, ${sessionsFixed} filas con el mismo "week" y días no consecutivos.
+Reglas de estructura (campo "structure") — obligatorias, en el mismo formato que usa el Builder:
+- For each session, include a "structure" array of blocks. Each block: {phase, duration, intensity, pace}.
+- NEVER collapse repeated intervals into one block. For 6x400m, output 6 SEPARATE repetition blocks (phase "Repetition 1 - 400m", etc.), each followed by its own recovery block (except the last, followed by cooldown).
+- For distance-based intervals, name each block with the distance (e.g. "Repetition 3 - 400m").
+- Always use HR zone notation Z1-Z5 with bpm in the intensity field, e.g. "Z4-Z5 (150-170 bpm)".
+- Include warmup and cooldown blocks in every quality session.
+- El campo "pace" de cada bloque es el rango numérico min/km (H:MM-H:MM, guión ASCII) coherente con el esfuerzo del bloque y el level del plan; las recuperaciones usan un ritmo fácil.
+- Los bloques de structure deben ser coherentes con "description" y "pace_range" de la sesión (structure es lo que se ejecuta; description es el texto legible del preview).`;
     const userPrompt = [
       `Describe el plan: ${aiContext || "Plan de running para marketplace"}`,
       `Nivel del plan (aplica la tabla de ritmos de este nivel en cada sesión): ${aiLevel}`,
