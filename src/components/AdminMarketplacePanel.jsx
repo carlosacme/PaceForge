@@ -463,7 +463,8 @@ function AdminMarketplacePanel({ notify, styles }) {
   "sessions_per_week": ${sessionsFixed},
   "price_cop": precio sugerido entre 50000 y 300000,
   "preview_workouts": [
-    {"week": 1, "day": "Martes", "type": "easy", "title": "título sesión", "description": "Rodaje suave a 6:00–6:45 min/km (texto con rango numérico obligatorio)", "pace_range": "6:00-6:45", "duration_min": número, "distance_km": número, "structure": [{"phase": "Calentamiento", "duration": "10 min", "intensity": "Z2 (120-140 bpm)", "pace": "6:00-6:45"}, {"phase": "Rodaje", "duration": "30 min", "intensity": "Z2 (120-140 bpm)", "pace": "6:00-6:45"}, {"phase": "Enfriamiento", "duration": "5 min", "intensity": "Z1 (110-125 bpm)", "pace": "6:30-7:00"}]}
+    {"week": 1, "day": "Martes", "type": "easy", "title": "Rodaje suave", "description": "Rodaje suave a 6:00–6:45 min/km", "pace_range": "6:00-6:45", "duration_min": 45, "distance_km": 8},
+    {"week": 1, "day": "Jueves", "type": "interval", "title": "Series 400m", "description": "Calentamiento + 6x400m a 4:30–5:00 min/km con recuperación", "pace_range": "4:30-5:00", "duration_min": 50, "distance_km": 7, "structure": [{"phase": "Calentamiento", "duration": "10 min", "intensity": "Z2 (120-140 bpm)", "pace": "6:00-6:45"}, {"phase": "Repetition 1 - 400m", "duration": "2 min", "intensity": "Z4-Z5 (150-170 bpm)", "pace": "4:30-5:00"}, {"phase": "Recuperación", "duration": "90 sec", "intensity": "Z1 (110-125 bpm)", "pace": "6:30-7:00"}, {"phase": "Enfriamiento", "duration": "5 min", "intensity": "Z1 (110-125 bpm)", "pace": "6:30-7:00"}]}
   ]
 }
 ${pacePromptBlock}
@@ -471,14 +472,16 @@ Reglas obligatorias:
 - El campo "duration_weeks" en tu respuesta JSON debe ser exactamente ${duracionSemanas}.
 - El campo "sessions_per_week" en tu respuesta JSON debe ser exactamente el número ${sessionsFixed} (valor fijo; no uses otro número).
 - En preview_workouts incluye TODAS las sesiones de TODAS las semanas: ${duracionSemanas} semanas × ${sessionsFixed} sesiones = ${totalPreviewEntries} entradas en total. Cada semana debe tener exactamente ${sessionsFixed} sesiones en días no consecutivos.
-- Cada elemento de preview_workouts debe incluir: week (del 1 al ${duracionSemanas}), day, type, title, description (con min/km numéricos según nivel y type), pace_range (formato H:MM-H:MM con guión ASCII, coherente con type y level), duration_min, distance_km, y structure (array de bloques ejecutables — ver reglas de estructura).
+- Cada elemento de preview_workouts debe incluir: week (del 1 al ${duracionSemanas}), day, type, title, description (con min/km numéricos según nivel y type), pace_range (formato H:MM-H:MM con guión ASCII, coherente con type y level), duration_min, distance_km. El campo structure SOLO en sesiones de calidad (ver reglas abajo).
 - preview_workouts debe tener exactamente ${totalPreviewEntries} objetos: ordena por semana creciente (1…${duracionSemanas}); dentro de cada semana, ${sessionsFixed} filas con el mismo "week" y días no consecutivos.
-Reglas de estructura (campo "structure") — obligatorias, en el mismo formato que usa el Builder:
-- For each session, include a "structure" array of blocks. Each block: {phase, duration, intensity, pace}.
+Reglas de estructura (campo "structure") — mismo formato que el Builder; compacta la respuesta:
+- Include the "structure" array ONLY for quality sessions (type: interval, tempo, fartlek, or any session with varied intensity blocks). For easy runs, recovery runs, and steady long runs (type: easy, recovery, long), OMIT the "structure" field entirely — those sessions run at a constant pace and don't need blocks.
+- This keeps the response compact. Quality sessions are typically 1-2 per week.
+- When structure IS included: each block is {phase, duration, intensity, pace}.
 - NEVER collapse repeated intervals into one block. For 6x400m, output 6 SEPARATE repetition blocks (phase "Repetition 1 - 400m", etc.), each followed by its own recovery block (except the last, followed by cooldown).
 - For distance-based intervals, name each block with the distance (e.g. "Repetition 3 - 400m").
 - Always use HR zone notation Z1-Z5 with bpm in the intensity field, e.g. "Z4-Z5 (150-170 bpm)".
-- Include warmup and cooldown blocks in every quality session.
+- Include warmup and cooldown blocks in every quality session that has structure.
 - El campo "pace" de cada bloque es el rango numérico min/km (H:MM-H:MM, guión ASCII) coherente con el esfuerzo del bloque y el level del plan; las recuperaciones usan un ritmo fácil.
 - Los bloques de structure deben ser coherentes con "description" y "pace_range" de la sesión (structure es lo que se ejecuta; description es el texto legible del preview).`;
     const userPrompt = [
@@ -496,7 +499,7 @@ Reglas de estructura (campo "structure") — obligatorias, en el mismo formato q
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           model: "claude-sonnet-5",
-          max_tokens: 16384,
+          max_tokens: 32000,
           system: systemPrompt,
           messages: [{ role: "user", content: userPrompt }],
         }),
@@ -506,12 +509,15 @@ Reglas de estructura (campo "structure") — obligatorias, en el mismo formato q
         notify?.("Error al generar plan con IA");
         return;
       }
+      const truncatedMsg =
+        `El plan es muy grande (${totalPreviewEntries} sesiones). ` +
+        "Prueba con menos semanas o menos sesiones por semana.";
       const text = extractAnthropicTextContent(data.content, "[plan-ia]");
       if (!text) {
         console.error("[plan-ia] stop_reason:", data?.stop_reason, "| usage:", data?.usage);
         notify?.(
           data?.stop_reason === "max_tokens"
-            ? "La IA truncó la respuesta (max_tokens). Prueba con menos semanas o sesiones."
+            ? truncatedMsg
             : "La IA no devolvió texto usable. Intenta de nuevo.",
         );
         return;
@@ -519,7 +525,11 @@ Reglas de estructura (campo "structure") — obligatorias, en el mismo formato q
       const parsed = extractJsonFromAnthropicText(text);
       if (!parsed || typeof parsed !== "object") {
         console.error("[plan-ia] JSON inválido. stop_reason:", data?.stop_reason, "| chars:", text.length);
-        notify?.("La IA no devolvió un JSON válido.");
+        notify?.(
+          data?.stop_reason === "max_tokens"
+            ? truncatedMsg
+            : "La IA no devolvió un JSON válido.",
+        );
         return;
       }
       const resolvedLevel = String(parsed.level || aiLevel || "intermedio");
