@@ -15,7 +15,15 @@ import {
   normalizeWorkoutStructure,
   WORKOUT_BLOCK_TYPES,
   formatCopInt,
+  getMarketplacePlanWorkoutRows,
 } from "./shared/appShared";
+
+/** Columnas livianas para la LISTA de planes (sin JSONB pesados). */
+const PLAN_LIST_COLUMNS =
+  "id,title,level,sport,price_cop,is_active,is_approved,coach_name,coach_user_id,duration_weeks,sessions_per_week,sales_count,created_at";
+/** Columnas livianas para la LISTA de compras. */
+const PURCHASE_LIST_COLUMNS =
+  "id,plan_id,buyer_user_id,price_paid,payment_status,payment_method,created_at";
 
 function AdminMarketplacePanel({ notify, styles }) {
   const S = styles;
@@ -33,6 +41,7 @@ function AdminMarketplacePanel({ notify, styles }) {
   const [plans, setPlans] = useState([]);
   const [purchases, setPurchases] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadingPlanEdit, setLoadingPlanEdit] = useState(false);
   const [creatingPlan, setCreatingPlan] = useState(false);
   const [createForm, setCreateForm] = useState(EMPTY_ADMIN_PLAN_FORM);
   const [aiModalOpen, setAiModalOpen] = useState(false);
@@ -57,9 +66,19 @@ function AdminMarketplacePanel({ notify, styles }) {
 
   const loadAll = useCallback(async () => {
     setLoading(true);
+    // Lista liviana: NO traer preview_workouts / plan_sessions (JSONB enormes;
+    // 388 sesiones duplicadas por plan provocaban ERR_CONNECTION_TIMED_OUT).
     const [plansRes, purchasesRes] = await Promise.all([
-      supabase.from("plan_marketplace").select("*").order("created_at", { ascending: false }),
-      supabase.from("plan_purchases").select("*").order("created_at", { ascending: false }),
+      supabase
+        .from("plan_marketplace")
+        .select(PLAN_LIST_COLUMNS)
+        .order("created_at", { ascending: false })
+        .limit(100),
+      supabase
+        .from("plan_purchases")
+        .select(PURCHASE_LIST_COLUMNS)
+        .order("created_at", { ascending: false })
+        .limit(100),
     ]);
     setLoading(false);
     if (plansRes.error) {
@@ -72,6 +91,46 @@ function AdminMarketplacePanel({ notify, styles }) {
       setPurchases([]);
     } else setPurchases(purchasesRes.data || []);
   }, [notify]);
+
+  /** Carga bajo demanda description + sesiones JSONB de UN plan (edición). */
+  const startEditPlan = async (plan) => {
+    if (!plan?.id) return;
+    setLoadingPlanEdit(true);
+    try {
+      const { data, error } = await supabase
+        .from("plan_marketplace")
+        .select("id,title,description,level,duration_weeks,sessions_per_week,price_cop,preview_workouts,plan_sessions")
+        .eq("id", plan.id)
+        .maybeSingle();
+      if (error) {
+        console.error("admin marketplace load plan for edit:", error);
+        notify?.(error.message || "No se pudo cargar el plan para editar");
+        return;
+      }
+      if (!data) {
+        notify?.("Plan no encontrado");
+        return;
+      }
+      const sessions = getMarketplacePlanWorkoutRows(data);
+      setCreateForm({
+        title: String(data.title || ""),
+        description: String(data.description || ""),
+        level: String(data.level || "intermedio"),
+        duration_weeks: String(data.duration_weeks ?? 12),
+        sessions_per_week: String(data.sessions_per_week ?? 4),
+        price_cop: String(data.price_cop ?? 120000),
+        preview_workouts_text: JSON.stringify(sessions, null, 2),
+        editing_plan_id: data.id,
+      });
+      closePlanSessionModal();
+      notify?.("Plan cargado en el formulario. Revisa y guarda cuando quieras.");
+      if (typeof window !== "undefined") {
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      }
+    } finally {
+      setLoadingPlanEdit(false);
+    }
+  };
 
   useEffect(() => {
     loadAll();
@@ -681,6 +740,7 @@ Reglas de estructura (campo "structure") — obligatorias, en el mismo formato q
                         Comisión plataforma: ${formatCopInt(commission)} COP (20%)
                       </td>
                       <td style={{ padding: "8px 6px", fontSize: ".82em", display: "flex", gap: 6, flexWrap: "wrap" }}>
+                        <button type="button" onClick={() => startEditPlan(p)} disabled={loadingPlanEdit} style={{ border: "1px solid #bae6fd", background: "#f0f9ff", color: "#0369a1", borderRadius: 7, padding: "5px 8px", fontWeight: 700, cursor: loadingPlanEdit ? "wait" : "pointer", fontFamily: "inherit", fontSize: ".74em" }}>✏️ Editar</button>
                         <button type="button" onClick={() => approvePlan(p.id)} style={{ border: "1px solid #bbf7d0", background: "#f0fdf4", color: "#166534", borderRadius: 7, padding: "5px 8px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".74em" }}>✅ Aprobar</button>
                         <button type="button" onClick={() => rejectPlan(p.id)} style={{ border: "1px solid #fecaca", background: "#fef2f2", color: "#b91c1c", borderRadius: 7, padding: "5px 8px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".74em" }}>🚫 Rechazar</button>
                         <button type="button" onClick={() => deletePlan(p.id)} style={{ border: "1px solid #e2e8f0", background: "#fff", color: "#334155", borderRadius: 7, padding: "5px 8px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".74em" }}>🗑️ Eliminar</button>
@@ -703,7 +763,7 @@ Reglas de estructura (campo "structure") — obligatorias, en el mismo formato q
                 {pendingPurchases.map((p) => (
                   <div key={p.id} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: "10px 12px", background: "#f8fafc", display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
                     <div style={{ fontSize: ".82em", color: "#334155" }}>
-                      Plan: <strong>{p.plan_title || p.plan_id}</strong> · ${formatCopInt(p.amount_cop || 0)} COP · {p.buyer_name || p.buyer_user_id || "Comprador"}
+                      Plan: <strong>{p.plan_title || p.plan_id}</strong> · ${formatCopInt(p.amount_cop ?? p.price_paid ?? 0)} COP · {p.buyer_name || p.buyer_user_id || "Comprador"}
                     </div>
                     <button type="button" onClick={() => confirmPayment(p.id)} style={{ border: "1px solid #bbf7d0", background: "#f0fdf4", color: "#166534", borderRadius: 8, padding: "7px 10px", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".76em" }}>
                       ✅ Confirmar pago
