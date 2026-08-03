@@ -6543,8 +6543,7 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
                             <thead>
                               <tr style={{ textAlign: "left", color: "#64748b", fontSize: ".85em" }}>
                                 <th style={{ padding: "4px 6px" }}>Bloque</th>
-                                <th style={{ padding: "4px 6px" }}>Objetivo</th>
-                                <th style={{ padding: "4px 6px", textAlign: "right" }}>Plan</th>
+                                <th style={{ padding: "4px 6px", textAlign: "right", whiteSpace: "nowrap" }}>Ritmo previsto</th>
                                 <th style={{ padding: "4px 6px", textAlign: "right" }}>Real</th>
                                 <th style={{ padding: "4px 6px", textAlign: "right" }}>Δ</th>
                               </tr>
@@ -6561,8 +6560,7 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
                                       {b.incomplete ? <span style={{ color: "#b45309", fontWeight: 700 }}> · no completado</span> : null}
                                       {b.dur_mismatch && !b.incomplete ? <span title="Duración muy distinta a la planeada"> ⚠️</span> : null}
                                     </td>
-                                    <td style={{ padding: "4px 6px", color: "#475569" }}>{b.target_effort || "—"}</td>
-                                    <td style={{ padding: "4px 6px", textAlign: "right" }}>{b.planned_pace_s != null ? `${fmtPace(b.planned_pace_s)}/km` : "—"}</td>
+                                    <td style={{ padding: "4px 6px", textAlign: "right", whiteSpace: "nowrap" }}>{b.planned_pace_s != null ? `${fmtPace(b.planned_pace_s)}/km` : "—"}</td>
                                     <td style={{ padding: "4px 6px", textAlign: "right" }}>{b.actual_pace_s != null ? `${fmtPace(b.actual_pace_s)}/km` : "—"}</td>
                                     <td style={{ padding: "4px 6px", textAlign: "right", color: deltaColor, fontWeight: 700 }}>{deltaTxt}</td>
                                   </tr>
