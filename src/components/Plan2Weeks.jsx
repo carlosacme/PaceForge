@@ -20,6 +20,7 @@ import {
   normalizeScheduledDateYmd,
   startOfWeekMonday,
   extractJsonFromAnthropicText,
+  extractAnthropicTextContent,
   normalizeWorkoutStructure,
   normalizeAthlete,
   formatDurationClock,
@@ -590,7 +591,16 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
         notify("Error al generar el plan (API).");
         return;
       }
-      const text = data.content?.find((b) => b.type === "text")?.text || "";
+      const text = extractAnthropicTextContent(data.content, "[plan2-ia]");
+      if (!text) {
+        console.error("[plan2-ia] stop_reason:", data?.stop_reason, "| usage:", data?.usage);
+        notify(
+          data?.stop_reason === "max_tokens"
+            ? "La IA truncó la respuesta (max_tokens). Intenta de nuevo."
+            : "La IA no devolvió texto usable. Intenta de nuevo.",
+        );
+        return;
+      }
       const parsed = extractJsonFromAnthropicText(text);
       const byWeek = new Map((parsed?.weeks || []).map((w) => [Number(w.week_number) || 0, w]));
       const orderedWeeks = [1, 2].map((n) => byWeek.get(n)).filter(Boolean);

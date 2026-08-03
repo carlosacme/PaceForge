@@ -7,6 +7,7 @@ import {
   PLAN_SESSION_TYPE_OPTIONS,
   emptyWorkoutStructureRow,
   extractJsonFromAnthropicText,
+  extractAnthropicTextContent,
   workoutStructureToEditableRows,
   editableRowsToWorkoutStructure,
   buildMarketplaceAiPacePromptSection,
@@ -446,9 +447,19 @@ Reglas de estructura (campo "structure") — obligatorias, en el mismo formato q
         notify?.("Error al generar plan con IA");
         return;
       }
-      const text = data.content?.find((b) => b.type === "text")?.text || "";
+      const text = extractAnthropicTextContent(data.content, "[plan-ia]");
+      if (!text) {
+        console.error("[plan-ia] stop_reason:", data?.stop_reason, "| usage:", data?.usage);
+        notify?.(
+          data?.stop_reason === "max_tokens"
+            ? "La IA truncó la respuesta (max_tokens). Prueba con menos semanas o sesiones."
+            : "La IA no devolvió texto usable. Intenta de nuevo.",
+        );
+        return;
+      }
       const parsed = extractJsonFromAnthropicText(text);
       if (!parsed || typeof parsed !== "object") {
+        console.error("[plan-ia] JSON inválido. stop_reason:", data?.stop_reason, "| chars:", text.length);
         notify?.("La IA no devolvió un JSON válido.");
         return;
       }

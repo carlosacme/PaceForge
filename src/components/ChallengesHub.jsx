@@ -15,6 +15,7 @@ import {
   challengeProgressOpenText,
   challengeProgressLabel,
   extractJsonFromAnthropicText,
+  extractAnthropicTextContent,
 } from "./shared/appShared";
 
 function ChallengesHub({
@@ -425,7 +426,12 @@ Reglas adicionales:
         notify?.(data?.error || "Error al generar reto con IA.");
         return;
       }
-      const text = data.content?.find((b) => b.type === "text")?.text || "";
+      const text = extractAnthropicTextContent(data.content, "[challenge-ia]");
+      if (!text) {
+        console.error("[challenge-ia] stop_reason:", data?.stop_reason);
+        notify?.("La IA no devolvió texto usable.");
+        return;
+      }
       const parsed = extractJsonFromAnthropicText(text);
       if (!parsed || typeof parsed !== "object") {
         notify?.("La IA no devolvió un JSON válido.");

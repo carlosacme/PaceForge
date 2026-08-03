@@ -14,6 +14,7 @@ import {
   workoutStructureToEditableRows,
   editableRowsToWorkoutStructure,
   extractJsonFromAnthropicText,
+  extractAnthropicTextContent,
   formatDurationClock,
   buildAthleteHrZonesPromptText,
   sendWorkoutAssignmentPushToAthlete,
@@ -309,7 +310,13 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
         setAiWorkout(null);
         return;
       }
-      const text = data.content?.find(b => b.type === "text")?.text || "";
+      const text = extractAnthropicTextContent(data.content, "[builder-ia]");
+      if (!text) {
+        console.error("[builder-ia] stop_reason:", data?.stop_reason);
+        notify("La IA no devolvió texto usable.");
+        setAiWorkout(null);
+        return;
+      }
       setAiWorkout(JSON.parse(text));
       await incrementGenerationCounter();
     } catch { setAiWorkout(null); }

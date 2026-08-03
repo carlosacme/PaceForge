@@ -433,6 +433,29 @@ export const getNextRaceCountdown = (races, todayYmd) => {
   return { race: r, days };
 };
 
+/**
+ * Extrae el texto utilizable de una respuesta Anthropic Messages API.
+ * NUNCA tomar content[0]: claude-sonnet-5 puede devolver primero un bloque
+ * "thinking" (razonamiento extendido) y el JSON/texto va en bloques "text".
+ * Concatena todos los bloques type==="text"; ignora thinking/tool_use/etc.
+ */
+export const extractAnthropicTextContent = (content, logTag = "[anthropic]") => {
+  const blocks = Array.isArray(content) ? content : [];
+  const text = blocks
+    .filter((b) => b && b.type === "text")
+    .map((b) => String(b.text || ""))
+    .join("\n")
+    .trim();
+  if (!text) {
+    console.error(
+      `${logTag} sin bloque de texto. Tipos recibidos:`,
+      blocks.map((b) => b?.type),
+      "| stop_reason se loguea en /api/generate-workout",
+    );
+  }
+  return text;
+};
+
 export const extractJsonFromAnthropicText = (text) => {
   const raw = (text || "").trim();
   if (!raw) return null;

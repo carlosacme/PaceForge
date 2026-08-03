@@ -22,10 +22,23 @@ async function callClaude(apiKey, prompt, maxTokens = 800) {
         }),
       });
       const data = await response.json();
-      if (response.ok && data.content?.[0]?.text) {
-        return { text: data.content[0].text, model };
+      // No usar content[0]: claude-sonnet-5 puede devolver "thinking" primero.
+      const text = (Array.isArray(data.content) ? data.content : [])
+        .filter((b) => b && b.type === "text")
+        .map((b) => String(b.text || ""))
+        .join("\n")
+        .trim();
+      if (response.ok && text) {
+        return { text, model };
       }
-      console.warn(`callClaude: model ${model} failed:`, JSON.stringify(data).slice(0, 300));
+      console.warn(
+        `callClaude: model ${model} failed:`,
+        "types:",
+        (data.content || []).map((b) => b?.type),
+        "stop_reason:",
+        data?.stop_reason,
+        JSON.stringify(data).slice(0, 300),
+      );
     } catch (err) {
       console.warn(`callClaude: model ${model} exception:`, err?.message);
     }

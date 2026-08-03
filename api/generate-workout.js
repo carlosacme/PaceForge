@@ -16,10 +16,29 @@ export default async function handler(req, res) {
     body: JSON.stringify(payload),
   });
   const data = await response.json();
-  // LOGGING TEMPORAL: ver el error real de Anthropic en los logs de Vercel
-  // (invalid model, auth, etc.). El handler responde 200 igual, asi que sin
-  // esto el error queda tragado (data.error nunca se leia).
-  console.log("[generate-workout] anthropic status:", response.status);
-  console.log("[generate-workout] anthropic body:", JSON.stringify(data).slice(0, 1500));
+  // Diagnostico: status, stop_reason, tipos de bloque y chars de texto.
+  // claude-sonnet-5 puede devolver "thinking" antes de "text"; si se trunca
+  // (stop_reason=max_tokens) el cliente recibe content sin texto usable.
+  const types = Array.isArray(data.content) ? data.content.map((b) => b?.type) : [];
+  const textChars = Array.isArray(data.content)
+    ? data.content
+        .filter((b) => b && b.type === "text")
+        .reduce((n, b) => n + String(b.text || "").length, 0)
+    : 0;
+  console.log(
+    "[generate-workout] anthropic status:",
+    response.status,
+    "| stop_reason:",
+    data?.stop_reason,
+    "| types:",
+    types,
+    "| text_chars:",
+    textChars,
+    "| usage:",
+    data?.usage,
+  );
+  if (data?.error) {
+    console.log("[generate-workout] anthropic error:", JSON.stringify(data.error).slice(0, 500));
+  }
   res.status(200).json(data);
 }
