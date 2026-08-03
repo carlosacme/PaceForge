@@ -83,6 +83,27 @@ function centerPaceForZone(vdot, zone) {
 }
 
 /**
+ * Ritmo numerico ya explicito -> secs/km. Acepta rango "5:00-5:10" (punto
+ * medio) o valor unico "5:00". Devuelve null si no es un pace numerico
+ * (etiqueta cualitativa "tempo", zona "Z4", vacio). Es la fuente PRIORITARIA:
+ * desde que enrichStructureWithPaces hornea target_pace numerico, la zona ya
+ * no se puede inferir del texto (zoneForEffort caeria a "E" para todos).
+ */
+function numericPaceToSecs(str) {
+  if (str == null) return null;
+  const s = String(str).trim();
+  const range = s.match(/(\d+):(\d{2})\s*[-–]\s*(\d+):(\d{2})/);
+  if (range) {
+    const a = +range[1] * 60 + +range[2];
+    const b = +range[3] * 60 + +range[4];
+    return (a + b) / 2;
+  }
+  const single = s.match(/(\d+):(\d{2})/);
+  if (single) return +single[1] * 60 + +single[2];
+  return null;
+}
+
+/**
  * Compara plan vs ejecutado por step.
  *
  * Estrategia de alineacion: CONSUMO SECUENCIAL por duracion. Los laps se
@@ -111,11 +132,15 @@ export function compareBlocks({ structure, laps, vdot }) {
     const effort = s.target_pace ?? s.pace ?? s.intensity ?? "";
     const zone = zoneForEffort(effort);
     const dur = durationToSecs(s.duration_min ?? s.duration);
+    // Prioriza el pace numerico ya explicito (enriquecido) sobre la zona: si
+    // effort es "5:00-5:10" usa 305s; solo si es cualitativo ("tempo", "Z4")
+    // deriva desde la zona + vdot (compatibilidad con structures viejos).
+    const numericPace = numericPaceToSecs(effort);
     return {
       step_name: s.block_type || s.phase || s.name || "",
       target_effort: effort,
       target_zone: zone,
-      planned_pace_s: centerPaceForZone(vdot, zone),
+      planned_pace_s: numericPace != null ? numericPace : centerPaceForZone(vdot, zone),
       planned_dur_s: dur,
       actual_dur_s: 0,
       actual_dist_m: 0,
