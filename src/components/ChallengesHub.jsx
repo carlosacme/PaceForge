@@ -417,6 +417,7 @@ Reglas adicionales:
         body: JSON.stringify({
           model: "claude-sonnet-5",
           max_tokens: 8000,
+          thinking: { type: "disabled" },
           system,
           messages: [{ role: "user", content: aiContextPrompt.trim() }],
         }),

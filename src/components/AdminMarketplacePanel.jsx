@@ -501,6 +501,7 @@ Reglas de estructura (campo "structure") — mismo formato que el Builder; compa
         body: JSON.stringify({
           model: "claude-sonnet-5",
           max_tokens: 32000,
+          thinking: { type: "disabled" },
           system: systemPrompt,
           messages: [{ role: "user", content: userPrompt }],
         }),

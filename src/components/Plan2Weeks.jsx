@@ -578,8 +578,9 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           model: "claude-sonnet-5",
-          // Margen para bloque "thinking" de claude-sonnet-5 + JSON de 2 semanas.
+          // Margen para JSON de 2 semanas (thinking desactivado en el body).
           max_tokens: 16000,
+          thinking: { type: "disabled" },
           system: plan2SystemPrompt,
           messages: [{ role: "user", content: plan2UserPrompt }],
         }),
