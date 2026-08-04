@@ -482,6 +482,7 @@ Reglas de estructura (campo "structure") — mismo formato que el Builder; compa
 - For distance-based intervals, name each block with the distance (e.g. "Repetition 3 - 400m").
 - Always use HR zone notation Z1-Z5 with bpm in the intensity field, e.g. "Z4-Z5 (150-170 bpm)".
 - Include warmup and cooldown blocks in every quality session that has structure.
+- The "duration" field of each block MUST be a plain number followed by a single unit: either "N sec" or "N min" (e.g. "60 sec", "2 min", "15 min"). Do NOT add extra words (no "caminar", no "trote suave", no "aprox"), do NOT use ranges (no "18-20 seg"), do NOT use clock format (no "1:30"), and do NOT use approximations (no "~2 min"). If a block is distance-based, still give a realistic single duration estimate.
 - El campo "pace" de cada bloque es el rango numérico min/km (H:MM-H:MM, guión ASCII) coherente con el esfuerzo del bloque y el level del plan; las recuperaciones usan un ritmo fácil.
 - Los bloques de structure deben ser coherentes con "description" y "pace_range" de la sesión (structure es lo que se ejecuta; description es el texto legible del preview).`;
     const userPrompt = [
