@@ -372,12 +372,16 @@ export function toIntervalsText(workout, vdot = 42.5) {
  * external_id evita duplicados al reenviar el mismo workout.
  */
 export function buildIntervalsEvent(workout, vdot = 42.5) {
+  // uid = lo que usa upsertOnUid=true; external_id = id de sync externo.
+  // Ambos con el mismo valor evita duplicados al reenviar.
+  const uid = `raf-${workout.id}`;
   return {
     category: "WORKOUT",
     start_date_local: `${workout.scheduled_date}T06:00:00`,
     type: "Run",
     name: workout.title || "Entrenamiento",
-    external_id: `raf-${workout.id}`,
+    uid,
+    external_id: uid,
     description: toIntervalsText(workout, vdot),
   };
 }

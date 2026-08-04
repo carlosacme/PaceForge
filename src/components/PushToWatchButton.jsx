@@ -4,32 +4,28 @@ import { supabase } from "../lib/supabase";
 /**
  * PushToWatchButton
  * -----------------------------------------------------------
- * Boton del coach para enviar el bloque de entrenamientos del atleta
+ * Boton del coach para enviar los entrenamientos pendientes del atleta
  * a su reloj (via intervals.icu -> Garmin/COROS).
  *
- * Rango por defecto: hoy + 14 dias, que coincide con los planes
- * de 2 semanas renovables de la app.
+ * Rango: lo calcula el backend (hoy -> workout pendiente mas lejano,
+ * tope 90 dias). Ya NO se usa una ventana fija de 14 dias.
  *
  * El endpoint rechaza/omite automaticamente:
  *   - atleta sin evaluacion VDOT  -> 400
  *   - atleta sin intervals.icu    -> 400
  *   - sesiones que no son carrera -> skipped
  *   - workouts con fecha pasada   -> skipped
+ * Y actualiza (PUT) los eventos ya existentes por uid/external_id
+ * raf-<workout.id> para no duplicar al reenviar.
  *
  * Uso en App.jsx (cabecera del atleta, junto a "Exportar PDF"):
  *   <PushToWatchButton athleteId={athlete?.id} athleteName={athlete?.name} />
  * -----------------------------------------------------------
  */
-export default function PushToWatchButton({ athleteId, athleteName, days = 14 }) {
+export default function PushToWatchButton({ athleteId, athleteName }) {
   const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState(null);   // { ok, pushed, skipped, failed, results }
+  const [result, setResult] = useState(null);   // { ok, pushed, created, updated, skipped, failed, results }
   const [error, setError] = useState("");
-
-  const isoPlus = (n) => {
-    const d = new Date();
-    d.setDate(d.getDate() + n);
-    return d.toISOString().slice(0, 10);
-  };
 
   const handlePush = async () => {
     if (!athleteId) return;
@@ -47,8 +43,7 @@ export default function PushToWatchButton({ athleteId, athleteName, days = 14 })
         body: JSON.stringify({
           action: "push-range",
           athlete_id: athleteId,
-          from: isoPlus(0),
-          to: isoPlus(days),
+          // Sin from/to: el backend cubre todo el plan pendiente (tope 90d).
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -94,15 +89,13 @@ export default function PushToWatchButton({ athleteId, athleteName, days = 14 })
   return (
     <div style={{ display: "inline-block" }}>
       <button type="button" onClick={handlePush} disabled={busy} style={S.btn}
-        title={`Envía los entrenamientos de los próximos ${days} días al reloj de ${athleteName || "el atleta"}`}>
+        title={`Envía los entrenamientos pendientes al reloj de ${athleteName || "el atleta"}`}>
         {busy ? "Enviando…" : "📲 Enviar al reloj"}
       </button>
 
       {error && (
         <div style={S.err}>
           {error}
-          {/* Los 400 mas comunes ya traen mensaje claro del backend:
-              sin evaluación VDOT, o sin intervals.icu conectado. */}
         </div>
       )}
 
@@ -112,10 +105,22 @@ export default function PushToWatchButton({ athleteId, athleteName, days = 14 })
             <div style={S.ok}>
               ✅ {result.pushed} entrenamiento{result.pushed !== 1 ? "s" : ""} enviado
               {result.pushed !== 1 ? "s" : ""} al reloj
+              {(result.created != null || result.updated != null) ? (
+                <span style={{ fontWeight: 600, color: "#64748b" }}>
+                  {" "}({result.created || 0} nuevo{(result.created || 0) !== 1 ? "s" : ""}
+                  , {result.updated || 0} actualizado{(result.updated || 0) !== 1 ? "s" : ""})
+                </span>
+              ) : null}
             </div>
           ) : (
             <div style={S.warn}>
               No se envió ningún entrenamiento
+            </div>
+          )}
+
+          {result.from && result.to && (
+            <div style={{ color: "#64748b", marginTop: 4 }}>
+              Rango: {result.from} → {result.to}
             </div>
           )}
 
@@ -143,6 +148,8 @@ export default function PushToWatchButton({ athleteId, athleteName, days = 14 })
               {result.results.map((r) => (
                 <li key={r.id} style={{ marginBottom: 2 }}>
                   {r.ok ? "✅" : "❌"} {r.title}
+                  {r.ok && r.action === "updated" ? " · actualizado" : ""}
+                  {r.ok && r.action === "created" ? " · nuevo" : ""}
                   {r.ok && r.steps ? ` · ${r.steps} paso${r.steps !== 1 ? "s" : ""}` : ""}
                   {!r.ok && r.error ? ` · ${r.error}` : ""}
                 </li>

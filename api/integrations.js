@@ -13,7 +13,8 @@
  *   disconnect     { athlete_id }
  *   status         { athlete_id }            ¿conectado?
  *   push-workout   { athlete_id, workout_id }
- *   push-range     { athlete_id, from, to }  empuja un rango de fechas
+ *   push-range     { athlete_id, from?, to? }  empuja workouts pendientes
+ *                  (rango por defecto: hoy -> workout mas lejano, tope 90d)
  *   pull-activity  { athlete_id, workout_id } trae lo ejecutado del reloj
  *   activity-intervals { athlete_id, activity_id } laps crudos (comparacion por bloque)
  *   oauth-start    { athlete_id }            inicia OAuth (JWT); devuelve authorize_url
@@ -224,30 +225,74 @@ async function actionStatus(res, athleteId) {
   });
 }
 
-/** Empuja una lista de workouts a intervals.icu */
+/** Empuja una lista de workouts a intervals.icu (crea o actualiza). */
 async function pushWorkouts(conn, workouts, vdot) {
+  if (!workouts?.length) return [];
+
+  // Indexar eventos existentes del rango por external_id/uid para evitar
+  // duplicados. upsertOnUid solo matchea el campo `uid` (NO external_id),
+  // por eso antes se duplicaban: enviabamos solo external_id.
+  const dates = workouts.map((w) => w.scheduled_date).filter(Boolean).sort();
+  const oldest = dates[0];
+  const newest = dates[dates.length - 1];
+  const byKey = new Map();
+  if (oldest && newest) {
+    const existingRes = await icuFetch(
+      conn,
+      `/athlete/0/events?oldest=${oldest}&newest=${newest}`,
+    );
+    const list = Array.isArray(existingRes.data) ? existingRes.data : [];
+    for (const ev of list) {
+      if (ev?.external_id) byKey.set(String(ev.external_id), ev);
+      if (ev?.uid) byKey.set(String(ev.uid), ev);
+    }
+  }
+
   const results = [];
+  let created = 0;
+  let updated = 0;
   for (const w of workouts) {
     if (!w.scheduled_date) {
       results.push({ id: w.id, ok: false, error: "sin scheduled_date" });
       continue;
     }
     const event = buildIntervalsEvent(w, vdot);
-    // upsertOnUid + external_id 'raf-<id>' evita duplicados al reenviar.
-    const r = await icuFetch(
-      conn,
-      "/athlete/0/events?upsertOnUid=true",
-      { method: "POST", body: event }
-    );
+    const key = event.external_id; // raf-<workout.id>
+    const existing = byKey.get(key);
+    let r;
+    let action;
+    if (existing?.id != null) {
+      r = await icuFetch(conn, `/athlete/0/events/${existing.id}`, {
+        method: "PUT",
+        body: event,
+      });
+      action = "updated";
+      if (r.ok) updated++;
+    } else {
+      // POST + upsertOnUid (uid=raf-<id>) como red de seguridad.
+      r = await icuFetch(conn, "/athlete/0/events?upsertOnUid=true", {
+        method: "POST",
+        body: event,
+      });
+      action = "created";
+      if (r.ok) {
+        created++;
+        if (r.data?.id != null) byKey.set(key, r.data);
+      }
+    }
     results.push({
       id: w.id,
       title: w.title,
       ok: r.ok,
+      action,
       steps: r.data?.workout_doc?.steps?.length ?? 0,
       moving_time: r.data?.moving_time ?? null,
       error: r.ok ? null : (r.text || "").slice(0, 200),
     });
   }
+  console.log(
+    `[pushWorkouts] created=${created} updated=${updated} total=${workouts.length}`,
+  );
   return results;
 }
 
@@ -306,18 +351,39 @@ async function actionPushWorkout(res, athleteId, workoutId) {
 }
 
 async function actionPushRange(res, athleteId, from, to) {
-  if (!from || !to) return jsonError(res, 400, "Faltan 'from' y 'to' (YYYY-MM-DD)");
-
   const conn = await getConnection(athleteId);
   if (!conn) return jsonError(res, 400, "El atleta no tiene intervals.icu conectado");
 
+  // Rango: hoy -> workout pendiente mas lejano del atleta (tope 90 dias).
+  // from/to del cliente son opcionales y solo se usan como pista; nunca
+  // acortamos por debajo del plan real (el bug de "solo 14 dias" venia del
+  // boton del cliente hardcodeado a days=14).
+  const hoy = new Date().toISOString().slice(0, 10);
+  const farRows = await sb(
+    `workouts?athlete_id=eq.${athleteId}&scheduled_date=gte.${hoy}` +
+    `&select=scheduled_date&order=scheduled_date.desc&limit=1`,
+  );
+  const farthest = farRows?.[0]?.scheduled_date || hoy;
+  const cap = (() => {
+    const d = new Date(`${hoy}T12:00:00`);
+    d.setDate(d.getDate() + 90);
+    return d.toISOString().slice(0, 10);
+  })();
+  const fromDate = hoy;
+  let toDate = farthest > cap ? cap : farthest;
+  // Si el cliente pide un "to" mas amplio (dentro del tope), lo respetamos.
+  if (to && String(to) > toDate && String(to) <= cap) toDate = String(to);
+
   const workouts = await sb(
     `workouts?athlete_id=eq.${athleteId}` +
-    `&scheduled_date=gte.${from}&scheduled_date=lte.${to}` +
-    `&select=*&order=scheduled_date.asc`
+    `&scheduled_date=gte.${fromDate}&scheduled_date=lte.${toDate}` +
+    `&select=*&order=scheduled_date.asc`,
   );
   if (!workouts?.length) {
-    return res.status(200).json({ ok: true, pushed: 0, results: [] });
+    return res.status(200).json({
+      ok: true, pushed: 0, created: 0, updated: 0, results: [],
+      from: fromDate, to: toDate,
+    });
   }
 
   // Sin evaluacion no hay ritmos reales: mandar un VDOT inventado
@@ -330,19 +396,25 @@ async function actionPushRange(res, athleteId, from, to) {
 
   // Omitir sesiones que no son de carrera (gimnasio, fuerza, etc.) y
   // las que estan en el pasado: no tienen ritmos o nunca llegan al reloj.
-  const hoy = new Date().toISOString().slice(0, 10);
   const runnable = workouts.filter(
-    (w) => isRunWorkout(w, vdot) && w.scheduled_date >= hoy
+    (w) => isRunWorkout(w, vdot) && w.scheduled_date >= hoy,
   );
   const skipped = workouts.length - runnable.length;
 
   const results = await pushWorkouts(conn, runnable, vdot);
   await finishPush(athleteId, conn.id, results);
 
+  const created = results.filter((r) => r.ok && r.action === "created").length;
+  const updated = results.filter((r) => r.ok && r.action === "updated").length;
+
   return res.status(200).json({
     ok: true,
     vdot_used: vdot,
+    from: fromDate,
+    to: toDate,
     pushed: results.filter((r) => r.ok).length,
+    created,
+    updated,
     failed: results.filter((r) => !r.ok).length,
     skipped,
     results,
