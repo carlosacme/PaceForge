@@ -484,7 +484,27 @@ Reglas de estructura (campo "structure") — mismo formato que el Builder; compa
 - Include warmup and cooldown blocks in every quality session that has structure.
 - The "duration" field of each block MUST be a plain number followed by a single unit: either "N sec" or "N min" (e.g. "60 sec", "2 min", "15 min"). Do NOT add extra words (no "caminar", no "trote suave", no "aprox"), do NOT use ranges (no "18-20 seg"), do NOT use clock format (no "1:30"), and do NOT use approximations (no "~2 min"). If a block is distance-based, still give a realistic single duration estimate.
 - El campo "pace" de cada bloque es el rango numérico min/km (H:MM-H:MM, guión ASCII) coherente con el esfuerzo del bloque y el level del plan; las recuperaciones usan un ritmo fácil.
-- Los bloques de structure deben ser coherentes con "description" y "pace_range" de la sesión (structure es lo que se ejecuta; description es el texto legible del preview).`;
+- Los bloques de structure deben ser coherentes con "description" y "pace_range" de la sesión (structure es lo que se ejecuta; description es el texto legible del preview).
+Reglas de periodización y progresión (obligatorias — el plan NO debe tener semanas casi idénticas):
+PERIODIZACIÓN
+- Divide el plan en fases: BASE (primer 40% de las semanas: volumen aeróbico progresivo, intensidad baja), ESPECÍFICA (siguiente 40%: trabajo a ritmo objetivo, intensidad creciente), y AFINAMIENTO (últimas 2-3 semanas: reducción de volumen 30-50% manteniendo intensidad).
+- Incluye una SEMANA DE DESCARGA cada 3-4 semanas: reduce el volumen al 60-70% de la semana anterior manteniendo una sesión de calidad corta. Es obligatoria para prevenir sobreentrenamiento.
+PROGRESIÓN DE CARGA
+- El volumen semanal (suma de distance_km) debe crecer entre 5% y 10% respecto a la semana anterior, EXCEPTO en semanas de descarga y afinamiento. Nunca saltes más del 10%.
+- El rodaje largo debe crecer progresivamente a lo largo del plan hasta su pico en la fase específica, y luego reducirse en el afinamiento.
+- Las sesiones de calidad deben progresar semana a semana: más repeticiones, o repeticiones más largas, o menos recuperación, o ritmo más exigente. NUNCA repitas la misma sesión de calidad dos semanas seguidas sin cambio.
+VARIEDAD DE ESTÍMULOS
+- Alterna los tipos de sesión de calidad a lo largo del plan: intervalos cortos (VO2max: 200m-800m), intervalos largos (1000m-2000m), tempo continuo (umbral), fartlek, y ritmo objetivo de carrera. No uses el mismo tipo todas las semanas.
+- En fase BASE prioriza fartlek y tempo suave; en fase ESPECÍFICA prioriza intervalos y ritmo objetivo.
+- Incluye trabajo de colinas o progresiones en la fase base si el nivel lo permite (intermedio/avanzado).
+COHERENCIA CON EL NIVEL
+- PRINCIPIANTE: máximo 3-4 sesiones/semana, volumen conservador, una sola sesión de calidad por semana, progresión lenta (5% semanal), sin dobles sesiones. Prioriza completar la distancia sobre el ritmo.
+- INTERMEDIO: 4-5 sesiones, una o dos de calidad, rodaje largo relevante, progresión 7-10%.
+- AVANZADO: 5-6 sesiones, dos sesiones de calidad, largos con bloques a ritmo objetivo, mayor volumen total.
+DESCANSO Y DISTRIBUCIÓN
+- Nunca programes dos sesiones de calidad en días consecutivos. Deja al menos un día fácil o de descanso entre ellas.
+- El rodaje largo va preferentemente en fin de semana.
+- Los títulos y descripciones de las sesiones deben reflejar la progresión (ej. "Series 6x800m — progresión semana 5" en vez de repetir "Series 800m" todas las semanas).`;
     const userPrompt = [
       `Describe el plan: ${aiContext || "Plan de running para marketplace"}`,
       `Nivel del plan (aplica la tabla de ritmos de este nivel en cada sesión): ${aiLevel}`,
