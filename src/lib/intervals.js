@@ -66,23 +66,32 @@ function parseDurationToken(tok, unit) {
   return null;
 }
 
+/** Detecta unidad en un string de duracion. "seg"/"s" -> sec; "min" -> min. */
+function detectDurationUnit(s) {
+  // Segundos EN: sec/secs; ES: seg/segs/segundos; abreviado: s (no "skip").
+  if (/(?:segundos|segs|seg|secs|sec)(?![a-z])/.test(s)) return "sec";
+  if (/\d\s*s(?![a-z])/.test(s)) return "sec";
+  if (/(?:minutos?|mins?)(?![a-z])/.test(s)) return "min";
+  return "";
+}
+
 /**
- * "10 min" | "8 min 30 sec" | "26 sec" | "1:30" -> segundos.
- * Tambien RANGOS ("1:30-2:00 min", "90-120 sec", "2-3 min"): se toma el
- * PUNTO MEDIO. Sin esto, un 400m con duracion "1:30-2:00 min" devolvia 0
- * (el regex de "min" enganchaba el "00" de "2:00") y normalizeBlock lo
- * descartaba -> los intervalos nunca llegaban al reloj.
+ * "10 min" | "8 min 30 sec" | "26 sec" | "60 seg caminar" | "1:30" -> segundos.
+ * Tambien RANGOS ("1:30-2:00 min", "90-120 sec", "18-20 seg"): punto medio.
+ * Acepta ES (seg/segundos) e EN (sec), e ignora texto tras la unidad
+ * ("60 seg caminar" -> 60). El reloj "M:SS min" va ANTES del regex laxo de
+ * min para no interpretar "1:30 min" como 30 minutos.
  */
-function durationToSecs(str) {
+export function durationToSecs(str) {
   if (str == null) return null;
   if (typeof str === "number") return str > 300 ? str : str * 60;
   const s = String(str).toLowerCase().trim();
 
-  // Rango primero: "1:30-2:00 min" | "90-120 sec" | "2-3 min" -> punto medio.
+  // Rango primero: "1:30-2:00 min" | "90-120 sec" | "18-20 seg" -> punto medio.
+  // No exige unidad al final ($): "18-20 seg" y "90-120 sec algo" valen.
   const range = s.match(/^([\d.:]+)\s*[-–]\s*([\d.:]+)/);
   if (range) {
-    const unitMatch = s.match(/(min|sec)\s*$/);
-    const unit = unitMatch ? unitMatch[1] : "";
+    const unit = detectDurationUnit(s);
     const a = parseDurationToken(range[1], unit);
     const b = parseDurationToken(range[2], unit);
     if (a != null && b != null) return Math.round((a + b) / 2);
@@ -91,13 +100,18 @@ function durationToSecs(str) {
   // Reloj mm:ss con sufijo OPCIONAL ("1:30", "1:30 min", "2:00 min"). DEBE ir
   // antes del regex laxo de "min": sin esto, /(\d+)\s*min/ engancha el "30" de
   // "1:30 min" y devuelve 30 min (1800s) -> el reloj mostraba "30m".
-  const clockSuffixed = s.match(/^(\d+):(\d{2})(?:\s*(?:min|sec))?$/);
+  // Sufijo opcional; no exige fin de string (permite basura tras la unidad).
+  const clockSuffixed = s.match(/^(\d+):(\d{2})(?:\s*(?:minutos?|mins?|segundos|segs|seg|secs|sec))?/);
   if (clockSuffixed) {
     return parseInt(clockSuffixed[1], 10) * 60 + parseInt(clockSuffixed[2], 10);
   }
 
-  const min = s.match(/(\d+)\s*min/);
-  const sec = s.match(/(\d+)\s*sec/);
+  // Unidades laxas: "60 seg caminar", "90 seg trote suave", "2 min", "26 sec".
+  // NO anclar al final: el texto tras la unidad se ignora.
+  // "s" bare: (?![a-z]) evita enganchar la "s" de "seg" a medias (ya cubierto
+  // arriba) y evita "60 skip".
+  const min = s.match(/(\d+)\s*(?:minutos?|mins?)(?![a-z])/);
+  const sec = s.match(/(\d+)\s*(?:segundos|segs|seg|secs|sec|s)(?![a-z])/);
   if (min || sec) {
     return (min ? parseInt(min[1], 10) : 0) * 60 + (sec ? parseInt(sec[1], 10) : 0);
   }
