@@ -158,7 +158,7 @@ export default function PushToWatchButton({ athleteId, athleteName }) {
           )}
 
           <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid #e2e8f0", color: "#64748b" }}>
-            Los entrenamientos llegan al reloj la mañana del día programado.
+            Los entrenamientos se envían a intervals.icu al instante. Cada uno aparece en tu reloj Garmin unos días antes de su fecha programada (aprox. 7 días), no todos de golpe. Si no ves los más lejanos todavía, es normal.
           </div>
         </div>
       )}

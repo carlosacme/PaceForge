@@ -211,7 +211,7 @@ export default function IntervalsConnect({ athleteId, onNotify }) {
                 no llegan al reloj.
               </div>
               <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid #e2e8f0", color: "#64748b" }}>
-                Los entrenamientos llegan al reloj la mañana del día programado.
+                Los entrenamientos se envían a intervals.icu al instante. Cada uno aparece en tu reloj Garmin unos días antes de su fecha programada (aprox. 7 días), no todos de golpe. Si no ves los más lejanos todavía, es normal.
                 También puedes forzarlos desde intervals.icu con “Send to watch”.
               </div>
             </div>
