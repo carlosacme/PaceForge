@@ -611,6 +611,11 @@ Reglas adicionales:
             const isMine = myChallengeIds.has(String(challenge.id));
             const progress = computeChallengeProgressForAthlete(challenge, workouts);
             const openDistanceChallenge = challengeHasOpenTarget(challenge);
+            const wouldMeetGoal =
+              !isMine &&
+              Number.isFinite(progress?.target) &&
+              progress.target > 0 &&
+              Number(progress?.value) >= Number(progress.target);
             return (
               <div key={challenge.id} style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: "12px 14px", background: "#fff" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
@@ -704,16 +709,27 @@ Reglas adicionales:
                 </div>
                 {isAthlete ? (
                   openDistanceChallenge ? (
-                    <div style={{ marginTop: 10, fontSize: ".76em", color: "#475569", fontWeight: 700 }}>
-                      {challengeProgressOpenText(challenge, progress)}
+                    <div style={{ marginTop: 10, fontSize: ".76em", color: isMine ? "#475569" : "#94a3b8", fontWeight: 700 }}>
+                      {isMine
+                        ? challengeProgressOpenText(challenge, progress)
+                        : `Tu progreso actual (aún no participas): ${challengeProgressOpenText(challenge, progress)}`}
                     </div>
                   ) : (
                     <>
-                      <div style={{ marginTop: 10, fontSize: ".76em", color: "#475569", fontWeight: 700 }}>
-                        Progreso: {challengeProgressLabel(challenge, progress)}
+                      <div style={{ marginTop: 10, fontSize: ".76em", color: isMine ? "#475569" : "#94a3b8", fontWeight: 700 }}>
+                        {isMine
+                          ? `Progreso: ${challengeProgressLabel(challenge, progress)}`
+                          : `Tu progreso actual (aún no participas): ${challengeProgressLabel(challenge, progress)}`}
                       </div>
                       <div style={{ height: 8, borderRadius: 999, background: "#e2e8f0", overflow: "hidden", marginTop: 6 }}>
-                        <div style={{ width: `${progress.pct}%`, height: "100%", background: challenge.color || "#a855f7" }} />
+                        <div
+                          style={{
+                            width: `${progress.pct}%`,
+                            height: "100%",
+                            background: isMine ? (challenge.color || "#a855f7") : "#94a3b8",
+                            opacity: isMine ? 1 : 0.55,
+                          }}
+                        />
                       </div>
                     </>
                   )
@@ -725,14 +741,33 @@ Reglas adicionales:
                         Participando
                       </span>
                     ) : (
-                      <button
-                        type="button"
-                        disabled={joiningChallengeId === String(challenge.id) || !athleteId || challengeExpired}
-                        onClick={() => joinChallenge(challenge.id)}
-                        style={{ background: joiningChallengeId === String(challenge.id) ? "#cbd5e1" : "linear-gradient(135deg,#2563eb,#3b82f6)", border: "none", borderRadius: 8, padding: "8px 12px", color: "#fff", fontWeight: 800, fontFamily: "inherit", cursor: joiningChallengeId === String(challenge.id) || challengeExpired ? "not-allowed" : "pointer", fontSize: ".75em" }}
-                      >
-                        {joiningChallengeId === String(challenge.id) ? "Uniendo…" : challengeExpired ? "Reto finalizado" : "Unirse"}
-                      </button>
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 8, minWidth: 0 }}>
+                        {wouldMeetGoal ? (
+                          <div
+                            style={{
+                              background: "linear-gradient(135deg, rgba(34,197,94,.16), rgba(245,158,11,.18))",
+                              border: "1px solid rgba(180,83,9,.35)",
+                              borderRadius: 8,
+                              padding: "8px 12px",
+                              color: "#9a3412",
+                              fontWeight: 800,
+                              fontSize: ".74em",
+                              lineHeight: 1.35,
+                              maxWidth: 320,
+                            }}
+                          >
+                            ¡Ya cumplirías la meta! Únete para que cuente.
+                          </div>
+                        ) : null}
+                        <button
+                          type="button"
+                          disabled={joiningChallengeId === String(challenge.id) || !athleteId || challengeExpired}
+                          onClick={() => joinChallenge(challenge.id)}
+                          style={{ background: joiningChallengeId === String(challenge.id) ? "#cbd5e1" : "linear-gradient(135deg,#2563eb,#3b82f6)", border: "none", borderRadius: 8, padding: "8px 12px", color: "#fff", fontWeight: 800, fontFamily: "inherit", cursor: joiningChallengeId === String(challenge.id) || challengeExpired ? "not-allowed" : "pointer", fontSize: ".75em" }}
+                        >
+                          {joiningChallengeId === String(challenge.id) ? "Uniendo…" : challengeExpired ? "Reto finalizado" : "Unirse"}
+                        </button>
+                      </div>
                     )
                   ) : <span />}
                   {isAdmin ? (
