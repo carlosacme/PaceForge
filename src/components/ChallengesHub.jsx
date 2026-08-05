@@ -44,6 +44,7 @@ function ChallengesHub({
   const [savingCreate, setSavingCreate] = useState(false);
   const [deletingId, setDeletingId] = useState("");
   const [renewingId, setRenewingId] = useState("");
+  const [updatingRecurrenceId, setUpdatingRecurrenceId] = useState("");
   const [workoutsByAthlete, setWorkoutsByAthlete] = useState({});
   const [participantsModalChallenge, setParticipantsModalChallenge] = useState(null);
   const [form, setForm] = useState({
@@ -463,6 +464,38 @@ Reglas adicionales:
     loadChallenges();
   };
 
+  /** Admin: No recurrente | Semanal | Mensual → is_recurring + recurrence */
+  const updateChallengeRecurrence = async (challengeId, mode) => {
+    if (!isAdmin) return;
+    const value = String(mode || "none");
+    const patch =
+      value === "weekly"
+        ? { is_recurring: true, recurrence: "weekly" }
+        : value === "monthly"
+          ? { is_recurring: true, recurrence: "monthly" }
+          : { is_recurring: false, recurrence: null };
+    setUpdatingRecurrenceId(String(challengeId));
+    const { error } = await supabase.from("challenges").update(patch).eq("id", challengeId);
+    setUpdatingRecurrenceId("");
+    if (error) {
+      notify?.(error.message || "No se pudo actualizar la recurrencia");
+      return;
+    }
+    notify?.(
+      value === "weekly"
+        ? "Recurrencia: semanal ✅"
+        : value === "monthly"
+          ? "Recurrencia: mensual ✅"
+          : "Reto marcado como no recurrente",
+    );
+    loadChallenges();
+  };
+
+  const recurrenceSelectValue = (c) => {
+    if (!c?.is_recurring) return "none";
+    return String(c.recurrence || "").toLowerCase() === "weekly" ? "weekly" : "monthly";
+  };
+
   return (
     <div style={{ ...S.card, marginBottom: 18 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
@@ -620,9 +653,24 @@ Reglas adicionales:
               <div key={challenge.id} style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: "12px 14px", background: "#fff" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
                   <div style={{ minWidth: 0 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                       <span style={{ fontSize: "1.25em" }}>{challenge.emoji || "🏁"}</span>
                       <span style={{ fontWeight: 900, color: challenge.color || "#0f172a", fontSize: ".95em" }}>{challenge.title || "Reto"}</span>
+                      {challenge.is_recurring ? (
+                        <span
+                          style={{
+                            fontSize: ".68em",
+                            fontWeight: 800,
+                            color: "#9a3412",
+                            background: "rgba(245,158,11,.16)",
+                            border: "1px solid rgba(245,158,11,.45)",
+                            borderRadius: 999,
+                            padding: "3px 9px",
+                          }}
+                        >
+                          🔄 {String(challenge.recurrence || "").toLowerCase() === "weekly" ? "Semanal" : "Mensual"}
+                        </span>
+                      ) : null}
                     </div>
                     <div style={{ color: "#64748b", fontSize: ".82em", marginTop: 4, lineHeight: 1.4 }}>{challenge.description || "Sin descripción"}</div>
                   </div>
@@ -631,6 +679,35 @@ Reglas adicionales:
                 <div style={{ marginTop: 10, color: "#64748b", fontSize: ".76em" }}>
                   Fecha límite: {challenge.end_date ? new Date(`${challenge.end_date}T12:00:00`).toLocaleDateString("es-CO") : "—"} · Participantes: {participants.length}
                 </div>
+                {isAdmin ? (
+                  <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <label style={{ fontSize: ".72em", fontWeight: 700, color: "#64748b" }} htmlFor={`recurrence-${challenge.id}`}>
+                      Recurrencia
+                    </label>
+                    <select
+                      id={`recurrence-${challenge.id}`}
+                      disabled={updatingRecurrenceId === String(challenge.id)}
+                      value={recurrenceSelectValue(challenge)}
+                      onChange={(e) => updateChallengeRecurrence(challenge.id, e.target.value)}
+                      style={{
+                        border: "1px solid #dbe2ea",
+                        borderRadius: 8,
+                        padding: "6px 10px",
+                        fontFamily: "inherit",
+                        fontSize: ".74em",
+                        fontWeight: 700,
+                        color: "#334155",
+                        background: updatingRecurrenceId === String(challenge.id) ? "#f1f5f9" : "#fff",
+                        cursor: updatingRecurrenceId === String(challenge.id) ? "not-allowed" : "pointer",
+                        maxWidth: 220,
+                      }}
+                    >
+                      <option value="none">No recurrente</option>
+                      <option value="weekly">Semanal</option>
+                      <option value="monthly">Mensual</option>
+                    </select>
+                  </div>
+                ) : null}
                 <div style={{ marginTop: 10, borderTop: "1px dashed #e2e8f0", paddingTop: 10 }}>
                   <button
                     type="button"
