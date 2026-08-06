@@ -23,7 +23,9 @@ const PLAN_LIST_COLUMNS =
   "id,title,level,sport,price_cop,is_active,is_approved,coach_name,coach_user_id,duration_weeks,sessions_per_week,sales_count,created_at";
 /** Columnas livianas para la LISTA de compras. */
 const PURCHASE_LIST_COLUMNS =
-  "id,plan_id,buyer_user_id,price_paid,payment_status,payment_method,created_at";
+  "id,plan_id,buyer_user_id,price_paid,payment_status,payment_method,confirmed_at,confirmed_by,confirmed_source,created_at";
+/** Estados en los que la compra aún no está cobrada y el admin puede actuar. */
+const OPEN_PURCHASE_STATUSES = new Set(["initiated", "pending"]);
 
 function AdminMarketplacePanel({ notify, styles }) {
   const S = styles;
@@ -89,7 +91,44 @@ function AdminMarketplacePanel({ notify, styles }) {
     if (purchasesRes.error) {
       console.error("admin marketplace purchases:", purchasesRes.error);
       setPurchases([]);
-    } else setPurchases(purchasesRes.data || []);
+      return;
+    }
+    // La tabla no guarda ni el nombre del comprador ni el título del plan:
+    // hay que resolverlos por join, y traer el estado real del pago en Wompi
+    // para no confirmar a ciegas.
+    const rows = purchasesRes.data || [];
+    const buyerIds = [...new Set(rows.map((r) => r.buyer_user_id).filter(Boolean))];
+    const purchaseIds = rows.map((r) => r.id).filter(Boolean);
+    const planTitleById = {};
+    for (const p of plansRes.data || []) planTitleById[String(p.id)] = String(p.title || "").trim();
+    const missingPlanIds = [...new Set(rows.map((r) => String(r.plan_id || "")).filter((id) => id && !planTitleById[id]))];
+    const [namesRes, morePlansRes, paymentsRes] = await Promise.all([
+      buyerIds.length ? supabase.from("user_names").select("user_id,name").in("user_id", buyerIds) : Promise.resolve({ data: [] }),
+      missingPlanIds.length ? supabase.from("plan_marketplace").select("id,title").in("id", missingPlanIds) : Promise.resolve({ data: [] }),
+      purchaseIds.length
+        ? supabase
+            .from("subscription_payments")
+            .select("marketplace_purchase_id,wompi_status,wompi_transaction_id,created_at")
+            .in("marketplace_purchase_id", purchaseIds)
+            .order("created_at", { ascending: false })
+        : Promise.resolve({ data: [] }),
+    ]);
+    const nameByUser = {};
+    for (const r of namesRes.data || []) nameByUser[String(r.user_id)] = String(r.name || "").trim();
+    for (const p of morePlansRes.data || []) planTitleById[String(p.id)] = String(p.title || "").trim();
+    const paymentByPurchase = {};
+    for (const pay of paymentsRes.data || []) {
+      const key = String(pay.marketplace_purchase_id || "");
+      if (!key || paymentByPurchase[key]) continue;
+      paymentByPurchase[key] = pay;
+    }
+    setPurchases(rows.map((row) => ({
+      ...row,
+      buyer_display: nameByUser[String(row.buyer_user_id)] || String(row.buyer_user_id || "Comprador"),
+      plan_display: planTitleById[String(row.plan_id)] || String(row.plan_id || ""),
+      wompi_status: paymentByPurchase[String(row.id)]?.wompi_status || null,
+      wompi_transaction_id: paymentByPurchase[String(row.id)]?.wompi_transaction_id || null,
+    })));
   }, [notify]);
 
   /** Carga bajo demanda description + sesiones JSONB de UN plan (edición). */
@@ -207,17 +246,45 @@ function AdminMarketplacePanel({ notify, styles }) {
     notify?.("Plan eliminado");
     loadAll();
   };
-  const confirmPayment = async (purchaseId) => {
-    const { error } = await supabase.from("plan_purchases").update({ payment_status: "confirmed" }).eq("id", purchaseId);
+  const confirmPayment = async (purchase) => {
+    if (!purchase?.id) return;
+    const wompiStatus = String(purchase.wompi_status || "").toUpperCase();
+    if (wompiStatus !== "APPROVED" && typeof window !== "undefined") {
+      const detail = wompiStatus ? `Estado en Wompi: ${wompiStatus}.` : "No hay ningún pago registrado en Wompi para esta compra.";
+      if (!window.confirm(`Este pago NO está aprobado en Wompi. ${detail}\n\n¿Confirmar de todos modos?`)) return;
+    }
+    const { data: authData } = await supabase.auth.getUser();
+    const adminId = authData?.user?.id || null;
+    const { error } = await supabase
+      .from("plan_purchases")
+      .update({
+        payment_status: "confirmed",
+        confirmed_at: new Date().toISOString(),
+        confirmed_by: adminId,
+        confirmed_source: "admin_manual",
+      })
+      .eq("id", purchase.id);
     if (error) {
       notify?.(error.message || "No se pudo confirmar pago");
       return;
     }
-    notify?.("Pago confirmado");
+    notify?.("Pago confirmado manualmente");
     loadAll();
   };
 
-  const pendingPurchases = (purchases || []).filter((p) => String(p.payment_status || "").toLowerCase() === "pending");
+  const declinePurchase = async (purchase) => {
+    if (!purchase?.id) return;
+    if (typeof window !== "undefined" && !window.confirm("¿Marcar esta compra como rechazada? El atleta no recibirá el plan.")) return;
+    const { error } = await supabase.from("plan_purchases").update({ payment_status: "declined" }).eq("id", purchase.id);
+    if (error) {
+      notify?.(error.message || "No se pudo rechazar la compra");
+      return;
+    }
+    notify?.("Compra marcada como rechazada");
+    loadAll();
+  };
+
+  const pendingPurchases = (purchases || []).filter((p) => OPEN_PURCHASE_STATUSES.has(String(p.payment_status || "").toLowerCase()));
   const hasUnsavedDraft = useMemo(() => {
     return Boolean(
       createForm.editing_plan_id ||
@@ -792,16 +859,38 @@ DESCANSO Y DISTRIBUCIÓN
               <div style={{ color: "#94a3b8", fontSize: ".84em" }}>No hay compras pendientes.</div>
             ) : (
               <div style={{ display: "grid", gap: 8 }}>
-                {pendingPurchases.map((p) => (
-                  <div key={p.id} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: "10px 12px", background: "#f8fafc", display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-                    <div style={{ fontSize: ".82em", color: "#334155" }}>
-                      Plan: <strong>{p.plan_title || p.plan_id}</strong> · ${formatCopInt(p.amount_cop ?? p.price_paid ?? 0)} COP · {p.buyer_name || p.buyer_user_id || "Comprador"}
+                {pendingPurchases.map((p) => {
+                  const wompiStatus = String(p.wompi_status || "").toUpperCase();
+                  const approved = wompiStatus === "APPROVED";
+                  return (
+                    <div key={p.id} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: "10px 12px", background: "#f8fafc", display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                      <div style={{ fontSize: ".82em", color: "#334155" }}>
+                        Plan: <strong>{p.plan_display || p.plan_id}</strong> · ${formatCopInt(p.price_paid ?? 0)} COP · {p.buyer_display || "Comprador"}
+                        <div style={{ marginTop: 4, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", fontSize: ".9em" }}>
+                          <span style={{ fontWeight: 800, borderRadius: 999, padding: "2px 8px", border: `1px solid ${approved ? "#86efac" : "#fed7aa"}`, background: approved ? "#dcfce7" : "#fff7ed", color: approved ? "#166534" : "#9a3412" }}>
+                            Wompi: {wompiStatus || "SIN PAGO"}
+                          </span>
+                          <span style={{ color: "#94a3b8" }}>
+                            {new Date(p.created_at).toLocaleDateString("es-CO")} · {p.payment_status}
+                          </span>
+                        </div>
+                        {!approved ? (
+                          <div style={{ marginTop: 4, fontSize: ".9em", color: "#b45309" }}>
+                            Este pago no está aprobado en Wompi. Confírmalo solo si validaste una transferencia.
+                          </div>
+                        ) : null}
+                      </div>
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                        <button type="button" onClick={() => confirmPayment(p)} style={{ border: "1px solid #bbf7d0", background: "#f0fdf4", color: "#166534", borderRadius: 8, padding: "7px 10px", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".76em" }}>
+                          ✅ Confirmar pago
+                        </button>
+                        <button type="button" onClick={() => declinePurchase(p)} style={{ border: "1px solid #fecaca", background: "#fef2f2", color: "#b91c1c", borderRadius: 8, padding: "7px 10px", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".76em" }}>
+                          🚫 Rechazar
+                        </button>
+                      </div>
                     </div>
-                    <button type="button" onClick={() => confirmPayment(p.id)} style={{ border: "1px solid #bbf7d0", background: "#f0fdf4", color: "#166534", borderRadius: 8, padding: "7px 10px", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".76em" }}>
-                      ✅ Confirmar pago
-                    </button>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>

@@ -24,8 +24,8 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
   const [savingPlan, setSavingPlan] = useState(false);
   const [coachLibraryRows, setCoachLibraryRows] = useState([]);
   const [loadingLibrary, setLoadingLibrary] = useState(false);
-  const [pendingPurchasesList, setPendingPurchasesList] = useState([]);
-  const [loadingPendingPurchases, setLoadingPendingPurchases] = useState(false);
+  const [confirmedSalesList, setConfirmedSalesList] = useState([]);
+  const [loadingConfirmedSales, setLoadingConfirmedSales] = useState(false);
   const [editingMarketplacePlanId, setEditingMarketplacePlanId] = useState(null);
   const [editingPlanSnapshot, setEditingPlanSnapshot] = useState(null);
   const [planForm, setPlanForm] = useState({
@@ -106,23 +106,48 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
     } finally { setLoadingPurchasedPlans(false); }
   }, [currentUserId, isAthlete]);
 
-  const loadPendingPurchases = useCallback(async () => {
-    const canSeePending = isCoach || isAdmin;
-    if (!canSeePending) { setPendingPurchasesList([]); setLoadingPendingPurchases(false); return; }
-    setLoadingPendingPurchases(true);
-    const { data, error } = await supabase.from("plan_purchases").select("*").order("created_at", { ascending: false });
-    setLoadingPendingPurchases(false);
-    if (error) { console.error("plan_purchases pending:", error); setPendingPurchasesList([]); return; }
-    const pendingRows = (data || []).filter((row) => String(row.payment_status || "").toLowerCase() === "pending");
-    if (isAdmin) { setPendingPurchasesList(pendingRows); return; }
-    const uid = coachUserId || currentUserId;
-    if (!uid) { setPendingPurchasesList([]); return; }
-    const myPlanIds = new Set((plans || []).filter((p) => String(p.coach_user_id || "") === String(uid)).map((p) => String(p.id)));
-    setPendingPurchasesList(pendingRows.filter((row) => myPlanIds.has(String(row.plan_id || ""))));
+  // Ventas ya cobradas. El coach no confirma pagos: solo ve lo que Wompi (o el
+  // admin, para transferencias) dio por bueno. Las columnas buyer_name y
+  // plan_title no existen en la tabla, hay que resolverlas por join.
+  const loadConfirmedSales = useCallback(async () => {
+    if (!isCoach && !isAdmin) { setConfirmedSalesList([]); setLoadingConfirmedSales(false); return; }
+    setLoadingConfirmedSales(true);
+    const { data, error } = await supabase
+      .from("plan_purchases")
+      .select("id,plan_id,buyer_user_id,price_paid,coach_earnings,payment_status,confirmed_at,confirmed_source,created_at")
+      .eq("payment_status", "confirmed")
+      .order("created_at", { ascending: false });
+    if (error) {
+      console.error("plan_purchases confirmed:", error);
+      setConfirmedSalesList([]); setLoadingConfirmedSales(false); return;
+    }
+    let rows = data || [];
+    if (!isAdmin) {
+      const uid = coachUserId || currentUserId;
+      if (!uid) { setConfirmedSalesList([]); setLoadingConfirmedSales(false); return; }
+      const myPlanIds = new Set((plans || []).filter((p) => String(p.coach_user_id || "") === String(uid)).map((p) => String(p.id)));
+      rows = rows.filter((row) => myPlanIds.has(String(row.plan_id || "")));
+    }
+    const buyerIds = [...new Set(rows.map((r) => r.buyer_user_id).filter(Boolean))];
+    const planIds = [...new Set(rows.map((r) => r.plan_id).filter(Boolean))];
+    const [namesRes, plansRes] = await Promise.all([
+      buyerIds.length ? supabase.from("user_names").select("user_id,name").in("user_id", buyerIds) : Promise.resolve({ data: [] }),
+      planIds.length ? supabase.from("plan_marketplace").select("id,title").in("id", planIds) : Promise.resolve({ data: [] }),
+    ]);
+    const nameByUser = {};
+    for (const r of namesRes.data || []) nameByUser[String(r.user_id)] = String(r.name || "").trim();
+    const titleByPlan = {};
+    for (const p of plansRes.data || []) titleByPlan[String(p.id)] = String(p.title || "").trim();
+    setConfirmedSalesList(rows.map((row) => ({
+      ...row,
+      buyer_display: nameByUser[String(row.buyer_user_id)] || "Comprador",
+      plan_display: titleByPlan[String(row.plan_id)] || String(row.plan_id || ""),
+    })));
+    setLoadingConfirmedSales(false);
   }, [isCoach, isAdmin, coachUserId, currentUserId, plans]);
 
   useEffect(() => { loadPurchasedPlans(); }, [loadPurchasedPlans]);
-  useEffect(() => { loadPendingPurchases(); }, [loadPendingPurchases]);
+  useEffect(() => { loadConfirmedSales(); }, [loadConfirmedSales]);
   useEffect(() => { if (!showPublishModal || !isCoach) return; loadCoachLibrary(); }, [showPublishModal, isCoach, loadCoachLibrary]);
 
   const plansVisible = useMemo(() => {
@@ -148,7 +173,7 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
       const { data: purchaseRow, error: purchaseErr } = await supabase.from("plan_purchases").insert({
         plan_id: plan.id, buyer_user_id: currentUserId, coach_id: plan.coach_user_id || null,
         price_paid: Number(plan.price_cop || 0), platform_fee: Math.round(Number(plan.price_cop || 0) * 0.2),
-        coach_earnings: Math.round(Number(plan.price_cop || 0) * 0.8), payment_method: "wompi", payment_status: "pending",
+        coach_earnings: Math.round(Number(plan.price_cop || 0) * 0.8), payment_method: "wompi", payment_status: "initiated",
       }).select().single();
       if (purchaseErr) { console.error("plan_purchases insert:", purchaseErr); notify?.(purchaseErr.message || "No se pudo iniciar la compra."); return; }
       const response = await fetch("/api/wompi-create-checkout", {
@@ -270,7 +295,7 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
     const { error } = await supabase.from("plan_marketplace").delete().eq("id", plan.id);
     if (error) { notify?.(error.message || "No se pudo eliminar"); return; }
     if (String(selectedPlan?.id) === String(plan.id)) setSelectedPlan(null);
-    notify?.("Plan eliminado"); loadMarketplace(); loadSales(); loadPendingPurchases();
+    notify?.("Plan eliminado"); loadMarketplace(); loadSales(); loadConfirmedSales();
   };
 
   const openEditMarketplacePlan = (plan) => {
@@ -284,12 +309,6 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
     setEditingPlanSnapshot(plan);
     setPlanForm({ title: String(plan.title || ""), description: String(plan.description || ""), level: String(plan.level || "intermedio"), duration_weeks: String(plan.duration_weeks ?? 8), sessions_per_week: String(plan.sessions_per_week ?? 4), price_cop: String(plan.price_cop ?? 0), preview_workouts: libIds });
     setShowPublishModal(true);
-  };
-
-  const confirmCoachPendingPurchase = async (purchaseId) => {
-    const { error } = await supabase.from("plan_purchases").update({ payment_status: "confirmed" }).eq("id", purchaseId);
-    if (error) { notify?.(error.message || "No se pudo confirmar"); return; }
-    notify?.("Pago confirmado"); loadPendingPurchases(); loadSales();
   };
 
   const submitCoachPlan = async () => {
@@ -322,7 +341,7 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
     notify?.(editingMarketplacePlanId ? "Plan actualizado." : "Plan enviado. Quedó pendiente de aprobación.");
     setShowPublishModal(false); setEditingMarketplacePlanId(null); setEditingPlanSnapshot(null);
     setPlanForm({ title: "", description: "", level: "intermedio", duration_weeks: "8", sessions_per_week: "4", price_cop: "120000", preview_workouts: [] });
-    loadMarketplace(); loadSales(); loadPendingPurchases();
+    loadMarketplace(); loadSales(); loadConfirmedSales();
   };
 
   const cardStyle = { border: "1px solid #e2e8f0", borderRadius: 12, padding: "12px 14px", background: "#fff", boxShadow: "0 1px 2px rgba(15,23,42,.04)" };
@@ -379,17 +398,27 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
 
       {isCoach || isAdmin ? (
         <div style={{ ...S.card, marginBottom: 14 }}>
-          <div style={{ fontSize: ".72em", letterSpacing: ".12em", textTransform: "uppercase", color: "#64748b", marginBottom: 8 }}>Compras pendientes de confirmar</div>
-          {loadingPendingPurchases ? <div style={{ color: "#64748b", fontSize: ".84em" }}>Cargando compras…</div> : pendingPurchasesList.length === 0 ? <div style={{ color: "#94a3b8", fontSize: ".84em" }}>No hay compras pendientes.</div> : (
+          <div style={{ fontSize: ".72em", letterSpacing: ".12em", textTransform: "uppercase", color: "#64748b", marginBottom: 8 }}>Ventas confirmadas</div>
+          {loadingConfirmedSales ? <div style={{ color: "#64748b", fontSize: ".84em" }}>Cargando ventas…</div> : confirmedSalesList.length === 0 ? <div style={{ color: "#94a3b8", fontSize: ".84em" }}>Aún no tienes ventas confirmadas.</div> : (
             <div style={{ display: "grid", gap: 8 }}>
-              {pendingPurchasesList.map((row) => (
+              {confirmedSalesList.map((row) => (
                 <div key={row.id} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: "10px 12px", background: "#f8fafc", display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-                  <div style={{ fontSize: ".82em", color: "#334155" }}>Plan: <strong>{row.plan_title || row.plan_id}</strong> · ${formatCopInt(row.amount_cop || 0)} COP · {row.buyer_name || row.buyer_user_id || "Comprador"}</div>
-                  <button type="button" onClick={() => confirmCoachPendingPurchase(row.id)} style={{ border: "1px solid #bbf7d0", background: "#f0fdf4", color: "#166534", borderRadius: 8, padding: "7px 10px", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".76em" }}>✅ Confirmar pago</button>
+                  <div style={{ fontSize: ".82em", color: "#334155" }}>
+                    Plan: <strong>{row.plan_display}</strong> · ${formatCopInt(row.price_paid || 0)} COP · {row.buyer_display}
+                    <div style={{ fontSize: ".82em", color: "#64748b", marginTop: 3 }}>
+                      {row.confirmed_at ? new Date(row.confirmed_at).toLocaleDateString("es-CO") : new Date(row.created_at).toLocaleDateString("es-CO")}
+                      {row.confirmed_source === "admin_manual" ? " · confirmada por administración" : row.confirmed_source === "wompi_webhook" ? " · pago verificado por Wompi" : ""}
+                      {row.coach_earnings != null ? ` · tus ingresos: $${formatCopInt(row.coach_earnings)} COP` : ""}
+                    </div>
+                  </div>
+                  <span style={{ fontSize: ".72em", fontWeight: 800, color: "#166534", background: "#dcfce7", border: "1px solid #86efac", borderRadius: 999, padding: "4px 10px" }}>Pagada</span>
                 </div>
               ))}
             </div>
           )}
+          <div style={{ marginTop: 10, fontSize: ".74em", color: "#94a3b8", lineHeight: 1.45 }}>
+            Las compras se confirman automáticamente cuando Wompi aprueba el pago. Si un atleta pagó por transferencia, escribe a administración para que la valide.
+          </div>
         </div>
       ) : null}
 

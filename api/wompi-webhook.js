@@ -150,6 +150,19 @@ export default async function handler(req, res) {
   }
 
   if (wompiStatus !== "APPROVED") {
+    // Cerrar la compra del marketplace: si no la marcamos, la fila se queda
+    // en 'initiated' para siempre y el admin la ve como pendiente de cobrar.
+    if (paymentRow.payer_type === "marketplace_purchase" && paymentRow.marketplace_purchase_id) {
+      const { error: declineErr } = await supabase
+        .from("plan_purchases")
+        .update({ payment_status: "declined" })
+        .eq("id", paymentRow.marketplace_purchase_id)
+        .neq("payment_status", "confirmed");
+
+      if (declineErr) {
+        console.error("[wompi-webhook] Marketplace decline update error:", declineErr);
+      }
+    }
     return res.status(200).json({ ok: true, status: wompiStatus });
   }
 
@@ -205,6 +218,7 @@ export default async function handler(req, res) {
           .update({
             payment_status: "confirmed",
             confirmed_at: new Date().toISOString(),
+            confirmed_source: "wompi_webhook",
           })
           .eq("id", paymentRow.marketplace_purchase_id);
 
