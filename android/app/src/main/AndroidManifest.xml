@@ -32,4 +32,13 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- Ubicacion: la usa el widget de clima via @capacitor/geolocation.
+         Sin estos permisos el WebView deniega la peticion sin preguntar y el
+         clima caia siempre en las coordenadas de respaldo. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+
+    <!-- El GPS no es obligatorio: sin el se usa la ubicacion aproximada de red. -->
+    <uses-feature android:name="android.hardware.location.gps" android:required="false" />
 </manifest>

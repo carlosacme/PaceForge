@@ -5221,7 +5221,7 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
           </div>
           </div>
 <div style={{ order: 2, marginBottom: 14 }}>
-  <WeatherWidget defaultCity="Bogota,CO" compact />
+  <WeatherWidget compact />
 </div>
           <div style={{ order: 5, marginBottom: 24, paddingBottom: 20, borderBottom: "1px solid #e2e8f0" }}>
             <div style={{ fontSize: ".65em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase", marginBottom: 12 }}>

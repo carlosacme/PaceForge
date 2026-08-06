@@ -1175,7 +1175,7 @@ export default function AthleteHome({ profile }) {
           </div>
         </div>
       ) : null}
-      <WeatherWidget defaultCity="Bogota,CO" />
+      <WeatherWidget />
 {(() => {
         const weatherNote = getWorkoutWeatherNote();
         const todayYmd2 = formatLocalYMD(new Date());
