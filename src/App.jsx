@@ -1119,6 +1119,7 @@ export default function App() {
   const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
   const [authError, setAuthError] = useState("");
+  const [authInfo, setAuthInfo] = useState("");
   const [authSubmitting, setAuthSubmitting] = useState(false);
   const [landingAuthOpen, setLandingAuthOpen] = useState(false);
   /** Pantalla dentro del flujo de auth: elección inicial, login o registro. */
@@ -1407,6 +1408,23 @@ export default function App() {
       data.subscription.unsubscribe();
     };
   }, []);
+
+  // Tras delete_own_account + signOut: mostrar confirmación en la pantalla de login.
+  useEffect(() => {
+    if (session || authLoading) return;
+    try {
+      if (sessionStorage.getItem("raf_account_deleted") === "1") {
+        sessionStorage.removeItem("raf_account_deleted");
+        setAuthInfo("Tu cuenta y datos asociados fueron eliminados correctamente.");
+        setAuthError("");
+        setLandingAuthOpen(true);
+        setAuthLandingStep("login");
+        setAuthMode("login");
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [session, authLoading]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -2263,6 +2281,11 @@ const handleSignOut = async () => {
             ) : authLandingStep === "login" ? (
               <div style={{ ...S.card, width: "100%", maxWidth: 400, padding: "28px 24px 32px" }}>
                 <h1 style={{ ...S.pageTitle, fontSize: "1.25em", marginBottom: 18 }}>Iniciar sesión</h1>
+                {authInfo ? (
+                  <div style={{ marginBottom: 14, background: "rgba(34,197,94,.12)", border: "1px solid rgba(34,197,94,.4)", color: "#166534", borderRadius: 8, padding: "10px 12px", fontSize: ".8em", fontWeight: 700, lineHeight: 1.45 }}>
+                    {authInfo}
+                  </div>
+                ) : null}
                 <form onSubmit={handleAuthSubmit}>
                   <div style={{ marginBottom: 12 }}>
                     <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6, fontWeight: 600 }}>Email</div>
@@ -2272,6 +2295,7 @@ const handleSignOut = async () => {
                       onChange={(e) => {
                         setAuthEmail(e.target.value);
                         if (authError) setAuthError("");
+                        if (authInfo) setAuthInfo("");
                       }}
                       placeholder="correo@ejemplo.com"
                       autoComplete="email"

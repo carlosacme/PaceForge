@@ -2,6 +2,8 @@
   "rewrites": [
     { "source": "/privacy", "destination": "/privacy.html" },
     { "source": "/api/privacy", "destination": "/privacy.html" },
+    { "source": "/eliminar-cuenta", "destination": "/eliminar-cuenta.html" },
+    { "source": "/api/eliminar-cuenta", "destination": "/eliminar-cuenta.html" },
     { "source": "/oauth/intervals/callback", "destination": "/api/integrations?action=oauth-callback" },
     { "source": "/api/intervals/webhook", "destination": "/api/integrations?action=icu-webhook" },
     { "source": "/(.*)", "destination": "/index.html" }

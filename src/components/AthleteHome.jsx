@@ -3,6 +3,7 @@ import { supabase } from "../lib/supabase";
 import WeatherWidget, { useWeather } from "./WeatherWidget";
 import IntervalsConnect from "./IntervalsConnect";
 import InstallAppButton from "./InstallAppButton";
+import DeleteAccountSection from "./DeleteAccountSection";
 import {
   formatLocalYMD,
   calendarCellToIsoYmd,
@@ -1691,6 +1692,8 @@ export default function AthleteHome({ profile }) {
                     </div>
                   </>
                 ) : null}
+
+                <DeleteAccountSection notify={notifyCallback} cardStyle={S.card} />
 
                 <button type="button" onClick={async () => {
                   if (typeof localStorage !== "undefined") {
