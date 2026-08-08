@@ -82,6 +82,10 @@ import {
   sendChatPushNotification,
   sendWorkoutAssignmentPushToAthlete,
   registerFcmToken,
+  computeHrZones,
+  RESTING_HR_MIN,
+  RESTING_HR_MAX,
+  MIN_HR_RESERVE,
 } from "./components/shared/appShared";
 import {
   initMessaging,
@@ -259,42 +263,6 @@ async function evaluateAndAwardAthleteAchievements(athleteId) {
     return { newAwards: [], snapshot: { achievements: [], earned: [] }, progress: null };
   }
 }
-
-/** Zonas % de FC máx (bpm). */
-const HR_ZONE_DEFS = [
-  { z: 1, lowPct: 0.5, highPct: 0.6, label: "Recuperación activa", color: "#22c55e" },
-  { z: 2, lowPct: 0.6, highPct: 0.7, label: "Aeróbico base", color: "#3b82f6" },
-  { z: 3, lowPct: 0.7, highPct: 0.8, label: "Aeróbico tempo", color: "#eab308" },
-  { z: 4, lowPct: 0.8, highPct: 0.9, label: "Umbral anaeróbico", color: "#f97316" },
-  { z: 5, lowPct: 0.9, highPct: 1.0, label: "VO2 max", color: "#ef4444" },
-];
-
-const computeAthleteHrZones = (fcMax) => {
-  const max = Number(fcMax);
-  if (!Number.isFinite(max) || max <= 0) return null;
-  return HR_ZONE_DEFS.map((d) => ({
-    zone: d.z,
-    low: Math.round(max * d.lowPct),
-    high: Math.round(max * d.highPct),
-    label: d.label,
-    color: d.color,
-    pctLabel: `${d.lowPct * 100}-${d.highPct * 100}% FC máx`,
-  }));
-};
-
-const buildAthleteHrZonesPromptText = (athlete) => {
-  if (!athlete || !athlete.fc_max || athlete.fc_max <= 0) return "";
-  const zones = computeAthleteHrZones(athlete.fc_max);
-  if (!zones) return "";
-  const lines = zones.map(
-    (z) => `Z${z.zone} (${z.pctLabel}): ${z.low}-${z.high} bpm — ${z.label}`,
-  );
-  let t = `Athlete heart rate zones (based on max HR ${athlete.fc_max} bpm):\n${lines.join("\n")}`;
-  if (athlete.fc_reposo && athlete.fc_reposo > 0) {
-    t += `\nResting HR (reference): ${athlete.fc_reposo} bpm.`;
-  }
-  return t;
-};
 
 const formatMessageTimestamp = (iso) => {
   if (!iso) return "";
@@ -950,8 +918,8 @@ const exportAthletePlanToPdf = ({ athlete, workouts, coachDisplayName }) => {
   }
 
   // ── ZONAS FC ─────────────────────────────────────────────────
-  const zones = computeAthleteHrZones(athlete.fc_max);
-  if (zones?.length) {
+  const { zones, method: hrZonesMethod } = computeHrZones(athlete.fc_max, athlete.fc_reposo);
+  if (zones.length) {
     y += 6;
     checkPage(40);
     doc.setFont("helvetica", "bold");
@@ -983,12 +951,16 @@ const exportAthletePlanToPdf = ({ athlete, workouts, coachDisplayName }) => {
     });
     y += 24;
 
-    if (athlete.fc_reposo && athlete.fc_reposo > 0) {
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(8);
-      doc.setTextColor(100, 116, 139);
-      doc.text(`FC reposo: ${athlete.fc_reposo} lpm`, L, y);
-    }
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(100, 116, 139);
+    doc.text(
+      hrZonesMethod === "karvonen"
+        ? `Metodo Karvonen (FC reserva) - FC max ${athlete.fc_max} lpm, FC reposo ${athlete.fc_reposo} lpm`
+        : `Calculadas sobre FC max ${athlete.fc_max} lpm. Registra la FC en reposo para zonas mas precisas.`,
+      L,
+      y,
+    );
   }
 
   // ── FOOTER EN TODAS LAS PÁGINAS ──────────────────────────────
@@ -4924,8 +4896,12 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
       alert("FC máxima: indica un valor entre 30 y 250 lpm, o déjalo vacío.");
       return;
     }
-    if (fcr != null && (!Number.isFinite(fcr) || fcr < 30 || fcr > 120)) {
-      alert("FC reposo: indica un valor entre 30 y 120 lpm, o déjalo vacío.");
+    if (fcr != null && (!Number.isFinite(fcr) || fcr < RESTING_HR_MIN || fcr > RESTING_HR_MAX)) {
+      alert(`FC reposo: indica un valor entre ${RESTING_HR_MIN} y ${RESTING_HR_MAX} lpm, o déjalo vacío. Por encima de ${RESTING_HR_MAX} lpm suele ser la FC media de esfuerzo, no la de reposo.`);
+      return;
+    }
+    if (fcr != null && fcmax != null && fcmax - fcr < MIN_HR_RESERVE) {
+      alert(`La diferencia entre la FC máxima (${fcmax}) y la FC en reposo (${fcr}) es muy pequeña. Revisa ambos datos.`);
       return;
     }
     setFcSaving(true);
@@ -5244,8 +5220,8 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
                 <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>FC reposo (lpm)</div>
                 <input
                   type="number"
-                  min={30}
-                  max={120}
+                  min={RESTING_HR_MIN}
+                  max={RESTING_HR_MAX}
                   placeholder="Ej: 48"
                   value={fcReposoInput}
                   onChange={(e) => setFcReposoInput(e.target.value)}
@@ -5272,9 +5248,14 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
               </button>
             </div>
             {(() => {
-              const zones = computeAthleteHrZones(athlete.fc_max);
-              return zones ? (
+              const { zones, warning } = computeHrZones(athlete.fc_max, athlete.fc_reposo);
+              return zones.length ? (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {warning ? (
+                  <div style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #fde68a", background: "#fffbeb", color: "#92400e", fontSize: ".72em", lineHeight: 1.45 }}>
+                    {warning}
+                  </div>
+                ) : null}
                 {zones.map((z) => (
                   <div key={z.zone}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4, fontSize: ".78em" }}>

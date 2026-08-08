@@ -1,7 +1,15 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "../lib/supabase";
 import { pacesLegacyShape, vdotFromRace, predictRaceSeconds } from "../lib/vdot";
-import { EVAL_DISTANCES, formatDurationClock } from "./shared/appShared";
+import {
+  EVAL_DISTANCES,
+  formatDurationClock,
+  computeHrZones,
+  isValidRestingHr,
+  RESTING_HR_MIN,
+  RESTING_HR_MAX,
+  MIN_HR_RESERVE,
+} from "./shared/appShared";
 import { usePersistedState } from "../hooks/usePersistedState";
 
 const evalStyles = {
@@ -42,33 +50,35 @@ const vdotFromCooper = (distanceMeters) => {
   return (d - 504.9) / 44.73;
 };
 
-const computeHrZones = (fcMax, fcRest) => {
-  const max = Number(fcMax);
-  if (!Number.isFinite(max) || max <= 0) return [];
-  const rest = Number(fcRest);
-  const useKarvonen = Number.isFinite(rest) && rest > 0 && rest < max;
-  const ranges = [
-    { z: "Z1", low: 0.5, high: 0.6, color: "#22c55e" },
-    { z: "Z2", low: 0.6, high: 0.7, color: "#3b82f6" },
-    { z: "Z3", low: 0.7, high: 0.8, color: "#f59e0b" },
-    { z: "Z4", low: 0.8, high: 0.9, color: "#f97316" },
-    { z: "Z5", low: 0.9, high: 1.0, color: "#ef4444" },
-  ];
-  return ranges.map((r) => {
-    if (useKarvonen) {
-      const reserve = max - rest;
-      return {
-        ...r,
-        lowBpm: Math.round(rest + reserve * r.low),
-        highBpm: Math.round(rest + reserve * r.high),
-      };
-    }
-    return {
-      ...r,
-      lowBpm: Math.round(max * r.low),
-      highBpm: Math.round(max * r.high),
-    };
-  });
+/**
+ * Mensaje de error del campo FC en reposo. Cadena vacía = el dato sirve.
+ * Un 140 lpm es FC media de esfuerzo, no de reposo, y con Karvonen deja las
+ * cinco zonas apretadas en pocos latidos.
+ */
+const restingHrErrorFor = (fcRest, fcMax) => {
+  const text = String(fcRest ?? "").trim();
+  if (text === "") return "";
+  const rest = Number(text);
+  if (!Number.isFinite(rest) || rest <= 0) return "Indica la FC en reposo en latidos por minuto.";
+  if (rest > RESTING_HR_MAX) {
+    return `Una FC en reposo por encima de ${RESTING_HR_MAX} lpm es inusual. ¿Seguro que no es tu FC media de esfuerzo? La FC en reposo se mide al despertar, acostado.`;
+  }
+  if (rest < RESTING_HR_MIN) return `Una FC en reposo por debajo de ${RESTING_HR_MIN} lpm no es creíble. Revisa el dato.`;
+  const max = Number(String(fcMax ?? "").trim());
+  if (!Number.isFinite(max) || max <= 0) return "";
+  if (!isValidRestingHr(rest, max)) {
+    return `La diferencia entre tu FC máxima (${Math.round(max)}) y tu FC en reposo (${Math.round(rest)}) es muy pequeña. Revisa ambos datos.`;
+  }
+  return "";
+};
+
+/** FC media del test de umbral: entero de referencia, o null. */
+const parseAvgHr = (raw) => {
+  const text = String(raw ?? "").trim();
+  if (text === "") return null;
+  const n = Number(text);
+  if (!Number.isFinite(n) || n < 60 || n > 250) return null;
+  return Math.round(n);
 };
 
 /**
@@ -98,6 +108,7 @@ export default function EvaluationView({ athletes, currentUserId, notify, athlet
   const [cooperDistance, setCooperDistance] = usePersistedState("raf_eval_cooperDistance", "2800");
   const [thresholdTime, setThresholdTime] = usePersistedState("raf_eval_thresholdTime", "00:30:00");
   const [thresholdDistance, setThresholdDistance] = usePersistedState("raf_eval_thresholdDistance", "7000");
+  const [thresholdAvgHr, setThresholdAvgHr] = usePersistedState("raf_eval_thresholdAvgHr", "");
   const [fcMax, setFcMax] = usePersistedState("raf_eval_fcMax", "");
   const [fcRest, setFcRest] = usePersistedState("raf_eval_fcRest", "");
   const [weeklyKm, setWeeklyKm] = usePersistedState("raf_eval_weeklyKm", "");
@@ -112,6 +123,9 @@ export default function EvaluationView({ athletes, currentUserId, notify, athlet
       : tab === "cooper"
         ? "Corre durante exactamente 12 minutos al máximo esfuerzo sostenible e ingresa la distancia total recorrida en metros."
         : "Corre durante 30 minutos al máximo esfuerzo que puedas mantener de forma constante e ingresa la distancia total y tu FC promedio si tienes monitor.";
+
+  /** Aviso del campo FC en reposo. Vacío = el dato sirve para Karvonen. */
+  const restingHrError = useMemo(() => restingHrErrorFor(fcRest, fcMax), [fcRest, fcMax]);
 
   useEffect(() => {
     if (!athleteOptions.length) return;
@@ -144,6 +158,7 @@ export default function EvaluationView({ athletes, currentUserId, notify, athlet
       if (typeof parsed.cooperDistance === "string") setCooperDistance(parsed.cooperDistance);
       if (typeof parsed.thresholdTime === "string") setThresholdTime(parsed.thresholdTime);
       if (typeof parsed.thresholdDistance === "string") setThresholdDistance(parsed.thresholdDistance);
+      if (typeof parsed.thresholdAvgHr === "string") setThresholdAvgHr(parsed.thresholdAvgHr);
       if (typeof parsed.fcMax === "string") setFcMax(parsed.fcMax);
       if (typeof parsed.fcRest === "string") setFcRest(parsed.fcRest);
       if (typeof parsed.weeklyKm === "string") setWeeklyKm(parsed.weeklyKm);
@@ -162,12 +177,13 @@ export default function EvaluationView({ athletes, currentUserId, notify, athlet
       cooperDistance,
       thresholdTime,
       thresholdDistance,
+      thresholdAvgHr,
       fcMax,
       fcRest,
       weeklyKm,
     };
     localStorage.setItem(EVAL_FORM_STORAGE_KEY, JSON.stringify(payload));
-  }, [athleteId, tab, raceDistance, raceTime, cooperDistance, thresholdTime, thresholdDistance, fcMax, fcRest, weeklyKm]);
+  }, [athleteId, tab, raceDistance, raceTime, cooperDistance, thresholdTime, thresholdDistance, thresholdAvgHr, fcMax, fcRest, weeklyKm]);
 
   const loadHistory = useCallback(async () => {
     if (!athleteId) {
@@ -223,16 +239,22 @@ export default function EvaluationView({ athletes, currentUserId, notify, athlet
       ...d,
       seconds: predictRaceSeconds(vdot, d.meters, { longExponent }),
     }));
-    const zones = computeHrZones(fcMax, fcRest);
+    // Las zonas salen de la funcion unica: si la FC en reposo no pasa la
+    // validacion, ella misma cae a %FCmax y devuelve el aviso.
+    const hr = computeHrZones(fcMax, fcRest);
+    const restingHrOk = isValidRestingHr(fcRest, fcMax);
     setResults({
       vdot,
       source,
       paces,
-      zones,
+      zones: hr.zones,
+      zonesMethod: hr.method,
+      zonesWarning: hr.warning,
       predictions,
       fc_max: Number(fcMax) || null,
-      fc_reposo: Number(fcRest) || null,
+      fc_reposo: restingHrOk ? Math.round(Number(fcRest)) : null,
       weekly_km_declared: parseWeeklyKm(weeklyKm),
+      threshold_avg_hr: tab === "threshold" ? parseAvgHr(thresholdAvgHr) : null,
       method: tab,
       eval_method: tab,
     });
@@ -244,6 +266,11 @@ export default function EvaluationView({ athletes, currentUserId, notify, athlet
   const saveAndApply = async () => {
     if (!results || !athleteId) {
       notify?.("Primero calcula la evaluación");
+      return;
+    }
+    // Nada de FC en reposo dudosa en la base: o se corrige o se deja vacía.
+    if (restingHrError) {
+      notify?.(`Corrige la FC en reposo antes de guardar (o déjala vacía). ${restingHrError}`);
       return;
     }
     setSaving(true);
@@ -259,6 +286,7 @@ export default function EvaluationView({ athletes, currentUserId, notify, athlet
       fc_max: results.fc_max,
       fc_reposo: results.fc_reposo,
       weekly_km_declared: results.weekly_km_declared,
+      threshold_avg_hr: results.threshold_avg_hr,
     };
     const { error: insErr } = await supabase.from("athlete_evaluations").insert(payload);
     if (insErr) {
@@ -304,7 +332,14 @@ export default function EvaluationView({ athletes, currentUserId, notify, athlet
         </div>
 
         <div style={{ ...S.card, marginBottom: 16 }}>
-          <div style={{ fontSize: ".76em", color: "#64748b", fontWeight: 700, marginBottom: 10 }}>ZONAS DE FC</div>
+          <div style={{ fontSize: ".76em", color: "#64748b", fontWeight: 700, marginBottom: 10 }}>
+            ZONAS DE FC{dataObj?.zonesMethod === "karvonen" ? " · KARVONEN (FC RESERVA)" : dataObj?.zonesMethod === "fcmax" ? " · % FC MÁXIMA" : ""}
+          </div>
+          {dataObj?.zonesWarning ? (
+            <div style={{ marginBottom: 10, padding: "8px 10px", borderRadius: 8, border: "1px solid #fde68a", background: "#fffbeb", color: "#92400e", fontSize: ".72em", lineHeight: 1.45 }}>
+              {dataObj.zonesWarning}
+            </div>
+          ) : null}
           <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))" }}>
             {zones.map((z) => (
               <div key={z.z} style={{ border: `1px solid ${(z.color || "#94a3b8")}66`, borderRadius: 10, padding: "10px 12px", background: `${z.color || "#94a3b8"}14` }}>
@@ -405,11 +440,36 @@ export default function EvaluationView({ athletes, currentUserId, notify, athlet
           </div>
           <div>
             <div style={{ fontSize: ".74em", color: "#64748b", marginBottom: 6, fontWeight: 700 }}>FC máxima</div>
-            <input value={fcMax} onChange={(e) => setFcMax(e.target.value)} placeholder="Ej. 188" style={{ width: "100%", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", fontFamily: "inherit" }} />
+            <input
+              type="number"
+              min={100}
+              max={250}
+              value={fcMax}
+              onChange={(e) => setFcMax(e.target.value)}
+              placeholder="Ej. 188"
+              style={{ width: "100%", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", fontFamily: "inherit" }}
+            />
+            <div style={{ fontSize: ".68em", color: "#64748b", marginTop: 6, lineHeight: 1.4 }}>
+              Idealmente de un test de esfuerzo o del valor máximo registrado por tu reloj en una sesión intensa. Evita la fórmula 220-edad, que es poco precisa.
+            </div>
           </div>
           <div>
             <div style={{ fontSize: ".74em", color: "#64748b", marginBottom: 6, fontWeight: 700 }}>FC reposo</div>
-            <input value={fcRest} onChange={(e) => setFcRest(e.target.value)} placeholder="Ej. 52" style={{ width: "100%", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", fontFamily: "inherit" }} />
+            <input
+              type="number"
+              min={RESTING_HR_MIN}
+              max={RESTING_HR_MAX}
+              value={fcRest}
+              onChange={(e) => setFcRest(e.target.value)}
+              placeholder="Ej. 52"
+              style={{ width: "100%", border: `1px solid ${restingHrError ? "#fca5a5" : "#e2e8f0"}`, borderRadius: 8, padding: "10px 12px", fontFamily: "inherit", background: restingHrError ? "#fef2f2" : "#fff" }}
+            />
+            {restingHrError ? (
+              <div style={{ fontSize: ".68em", color: "#b91c1c", marginTop: 6, lineHeight: 1.45, fontWeight: 600 }}>{restingHrError}</div>
+            ) : null}
+            <div style={{ fontSize: ".68em", color: "#64748b", marginTop: 6, lineHeight: 1.4 }}>
+              Mídela al despertar, acostado y antes de levantarte. Cuenta tus pulsaciones durante 60 segundos (o usa tu reloj). Repítelo 3 días y usa el promedio. Valores típicos: 40-70 lpm en corredores entrenados, 60-80 en personas activas.
+            </div>
           </div>
           <div>
             <div style={{ fontSize: ".74em", color: "#64748b", marginBottom: 6, fontWeight: 700 }}>Kilometraje semanal actual (km)</div>
@@ -479,9 +539,25 @@ export default function EvaluationView({ athletes, currentUserId, notify, athlet
           </div>
         )}
         {tab === "threshold" && (
-          <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", marginTop: 14 }}>
-            <input value={thresholdTime} onChange={(e) => setThresholdTime(e.target.value)} placeholder="Tiempo hh:mm:ss" style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", fontFamily: "inherit" }} />
-            <input value={thresholdDistance} onChange={(e) => setThresholdDistance(e.target.value)} placeholder="Distancia (m)" style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", fontFamily: "inherit" }} />
+          <div style={{ marginTop: 14 }}>
+            <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
+              <input value={thresholdTime} onChange={(e) => setThresholdTime(e.target.value)} placeholder="Tiempo hh:mm:ss" style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", fontFamily: "inherit" }} />
+              <input value={thresholdDistance} onChange={(e) => setThresholdDistance(e.target.value)} placeholder="Distancia (m)" style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", fontFamily: "inherit" }} />
+              <div>
+                <input
+                  type="number"
+                  min={60}
+                  max={250}
+                  value={thresholdAvgHr}
+                  onChange={(e) => setThresholdAvgHr(e.target.value)}
+                  placeholder="FC media del test (opcional)"
+                  style={{ width: "100%", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", fontFamily: "inherit" }}
+                />
+                <div style={{ fontSize: ".68em", color: "#64748b", marginTop: 6, lineHeight: 1.4 }}>
+                  FC media de los 30 minutos, si llevaste monitor. Es solo un registro para el coach: no cambia el VDOT ni las zonas.
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
@@ -587,17 +663,27 @@ export default function EvaluationView({ athletes, currentUserId, notify, athlet
                 <div style={{ padding: "10px 12px", background: "#fff" }}>
                   <div style={{ fontSize: ".78em", color: "#64748b", marginBottom: 10 }}>
                     Método: <strong style={{ color: "#0f172a" }}>{String(h.method || "").toUpperCase()}</strong>
+                    {h.threshold_avg_hr ? <> · FC media del test: <strong style={{ color: "#0f172a" }}>{h.threshold_avg_hr} lpm</strong></> : null}
                   </div>
-                  {renderEvaluationCards({
-                    vdot: h.vdot,
-                    paces: h.paces,
-                    zones: h.hr_zones,
-                    predictions: (h.predicted_times || []).map((p) => ({
-                      id: p.id,
-                      label: EVAL_DISTANCES.find((d) => d.id === p.id)?.label || String(p.id || "").toUpperCase(),
-                      seconds: p.seconds,
-                    })),
-                  })}
+                  {(() => {
+                    // Las zonas se recalculan con la funcion unica en vez de
+                    // pintar el jsonb guardado: las evaluaciones viejas se
+                    // guardaron con reglas distintas y mostraban rangos que ya
+                    // no coinciden con los del panel del coach.
+                    const hr = h.fc_max ? computeHrZones(h.fc_max, h.fc_reposo) : null;
+                    return renderEvaluationCards({
+                      vdot: h.vdot,
+                      paces: h.paces,
+                      zones: hr ? hr.zones : h.hr_zones,
+                      zonesMethod: hr ? hr.method : null,
+                      zonesWarning: hr ? hr.warning : null,
+                      predictions: (h.predicted_times || []).map((p) => ({
+                        id: p.id,
+                        label: EVAL_DISTANCES.find((d) => d.id === p.id)?.label || String(p.id || "").toUpperCase(),
+                        seconds: p.seconds,
+                      })),
+                    });
+                  })()}
                 </div>
               )}
             </div>

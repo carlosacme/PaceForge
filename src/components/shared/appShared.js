@@ -1103,6 +1103,15 @@ export const getNextMonday = (dateStr) => {
   return formatLocalYMD(d);
 };
 
+/* ============================================================
+ * ZONAS DE FRECUENCIA CARDIACA — FUENTE UNICA
+ * ============================================================
+ * Habia dos calculos distintos (la evaluacion con Karvonen y el panel del
+ * coach con %FCmax a secas, mas una copia de este ultimo en App.jsx), asi que
+ * el mismo atleta veia tablas de zonas incompatibles segun la pantalla.
+ * Todo pasa por computeHrZones().
+ */
+
 const HR_ZONE_DEFS = [
   { z: 1, lowPct: 0.5, highPct: 0.6, label: "Recuperación activa", color: "#22c55e" },
   { z: 2, lowPct: 0.6, highPct: 0.7, label: "Aeróbico base", color: "#3b82f6" },
@@ -1111,29 +1120,81 @@ const HR_ZONE_DEFS = [
   { z: 5, lowPct: 0.9, highPct: 1.0, label: "VO2 max", color: "#ef4444" },
 ];
 
-export const computeAthleteHrZones = (fcMax) => {
+/** Limites de una FC en reposo creible, y separacion minima con la maxima. */
+export const RESTING_HR_MIN = 30;
+export const RESTING_HR_MAX = 90;
+export const MIN_HR_RESERVE = 40;
+
+/**
+ * ¿La FC en reposo sirve para Karvonen?
+ *
+ * Un atleta escribio 140 lpm, que es su FC media de esfuerzo, y Karvonen le
+ * comprimio las cinco zonas en 18 lpm (Z1 de 3 lpm de ancho). De ahi el minimo
+ * de reserva: sin al menos 40 lpm entre maxima y reposo, las zonas no sirven
+ * para entrenar.
+ */
+export const isValidRestingHr = (fcReposo, fcMax) => {
+  const rest = Number(fcReposo);
+  if (!Number.isFinite(rest) || rest < RESTING_HR_MIN || rest > RESTING_HR_MAX) return false;
   const max = Number(fcMax);
-  if (!Number.isFinite(max) || max <= 0) return null;
-  return HR_ZONE_DEFS.map((d) => ({
-    zone: d.z,
-    low: Math.round(max * d.lowPct),
-    high: Math.round(max * d.highPct),
-    label: d.label,
-    color: d.color,
-    pctLabel: `${d.lowPct * 100}-${d.highPct * 100}% FC máx`,
-  }));
+  if (!Number.isFinite(max) || max <= 0) return false;
+  return max - rest >= MIN_HR_RESERVE;
+};
+
+/**
+ * Zonas de FC del atleta. Karvonen si la FC en reposo es valida, y si no,
+ * porcentaje de la FC maxima avisando de que el dato es menos preciso.
+ *
+ * @param {number} fcMax     FC maxima en lpm
+ * @param {number} fcReposo  FC en reposo en lpm (opcional)
+ * @returns {{ zones: object[], method: 'karvonen'|'fcmax'|null, warning: string|null }}
+ *
+ * Cada zona trae los bpm por duplicado en low/high y lowBpm/highBpm: la
+ * primera pareja es la que leen el panel del coach y el PDF, y la segunda es
+ * la forma con la que ya estan guardadas las evaluaciones historicas en
+ * athlete_evaluations.hr_zones.
+ */
+export const computeHrZones = (fcMax, fcReposo) => {
+  const max = Number(fcMax);
+  if (!Number.isFinite(max) || max <= 0) {
+    return { zones: [], method: null, warning: "Registra tu FC máxima para calcular tus zonas de entrenamiento." };
+  }
+  const useKarvonen = isValidRestingHr(fcReposo, max);
+  const rest = Number(fcReposo);
+  const reserve = max - rest;
+  const zones = HR_ZONE_DEFS.map((d) => {
+    const low = useKarvonen ? Math.round(rest + reserve * d.lowPct) : Math.round(max * d.lowPct);
+    const high = useKarvonen ? Math.round(rest + reserve * d.highPct) : Math.round(max * d.highPct);
+    return {
+      zone: d.z,
+      z: `Z${d.z}`,
+      label: d.label,
+      color: d.color,
+      lowPct: d.lowPct,
+      highPct: d.highPct,
+      low,
+      high,
+      lowBpm: low,
+      highBpm: high,
+      pctLabel: `${d.lowPct * 100}-${d.highPct * 100}% ${useKarvonen ? "FC reserva" : "FC máx"}`,
+    };
+  });
+  return {
+    zones,
+    method: useKarvonen ? "karvonen" : "fcmax",
+    warning: useKarvonen ? null : "Zonas calculadas solo con FC máxima. Registra tu FC en reposo para zonas más precisas.",
+  };
 };
 
 export const buildAthleteHrZonesPromptText = (athlete) => {
   if (!athlete || !athlete.fc_max || athlete.fc_max <= 0) return "";
-  const zones = computeAthleteHrZones(athlete.fc_max);
-  if (!zones) return "";
+  const { zones, method } = computeHrZones(athlete.fc_max, athlete.fc_reposo);
+  if (!zones.length) return "";
   const lines = zones.map((z) => `Z${z.zone} (${z.pctLabel}): ${z.low}-${z.high} bpm — ${z.label}`);
-  let t = `Athlete heart rate zones (based on max HR ${athlete.fc_max} bpm):\n${lines.join("\n")}`;
-  if (athlete.fc_reposo && athlete.fc_reposo > 0) {
-    t += `\nResting HR (reference): ${athlete.fc_reposo} bpm.`;
-  }
-  return t;
+  const basis = method === "karvonen"
+    ? `Karvonen, max HR ${athlete.fc_max} bpm and resting HR ${athlete.fc_reposo} bpm`
+    : `max HR ${athlete.fc_max} bpm`;
+  return `Athlete heart rate zones (${basis}):\n${lines.join("\n")}`;
 };
 
 export async function sendWorkoutAssignmentPushToAthlete({ athleteUserId, workoutTitle, scheduledDate }) {
