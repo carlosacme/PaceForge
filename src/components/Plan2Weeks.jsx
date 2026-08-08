@@ -1,6 +1,12 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { supabase } from "../lib/supabase";
-import { paceRangesForPrompt, vdotRequiredForRace, parseTimeToSeconds } from "../lib/vdot";
+import {
+  paceRangesForPrompt,
+  vdotRequiredForRace,
+  parseTimeToSeconds,
+  planWeeklyVolume,
+  qualityWorkGuide,
+} from "../lib/vdot";
 import { usePersistedState } from "../hooks/usePersistedState";
 import {
   BRAND_NAME,
@@ -85,9 +91,10 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, profileRole, onG
     focus: PLAN2_NEXT_BLOCK_FOCUSES[0],
     notes: "",
   });
-  // VDOT medido del atleta seleccionado. Se recarga SIEMPRE al cambiar de
-  // atleta; nextBlockParams.vdot es solo un override manual del coach.
-  const [vdotInfo, setVdotInfo] = useState({ loading: false, vdot: null, testDate: null });
+  // Ultima evaluacion del atleta: VDOT medido (ritmos) y km/semana declarados
+  // (volumen). Se recarga SIEMPRE al cambiar de atleta; nextBlockParams.vdot es
+  // solo un override manual del coach.
+  const [evalInfo, setEvalInfo] = useState({ loading: false, vdot: null, weeklyKm: null, testDate: null });
   const monthKey = useMemo(() => getCurrentMonthKey(), []);
   const isBasicPlan = useMemo(() => {
     const p = String(coachPlan || "").toLowerCase();
@@ -131,9 +138,9 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, profileRole, onG
   /** VDOT que se va a usar de verdad, con su procedencia para la UI. */
   const effectiveVdot = useMemo(() => {
     if (vdotOverride != null) return { value: vdotOverride, source: "manual" };
-    if (vdotInfo.vdot != null) return { value: vdotInfo.vdot, source: "evaluation" };
+    if (evalInfo.vdot != null) return { value: evalInfo.vdot, source: "evaluation" };
     return { value: null, source: "estimated" };
-  }, [vdotOverride, vdotInfo.vdot]);
+  }, [vdotOverride, evalInfo.vdot]);
 
   const vdotPaceRanges = useMemo(
     () => paceRangesForPrompt(effectiveVdot.value, String(levelId || "intermedio").toLowerCase()),
@@ -141,17 +148,49 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, profileRole, onG
   );
 
   const vdotLabel = useMemo(() => {
-    if (vdotInfo.loading) return "Cargando VDOT del atleta…";
+    if (evalInfo.loading) return "Cargando VDOT del atleta…";
     const shown = vdotPaceRanges ? Number(vdotPaceRanges.vdotUsed) : null;
     if (shown == null) return "";
     if (effectiveVdot.source === "manual") return `VDOT ${shown.toFixed(2)} (ajustado a mano por el coach)`;
     if (effectiveVdot.source === "evaluation") {
-      const d = vdotInfo.testDate ? new Date(`${String(vdotInfo.testDate).slice(0, 10)}T12:00:00`) : null;
+      const d = evalInfo.testDate ? new Date(`${String(evalInfo.testDate).slice(0, 10)}T12:00:00`) : null;
       const when = d && !Number.isNaN(d.getTime()) ? d.toLocaleDateString("es-CO") : "fecha desconocida";
       return `VDOT ${shown.toFixed(2)} (evaluación del ${when})`;
     }
     return `VDOT ${shown} (estimado — este atleta no tiene evaluación)`;
-  }, [vdotInfo.loading, vdotInfo.testDate, effectiveVdot.source, vdotPaceRanges]);
+  }, [evalInfo.loading, evalInfo.testDate, effectiveVdot.source, vdotPaceRanges]);
+
+  /**
+   * Km/semana reales del atleta: primero lo declarado en la ultima evaluacion,
+   * si no el dato de su perfil. null = no hay dato y se usara el piso del nivel.
+   */
+  const declaredWeeklyKm = useMemo(() => {
+    if (evalInfo.weeklyKm != null) return evalInfo.weeklyKm;
+    const fromProfile = Number(selectedAthlete?.weekly_km);
+    return Number.isFinite(fromProfile) && fromProfile > 0 ? Math.round(fromProfile) : null;
+  }, [evalInfo.weeklyKm, selectedAthlete?.weekly_km]);
+
+  /** Volumen semanal objetivo del bloque: base real del atleta + progresion. */
+  const volumePlan = useMemo(
+    () => planWeeklyVolume({
+      declaredKm: declaredWeeklyKm,
+      level: levelId,
+      competition,
+      blockNumber: Number(currentBlock) || 1,
+    }),
+    [declaredWeeklyKm, levelId, competition, currentBlock],
+  );
+
+  const volumeLabel = useMemo(() => {
+    if (evalInfo.loading) return "Cargando volumen del atleta…";
+    const declaredText = declaredWeeklyKm == null
+      ? `sin dato declarado, piso de ${volumePlan.floorKm} km por nivel`
+      : declaredWeeklyKm < volumePlan.floorKm
+        ? `declara ${declaredWeeklyKm} km/semana, se sube al piso de ${volumePlan.floorKm} km por nivel`
+        : `declara ${declaredWeeklyKm} km/semana`;
+    const capText = volumePlan.cappedByLevel ? `, limitado por el techo del nivel (${volumePlan.capKm} km)` : "";
+    return `Semana 1 ≈ ${volumePlan.targetKm} km — ${declaredText}${capText}`;
+  }, [evalInfo.loading, declaredWeeklyKm, volumePlan]);
 
   /** Aviso NO bloqueante si el tiempo objetivo no cuadra con el VDOT. */
   const targetTimeWarning = useMemo(() => {
@@ -411,15 +450,15 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, profileRole, onG
   // como desempate, igual que en Builder.
   useEffect(() => {
     if (!athleteId) {
-      setVdotInfo({ loading: false, vdot: null, testDate: null });
+      setEvalInfo({ loading: false, vdot: null, weeklyKm: null, testDate: null });
       return undefined;
     }
     let cancelled = false;
-    setVdotInfo({ loading: true, vdot: null, testDate: null });
+    setEvalInfo({ loading: true, vdot: null, weeklyKm: null, testDate: null });
     (async () => {
       const { data, error } = await supabase
         .from("athlete_evaluations")
-        .select("vdot, test_date, created_at")
+        .select("vdot, weekly_km_declared, test_date, created_at")
         .eq("athlete_id", athleteId)
         .order("test_date", { ascending: false })
         .order("created_at", { ascending: false })
@@ -428,13 +467,17 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, profileRole, onG
       if (cancelled) return;
       if (error) {
         console.error("athlete_evaluations vdot:", error);
-        setVdotInfo({ loading: false, vdot: null, testDate: null });
+        setEvalInfo({ loading: false, vdot: null, weeklyKm: null, testDate: null });
         return;
       }
       const vdotVal = Number(data?.vdot);
-      setVdotInfo({
+      // 0 km es un dato valido ("viene de una pausa"), asi que solo se descarta
+      // cuando la columna viene vacia.
+      const kmVal = data?.weekly_km_declared == null ? null : Number(data.weekly_km_declared);
+      setEvalInfo({
         loading: false,
         vdot: Number.isFinite(vdotVal) && vdotVal > 0 ? vdotVal : null,
+        weeklyKm: Number.isFinite(kmVal) && kmVal >= 0 ? Math.round(kmVal) : null,
         testDate: data?.test_date || data?.created_at || null,
       });
     })();
@@ -537,23 +580,37 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, profileRole, onG
       recovery: pr.recovery.desc,
     };
 
-    // Volumen base según distancia objetivo
-    const competitionText = String(competition || "").toLowerCase();
-    const baseKmWeekly = competitionText.includes("maratón") || competitionText.includes("maraton") ? 50
-      : competitionText.includes("media") ? 35
-      : competitionText.includes("10") ? 25
-      : competitionText.includes("5") ? 18 : 25;
+    // Volumen: sale del kilometraje real del atleta, no de una tabla por
+    // distancia. El nivel solo pone el techo (volumePlan.capKm).
+    const vol = volumePlan;
+    const week2Km = blockNumber >= 8
+      ? Math.round(vol.targetKm * 0.6)                          // race week
+      : Math.min(vol.capKm, Math.round(vol.targetKm * 1.08));   // consolidación
+    const maxSessionKm = Math.max(4, Math.round(vol.targetKm * 0.4));
+    const declaredVolumeText = vol.declaredKm == null
+      ? `${vol.floorKm} km/week (starting floor for level, athlete has no declared volume)`
+      : vol.declaredKm < vol.floorKm
+        ? `${vol.declaredKm} km/week declared, raised to ${vol.baseKm} km (starting floor for level)`
+        : `${vol.declaredKm} km/week`;
+    const signed = (n) => `${n > 0 ? "+" : ""}${n}%`;
+    const progressionText = vol.progressionPct === 0
+      ? `That is exactly the athlete's current weekly volume (${vol.baseKm} km): block 1 does not add load yet.`
+      : `That is the athlete's current weekly volume (${vol.baseKm} km) progressed to block ${blockNumber}: ${signed(vol.progressionPct)} for this block, ${signed(vol.cumulativePct)} accumulated since block 1.`;
+
+    // Calidad: el VDOT decide el tipo de series, no el nivel ni la distancia.
+    const quality = qualityWorkGuide(pr.vdotUsed);
 
     // Fase del plan según número de bloque
-    const phase = blockNumber <= 2 ? "BASE (aerobic foundation, easy runs dominate, build volume gradually)"
-      : blockNumber <= 4 ? "BUILDING (introduce tempo runs, increase volume 10% from previous block)"
-      : blockNumber <= 6 ? "DEVELOPMENT (threshold work, interval sessions, peak volume)"
-      : blockNumber <= 8 ? "PEAK (race-specific workouts, highest intensity, maintain volume)"
-      : "TAPER (reduce volume 20-30%, maintain intensity, prepare for race)";
+    const phase = blockNumber <= 2 ? "BASE (aerobic foundation, easy runs dominate)"
+      : blockNumber <= 4 ? "BUILDING (introduce tempo runs over a consolidated aerobic base)"
+      : blockNumber <= 6 ? "DEVELOPMENT (threshold work and interval sessions)"
+      : blockNumber <= 8 ? "PEAK (race-specific workouts, highest intensity)"
+      : "TAPER (keep intensity, volume already reduced, prepare for race)";
 
     // Semana 2 es race week solo en el último bloque
-    const week2Type = blockNumber >= 8 ? "RACE WEEK: reduce volume 40%, only easy runs + strides, race on race date"
-      : "CONSOLIDATION WEEK: same focus as week 1 but slightly higher volume (+10%) or higher quality";
+    const week2Type = blockNumber >= 8
+      ? `RACE WEEK: ${week2Km} km total, only easy runs + strides, race on race date`
+      : `CONSOLIDATION WEEK: ${week2Km} km total, same focus as week 1 with slightly higher volume or quality`;
 
     return `Generate a 2-week running training block as JSON only.
 IMPORTANT: Respond entirely in Spanish. All fields including plan_title, focus, title, and description MUST be in Spanish. Do not use English in any field.
@@ -566,27 +623,23 @@ ATHLETE PROFILE:
 - Training days per week: ${daysPerWeek}
 - Block start date: ${blockStartDate}. Week 1 starts on this date, week 2 starts 7 days later.
 - Previous block summary: ${prevBlockSummary}
-- PROGRESSION REQUIREMENT: Week 1 volume MUST be ${blockNumber <= 2 ? "25-35" : blockNumber <= 4 ? "35-45" : blockNumber <= 6 ? "45-55" : "55-65"}km total. Each session km MUST be higher than previous block by 10-15%.
+- Current weekly volume: ${declaredVolumeText}
 - Preferred weekdays (1=Mon..7=Sun): ${selectedTrainingDaysText || "2,3,4,6,7"}
 
-CRITICAL: This is block number ${blockNumber}. Each block MUST be progressively harder than the previous one:
-- Block 1-2: Base phase, easy runs dominate (70% easy, 30% quality), low volume
-- Block 3-4: Building phase, introduce tempo (60% easy, 40% quality), +10% volume
-- Block 5-6: Development phase, threshold + intervals (50% easy, 50% quality), +20% volume
-- Block 7-8: Peak phase, race-specific work (40% easy, 60% quality), +25% volume
-- Block 9+: Taper phase, reduce volume 30%, maintain intensity
-For a ${levelLabel} athlete targeting ${competition} in ${targetTime}:
-- Beginner: start week 1 at 60% of race distance total, increase 10% per block
-- Intermediate: start at 80% of race distance total, increase 8% per block
-- Advanced: start at 100% of race distance total, increase 5% per block
-Block ${blockNumber} volume target per session: adjust ALL km values according to block progression above.
-VOLUME CAP by level and distance:
-- Beginner 5K: max 15km/week block 1, +2km per block
-- Beginner 10K: max 20km/week block 1, +3km per block
-- Beginner Half: max 25km/week block 1, +4km per block
-- Beginner Marathon: max 30km/week block 1, +5km per block
-- Intermediate 10K: max 30km/week block 1, +3km per block
-- Advanced 10K: max 40km/week block 1, +3km per block
+WEEKLY VOLUME (hard requirement, this athlete's real training load):
+- Week 1 total volume MUST be approximately ${vol.targetKm} km (sum of the ${daysPerWeek} sessions, ±10%). ${progressionText}${vol.cappedByLevel ? ` It is also trimmed by the level safety cap (${vol.capKm} km).` : ""}
+- Week 2 total volume: ${week2Km} km.
+- HARD CAP: never exceed ${vol.capKm} km in a week. That is the safety ceiling for a ${levelLabel} athlete targeting ${competition} at block ${blockNumber}.
+- No single session may exceed ${maxSessionKm} km.
+- Do NOT use a generic volume for the race distance: an athlete currently running ${vol.baseKm} km/week must NOT get a week built for someone running twice that.
+
+BLOCK ${blockNumber} EASY/QUALITY BALANCE (the level and phase set the mix, not the volume):
+- Block 1-2: base phase, 70% easy / 30% quality
+- Block 3-4: building phase, 60% easy / 40% quality, introduce tempo
+- Block 5-6: development phase, 50% easy / 50% quality, threshold + intervals
+- Block 7-8: peak phase, 40% easy / 60% quality, race-specific work
+- Block 9+: taper phase, keep intensity and cut volume
+Apply the mix for block ${blockNumber} INSIDE the weekly volume above. Higher quality does not mean more km.
 
 TRAINING PACES for this athlete (derived from their measured VDOT ${pr.vdotUsed}${pr.isEstimated ? " — ESTIMATED from level, athlete has no evaluation yet" : ""}). Use these EXACT ranges in every description:
 - Easy / long / warmup-cooldown: ${pr.easy.desc}
@@ -597,21 +650,28 @@ TRAINING PACES for this athlete (derived from their measured VDOT ${pr.vdotUsed}
 - Recovery runs: ${pr.recovery.desc}
 Reference pace_range strings for JSON: easy=${pr.easy.pace_range}, tempo=${pr.tempo.pace_range}, interval=${pr.interval.pace_range} (min/km, ASCII hyphen).
 
+QUALITY WORK by VDOT ${pr.vdotUsed} (band ${quality.band}):
+- VDOT < 40: intervals of 200-600m, 4-6 reps, full recovery (equal to or longer than the interval)
+- VDOT 40-50: intervals of 400-1000m, 5-8 reps, recovery 50-100% of the interval time
+- VDOT > 50: intervals of 800-2000m, 6-10 reps, recovery 50% of the interval time
+This athlete is in band ${quality.band}: use intervals of ${quality.intervalRange}, ${quality.reps} reps, ${quality.recovery}.
+Adjust the number and length of the repetitions to this athlete's VDOT. Do NOT use the same session for every athlete.
+
 PERIODIZATION:
 - Block number: ${blockNumber} of ~10 total blocks
 - Current phase: ${phase}
-- Weekly volume target: ~${baseKmWeekly} km (adjust ±15% based on phase)
+- Weekly volume: week 1 ${vol.targetKm} km, week 2 ${week2Km} km (already computed from the athlete's real volume, do not change it)
 - Week 1: ${nextBlockParams.focus || phase}
 - Week 2: ${week2Type}
 - Coach notes: ${nextBlockParams.notes || "none"}
 
-VOLUME RULES:
+VOLUME RULES (percentages of the ${vol.targetKm} km of week 1):
 - Easy/Long runs: 30-40% of weekly km, pace ${paces.easy}
 - Tempo runs: 20-25% of weekly km at ${paces.tempo}
-- Intervals: 15-20% of weekly km at ${paces.interval} (e.g. 6x800m, 5x1000m)
+- Intervals: 15-20% of weekly km at ${paces.interval}, following the QUALITY WORK section above (warmup and cooldown included in the session km)
 - Recovery runs: remaining km at ${paces.recovery}
 - Marathon-pace segments (when prescribed): ${paces.marathon}; reps/strides: ${paces.rep}
-- NEVER assign 10km to a beginner first session. Start conservative.
+- The sum of total_km of the ${daysPerWeek} sessions of week 1 MUST land within ±10% of ${vol.targetKm} km.
 
 SESSION STRUCTURE (fixed weekdays):
 weekday 2 (Tuesday): type "long" — Rodaje largo at easy pace
@@ -625,7 +685,7 @@ OUTPUT JSON SCHEMA:
 {"plan_title":"string","weeks":[{"week_number":1,"focus":"string","workouts":[{"weekday":2,"title":"string","type":"long|tempo|recovery|interval","total_km":0,"duration_min":0,"description":"Include specific pace, sets/reps for intervals, warmup/cooldown"}]}]}
 
 Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays both weeks, all numeric fields must be numbers, description must include specific paces from above.`;
-  }, [competition, targetTime, levelId, levelLabel, daysPerWeek, startDate, currentBlock, nextBlockParams, selectedTrainingDaysText, blockHistory, vdotPaceRanges]);
+  }, [competition, targetTime, levelId, levelLabel, daysPerWeek, startDate, currentBlock, nextBlockParams, selectedTrainingDaysText, blockHistory, vdotPaceRanges, volumePlan]);
 
   const generatePlan2 = async () => {
     const timeOk = /^\d{1,2}:\d{2}:\d{2}$/.test(String(targetTime || "").trim());
@@ -1016,12 +1076,12 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
                   type="number"
                   min={0}
                   step={0.1}
-                  value={nextBlockParams.vdot === "" && vdotInfo.vdot != null ? String(vdotInfo.vdot) : nextBlockParams.vdot}
+                  value={nextBlockParams.vdot === "" && evalInfo.vdot != null ? String(evalInfo.vdot) : nextBlockParams.vdot}
                   onChange={(e) => setNextBlockParams((prev) => ({ ...prev, vdot: e.target.value }))}
                   placeholder={vdotPaceRanges ? String(vdotPaceRanges.vdotUsed) : "Ej: 48.2"}
                   style={{ ...inputStyle, margin: 0 }}
                 />
-                {effectiveVdot.source === "manual" && vdotInfo.vdot != null ? (
+                {effectiveVdot.source === "manual" && evalInfo.vdot != null ? (
                   <button
                     type="button"
                     onClick={() => setNextBlockParams((prev) => ({ ...prev, vdot: "" }))}
@@ -1034,6 +1094,31 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
               {effectiveVdot.source === "estimated" ? (
                 <div style={{ marginTop: 6, color: "#92400e", fontSize: ".72em", lineHeight: 1.4 }}>
                   Los ritmos saldrán de un VDOT por nivel. Haz una evaluación al atleta para ajustarlos a su estado real.
+                </div>
+              ) : null}
+            </div>
+            <div
+              style={{
+                borderRadius: 10,
+                padding: "10px 12px",
+                border: `1px solid ${declaredWeeklyKm == null ? "rgba(245,158,11,.45)" : "rgba(14,116,144,.35)"}`,
+                background: declaredWeeklyKm == null ? "#fffbeb" : "rgba(14,116,144,.08)",
+              }}
+            >
+              <div style={{ ...labelStyle, marginBottom: 6 }}>Volumen que se usará en el plan</div>
+              <div
+                style={{
+                  fontSize: ".84em",
+                  fontWeight: 800,
+                  color: declaredWeeklyKm == null ? "#92400e" : "#0e7490",
+                  lineHeight: 1.4,
+                }}
+              >
+                {athleteId ? volumeLabel : "Selecciona un atleta"}
+              </div>
+              {athleteId && declaredWeeklyKm == null ? (
+                <div style={{ marginTop: 6, color: "#92400e", fontSize: ".72em", lineHeight: 1.4 }}>
+                  Registra el kilometraje semanal del atleta en su evaluación para que el volumen salga de su estado real.
                 </div>
               ) : null}
             </div>

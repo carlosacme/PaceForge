@@ -71,6 +71,18 @@ const computeHrZones = (fcMax, fcRest) => {
   });
 };
 
+/**
+ * Km/semana declarados -> entero para la BD. Cadena vacía = no declarado (null);
+ * 0 sí es un dato real y significa "viene de una pausa".
+ */
+const parseWeeklyKm = (raw) => {
+  const text = String(raw ?? "").trim();
+  if (text === "") return null;
+  const n = Number(text);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return Math.min(400, Math.round(n));
+};
+
 export default function EvaluationView({ athletes, currentUserId, notify, athleteOnlyId = null }) {
   const S = evalStyles;
   const EVAL_FORM_STORAGE_KEY = "raf_eval_form";
@@ -88,6 +100,7 @@ export default function EvaluationView({ athletes, currentUserId, notify, athlet
   const [thresholdDistance, setThresholdDistance] = usePersistedState("raf_eval_thresholdDistance", "7000");
   const [fcMax, setFcMax] = usePersistedState("raf_eval_fcMax", "");
   const [fcRest, setFcRest] = usePersistedState("raf_eval_fcRest", "");
+  const [weeklyKm, setWeeklyKm] = usePersistedState("raf_eval_weeklyKm", "");
   const [results, setResults] = useState(null);
   const [saving, setSaving] = useState(false);
   const [history, setHistory] = useState([]);
@@ -114,6 +127,7 @@ export default function EvaluationView({ athletes, currentUserId, notify, athlet
     if (!selectedAthlete) return;
     setFcMax(selectedAthlete.fc_max ? String(selectedAthlete.fc_max) : "");
     setFcRest(selectedAthlete.fc_reposo ? String(selectedAthlete.fc_reposo) : "");
+    setWeeklyKm(selectedAthlete.weekly_km != null ? String(selectedAthlete.weekly_km) : "");
   }, [selectedAthlete?.id]);
 
   useEffect(() => {
@@ -132,6 +146,7 @@ export default function EvaluationView({ athletes, currentUserId, notify, athlet
       if (typeof parsed.thresholdDistance === "string") setThresholdDistance(parsed.thresholdDistance);
       if (typeof parsed.fcMax === "string") setFcMax(parsed.fcMax);
       if (typeof parsed.fcRest === "string") setFcRest(parsed.fcRest);
+      if (typeof parsed.weeklyKm === "string") setWeeklyKm(parsed.weeklyKm);
     } catch (err) {
       console.warn("No se pudo restaurar raf_eval_form", err);
     }
@@ -149,9 +164,10 @@ export default function EvaluationView({ athletes, currentUserId, notify, athlet
       thresholdDistance,
       fcMax,
       fcRest,
+      weeklyKm,
     };
     localStorage.setItem(EVAL_FORM_STORAGE_KEY, JSON.stringify(payload));
-  }, [athleteId, tab, raceDistance, raceTime, cooperDistance, thresholdTime, thresholdDistance, fcMax, fcRest]);
+  }, [athleteId, tab, raceDistance, raceTime, cooperDistance, thresholdTime, thresholdDistance, fcMax, fcRest, weeklyKm]);
 
   const loadHistory = useCallback(async () => {
     if (!athleteId) {
@@ -216,6 +232,7 @@ export default function EvaluationView({ athletes, currentUserId, notify, athlet
       predictions,
       fc_max: Number(fcMax) || null,
       fc_reposo: Number(fcRest) || null,
+      weekly_km_declared: parseWeeklyKm(weeklyKm),
       method: tab,
       eval_method: tab,
     });
@@ -241,6 +258,7 @@ export default function EvaluationView({ athletes, currentUserId, notify, athlet
       predicted_times: results.predictions.map((p) => ({ id: p.id, seconds: p.seconds })),
       fc_max: results.fc_max,
       fc_reposo: results.fc_reposo,
+      weekly_km_declared: results.weekly_km_declared,
     };
     const { error: insErr } = await supabase.from("athlete_evaluations").insert(payload);
     if (insErr) {
@@ -249,14 +267,16 @@ export default function EvaluationView({ athletes, currentUserId, notify, athlet
       notify?.(`No se pudo guardar evaluación: ${insErr.message}`);
       return;
     }
+    const athleteUpdate = { fc_max: results.fc_max, fc_reposo: results.fc_reposo };
+    if (results.weekly_km_declared != null) athleteUpdate.weekly_km = results.weekly_km_declared;
     const { error: updErr } = await supabase
       .from("athletes")
-      .update({ fc_max: results.fc_max, fc_reposo: results.fc_reposo })
+      .update(athleteUpdate)
       .eq("id", athleteId);
     setSaving(false);
     if (updErr) {
       console.error(updErr);
-      notify?.(`Evaluación guardada, pero no se pudo actualizar FC: ${updErr.message}`);
+      notify?.(`Evaluación guardada, pero no se pudo actualizar el perfil del atleta: ${updErr.message}`);
     } else {
       notify?.("Evaluación guardada y aplicada al atleta");
     }
@@ -390,6 +410,22 @@ export default function EvaluationView({ athletes, currentUserId, notify, athlet
           <div>
             <div style={{ fontSize: ".74em", color: "#64748b", marginBottom: 6, fontWeight: 700 }}>FC reposo</div>
             <input value={fcRest} onChange={(e) => setFcRest(e.target.value)} placeholder="Ej. 52" style={{ width: "100%", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", fontFamily: "inherit" }} />
+          </div>
+          <div>
+            <div style={{ fontSize: ".74em", color: "#64748b", marginBottom: 6, fontWeight: 700 }}>Kilometraje semanal actual (km)</div>
+            <input
+              type="number"
+              min={0}
+              max={400}
+              step={1}
+              value={weeklyKm}
+              onChange={(e) => setWeeklyKm(e.target.value)}
+              placeholder="Ej. 30"
+              style={{ width: "100%", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", fontFamily: "inherit" }}
+            />
+            <div style={{ fontSize: ".68em", color: "#64748b", marginTop: 6, lineHeight: 1.4 }}>
+              ¿Cuántos km corre el atleta a la semana actualmente? Si viene de una pausa, indica 0. Es el dato con el que se calcula el volumen de sus planes.
+            </div>
           </div>
         </div>
 

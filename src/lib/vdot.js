@@ -309,6 +309,171 @@ export function vdotRequiredForRace(distanceMeters, time, opts) {
   return hi;
 }
 
+/* ============================================================
+ * VOLUMEN SEMANAL (la CARGA del plan)
+ * ============================================================
+ * El VDOT dice a que ritmos corre el atleta, no cuanto aguanta. La carga
+ * arranca del kilometraje que el atleta declara en su evaluacion
+ * (weekly_km_declared); el nivel solo pone el techo de seguridad.
+ */
+
+/**
+ * Piso de arranque en km/semana cuando el atleta declara 0 (vuelve de una
+ * pausa) o menos de lo minimo para sostener un bloque de 2 semanas.
+ */
+export const STARTING_WEEKLY_KM = {
+  principiante: 12,
+  intermedio: 20,
+  avanzado: 30,
+};
+
+/**
+ * Techo de km/semana por nivel y distancia objetivo: `base` es el bloque 1 y
+ * sube `perBlock` en cada bloque. Es un limite de seguridad, no un objetivo:
+ * un atleta que ya corre mas de esto conserva su volumen real hasta el techo.
+ */
+const WEEKLY_KM_CAP = {
+  principiante: {
+    "5k":      { base: 15, perBlock: 2 },
+    "10k":     { base: 20, perBlock: 3 },
+    half:      { base: 25, perBlock: 4 },
+    marathon:  { base: 30, perBlock: 5 },
+  },
+  intermedio: {
+    "5k":      { base: 25, perBlock: 2 },
+    "10k":     { base: 30, perBlock: 3 },
+    half:      { base: 40, perBlock: 4 },
+    marathon:  { base: 50, perBlock: 5 },
+  },
+  avanzado: {
+    "5k":      { base: 35, perBlock: 2 },
+    "10k":     { base: 45, perBlock: 3 },
+    half:      { base: 60, perBlock: 4 },
+    marathon:  { base: 75, perBlock: 5 },
+  },
+};
+
+/** Nivel a clave conocida ('principiante' | 'intermedio' | 'avanzado'). */
+export function levelKeyOf(level) {
+  const key = String(level || "").toLowerCase();
+  return STARTING_WEEKLY_KM[key] ? key : "intermedio";
+}
+
+/** Competencia (texto libre de la UI) a clave de distancia del techo. */
+export function raceKeyOf(competition) {
+  const text = String(competition || "").toLowerCase();
+  if (text.includes("media")) return "half";               // antes que "maraton"
+  if (text.includes("marat")) return "marathon";
+  if (text.includes("21")) return "half";
+  if (text.includes("10")) return "10k";
+  if (text.includes("5")) return "5k";
+  return "10k";
+}
+
+/** Techo de km/semana para el bloque dado. */
+export function weeklyKmCap(level, competition, blockNumber = 1) {
+  const cap = WEEKLY_KM_CAP[levelKeyOf(level)][raceKeyOf(competition)];
+  const block = Math.max(1, Math.round(Number(blockNumber) || 1));
+  return cap.base + cap.perBlock * (block - 1);
+}
+
+/**
+ * Progresion del bloque en %. Sube 5-10% mientras se construye y baja en el
+ * taper (bloque 9+), coherente con las fases del prompt.
+ */
+export function blockProgressionPct(blockNumber) {
+  const b = Math.max(1, Math.round(Number(blockNumber) || 1));
+  if (b <= 1) return 0;
+  if (b <= 2) return 5;
+  if (b <= 6) return 8;
+  if (b <= 8) return 10;
+  return -20;
+}
+
+/** Progresion acumulada desde el bloque 1 hasta `blockNumber`. */
+function cumulativeProgressionFactor(blockNumber) {
+  const target = Math.max(1, Math.round(Number(blockNumber) || 1));
+  let factor = 1;
+  for (let b = 2; b <= target; b += 1) factor *= 1 + blockProgressionPct(b) / 100;
+  return factor;
+}
+
+/**
+ * Volumen semanal objetivo de la semana 1 del bloque.
+ *
+ * @param {object}  args
+ * @param {number?} args.declaredKm   km/semana declarados por el atleta
+ * @param {string}  args.level        nivel (techo de seguridad)
+ * @param {string}  args.competition  distancia objetivo (techo de seguridad)
+ * @param {number}  args.blockNumber  bloque actual (progresion acumulada)
+ * @returns {{
+ *   levelKey: string, declaredKm: number|null, floorKm: number, baseKm: number,
+ *   usedFloor: boolean, progressionPct: number, cumulativePct: number,
+ *   levelCapKm: number, capKm: number, targetKm: number, cappedByLevel: boolean
+ * }}
+ */
+export function planWeeklyVolume({ declaredKm, level, competition, blockNumber = 1 } = {}) {
+  const levelKey = levelKeyOf(level);
+  const floorKm = STARTING_WEEKLY_KM[levelKey];
+  // Number(null) es 0, y aqui 0 significa "viene de una pausa" (dato real),
+  // mientras que null significa "no lo sabemos". No se pueden confundir.
+  const raw = declaredKm == null || declaredKm === "" ? NaN : Number(declaredKm);
+  const declared = Number.isFinite(raw) && raw >= 0 ? Math.round(raw) : null;
+  const baseKm = Math.max(declared ?? 0, floorKm);
+  const levelCapKm = weeklyKmCap(levelKey, competition, blockNumber);
+  // El techo limita cuanto se SUBE, nunca obliga a bajar: a un atleta que ya
+  // corre mas que el techo de su nivel se le mantiene su volumen, no se le
+  // desentrena.
+  const capKm = Math.max(levelCapKm, baseKm);
+  const factor = cumulativeProgressionFactor(blockNumber);
+  const progressed = Math.round(baseKm * factor);
+  const targetKm = Math.max(floorKm, Math.min(progressed, capKm));
+  return {
+    levelKey,
+    declaredKm: declared,
+    floorKm,
+    baseKm,
+    usedFloor: declared == null || declared < floorKm,
+    progressionPct: blockProgressionPct(blockNumber),
+    cumulativePct: Math.round((factor - 1) * 100),
+    levelCapKm,
+    capKm,
+    targetKm,
+    cappedByLevel: progressed > capKm,
+  };
+}
+
+/**
+ * Guia de trabajo de CALIDAD segun VDOT: series y recuperaciones. Un atleta de
+ * VDOT 35 no puede hacer las mismas series que uno de 55, aunque el volumen
+ * semanal sea parecido.
+ */
+export function qualityWorkGuide(vdot) {
+  const v = Number(vdot);
+  if (!Number.isFinite(v) || v <= 0 || v < 40) {
+    return {
+      band: "<40",
+      intervalRange: "200-600m",
+      reps: "4-6",
+      recovery: "full recovery (equal to or longer than the interval)",
+    };
+  }
+  if (v <= 50) {
+    return {
+      band: "40-50",
+      intervalRange: "400-1000m",
+      reps: "5-8",
+      recovery: "50-100% of the interval time",
+    };
+  }
+  return {
+    band: ">50",
+    intervalRange: "800-2000m",
+    reps: "6-10",
+    recovery: "50% of the interval time",
+  };
+}
+
 /**
  * Tabla por nivel, ahora DERIVADA de vdot.js.
  * Se mantiene el nombre y la forma para no romper a los consumidores
