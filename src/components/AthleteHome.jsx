@@ -12,7 +12,6 @@ import {
   getMonthGrid,
   cellIsInViewMonth,
   normalizeAthlete,
-  PLATFORM_ADMIN_USER_ID,
   DAYS,
   getRaceCountdownText,
   achievementJoinMeta,
@@ -66,6 +65,13 @@ function normalizeSoloAthletePlanKey(athletePlan, subscriptionPeriod) {
 
 const SOLO_PLAN_MONTHLY_COP = 25000;
 const SOLO_PLAN_ANNUAL_COP = 250000;
+
+/**
+ * Coaches publicos que hacen falta para que valga la pena enseñar el
+ * directorio. Con uno o dos no hay nada que elegir y queda pobre; la seccion
+ * se enciende sola cuando la plataforma llega a este numero.
+ */
+const MIN_COACHES_FOR_DIRECTORY = 3;
 import { refreshFcmTokenIfGranted, clearFcmToken } from "../firebase.js";
 
 function MarketplacePlanWorkoutsAccordion({ previewWorkouts, resetKey, lockAfterWeek1 = false }) {
@@ -280,6 +286,7 @@ export default function AthleteHome({ profile }) {
   const [coachCodeMsg, setCoachCodeMsg] = useState("");
   const [coachDirectory, setCoachDirectory] = useState([]);
   const [coachDirLoading, setCoachDirLoading] = useState(false);
+  const coachDirLoadedRef = useRef(false);
   const [workouts, setWorkouts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
@@ -320,10 +327,6 @@ export default function AthleteHome({ profile }) {
   const [forceManualFields, setForceManualFields] = useState(false);
   const [findCoachCodeInput, setFindCoachCodeInput] = useState("");
   const [findCoachCodeBusy, setFindCoachCodeBusy] = useState(false);
-  const [publicCoachesAthlete, setPublicCoachesAthlete] = useState([]);
-  const [loadingPublicCoachesAthlete, setLoadingPublicCoachesAthlete] = useState(false);
-  const [selectCoachBusyId, setSelectCoachBusyId] = useState("");
-  const [coachAssignSuccess, setCoachAssignSuccess] = useState("");
   const [workoutSummaryModal, setWorkoutSummaryModal] = useState(null);
   const [manualSummaryForm, setManualSummaryForm] = useState({
     distanceKm: "",
@@ -404,7 +407,6 @@ export default function AthleteHome({ profile }) {
     const load = async () => {
       setLoading(true);
       setMessage("");
-      setCoachAssignSuccess("");
       setAthleteNotRegistered(false);
       const { data: authData, error: authErr } = await supabase.auth.getUser();
       if (cancelled) return;
@@ -486,28 +488,6 @@ export default function AthleteHome({ profile }) {
     }
     return m;
   }, [earnedAchievements]);
-
-  useEffect(() => {
-    if (!athleteInfo?.id || athleteNotRegistered || athleteCoachIdPrimitive) { setPublicCoachesAthlete([]); return; }
-    let cancelled = false;
-    (async () => {
-      setLoadingPublicCoachesAthlete(true);
-      const { data, error } = await supabase.from("coach_profiles").select("user_id, full_name, avatar_url, city, country, subscription_plan").eq("is_public", true).order("updated_at", { ascending: false });
-      if (cancelled) return;
-      if (error) { console.error("[AthleteHome] coaches públicos:", error); setPublicCoachesAthlete([]); }
-      else {
-        const list = data || [];
-        const sorted = [...list].sort((a, b) => {
-          const ap = String(a.user_id) === PLATFORM_ADMIN_USER_ID ? 0 : 1;
-          const bp = String(b.user_id) === PLATFORM_ADMIN_USER_ID ? 0 : 1;
-          return ap - bp;
-        });
-        setPublicCoachesAthlete(sorted);
-      }
-      setLoadingPublicCoachesAthlete(false);
-    })();
-    return () => { cancelled = true; };
-  }, [athleteInfo?.id, athleteNotRegistered, athleteCoachIdPrimitive]);
 
   const workoutsByDate = useMemo(() => {
     const m = {};
@@ -1007,8 +987,6 @@ export default function AthleteHome({ profile }) {
     const { error: eProf } = await supabase.from("profiles").update({ coach_id: coachUserId }).eq("user_id", profile.user_id);
     if (eProf) { setMessage(eProf.message || "No se pudo actualizar tu perfil. Revisa permisos o contacta soporte."); return false; }
     setAthleteInfo((prev) => (prev ? { ...prev, coach_id: coachUserId } : prev));
-    setCoachAssignSuccess("¡Coach asignado exitosamente! Ya puedes ver tus entrenamientos.");
-    setTimeout(() => setCoachAssignSuccess(""), 8000);
     const { data: wRows, error: wErr } = await supabase.from("workouts").select("*").eq("athlete_id", athleteInfo.id).order("scheduled_date", { ascending: true });
     if (!wErr && wRows) setWorkouts((wRows || []).map(normalizeWorkoutRow));
     return true;
@@ -1037,23 +1015,33 @@ export default function AthleteHome({ profile }) {
     } finally { setFindCoachCodeBusy(false); }
   };
 
-  const loadCoachDirectory = async () => {
+  // Directorio desde la vista coach_public: coach_profiles no la puede leer el
+  // atleta (solo el propio coach o el admin), asi que la consulta directa a la
+  // tabla devolvia siempre vacio.
+  const loadCoachDirectory = useCallback(async () => {
     setCoachDirLoading(true);
     const { data, error } = await supabase
       .from("coach_public")
-      .select("user_id, name, coach_id")
+      .select("user_id, name, full_name, coach_id, city, country, avatar_url")
+      .eq("is_public", true)
       .order("name", { ascending: true })
       .limit(20);
     setCoachDirLoading(false);
-    if (!error && data) setCoachDirectory(data);
-  };
+    if (error) { console.error("[AthleteHome] directorio de coaches:", error); return; }
+    setCoachDirectory(data || []);
+  }, []);
 
-  const selectPublicCoach = async (coachUserId) => {
-    setSelectCoachBusyId(String(coachUserId));
-    setMessage("");
-    try { await linkAthleteToCoach(coachUserId); }
-    finally { setSelectCoachBusyId(""); }
-  };
+  // Una sola carga al abrir Config, que es donde vive el directorio.
+  useEffect(() => {
+    if (athleteProfileTab !== "config" || coachDirLoadedRef.current) return;
+    coachDirLoadedRef.current = true;
+    loadCoachDirectory();
+  }, [athleteProfileTab, loadCoachDirectory]);
+
+  const availableCoaches = useMemo(
+    () => coachDirectory.filter((c) => !athleteCoachIdPrimitive || String(c.user_id) !== String(athleteCoachIdPrimitive)),
+    [coachDirectory, athleteCoachIdPrimitive],
+  );
 
   const renderAthleteProgressCard = (marginBottom) => (
     <div style={{ ...S.card, marginBottom, overflow: "visible" }}>
@@ -1583,33 +1571,40 @@ export default function AthleteHome({ profile }) {
                       </div>
                       {coachCodeMsg ? <div style={{ fontSize: ".78em", color: coachCodeMsg.startsWith("Conectado") ? "#166534" : "#dc2626", fontWeight: 600 }}>{coachCodeMsg}</div> : null}
                     </div>
+                    {/* Con menos de MIN_COACHES_FOR_DIRECTORY coaches disponibles no se
+                        renderiza nada: ni la seccion ni un mensaje de vacio. */}
+                    {availableCoaches.length >= MIN_COACHES_FOR_DIRECTORY ? (
                     <div style={{ marginBottom: 20 }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
                         <div style={{ fontSize: ".72em", fontWeight: 800, color: "#475569", textTransform: "uppercase", letterSpacing: ".1em" }}>DIRECTORIO DE COACHES</div>
                         <button type="button" onClick={loadCoachDirectory} disabled={coachDirLoading} style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#334155", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".75em" }}>
-                          {coachDirLoading ? "Cargando..." : coachDirectory.length ? "Actualizar" : "Ver coaches"}
+                          {coachDirLoading ? "Cargando..." : "Actualizar"}
                         </button>
                       </div>
-                      {coachDirectory.length > 0 ? (
-                        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                          {coachDirectory.map((c) => (
-                            <div key={c.user_id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "10px 12px", borderRadius: 10, border: "1px solid #e2e8f0", background: "#fafafa", flexWrap: "wrap" }}>
-                              <div>
-                                <div style={{ fontWeight: 800, color: "#0f172a", fontSize: ".88em" }}>{c.name}</div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                        {availableCoaches.map((c) => (
+                          <div key={c.user_id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "10px 12px", borderRadius: 10, border: "1px solid #e2e8f0", background: "#fafafa", flexWrap: "wrap" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                              {c.avatar_url ? (
+                                <img src={c.avatar_url} alt="" loading="lazy" style={{ width: 32, height: 32, borderRadius: "50%", objectFit: "cover", flexShrink: 0, border: "1px solid #e2e8f0" }} />
+                              ) : (
+                                <span style={{ fontSize: "1.2em", flexShrink: 0 }}>🏃</span>
+                              )}
+                              <div style={{ minWidth: 0 }}>
+                                <div style={{ fontWeight: 800, color: "#0f172a", fontSize: ".88em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.full_name || c.name}</div>
                                 <div style={{ fontSize: ".72em", color: "#64748b", marginTop: 2 }}>
-                                  {"Codigo: " + (c.coach_id || "N/A") + (c.city ? " · " + c.city : "")}
+                                  {"Codigo: " + (c.coach_id || "N/A") + [c.city, c.country].filter(Boolean).map((s) => " · " + s).join("")}
                                 </div>
                               </div>
-                              <button type="button" onClick={() => { setFindCoachCodeInput(c.coach_id || ""); setCoachCodeMsg(""); }} style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid rgba(245,158,11,.4)", background: "rgba(245,158,11,.1)", color: "#b45309", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".75em", whiteSpace: "nowrap" }}>
-                                Seleccionar
-                              </button>
                             </div>
-                          ))}
-                        </div>
-                      ) : !coachDirLoading ? (
-                        <div style={{ fontSize: ".82em", color: "#94a3b8" }}>Haz clic en "Ver coaches" para explorar el directorio.</div>
-                      ) : null}
+                            <button type="button" onClick={() => { setFindCoachCodeInput(c.coach_id || ""); setCoachCodeMsg(""); }} style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid rgba(245,158,11,.4)", background: "rgba(245,158,11,.1)", color: "#b45309", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".75em", whiteSpace: "nowrap" }}>
+                              Seleccionar
+                            </button>
+                          </div>
+                        ))}
+                      </div>
                     </div>
+                    ) : null}
                     <div style={{ marginTop: 20, paddingTop: 20, borderTop: "1px solid #e2e8f0" }}>
                       <IntervalsConnect athleteId={athleteInfo?.id} onNotify={setMessage} />
                     </div>
