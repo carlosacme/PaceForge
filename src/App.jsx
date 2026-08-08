@@ -1828,15 +1828,13 @@ export default function App() {
         const hasInviteCode = Boolean(inviteCodeFromUrl);
         const hasManualCoachCode = Boolean(authCoachCode.trim());
         if (hasInviteCode) {
-          const { data: inv, error: invErr } = await supabase
-            .from("invitations")
-            .select("*")
-            .eq("code", inviteCodeFromUrl)
-            .eq("status", "pending")
-            .maybeSingle();
+          // Via RPC: durante el registro todavia no hay sesion y las policies
+          // de invitations solo dejan leer al coach dueño de la fila.
+          const { data: invRows, error: invErr } = await supabase.rpc("find_invitation_by_code", { p_code: inviteCodeFromUrl });
           if (invErr) {
             console.error("Error consultando invitación:", invErr);
           }
+          const inv = Array.isArray(invRows) ? invRows[0] : invRows;
           if (inv) {
             const inviteEmail = String(inv.email || "").trim().toLowerCase();
             const regEmail = authEmail.trim().toLowerCase();
@@ -1847,6 +1845,15 @@ export default function App() {
             }
             linkedCoachId = inv.coach_id || null;
             inviteRow = inv;
+          }
+          if (!linkedCoachId) {
+            const seguir = window.confirm(
+              "El link de invitación no es válido o ya se usó, así que no podemos conectarte con tu coach automáticamente.\n\n¿Continuar el registro sin coach? Podrás conectarte después con el código de tu coach.",
+            );
+            if (!seguir) {
+              setAuthSubmitting(false);
+              return;
+            }
           }
         } else if (hasManualCoachCode) {
           const coachIdFromCode = await resolveCoachIdByCode(authCoachCode);
@@ -1974,11 +1981,11 @@ export default function App() {
           setPendingCoachRequestId("");
         }
 
-        if (inviteRow?.id) {
-          await supabase
-            .from("invitations")
-            .update({ status: "accepted", accepted_at: new Date().toISOString() })
-            .eq("id", inviteRow.id);
+        if (inviteRow) {
+          // Tambien por RPC: sin sesion (verificacion de email activada) el
+          // update directo lo bloquearia RLS.
+          const { error: accErr } = await supabase.rpc("accept_invitation_by_code", { p_code: inviteCodeFromUrl });
+          if (accErr) console.warn("No se pudo marcar la invitación como aceptada:", accErr);
           setInviteCodeFromUrl("");
           if (typeof window !== "undefined") {
             window.history.replaceState({}, "", "/");

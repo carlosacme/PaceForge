@@ -1552,6 +1552,30 @@ export async function resolveCoachUserIdFromPublicCode(codeInput) {
   return data ?? null;
 }
 
+/**
+ * Coach al que se dirige una solicitud de entrenador.
+ *
+ * Hoy solo hay un coach publico en la plataforma, asi que la solicitud va a
+ * el. Cuando haya varios, este es el punto donde hay que dejar que el atleta
+ * elija: mientras tanto se cae al coach de la plataforma para no dejar la
+ * solicitud sin destinatario.
+ */
+export async function resolveDefaultCoachUserId() {
+  const { data, error } = await supabase
+    .from("coach_public")
+    .select("user_id")
+    .eq("is_public", true)
+    .limit(2);
+  if (error) {
+    console.error("resolveDefaultCoachUserId:", error);
+    return PLATFORM_ADMIN_USER_ID;
+  }
+  const rows = data || [];
+  if (rows.length === 1) return rows[0].user_id;
+  const admin = rows.find((r) => String(r.user_id) === PLATFORM_ADMIN_USER_ID);
+  return admin?.user_id || rows[0]?.user_id || PLATFORM_ADMIN_USER_ID;
+}
+
 export const TAB_KEY_LIBRARY = "raf_tab_biblioteca";
 
 export const formatCopInt = (n) =>

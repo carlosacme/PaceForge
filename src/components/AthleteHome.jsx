@@ -26,6 +26,7 @@ import {
   computeFormaFatigaWeeklyPoints,
   formaFatigaStatusFromPoint,
   resolveCoachUserIdFromPublicCode,
+  resolveDefaultCoachUserId,
   sendChatPushNotification,
   registerFcmToken,
   normalizeScheduledDateYmd,
@@ -72,6 +73,68 @@ const SOLO_PLAN_ANNUAL_COP = 250000;
  * se enciende sola cuando la plataforma llega a este numero.
  */
 const MIN_COACHES_FOR_DIRECTORY = 3;
+
+/**
+ * Las dos formas que tiene el atleta de conseguir coach: el codigo que le pasa
+ * su entrenador, o pedir que le asignen uno. Se pinta igual en el aviso del
+ * inicio y en Perfil -> Config, con el mismo estado detras.
+ */
+const CoachLinkActions = ({
+  code,
+  onCodeChange,
+  onConnect,
+  connecting,
+  codeMsg,
+  onRequest,
+  requesting,
+  requestPending,
+  requestMsg,
+  showRequest = true,
+}) => {
+  const connectDisabled = connecting || !code.trim();
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
+        <input
+          type="text"
+          value={code}
+          onChange={(e) => onCodeChange(e.target.value.toUpperCase())}
+          placeholder="Codigo del coach (ej: B5C9E44A)"
+          style={{ flex: "1 1 180px", minWidth: 0, padding: "9px 12px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#0f172a", fontFamily: "inherit", fontSize: ".84em", boxSizing: "border-box" }}
+        />
+        <button
+          type="button"
+          onClick={onConnect}
+          disabled={connectDisabled}
+          style={{ padding: "9px 16px", borderRadius: 8, border: "none", background: connectDisabled ? "#e2e8f0" : "linear-gradient(135deg,#b45309,#f59e0b)", color: connectDisabled ? "#94a3b8" : "#fff", fontWeight: 800, cursor: connectDisabled ? "not-allowed" : "pointer", fontFamily: "inherit", fontSize: ".82em", whiteSpace: "nowrap" }}
+        >
+          {connecting ? "Conectando..." : "Conectar"}
+        </button>
+      </div>
+      {codeMsg ? (
+        <div style={{ fontSize: ".78em", color: codeMsg.startsWith("Conectado") ? "#166534" : "#dc2626", fontWeight: 600, marginBottom: 8 }}>{codeMsg}</div>
+      ) : null}
+      {!showRequest ? null : (
+      <>
+      <button
+        type="button"
+        onClick={onRequest}
+        disabled={requesting || requestPending}
+        style={{ padding: "9px 16px", borderRadius: 8, border: "1px solid rgba(245,158,11,.45)", background: requesting || requestPending ? "#f1f5f9" : "rgba(245,158,11,.12)", color: requesting || requestPending ? "#94a3b8" : "#b45309", fontWeight: 800, cursor: requesting || requestPending ? "not-allowed" : "pointer", fontFamily: "inherit", fontSize: ".82em" }}
+      >
+        {requesting ? "Enviando..." : requestPending ? "Solicitud enviada" : "Solicitar entrenador"}
+      </button>
+      <div style={{ fontSize: ".72em", color: "#64748b", marginTop: 6, lineHeight: 1.4 }}>
+        ¿No tienes código? Pide que te asignen un entrenador y él te contactará.
+      </div>
+      {requestMsg ? (
+        <div style={{ fontSize: ".78em", color: requestMsg.startsWith("Solicitud enviada") ? "#166534" : "#b45309", fontWeight: 600, marginTop: 6 }}>{requestMsg}</div>
+      ) : null}
+      </>
+      )}
+    </div>
+  );
+};
 import { refreshFcmTokenIfGranted, clearFcmToken } from "../firebase.js";
 
 function MarketplacePlanWorkoutsAccordion({ previewWorkouts, resetKey, lockAfterWeek1 = false }) {
@@ -327,6 +390,9 @@ export default function AthleteHome({ profile }) {
   const [forceManualFields, setForceManualFields] = useState(false);
   const [findCoachCodeInput, setFindCoachCodeInput] = useState("");
   const [findCoachCodeBusy, setFindCoachCodeBusy] = useState(false);
+  const [coachRequestBusy, setCoachRequestBusy] = useState(false);
+  const [coachRequestPending, setCoachRequestPending] = useState(false);
+  const [coachRequestMsg, setCoachRequestMsg] = useState("");
   const [workoutSummaryModal, setWorkoutSummaryModal] = useState(null);
   const [manualSummaryForm, setManualSummaryForm] = useState({
     distanceKm: "",
@@ -966,6 +1032,58 @@ export default function AthleteHome({ profile }) {
     } finally { setAthleteChatSending(false); }
   };
 
+  // Solicitud de entrenador: la tabla coach_requests y el panel del coach ya
+  // existian, faltaba que el atleta pudiera crear la fila.
+  const requestCoach = useCallback(async () => {
+    if (!athleteInfo?.id || !profile?.user_id) {
+      setCoachRequestMsg("Aún estamos cargando tu ficha. Inténtalo en unos segundos.");
+      return;
+    }
+    setCoachRequestBusy(true);
+    setCoachRequestMsg("");
+    try {
+      const { data: existing, error: exErr } = await supabase
+        .from("coach_requests")
+        .select("id")
+        .eq("athlete_user_id", profile.user_id)
+        .eq("status", "pending")
+        .limit(1);
+      if (exErr) { console.error("[AthleteHome] solicitudes previas:", exErr); }
+      if (existing?.length) {
+        setCoachRequestPending(true);
+        setCoachRequestMsg("Ya tienes una solicitud pendiente.");
+        return;
+      }
+      const coachId = await resolveDefaultCoachUserId();
+      if (!coachId) {
+        setCoachRequestMsg("No hay entrenadores disponibles ahora mismo. Inténtalo más tarde.");
+        return;
+      }
+      const { error } = await supabase.from("coach_requests").insert({
+        athlete_user_id: profile.user_id,
+        athlete_id: athleteInfo.id,
+        coach_id: coachId,
+        status: "pending",
+      });
+      if (error) {
+        console.error("[AthleteHome] solicitar entrenador:", error);
+        setCoachRequestMsg(error.message || "No se pudo enviar la solicitud.");
+        return;
+      }
+      setCoachRequestPending(true);
+      setCoachRequestMsg("Solicitud enviada. Tu entrenador la revisará pronto.");
+      sendChatPushNotification({
+        toUserId: coachId,
+        title: "Nueva solicitud de atleta",
+        body: `${athleteName} quiere entrenar contigo`,
+        data: { type: "coach_request", athlete_id: athleteInfo.id },
+        logLabel: "solicitud de entrenador",
+      }).catch(() => {});
+    } finally {
+      setCoachRequestBusy(false);
+    }
+  }, [athleteInfo?.id, profile?.user_id, athleteName]);
+
   const clearAthleteChat = async () => {
     if (!athleteInfo?.id || !coachIdForChat) return;
     if (!window.confirm("¿Estás seguro? Esto eliminará todos los mensajes de esta conversación.")) return;
@@ -978,6 +1096,23 @@ export default function AthleteHome({ profile }) {
   };
 
   const athleteNeedsCoachLink = Boolean(athleteInfo) && !athleteNotRegistered && (athleteInfo.coach_id == null || athleteInfo.coach_id === "");
+
+  // Solo se consulta si al atleta le falta coach, para no cargar nada de mas.
+  useEffect(() => {
+    if (!athleteNeedsCoachLink || !profile?.user_id) return undefined;
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from("coach_requests")
+        .select("id")
+        .eq("athlete_user_id", profile.user_id)
+        .eq("status", "pending")
+        .limit(1);
+      if (cancelled || error) return;
+      if (data?.length) setCoachRequestPending(true);
+    })();
+    return () => { cancelled = true; };
+  }, [athleteNeedsCoachLink, profile?.user_id]);
 
   const linkAthleteToCoach = async (coachUserId) => {
     if (!athleteInfo?.id || !profile?.user_id || !coachUserId) return false;
@@ -1206,6 +1341,42 @@ export default function AthleteHome({ profile }) {
           >
             <span aria-hidden="true">💬</span> Chat
           </button>
+        </div>
+      ) : null}
+      {athleteNeedsCoachLink ? (
+        <div
+          style={{
+            padding: "14px 16px",
+            borderRadius: 12,
+            background: "linear-gradient(135deg, rgba(245,158,11,.1), rgba(251,191,36,.08))",
+            border: "1px solid rgba(245,158,11,.3)",
+            marginBottom: 12,
+          }}
+        >
+          <div style={{ fontSize: ".95em", fontWeight: 900, color: "#0f172a", marginBottom: 4 }}>Aún no tienes entrenador</div>
+          <div style={{ fontSize: ".82em", color: "#475569", marginBottom: 12, lineHeight: 1.45 }}>
+            Conéctate con tu coach para recibir tus entrenamientos personalizados.
+          </div>
+          <CoachLinkActions
+            code={findCoachCodeInput}
+            onCodeChange={(v) => { setFindCoachCodeInput(v); setCoachCodeMsg(""); }}
+            onConnect={connectCoachByCode}
+            connecting={findCoachCodeBusy}
+            codeMsg={coachCodeMsg}
+            onRequest={requestCoach}
+            requesting={coachRequestBusy}
+            requestPending={coachRequestPending}
+            requestMsg={coachRequestMsg}
+          />
+        </div>
+      ) : null}
+      {athleteNotRegistered ? (
+        <div style={{ padding: "14px 16px", borderRadius: 12, background: "#eff6ff", border: "1px solid #bfdbfe", marginBottom: 12 }}>
+          <div style={{ fontSize: ".95em", fontWeight: 900, color: "#0f172a", marginBottom: 4 }}>Estamos preparando tu ficha</div>
+          <div style={{ fontSize: ".82em", color: "#475569", lineHeight: 1.45 }}>
+            Tu cuenta existe, pero todavía no encontramos tu ficha de atleta, así que aún no podemos mostrarte entrenamientos.
+            Si acabas de registrarte, recarga la app en unos segundos. Si sigue igual, escríbenos y lo resolvemos.
+          </div>
         </div>
       ) : null}
       <WeatherWidget />
@@ -1552,24 +1723,18 @@ export default function AthleteHome({ profile }) {
                       ) : (
                         <div style={{ fontSize: ".82em", color: "#64748b", marginBottom: 10 }}>No tienes coach asignado. Ingresa un codigo para conectarte.</div>
                       )}
-                      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
-                        <input
-                          type="text"
-                          value={findCoachCodeInput}
-                          onChange={(e) => { setFindCoachCodeInput(e.target.value.toUpperCase()); setCoachCodeMsg(""); }}
-                          placeholder="Codigo del coach (ej: B5C9E44A)"
-                          style={{ flex: "1 1 180px", padding: "9px 12px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#0f172a", fontFamily: "inherit", fontSize: ".84em", boxSizing: "border-box" }}
-                        />
-                        <button
-                          type="button"
-                          onClick={connectCoachByCode}
-                          disabled={findCoachCodeBusy || !findCoachCodeInput.trim()}
-                          style={{ padding: "9px 16px", borderRadius: 8, border: "none", background: (findCoachCodeBusy || !findCoachCodeInput.trim()) ? "#e2e8f0" : "linear-gradient(135deg,#b45309,#f59e0b)", color: (findCoachCodeBusy || !findCoachCodeInput.trim()) ? "#94a3b8" : "#fff", fontWeight: 800, cursor: (findCoachCodeBusy || !findCoachCodeInput.trim()) ? "not-allowed" : "pointer", fontFamily: "inherit", fontSize: ".82em", whiteSpace: "nowrap" }}
-                        >
-                          {findCoachCodeBusy ? "Conectando..." : "Conectar"}
-                        </button>
-                      </div>
-                      {coachCodeMsg ? <div style={{ fontSize: ".78em", color: coachCodeMsg.startsWith("Conectado") ? "#166534" : "#dc2626", fontWeight: 600 }}>{coachCodeMsg}</div> : null}
+                      <CoachLinkActions
+                        code={findCoachCodeInput}
+                        onCodeChange={(v) => { setFindCoachCodeInput(v); setCoachCodeMsg(""); }}
+                        onConnect={connectCoachByCode}
+                        connecting={findCoachCodeBusy}
+                        codeMsg={coachCodeMsg}
+                        onRequest={requestCoach}
+                        requesting={coachRequestBusy}
+                        requestPending={coachRequestPending}
+                        requestMsg={coachRequestMsg}
+                        showRequest={athleteNeedsCoachLink}
+                      />
                     </div>
                     {/* Con menos de MIN_COACHES_FOR_DIRECTORY coaches disponibles no se
                         renderiza nada: ni la seccion ni un mensaje de vacio. */}
