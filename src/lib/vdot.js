@@ -359,12 +359,46 @@ export function levelKeyOf(level) {
   return STARTING_WEEKLY_KM[key] ? key : "intermedio";
 }
 
-/** Competencia (texto libre de la UI) a clave de distancia del techo. */
+/**
+ * Los dos vocabularios de distancia que convivan en la app:
+ * la ficha de carrera (races.distance) usa "5K/10K/21K/42K" y el generador
+ * usa "5K/10K/Media Maratón/Maratón". Sin esta tabla, "42K" no se reconocia
+ * como maraton y heredaba el techo de volumen de un 10K.
+ */
+export const RACE_DISTANCE_TO_COMPETITION = {
+  "5K": "5K",
+  "10K": "10K",
+  "21K": "Media Maratón",
+  "42K": "Maratón",
+};
+
+export const COMPETITION_TO_RACE_DISTANCE = {
+  "5K": "5K",
+  "10K": "10K",
+  "Media Maratón": "21K",
+  "Maratón": "42K",
+};
+
+/** "21K" -> "Media Maratón". Devuelve null si la distancia es libre ("Otro"). */
+export function competitionFromRaceDistance(distance) {
+  const key = String(distance || "").trim().toUpperCase();
+  return RACE_DISTANCE_TO_COMPETITION[key] || null;
+}
+
+/** "Media Maratón" -> "21K". Devuelve null para competencias sin equivalente. */
+export function raceDistanceFromCompetition(competition) {
+  return COMPETITION_TO_RACE_DISTANCE[String(competition || "").trim()] || null;
+}
+
+/**
+ * Competencia (texto libre de la UI o distancia de la ficha) a clave interna.
+ * Acepta los dos vocabularios: "Maratón", "42K" y "42" caen en marathon.
+ */
 export function raceKeyOf(competition) {
   const text = String(competition || "").toLowerCase();
   if (text.includes("media")) return "half";               // antes que "maraton"
-  if (text.includes("marat")) return "marathon";
   if (text.includes("21")) return "half";
+  if (text.includes("marat") || text.includes("42")) return "marathon";
   if (text.includes("10")) return "10k";
   if (text.includes("5")) return "5k";
   return "10k";
@@ -471,6 +505,154 @@ export function qualityWorkGuide(vdot) {
     intervalRange: "800-2000m",
     reps: "6-10",
     recovery: "50% of the interval time",
+  };
+}
+
+/* ─────────────────── Carreras y afinamiento (taper) ─────────────────── */
+
+/**
+ * Semanas de afinamiento por distancia. Un 5K se afina en unos dias; un
+ * maraton necesita tres semanas de bajada progresiva.
+ * (half = 21K, marathon = 42K en el vocabulario de la ficha de carrera.)
+ */
+export const TAPER_WEEKS = {
+  "5k": 1,
+  "10k": 1,
+  half: 2,
+  marathon: 3,
+};
+
+/**
+ * Recorte de volumen por semana, en % sobre la carga normal del bloque.
+ * El indice 0 es la semana de la carrera y se va alejando hacia atras:
+ * maraton = -60% la semana de la carrera, -40% la anterior, -25% la previa.
+ */
+const TAPER_VOLUME_CUT = {
+  "5k": [40],
+  "10k": [40],
+  half: [50, 25],
+  marathon: [60, 40, 25],
+};
+
+/**
+ * Carrera B: no se afina el bloque, solo se suavizan los ultimos dias. Aun
+ * asi la semana de la competicion no puede ir a carga completa, asi que se
+ * le aplica un recorte corto.
+ */
+const PRIORITY_B_RACE_WEEK_CUT = 25;
+
+/** Prioridad valida ('A' objetivo, 'B' importante, 'C' de entrenamiento). */
+export function normalizeRacePriority(priority) {
+  const p = String(priority || "A").trim().toUpperCase();
+  return p === "B" || p === "C" ? p : "A";
+}
+
+/** Semanas de taper de una distancia (0 si no se reconoce). */
+export function taperWeeksFor(raceKey) {
+  return TAPER_WEEKS[raceKey] || 1;
+}
+
+const ymdOf = (value) => String(value || "").slice(0, 10);
+const dateOfYmd = (ymd) => new Date(`${ymdOf(ymd)}T12:00:00`);
+
+function addDaysYmd(ymd, days) {
+  const d = dateOfYmd(ymd);
+  d.setDate(d.getDate() + days);
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
+function diffDaysYmd(fromYmd, toYmd) {
+  return Math.round((dateOfYmd(toYmd).getTime() - dateOfYmd(fromYmd).getTime()) / 86400000);
+}
+
+/** Normaliza una fila de races al formato que entiende el generador. */
+function toPlanRace(row) {
+  const distance = String(row?.distance || "").trim();
+  const competition = competitionFromRaceDistance(distance);
+  return {
+    id: row?.id,
+    name: String(row?.name || "Carrera"),
+    date: ymdOf(row?.date),
+    distance,
+    competition,
+    raceKey: raceKeyOf(competition || distance),
+    priority: normalizeRacePriority(row?.priority),
+  };
+}
+
+/**
+ * Que carrera manda en una semana concreta y cuanto hay que recortar.
+ * @returns {{mode:'full'|'short', cutPct:number, weeksToRace:number, race:object}|null}
+ */
+function taperForWeek(races, weekStartYmd) {
+  const applicable = [];
+  for (const race of races) {
+    if (race.priority === "C" || race.date < weekStartYmd) continue;
+    const weeksToRace = Math.floor(diffDaysYmd(weekStartYmd, race.date) / 7) + 1;
+    if (weeksToRace < 1) continue;
+    if (race.priority === "A") {
+      const cuts = TAPER_VOLUME_CUT[race.raceKey] || TAPER_VOLUME_CUT["10k"];
+      const cutPct = cuts[weeksToRace - 1];
+      if (cutPct != null) applicable.push({ mode: "full", cutPct, weeksToRace, race });
+    } else if (weeksToRace === 1) {
+      applicable.push({ mode: "short", cutPct: PRIORITY_B_RACE_WEEK_CUT, weeksToRace, race });
+    }
+  }
+  if (!applicable.length) return null;
+  // Con varias carreras en juego (una B de preparacion antes de la A objetivo)
+  // manda la que mas exige bajar: nunca se compite con carga alta.
+  return applicable.sort((a, b) => b.cutPct - a.cutPct)[0];
+}
+
+/**
+ * Contexto de carreras del bloque que se va a generar.
+ *
+ * El afinamiento pasa a depender de la carrera real (fecha, distancia y
+ * prioridad) en vez del numero de bloque: si hay una carrera A cerca manda
+ * ella, y si no hay ninguna el generador sigue con la fase por bloque.
+ *
+ * @param {object}   args
+ * @param {Array}    args.races          filas de la tabla races (futuras)
+ * @param {string}   args.blockStartYmd  lunes de inicio del bloque
+ * @param {number}   args.weekCount      semanas del bloque (2)
+ */
+export function planRaceContext({ races = [], blockStartYmd, weekCount = 2 } = {}) {
+  const start = ymdOf(blockStartYmd);
+  const empty = {
+    blockStartYmd: start,
+    blockEndYmd: start ? addDaysYmd(start, weekCount * 7 - 1) : "",
+    weeks: [],
+    racesInBlock: [],
+    nextTargetRace: null,
+    daysToNextTarget: null,
+    taperActive: false,
+  };
+  if (!start) return empty;
+
+  const list = (races || [])
+    .filter((r) => r && r.date)
+    .map(toPlanRace)
+    .filter((r) => r.date)
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  const weeks = [];
+  for (let i = 0; i < weekCount; i += 1) {
+    const startYmd = addDaysYmd(start, i * 7);
+    const endYmd = addDaysYmd(start, i * 7 + 6);
+    const race = list.find((r) => r.date >= startYmd && r.date <= endYmd) || null;
+    weeks.push({ weekNumber: i + 1, startYmd, endYmd, race, taper: taperForWeek(list, startYmd) });
+  }
+
+  const nextTargetRace = list.find((r) => r.priority === "A" && r.date >= start) || null;
+  return {
+    ...empty,
+    weeks,
+    racesInBlock: weeks.map((w) => w.race).filter(Boolean),
+    nextTargetRace,
+    daysToNextTarget: nextTargetRace ? diffDaysYmd(start, nextTargetRace.date) : null,
+    taperActive: weeks.some((w) => w.taper),
   };
 }
 

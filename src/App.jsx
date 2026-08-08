@@ -46,6 +46,8 @@ import {
   cellIsInViewMonth,
   daysBetweenYmd,
   RACE_DISTANCE_PRESETS,
+  RACE_PRIORITY_OPTIONS,
+  racePriorityMeta,
   raceDistanceToFormFields,
   normalizeRaceRow,
   getNextRaceCountdown,
@@ -4155,6 +4157,7 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
     distance: "21K",
     distanceOther: "",
     city: "",
+    priority: "A",
   });
   const [raceCtxMenu, setRaceCtxMenu] = useState(null);
   const raceCtxMenuRef = useRef(null);
@@ -4165,6 +4168,7 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
     distance: "21K",
     distanceOther: "",
     city: "",
+    priority: "A",
   });
   const [raceMoveDate, setRaceMoveDate] = useState("");
   const [raceActionBusy, setRaceActionBusy] = useState(false);
@@ -4472,6 +4476,7 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
       date: race.date || formatLocalYMD(new Date()),
       ...df,
       city: race.city || "",
+      priority: race.priority || "A",
     });
     setRacePanel({ mode: "edit", raceId: race.id });
     closeRaceCtxMenu();
@@ -4507,6 +4512,7 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
         date: raceEditForm.date,
         distance: dist,
         city: raceEditForm.city.trim() || null,
+        priority: raceEditForm.priority || "A",
       })
       .eq("id", panelRace.id);
     setRaceActionBusy(false);
@@ -4822,6 +4828,7 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
       distance: "21K",
       distanceOther: "",
       city: "",
+      priority: "A",
     });
     setRaceModalOpen(true);
   };
@@ -4852,6 +4859,7 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
         date: raceForm.date,
         distance: dist,
         city: raceForm.city.trim() || null,
+        priority: raceForm.priority || "A",
       });
       if (error) {
         console.error(error);
@@ -5687,31 +5695,34 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
                     }}
                   >
                     <div style={{ fontSize: ".58em", color: inViewMonth ? "#475569" : "#94a3b8", textAlign: "center", fontWeight: 600 }}>{cellDate.getDate()}</div>
-                    {dayRaces.map((race) => (
-                      <button
-                        key={race.id}
-                        type="button"
-                        onClick={(e) => openRaceCalendarMenu(e, race)}
-                        title={`${race.name} · ${race.distance}${race.city ? ` · ${race.city}` : ""}`}
-                        style={{
-                          fontSize: ".48em",
-                          fontWeight: 800,
-                          color: "#b45309",
-                          textAlign: "center",
-                          lineHeight: 1.2,
-                          padding: "2px 2px",
-                          borderRadius: 4,
-                          background: "rgba(255,255,255,.65)",
-                          border: "1px solid rgba(245,158,11,.35)",
-                          cursor: "pointer",
-                          fontFamily: "inherit",
-                          width: "100%",
-                          boxSizing: "border-box",
-                        }}
-                      >
-                        🏁 {race.name}
-                      </button>
-                    ))}
+                    {dayRaces.map((race) => {
+                      const pri = racePriorityMeta(race.priority);
+                      return (
+                        <button
+                          key={race.id}
+                          type="button"
+                          onClick={(e) => openRaceCalendarMenu(e, race)}
+                          title={`${race.name} · ${race.distance} · Prioridad ${pri.id} (${pri.short})${race.city ? ` · ${race.city}` : ""}`}
+                          style={{
+                            fontSize: ".48em",
+                            fontWeight: 800,
+                            color: pri.color,
+                            textAlign: "center",
+                            lineHeight: 1.2,
+                            padding: "2px 2px",
+                            borderRadius: 4,
+                            background: "rgba(255,255,255,.65)",
+                            border: `1px solid ${pri.color}59`,
+                            cursor: "pointer",
+                            fontFamily: "inherit",
+                            width: "100%",
+                            boxSizing: "border-box",
+                          }}
+                        >
+                          🏁 {pri.id} · {race.name}
+                        </button>
+                      );
+                    })}
                     {dayWorkouts.map(w => {
                       const wt = WORKOUT_TYPES.find(t => t.id === w.type) || WORKOUT_TYPES[0];
                       return (
@@ -6082,6 +6093,20 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
                     />
                   </div>
                 </div>
+                <div>
+                  <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Prioridad</div>
+                  <select
+                    value={raceEditForm.priority}
+                    onChange={(e) => setRaceEditForm((f) => ({ ...f, priority: e.target.value }))}
+                    style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", color: "#0f172a", fontFamily: "inherit", fontSize: ".84em", boxSizing: "border-box" }}
+                  >
+                    {RACE_PRIORITY_OPTIONS.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
                 {raceEditForm.distance === "Otro" ? (
                   <div>
                     <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Describe la distancia</div>
@@ -6404,6 +6429,23 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
                     placeholder="Ciudad"
                     style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", color: "#0f172a", fontFamily: "inherit", fontSize: ".84em", boxSizing: "border-box" }}
                   />
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Prioridad</div>
+                <select
+                  value={raceForm.priority}
+                  onChange={(e) => setRaceForm((f) => ({ ...f, priority: e.target.value }))}
+                  style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", color: "#0f172a", fontFamily: "inherit", fontSize: ".84em", boxSizing: "border-box" }}
+                >
+                  {RACE_PRIORITY_OPTIONS.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.label}
+                    </option>
+                  ))}
+                </select>
+                <div style={{ fontSize: ".68em", color: "#64748b", marginTop: 5, lineHeight: 1.4 }}>
+                  La prioridad decide el afinamiento que el generador mete en el plan de 2 semanas.
                 </div>
               </div>
               {raceForm.distance === "Otro" ? (

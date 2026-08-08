@@ -1,7 +1,7 @@
 import FitParser from "fit-file-parser";
 import { supabase } from "../../lib/supabase";
 import { readStructure } from "../../lib/workoutStructure";
-import { PACE_RANGES_BY_LEVEL } from "../../lib/vdot";
+import { PACE_RANGES_BY_LEVEL, normalizeRacePriority } from "../../lib/vdot";
 import { distKmFromLabel } from "../../lib/intervals";
 
 export const BRAND_NAME = "RunningApexFlow";
@@ -449,6 +449,16 @@ export const daysBetweenYmd = (fromYmd, toYmd) => {
 
 export const RACE_DISTANCE_PRESETS = ["5K", "10K", "21K", "42K", "Otro"];
 
+/** Prioridad de la carrera: decide cuanto afinamiento mete el generador. */
+export const RACE_PRIORITY_OPTIONS = [
+  { id: "A", label: "A — Carrera objetivo (afinamiento completo)", short: "Objetivo", color: "#b45309" },
+  { id: "B", label: "B — Carrera importante (afinamiento corto)", short: "Importante", color: "#0e7490" },
+  { id: "C", label: "C — Carrera de entrenamiento (sin afinamiento)", short: "Entrenamiento", color: "#64748b" },
+];
+
+export const racePriorityMeta = (priority) =>
+  RACE_PRIORITY_OPTIONS.find((p) => p.id === normalizeRacePriority(priority)) || RACE_PRIORITY_OPTIONS[0];
+
 export const raceDistanceToFormFields = (dist) => {
   const d = String(dist || "").trim();
   const fixed = RACE_DISTANCE_PRESETS.filter((x) => x !== "Otro");
@@ -472,6 +482,7 @@ export const normalizeRaceRow = (row) => {
     date: dateStr,
     distance: row.distance != null ? String(row.distance) : "",
     city: row.city != null ? String(row.city) : "",
+    priority: normalizeRacePriority(row.priority),
   };
 };
 

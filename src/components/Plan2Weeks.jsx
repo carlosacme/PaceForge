@@ -5,6 +5,7 @@ import {
   vdotRequiredForRace,
   parseTimeToSeconds,
   planWeeklyVolume,
+  planRaceContext,
   qualityWorkGuide,
 } from "../lib/vdot";
 import { usePersistedState } from "../hooks/usePersistedState";
@@ -45,6 +46,12 @@ const RACE_METERS_BY_COMPETITION = {
 
 /** Diferencia de VDOT desde la que el objetivo deja de ser realista. */
 const VDOT_GAP_WARNING = 3;
+
+/** Volumen de un bloque marcado como descarga, sobre la carga normal. */
+const DELOAD_FACTOR = 0.65;
+
+/** Bloques seguidos de carga creciente a partir de los que se sugiere bajar. */
+const BLOCKS_BEFORE_DELOAD_HINT = 3;
 
 function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, profileRole, onGoToPlans, onPlanAssigned }) {
   const S = styles;
@@ -95,6 +102,10 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, profileRole, onG
   // (volumen). Se recarga SIEMPRE al cambiar de atleta; nextBlockParams.vdot es
   // solo un override manual del coach.
   const [evalInfo, setEvalInfo] = useState({ loading: false, vdot: null, weeklyKm: null, testDate: null });
+  // Carreras futuras del atleta: mandan sobre la fase por numero de bloque.
+  const [athleteRaces, setAthleteRaces] = useState([]);
+  const [isDeloadBlock, setIsDeloadBlock] = usePersistedState(`raf_plan2_deload_${athleteStorageKey}`, false);
+  const [lastDeloadBlock, setLastDeloadBlock] = usePersistedState(`raf_plan2_lastDeload_${athleteStorageKey}`, 0);
   const monthKey = useMemo(() => getCurrentMonthKey(), []);
   const isBasicPlan = useMemo(() => {
     const p = String(coachPlan || "").toLowerCase();
@@ -191,6 +202,67 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, profileRole, onG
     const capText = volumePlan.cappedByLevel ? `, limitado por el techo del nivel (${volumePlan.capKm} km)` : "";
     return `Semana 1 ≈ ${volumePlan.targetKm} km — ${declaredText}${capText}`;
   }, [evalInfo.loading, declaredWeeklyKm, volumePlan]);
+
+  /** Carreras que caen dentro del bloque y afinamiento que toca cada semana. */
+  const raceContext = useMemo(
+    () => planRaceContext({ races: athleteRaces, blockStartYmd: startDate, weekCount: 2 }),
+    [athleteRaces, startDate],
+  );
+
+  /**
+   * Km de cada semana del bloque ya con el afinamiento de la carrera y la
+   * descarga aplicados. El recorte se mide siempre contra la carga normal del
+   * bloque (volumePlan.targetKm), no en cascada.
+   */
+  const blockWeekTargets = useMemo(() => {
+    const blockNumber = Number(currentBlock) || 1;
+    const normalWeek2 = blockNumber >= 8
+      ? Math.round(volumePlan.targetKm * 0.6)
+      : Math.min(volumePlan.capKm, Math.round(volumePlan.targetKm * 1.08));
+    const normals = [volumePlan.targetKm, normalWeek2];
+    return [0, 1].map((i) => {
+      const week = raceContext.weeks[i] || { weekNumber: i + 1, race: null, taper: null };
+      const cutPct = week.taper?.cutPct || 0;
+      const normalKm = normals[i];
+      let km = cutPct ? Math.round(volumePlan.targetKm * (1 - cutPct / 100)) : normalKm;
+      // Descarga y afinamiento no se suman: manda el que deje la semana mas baja.
+      if (isDeloadBlock) km = Math.min(km, Math.round(normalKm * DELOAD_FACTOR));
+      return {
+        weekNumber: i + 1,
+        km: Math.max(5, km),
+        normalKm,
+        cutPct,
+        race: week.race,
+        taper: week.taper,
+      };
+    });
+  }, [raceContext, volumePlan, currentBlock, isDeloadBlock]);
+
+  /** Aviso informativo cuando hay competicion dentro del bloque. */
+  const raceInBlockWarning = useMemo(() => {
+    const week = blockWeekTargets.find((w) => w.race);
+    if (!week) return "";
+    const r = week.race;
+    const fecha = new Date(`${r.date}T12:00:00`).toLocaleDateString("es-CO");
+    if (r.priority === "C") {
+      return `${r.name} (${r.distance}) el ${fecha} cae dentro de este bloque. Es prioridad C: se corre dentro de la carga normal, sin afinamiento.`;
+    }
+    return `${r.name} (${r.distance}) el ${fecha} cae dentro de este bloque. El plan incluirá afinamiento.`;
+  }, [blockWeekTargets]);
+
+  /** Sugerencia (no obligacion) de meter una descarga tras varios bloques. */
+  const blocksSinceDeload = useMemo(() => {
+    const block = Number(currentBlock) || 1;
+    const last = Number(lastDeloadBlock) || 0;
+    return Math.max(0, block - last);
+  }, [currentBlock, lastDeloadBlock]);
+
+  const deloadSuggestion = useMemo(() => {
+    if (isDeloadBlock) return "";
+    if ((Number(currentBlock) || 1) < BLOCKS_BEFORE_DELOAD_HINT) return "";
+    if (blocksSinceDeload < BLOCKS_BEFORE_DELOAD_HINT) return "";
+    return `Llevas ${blocksSinceDeload} bloques de carga creciente. Considera una semana de descarga.`;
+  }, [isDeloadBlock, currentBlock, blocksSinceDeload]);
 
   /** Aviso NO bloqueante si el tiempo objetivo no cuadra con el VDOT. */
   const targetTimeWarning = useMemo(() => {
@@ -486,6 +558,34 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, profileRole, onG
     };
   }, [athleteId]);
 
+  // Carreras futuras del atleta. El generador las necesita para afinar sobre
+  // la fecha real de competicion en vez de sobre el numero de bloque.
+  useEffect(() => {
+    if (!athleteId) {
+      setAthleteRaces([]);
+      return undefined;
+    }
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from("races")
+        .select("id, name, date, distance, priority")
+        .eq("athlete_id", athleteId)
+        .gte("date", formatLocalYMD(new Date()))
+        .order("date", { ascending: true });
+      if (cancelled) return;
+      if (error) {
+        console.error("races plan2:", error);
+        setAthleteRaces([]);
+        return;
+      }
+      setAthleteRaces(data || []);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [athleteId]);
+
   const handleToggleTrainingDay = (weekday) => {
     setNextBlockParams((prev) => {
       const exists = prev.trainingDays.includes(weekday);
@@ -531,6 +631,7 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, profileRole, onG
     setDaysPerWeek(nextSessions);
     setPlanAssignedSuccess(false);
     setDraftStatus("draft");
+    setIsDeloadBlock(false);
     setShowNextBlockPanel(true);
     setGeneratedPlan(null);
     setOpenWeeks(new Set());
@@ -583,10 +684,10 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, profileRole, onG
     // Volumen: sale del kilometraje real del atleta, no de una tabla por
     // distancia. El nivel solo pone el techo (volumePlan.capKm).
     const vol = volumePlan;
-    const week2Km = blockNumber >= 8
-      ? Math.round(vol.targetKm * 0.6)                          // race week
-      : Math.min(vol.capKm, Math.round(vol.targetKm * 1.08));   // consolidación
-    const maxSessionKm = Math.max(4, Math.round(vol.targetKm * 0.4));
+    const [week1Info, week2Info] = blockWeekTargets;
+    const week1Km = week1Info.km;
+    const week2Km = week2Info.km;
+    const maxSessionKm = Math.max(4, Math.round(week1Km * 0.4));
     const declaredVolumeText = vol.declaredKm == null
       ? `${vol.floorKm} km/week (starting floor for level, athlete has no declared volume)`
       : vol.declaredKm < vol.floorKm
@@ -600,17 +701,71 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, profileRole, onG
     // Calidad: el VDOT decide el tipo de series, no el nivel ni la distancia.
     const quality = qualityWorkGuide(pr.vdotUsed);
 
-    // Fase del plan según número de bloque
-    const phase = blockNumber <= 2 ? "BASE (aerobic foundation, easy runs dominate)"
+    // Fase: si hay una carrera cerca manda ella; si no, el numero de bloque.
+    const governingTaper = week1Info.taper || week2Info.taper;
+    const phaseByBlock = blockNumber <= 2 ? "BASE (aerobic foundation, easy runs dominate)"
       : blockNumber <= 4 ? "BUILDING (introduce tempo runs over a consolidated aerobic base)"
       : blockNumber <= 6 ? "DEVELOPMENT (threshold work and interval sessions)"
       : blockNumber <= 8 ? "PEAK (race-specific workouts, highest intensity)"
-      : "TAPER (keep intensity, volume already reduced, prepare for race)";
+      : "TAPER (keep intensity, volume already reduced)";
+    const phase = governingTaper
+      ? `TAPER FOR ${governingTaper.race.name} on ${governingTaper.race.date} (keep intensity, volume already reduced)`
+      : phaseByBlock;
 
-    // Semana 2 es race week solo en el último bloque
-    const week2Type = blockNumber >= 8
-      ? `RACE WEEK: ${week2Km} km total, only easy runs + strides, race on race date`
-      : `CONSOLIDATION WEEK: ${week2Km} km total, same focus as week 1 with slightly higher volume or quality`;
+    // Semana 2: la carrera manda; sin carrera, el numero de bloque. Antes se
+    // decia "race on race date" a partir del bloque 8 aunque no hubiera
+    // ninguna carrera registrada y el plan se la inventaba.
+    const week2Type = week2Info.race && week2Info.race.priority !== "C"
+      ? `RACE WEEK: ${week2Km} km total, the race is on ${week2Info.race.date}, only easy runs + strides before it`
+      : week2Info.cutPct
+        ? `TAPER WEEK: ${week2Km} km total, keep the intensity and cut the volume`
+        : blockNumber >= 8
+          ? `LOW-VOLUME WEEK: ${week2Km} km total, only easy runs + strides`
+          : `CONSOLIDATION WEEK: ${week2Km} km total, same focus as week 1 with slightly higher volume or quality`;
+
+    // Bloque de carreras del prompt. Sin carreras registradas no se menciona
+    // ninguna: el generador no puede inventarse una competicion.
+    const raceProfileLines = [];
+    for (const w of blockWeekTargets) {
+      if (!w.race) continue;
+      raceProfileLines.push(
+        `- RACE IN THIS BLOCK: ${w.race.name}, ${w.race.distance}, on ${w.race.date} (${w.race.priority} priority, week ${w.weekNumber} of this block)`,
+      );
+    }
+    const target = raceContext.nextTargetRace;
+    const targetInBlock = blockWeekTargets.some((w) => w.race && String(w.race.id) === String(target?.id));
+    if (target && !targetInBlock && raceContext.daysToNextTarget != null) {
+      raceProfileLines.push(`- Next target race: ${target.name} (${target.distance}) in ${raceContext.daysToNextTarget} days`);
+    }
+
+    const raceRules = [];
+    for (const w of blockWeekTargets) {
+      if (w.taper && w.taper.mode === "full") {
+        raceRules.push(
+          `- Week ${w.weekNumber} is a TAPER week for ${w.taper.race.name} (${w.taper.race.distance}, ${w.taper.race.date}): ${w.km} km total, ${w.cutPct}% below the normal load. Keep the intensity (same paces, fewer or shorter reps) and cut only the volume.`,
+        );
+      } else if (w.taper && w.taper.mode === "short") {
+        raceRules.push(
+          `- ${w.taper.race.name} (${w.taper.race.date}) is a B-priority race: do not rebuild the whole week, just keep the last 3-4 days before it easy. Week ${w.weekNumber} totals ${w.km} km.`,
+        );
+      }
+      if (w.race && w.race.priority === "C") {
+        raceRules.push(
+          `- ${w.race.name} (${w.race.distance}) on ${w.race.date} is a C-priority training race: do NOT taper, keep the normal load, and replace the session scheduled that day with the race itself (title it "${w.race.name}").`,
+        );
+      } else if (w.race) {
+        raceRules.push(
+          `- On ${w.race.date} the session IS the race: title it "${w.race.name}", type "long", total_km equal to the race distance (${w.race.distance}).`,
+        );
+      }
+    }
+    const raceSection = raceRules.length
+      ? `\nRACE PLAN (this overrides the block-number phase):\n${raceRules.join("\n")}\n`
+      : "";
+
+    const deloadSection = isDeloadBlock
+      ? `\nDELOAD BLOCK (the coach marked this block as recovery):\n- Volume is already reduced to about ${Math.round(DELOAD_FACTOR * 100)}% of the normal load. Keep ONE short quality session (for example 4-6 x 400m or a 15 min tempo) and run everything else easy.\n`
+      : "";
 
     return `Generate a 2-week running training block as JSON only.
 IMPORTANT: Respond entirely in Spanish. All fields including plan_title, focus, title, and description MUST be in Spanish. Do not use English in any field.
@@ -625,14 +780,14 @@ ATHLETE PROFILE:
 - Previous block summary: ${prevBlockSummary}
 - Current weekly volume: ${declaredVolumeText}
 - Preferred weekdays (1=Mon..7=Sun): ${selectedTrainingDaysText || "2,3,4,6,7"}
-
+${raceProfileLines.length ? `${raceProfileLines.join("\n")}\n` : ""}
 WEEKLY VOLUME (hard requirement, this athlete's real training load):
-- Week 1 total volume MUST be approximately ${vol.targetKm} km (sum of the ${daysPerWeek} sessions, ±10%). ${progressionText}${vol.cappedByLevel ? ` It is also trimmed by the level safety cap (${vol.capKm} km).` : ""}
-- Week 2 total volume: ${week2Km} km.
+- Week 1 total volume MUST be approximately ${week1Km} km (sum of the ${daysPerWeek} sessions, ±10%).${week1Info.cutPct ? ` This week is already reduced ${week1Info.cutPct}% for the race (normal load would be ${week1Info.normalKm} km).` : ` ${progressionText}${vol.cappedByLevel ? ` It is also trimmed by the level safety cap (${vol.capKm} km).` : ""}`}
+- Week 2 total volume: ${week2Km} km.${week2Info.cutPct ? ` Also reduced ${week2Info.cutPct}% for the race.` : ""}
 - HARD CAP: never exceed ${vol.capKm} km in a week. That is the safety ceiling for a ${levelLabel} athlete targeting ${competition} at block ${blockNumber}.
 - No single session may exceed ${maxSessionKm} km.
 - Do NOT use a generic volume for the race distance: an athlete currently running ${vol.baseKm} km/week must NOT get a week built for someone running twice that.
-
+${raceSection}${deloadSection}
 BLOCK ${blockNumber} EASY/QUALITY BALANCE (the level and phase set the mix, not the volume):
 - Block 1-2: base phase, 70% easy / 30% quality
 - Block 3-4: building phase, 60% easy / 40% quality, introduce tempo
@@ -660,18 +815,18 @@ Adjust the number and length of the repetitions to this athlete's VDOT. Do NOT u
 PERIODIZATION:
 - Block number: ${blockNumber} of ~10 total blocks
 - Current phase: ${phase}
-- Weekly volume: week 1 ${vol.targetKm} km, week 2 ${week2Km} km (already computed from the athlete's real volume, do not change it)
+- Weekly volume: week 1 ${week1Km} km, week 2 ${week2Km} km (already computed from the athlete's real volume, races included, do not change it)
 - Week 1: ${nextBlockParams.focus || phase}
 - Week 2: ${week2Type}
 - Coach notes: ${nextBlockParams.notes || "none"}
 
-VOLUME RULES (percentages of the ${vol.targetKm} km of week 1):
+VOLUME RULES (percentages of the ${week1Km} km of week 1):
 - Easy/Long runs: 30-40% of weekly km, pace ${paces.easy}
 - Tempo runs: 20-25% of weekly km at ${paces.tempo}
 - Intervals: 15-20% of weekly km at ${paces.interval}, following the QUALITY WORK section above (warmup and cooldown included in the session km)
 - Recovery runs: remaining km at ${paces.recovery}
 - Marathon-pace segments (when prescribed): ${paces.marathon}; reps/strides: ${paces.rep}
-- The sum of total_km of the ${daysPerWeek} sessions of week 1 MUST land within ±10% of ${vol.targetKm} km.
+- The sum of total_km of the ${daysPerWeek} sessions of week 1 MUST land within ±10% of ${week1Km} km.
 
 SESSION STRUCTURE (fixed weekdays):
 weekday 2 (Tuesday): type "long" — Rodaje largo at easy pace
@@ -685,7 +840,7 @@ OUTPUT JSON SCHEMA:
 {"plan_title":"string","weeks":[{"week_number":1,"focus":"string","workouts":[{"weekday":2,"title":"string","type":"long|tempo|recovery|interval","total_km":0,"duration_min":0,"description":"Include specific pace, sets/reps for intervals, warmup/cooldown"}]}]}
 
 Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays both weeks, all numeric fields must be numbers, description must include specific paces from above.`;
-  }, [competition, targetTime, levelId, levelLabel, daysPerWeek, startDate, currentBlock, nextBlockParams, selectedTrainingDaysText, blockHistory, vdotPaceRanges, volumePlan]);
+  }, [competition, targetTime, levelId, levelLabel, daysPerWeek, startDate, currentBlock, nextBlockParams, selectedTrainingDaysText, blockHistory, vdotPaceRanges, volumePlan, blockWeekTargets, raceContext, isDeloadBlock]);
 
   const generatePlan2 = async () => {
     const timeOk = /^\d{1,2}:\d{2}:\d{2}$/.test(String(targetTime || "").trim());
@@ -840,6 +995,25 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
       return;
     }
 
+    // Choque con la carrera: si ese dia ya habia algo asignado, el coach tiene
+    // que verlo antes de duplicar sesiones encima de la competicion.
+    const raceDates = raceContext.racesInBlock.map((r) => r.date).filter(Boolean);
+    if (raceDates.length) {
+      const { data: clashes, error: clashError } = await supabase
+        .from("workouts")
+        .select("id, title, scheduled_date")
+        .eq("athlete_id", selectedAthlete.id)
+        .in("scheduled_date", raceDates);
+      if (clashError) console.error("workouts en dia de carrera:", clashError);
+      if (clashes?.length) {
+        const detalle = clashes.map((c) => `· ${c.scheduled_date}: ${c.title || "entrenamiento"}`).join("\n");
+        const seguir = window.confirm(
+          `El día de la carrera ya tiene entrenamiento asignado:\n\n${detalle}\n\n¿Asignar el plan de todas formas? Tendrás que borrar el duplicado desde el calendario.`,
+        );
+        if (!seguir) return;
+      }
+    }
+
     const { data: userData, error: userError } = await supabase.auth.getUser();
     if (userError || !userData?.user) {
       alert(userError?.message || "No hay usuario autenticado.");
@@ -869,6 +1043,8 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
         ...prev,
         trainingDays: expectedDays.length ? expectedDays : prev.trainingDays,
       }));
+      // Deja constancia de la descarga para no volver a sugerirla enseguida.
+      if (isDeloadBlock) setLastDeloadBlock(Number(currentBlock) || 1);
       setPlanAssignedSuccess(true);
       onPlanAssigned?.();
       await loadBlockHistory();
@@ -1116,6 +1292,12 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
               >
                 {athleteId ? volumeLabel : "Selecciona un atleta"}
               </div>
+              {athleteId && (blockWeekTargets[0].cutPct || blockWeekTargets[1].cutPct || isDeloadBlock) ? (
+                <div style={{ marginTop: 6, color: "#0f172a", fontSize: ".74em", fontWeight: 700, lineHeight: 1.4 }}>
+                  Ajustado a {blockWeekTargets[0].km} km la semana 1 y {blockWeekTargets[1].km} km la semana 2
+                  {isDeloadBlock ? " (bloque de descarga)" : " (afinamiento por carrera)"}
+                </div>
+              ) : null}
               {athleteId && declaredWeeklyKm == null ? (
                 <div style={{ marginTop: 6, color: "#92400e", fontSize: ".72em", lineHeight: 1.4 }}>
                   Registra el kilometraje semanal del atleta en su evaluación para que el volumen salga de su estado real.
@@ -1170,6 +1352,37 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
                 style={inputStyle}
               />
               <div style={{ marginTop: 6, color: "#64748b", fontSize: ".72em" }}>Los bloques inician siempre el lunes.</div>
+            </div>
+            {raceInBlockWarning ? (
+              <div style={{ padding: "10px 12px", borderRadius: 8, border: "1px solid rgba(245,158,11,.45)", background: "#fffbeb", color: "#92400e", fontSize: ".76em", fontWeight: 600, lineHeight: 1.45 }}>
+                ⚠️ {raceInBlockWarning}
+              </div>
+            ) : null}
+            {raceContext.nextTargetRace && !raceInBlockWarning && raceContext.daysToNextTarget != null ? (
+              <div style={{ padding: "10px 12px", borderRadius: 8, border: "1px solid rgba(14,116,144,.35)", background: "rgba(14,116,144,.08)", color: "#0e7490", fontSize: ".76em", fontWeight: 600, lineHeight: 1.45 }}>
+                🏁 Próxima carrera objetivo: {raceContext.nextTargetRace.name} ({raceContext.nextTargetRace.distance}) en {raceContext.daysToNextTarget} días.
+              </div>
+            ) : null}
+            <div style={{ padding: "10px 12px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#f8fafc" }}>
+              <label style={{ display: "flex", gap: 8, alignItems: "flex-start", cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={Boolean(isDeloadBlock)}
+                  onChange={(e) => setIsDeloadBlock(e.target.checked)}
+                  style={{ marginTop: 2, accentColor: "#b45309" }}
+                />
+                <span style={{ fontSize: ".78em", color: "#0f172a", fontWeight: 700, lineHeight: 1.4 }}>
+                  Este bloque es de descarga
+                  <span style={{ display: "block", fontWeight: 500, color: "#64748b", marginTop: 2 }}>
+                    Baja el volumen al {Math.round(DELOAD_FACTOR * 100)}% del bloque anterior y deja una sola sesión de calidad corta.
+                  </span>
+                </span>
+              </label>
+              {deloadSuggestion ? (
+                <div style={{ marginTop: 8, color: "#92400e", fontSize: ".74em", fontWeight: 600, lineHeight: 1.45 }}>
+                  💡 {deloadSuggestion}
+                </div>
+              ) : null}
             </div>
             <button
               type="button"
