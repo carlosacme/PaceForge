@@ -1,6 +1,13 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "../lib/supabase";
-import { formatCopInt, getMarketplacePlanWorkoutRows, formatLocalYMD, addDays } from "./shared/appShared";
+import {
+  formatCopInt,
+  getMarketplacePlanWorkoutRows,
+  getPlanStartingWeeklyKm,
+  getPlanPeakWeeklyKm,
+  formatLocalYMD,
+  addDays,
+} from "./shared/appShared";
 import { readStructure } from "../lib/workoutStructure";
 import { enrichStructureWithPaces } from "../lib/enrichPace";
 
@@ -44,6 +51,9 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
   const [loadingCalendarSync, setLoadingCalendarSync] = useState(false);
   const [calendarSyncDone, setCalendarSyncDone] = useState({});
   const [selectedDays, setSelectedDays] = useState([]);
+  // Km/semana que corre hoy el atleta que mira la tienda. Sirve para avisarle
+  // si el plan arranca por encima de su base actual.
+  const [athleteWeeklyKm, setAthleteWeeklyKm] = useState(null);
 
   const loadMarketplace = useCallback(async () => {
     setLoadingPlans(true);
@@ -146,6 +156,48 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
     setLoadingConfirmedSales(false);
   }, [isCoach, isAdmin, coachUserId, currentUserId, plans]);
 
+  // Volumen declarado en la ultima evaluacion del atleta (weekly_km_declared).
+  // Si no hay evaluacion se usa el del perfil, y si tampoco hay se deja en null
+  // para no comparar contra un dato inventado.
+  useEffect(() => {
+    if (!isAthlete || !currentUserId) {
+      setAthleteWeeklyKm(null);
+      return undefined;
+    }
+    let cancelled = false;
+    (async () => {
+      const { data: authData } = await supabase.auth.getUser();
+      if (cancelled) return;
+      const email = authData?.user?.email?.trim();
+      const byUser = await supabase.from("athletes").select("id, weekly_km").eq("user_id", currentUserId).limit(1);
+      if (cancelled) return;
+      let athleteRow = byUser.data?.[0] || null;
+      if (!athleteRow && email) {
+        const byEmail = await supabase.from("athletes").select("id, weekly_km").ilike("email", email).limit(1);
+        if (cancelled) return;
+        athleteRow = byEmail.data?.[0] || null;
+      }
+      if (!athleteRow) { setAthleteWeeklyKm(null); return; }
+      const { data: evalRow, error } = await supabase
+        .from("athlete_evaluations")
+        .select("weekly_km_declared, test_date, created_at")
+        .eq("athlete_id", athleteRow.id)
+        .order("test_date", { ascending: false })
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (cancelled) return;
+      if (error) console.warn("athlete_evaluations weekly_km:", error);
+      // 0 km es un dato real (vuelve de una pausa), asi que solo se descarta si
+      // la columna viene vacia.
+      const declared = evalRow?.weekly_km_declared == null ? NaN : Number(evalRow.weekly_km_declared);
+      if (Number.isFinite(declared) && declared >= 0) { setAthleteWeeklyKm(Math.round(declared)); return; }
+      const profileKm = Number(athleteRow.weekly_km);
+      setAthleteWeeklyKm(Number.isFinite(profileKm) && profileKm > 0 ? Math.round(profileKm) : null);
+    })();
+    return () => { cancelled = true; };
+  }, [isAthlete, currentUserId]);
+
   useEffect(() => { loadPurchasedPlans(); }, [loadPurchasedPlans]);
   useEffect(() => { loadConfirmedSales(); }, [loadConfirmedSales]);
   useEffect(() => { if (!showPublishModal || !isCoach) return; loadCoachLibrary(); }, [showPublishModal, isCoach, loadCoachLibrary]);
@@ -162,6 +214,21 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
   }, [plans, coachUserId, currentUserId, isAdmin]);
 
   const coachOwnPlans = useMemo(() => (plans || []).filter((p) => String(p.coach_user_id || "") === String(coachUserId || "")), [plans, coachUserId]);
+
+  /** Volumen de arranque y pico por plan, para las tarjetas y la ficha. */
+  const volumeByPlanId = useMemo(() => {
+    const map = {};
+    for (const p of plansVisible) {
+      map[String(p.id)] = { start: getPlanStartingWeeklyKm(p), peak: getPlanPeakWeeklyKm(p) };
+    }
+    return map;
+  }, [plansVisible]);
+
+  const selectedPlanVolume = useMemo(() => {
+    if (!selectedPlan) return null;
+    return volumeByPlanId[String(selectedPlan.id)]
+      || { start: getPlanStartingWeeklyKm(selectedPlan), peak: getPlanPeakWeeklyKm(selectedPlan) };
+  }, [selectedPlan, volumeByPlanId]);
 
   const handleBuyWithWompi = async (plan) => {
     if (!currentUserId) { notify?.("Inicia sesión para comprar."); return; }
@@ -464,6 +531,7 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
             const coachUid = coachUserId || currentUserId;
             const approved = p.is_approved === true || p.is_approved === "true";
             const canManage = isAdmin || String(p.coach_user_id || "") === String(coachUid || "");
+            const startKm = volumeByPlanId[String(p.id)]?.start ?? null;
             return (
               <div key={p.id} style={cardStyle}>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "flex-start" }}>
@@ -474,7 +542,9 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
                   </div>
                 </div>
                 <div style={{ fontSize: ".78em", color: "#64748b", marginTop: 4 }}>Coach: {p.coach_name || "Coach"}</div>
-                <div style={{ fontSize: ".78em", color: "#64748b", marginTop: 2 }}>{p.duration_weeks} semanas · {p.sessions_per_week} sesiones/semana</div>
+                <div style={{ fontSize: ".78em", color: "#64748b", marginTop: 2 }}>
+                  {p.duration_weeks} semanas · {p.sessions_per_week} sesiones/semana{startKm != null ? ` · desde ${startKm} km/sem` : ""}
+                </div>
                 <div style={{ marginTop: 8, fontSize: ".95em", fontWeight: 800, color: "#0f172a" }}>${formatCopInt(p.price_cop)} COP</div>
                 <div style={{ marginTop: 6, fontSize: ".78em", color: "#f59e0b", fontWeight: 700 }}>{ratingStars} {rating > 0 ? rating.toFixed(1) : "0.0"}</div>
                 <button type="button" onClick={() => setSelectedPlan(p)} style={{ marginTop: 10, width: "100%", background: "linear-gradient(135deg,#0d9488,#14b8a6)", border: "none", borderRadius: 8, padding: "8px 10px", color: "#fff", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".78em" }}>Ver plan</button>
@@ -505,6 +575,29 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
               <button type="button" onClick={() => setSelectedPlan(null)} style={{ border: "1px solid #e2e8f0", background: "#fff", borderRadius: 8, padding: "6px 10px", cursor: "pointer", fontFamily: "inherit" }}>✕</button>
             </div>
             <div style={{ color: "#475569", fontSize: ".86em", marginBottom: 10 }}>{selectedPlan.description || "Sin descripción."}</div>
+            {selectedPlanVolume?.start != null ? (
+              <div style={{ marginBottom: 12, padding: "12px 14px", borderRadius: 12, border: "1px solid #bae6fd", background: "#f0f9ff" }}>
+                <div style={{ fontSize: ".86em", fontWeight: 800, color: "#0c4a6e", lineHeight: 1.45 }}>
+                  {selectedPlanVolume.peak != null && selectedPlanVolume.peak > selectedPlanVolume.start
+                    ? `📊 Este plan arranca en ~${selectedPlanVolume.start} km/semana y llega hasta ~${selectedPlanVolume.peak} km/semana`
+                    : `📊 Este plan se mantiene en ~${selectedPlanVolume.start} km/semana`}
+                </div>
+                <div style={{ fontSize: ".78em", color: "#0369a1", marginTop: 6, lineHeight: 1.45 }}>
+                  Recomendado si actualmente corres al menos {selectedPlanVolume.start} km por semana.
+                </div>
+                {isAthlete && athleteWeeklyKm != null ? (
+                  athleteWeeklyKm >= selectedPlanVolume.start ? (
+                    <div style={{ marginTop: 10, padding: "9px 11px", borderRadius: 9, border: "1px solid #bbf7d0", background: "#f0fdf4", color: "#166534", fontSize: ".78em", fontWeight: 700, lineHeight: 1.45 }}>
+                      ✅ Este plan se ajusta a tu volumen actual ({athleteWeeklyKm} km/semana).
+                    </div>
+                  ) : (
+                    <div style={{ marginTop: 10, padding: "9px 11px", borderRadius: 9, border: "1px solid #fde68a", background: "#fffbeb", color: "#92400e", fontSize: ".78em", fontWeight: 700, lineHeight: 1.45 }}>
+                      ⚠️ Este plan arranca en {selectedPlanVolume.start} km/semana y actualmente corres {athleteWeeklyKm} km/semana. Considera un plan de menor volumen o aumenta tu base antes de empezar.
+                    </div>
+                  )
+                ) : null}
+              </div>
+            ) : null}
             <div style={{ fontSize: ".78em", fontWeight: 800, color: "#334155", marginBottom: 8 }}>Contenido del plan</div>
             <MarketplacePlanWorkoutsAccordion previewWorkouts={getMarketplacePlanWorkoutRows(selectedPlan)} resetKey={selectedPlan.id} lockAfterWeek1={lockAfterWeek1} />
             {!hidePurchaseCta && planPreviewHasLockedWeeks ? (

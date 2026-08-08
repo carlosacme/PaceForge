@@ -91,6 +91,55 @@ export const getMarketplacePlanWorkoutRows = (plan) => {
   return [prev, sess, full].reduce(longest, []);
 };
 
+/**
+ * Kilometros por semana de un plan del marketplace: { [semana]: km }.
+ *
+ * La carga de estos planes es FIJA: al cargarlos se personalizan los ritmos
+ * por VDOT, pero no los kilometros ni las series. El comprador necesita saber
+ * en que volumen arranca el plan antes de pagarlo.
+ *
+ * Devuelve null si el plan no trae sesiones, si ninguna declara semana o si
+ * ninguna trae distancia: es mejor no mostrar nada que mostrar ceros.
+ */
+const getPlanWeeklyKmMap = (plan) => {
+  const rows = getMarketplacePlanWorkoutRows(plan);
+  if (!rows.length) return null;
+  const byWeek = new Map();
+  let hasDistance = false;
+  for (const row of rows) {
+    if (!row || typeof row !== "object") continue;
+    const weekRaw = row.week != null && row.week !== "" ? Number(row.week) : NaN;
+    if (!Number.isFinite(weekRaw) || weekRaw < 1) continue;
+    const week = Math.round(weekRaw);
+    // Las sesiones de la biblioteca del coach usan total_km; las generadas por
+    // IA, distance_km. Una sesion sin distancia cuenta como 0, no invalida la
+    // semana (puede ser fuerza o movilidad).
+    const kmRaw = Number(row.distance_km ?? row.total_km);
+    const km = Number.isFinite(kmRaw) && kmRaw > 0 ? kmRaw : 0;
+    if (km > 0) hasDistance = true;
+    byWeek.set(week, (byWeek.get(week) || 0) + km);
+  }
+  if (!byWeek.size || !hasDistance) return null;
+  return byWeek;
+};
+
+/** Km de la semana 1 del plan (volumen de arranque). null si no se puede saber. */
+export const getPlanStartingWeeklyKm = (plan) => {
+  const byWeek = getPlanWeeklyKmMap(plan);
+  if (!byWeek) return null;
+  const firstWeek = Math.min(...byWeek.keys());
+  const km = byWeek.has(1) ? byWeek.get(1) : byWeek.get(firstWeek);
+  return km > 0 ? Math.round(km) : null;
+};
+
+/** Km de la semana mas exigente del plan (volumen pico). null si no se sabe. */
+export const getPlanPeakWeeklyKm = (plan) => {
+  const byWeek = getPlanWeeklyKmMap(plan);
+  if (!byWeek) return null;
+  const peak = Math.max(...byWeek.values());
+  return peak > 0 ? Math.round(peak) : null;
+};
+
 export const normalizeAthlete = (athlete) => ({
   id: athlete?.id,
   name: athlete?.name || "Atleta sin nombre",
