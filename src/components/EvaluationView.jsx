@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "../lib/supabase";
-import { pacesLegacyShape } from "../lib/vdot";
+import { pacesLegacyShape, vdotFromRace, predictRaceSeconds } from "../lib/vdot";
 import { EVAL_DISTANCES, formatDurationClock } from "./shared/appShared";
 import { usePersistedState } from "../hooks/usePersistedState";
 
@@ -36,47 +36,10 @@ const formatPaceMinKm = (paceMinPerKm) => {
   return `${m}:${String(s).padStart(2, "0")} /km`;
 };
 
-const velocityToVo2 = (vMetersPerMin) => -4.6 + 0.182258 * vMetersPerMin + 0.000104 * vMetersPerMin * vMetersPerMin;
-
-const timePercentVo2 = (tMin) => 0.8 + 0.1894393 * Math.exp(-0.012778 * tMin) + 0.2989558 * Math.exp(-0.1932605 * tMin);
-
-const vdotFromRace = (distanceMeters, totalSeconds) => {
-  const tMin = Number(totalSeconds) / 60;
-  if (!Number.isFinite(distanceMeters) || !Number.isFinite(tMin) || distanceMeters <= 0 || tMin <= 0) return null;
-  const v = distanceMeters / tMin;
-  const vo2 = velocityToVo2(v);
-  const pct = timePercentVo2(tMin);
-  if (!Number.isFinite(vo2) || !Number.isFinite(pct) || pct <= 0) return null;
-  return vo2 / pct;
-};
-
 const vdotFromCooper = (distanceMeters) => {
   const d = Number(distanceMeters);
   if (!Number.isFinite(d) || d <= 0) return null;
   return (d - 504.9) / 44.73;
-};
-
-const predictTimeFromVdot = (vdot, distanceMeters) => {
-  if (!Number.isFinite(vdot) || vdot <= 0) return null;
-  let lo = 5;
-  let hi = 360;
-  for (let i = 0; i < 60; i += 1) {
-    const mid = (lo + hi) / 2;
-    const v = distanceMeters / mid;
-    const current = velocityToVo2(v) / timePercentVo2(mid);
-    if (current > vdot) lo = mid;
-    else hi = mid;
-  }
-  return hi * 60;
-};
-
-// Corrección de Riegel para distancias largas: parte de un tiempo base confiable
-// (predicción de 10K) y extrapola con exponente de fatiga.
-// Exponente estándar 1.06; se sube a 1.08 para extrapolaciones largas porque
-// un test corto (Cooper/3-5km) sobrestima la resistencia a 21K/42K.
-const riegelPredict = (baseSeconds, baseMeters, targetMeters, exponent) => {
-  if (!Number.isFinite(baseSeconds) || baseSeconds <= 0) return null;
-  return baseSeconds * Math.pow(targetMeters / baseMeters, exponent);
 };
 
 const computeHrZones = (fcMax, fcRest) => {
@@ -238,15 +201,12 @@ export default function EvaluationView({ athletes, currentUserId, notify, athlet
     const paces = pacesLegacyShape(vdot);
     // 5K y 10K: directo desde VDOT (fiable). 21K y 42K: Riegel desde el 10K
     // con exponente mayor para no sobrestimar la resistencia.
-    const base10kSec = predictTimeFromVdot(vdot, 10000);
     // Exponente más agresivo si el test fue corto (cooper/umbral corto)
     const longExponent = tab === "cooper" ? 1.09 : 1.07;
-    const predictions = EVAL_DISTANCES.map((d) => {
-      if ((d.id === "21k" || d.id === "42k") && Number.isFinite(base10kSec)) {
-        return { ...d, seconds: riegelPredict(base10kSec, 10000, d.meters, longExponent) };
-      }
-      return { ...d, seconds: predictTimeFromVdot(vdot, d.meters) };
-    });
+    const predictions = EVAL_DISTANCES.map((d) => ({
+      ...d,
+      seconds: predictRaceSeconds(vdot, d.meters, { longExponent }),
+    }));
     const zones = computeHrZones(fcMax, fcRest);
     setResults({
       vdot,

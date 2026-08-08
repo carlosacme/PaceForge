@@ -195,11 +195,14 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
       // para que el workout no llegue "sin ritmos" al reloj.
       const vdotByAthlete = {};
       await Promise.all(selectedAthletes.map(async (a) => {
+        // Orden unificado con Plan2Weeks: manda la fecha real del test y
+        // created_at solo desempata entre tests del mismo dia.
         const { data } = await supabase
           .from("athlete_evaluations")
           .select("vdot, test_date")
           .eq("athlete_id", a.id)
           .order("test_date", { ascending: false })
+          .order("created_at", { ascending: false })
           .limit(1);
         vdotByAthlete[a.id] = Number(data?.[0]?.vdot) || null;
       }));

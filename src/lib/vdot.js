@@ -223,6 +223,92 @@ export function paceRangesForPrompt(vdot, level = "intermedio") {
   };
 }
 
+/* ============================================================
+ * VDOT <-> TIEMPOS DE CARRERA
+ * ============================================================
+ * Vivian duplicadas dentro de EvaluationView.jsx. Se centralizan aqui
+ * porque el aviso de coherencia de Plan2Weeks necesita la operacion
+ * inversa (que VDOT hace falta para un tiempo objetivo) y este archivo
+ * es la fuente unica de verdad declarada.
+ */
+
+/** %VO2max sostenible en una carrera de t minutos (Daniels & Gilbert). */
+const timePercentVo2 = (tMin) =>
+  0.8 + 0.1894393 * Math.exp(-0.012778 * tMin) + 0.2989558 * Math.exp(-0.1932605 * tMin);
+
+/** "h:mm:ss" | "mm:ss" | segundos -> segundos. null si no es valido. */
+export function parseTimeToSeconds(raw) {
+  if (typeof raw === "number") return Number.isFinite(raw) && raw > 0 ? raw : null;
+  const parts = String(raw || "").trim().split(":").map((x) => Number(x));
+  if (!parts.length || parts.some((n) => !Number.isFinite(n) || n < 0)) return null;
+  let secs = null;
+  if (parts.length === 3) secs = parts[0] * 3600 + parts[1] * 60 + parts[2];
+  else if (parts.length === 2) secs = parts[0] * 60 + parts[1];
+  else if (parts.length === 1) secs = parts[0];
+  return secs && secs > 0 ? secs : null;
+}
+
+/** VDOT implicito en una marca de carrera. */
+export function vdotFromRace(distanceMeters, totalSeconds) {
+  const tMin = Number(totalSeconds) / 60;
+  const d = Number(distanceMeters);
+  if (!Number.isFinite(d) || !Number.isFinite(tMin) || d <= 0 || tMin <= 0) return null;
+  const vo2 = vo2AtVelocity(d / tMin);
+  const pct = timePercentVo2(tMin);
+  if (!Number.isFinite(vo2) || !Number.isFinite(pct) || pct <= 0) return null;
+  return vo2 / pct;
+}
+
+/** Tiempo Daniels puro para una distancia, por biseccion sobre la duracion. */
+function danielsRaceSeconds(vdot, distanceMeters) {
+  if (!Number.isFinite(vdot) || vdot <= 0) return null;
+  let lo = 5;
+  let hi = 360;
+  for (let i = 0; i < 60; i += 1) {
+    const mid = (lo + hi) / 2;
+    const current = vo2AtVelocity(distanceMeters / mid) / timePercentVo2(mid);
+    if (current > vdot) lo = mid;
+    else hi = mid;
+  }
+  return hi * 60;
+}
+
+/**
+ * Tiempo estimado de carrera para un VDOT.
+ * 5K/10K salen directos de Daniels. 21K y 42K se extrapolan con Riegel desde
+ * la prediccion de 10K, porque Daniels puro sobrestima la resistencia en
+ * distancias largas. `longExponent` sube para tests cortos (Cooper).
+ */
+export function predictRaceSeconds(vdot, distanceMeters, { longExponent = 1.07 } = {}) {
+  const d = Number(distanceMeters);
+  if (!Number.isFinite(d) || d <= 0) return null;
+  if (d <= 10000) return danielsRaceSeconds(vdot, d);
+  const base10k = danielsRaceSeconds(vdot, 10000);
+  if (!Number.isFinite(base10k) || base10k <= 0) return null;
+  return base10k * Math.pow(d / 10000, longExponent);
+}
+
+/**
+ * Operacion inversa: VDOT necesario para correr `distanceMeters` en `time`.
+ * Usa la MISMA cadena de prediccion que la evaluacion, para que el numero sea
+ * comparable con el VDOT que ve el coach. Devuelve null si los datos no valen.
+ */
+export function vdotRequiredForRace(distanceMeters, time, opts) {
+  const secs = parseTimeToSeconds(time);
+  const d = Number(distanceMeters);
+  if (!secs || !Number.isFinite(d) || d <= 0) return null;
+  let lo = 20;
+  let hi = 85;
+  for (let i = 0; i < 60; i += 1) {
+    const mid = (lo + hi) / 2;
+    const t = predictRaceSeconds(mid, d, opts);
+    if (t == null) return null;
+    if (t > secs) lo = mid;
+    else hi = mid;
+  }
+  return hi;
+}
+
 /**
  * Tabla por nivel, ahora DERIVADA de vdot.js.
  * Se mantiene el nombre y la forma para no romper a los consumidores

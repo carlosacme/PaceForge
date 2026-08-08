@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { supabase } from "../lib/supabase";
-import { paceRangesForPrompt } from "../lib/vdot";
+import { paceRangesForPrompt, vdotRequiredForRace, parseTimeToSeconds } from "../lib/vdot";
 import { usePersistedState } from "../hooks/usePersistedState";
 import {
   BRAND_NAME,
@@ -29,17 +29,32 @@ import {
   styles,
 } from "./shared/appShared";
 
+/** Metros por competencia, para validar el tiempo objetivo contra el VDOT. */
+const RACE_METERS_BY_COMPETITION = {
+  "Maratón": 42195,
+  "Media Maratón": 21097.5,
+  "10K": 10000,
+  "5K": 5000,
+};
+
+/** Diferencia de VDOT desde la que el objetivo deja de ser realista. */
+const VDOT_GAP_WARNING = 3;
+
 function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, profileRole, onGoToPlans, onPlanAssigned }) {
   const S = styles;
   const [athleteId, setAthleteId] = useState(() => {
     if (typeof window === "undefined") return "";
     return localStorage.getItem("raf_plan2_athlete") || "";
   });
-  const [competition, setCompetition] = usePersistedState("raf_plan2_competition", "Maratón");
-  const [targetTime, setTargetTime] = usePersistedState("raf_plan2_targetTime", "");
-  const [levelId, setLevelId] = usePersistedState("raf_plan2_levelId", "intermedio");
-  const [daysPerWeek, setDaysPerWeek] = usePersistedState("raf_plan2_daysPerWeek", 3);
-  const [startDate, setStartDate] = usePersistedState("raf_plan2_startDate", formatLocalYMD(addDays(new Date(), 14)));
+  // Los parametros del plan son POR ATLETA. Con una sola clave compartida, al
+  // cambiar de atleta se arrastraban los del anterior (VDOT incluido) y el plan
+  // salia con los ritmos de otra persona.
+  const athleteStorageKey = String(athleteId || "none");
+  const [competition, setCompetition] = usePersistedState(`raf_plan2_competition_${athleteStorageKey}`, "Maratón");
+  const [targetTime, setTargetTime] = usePersistedState(`raf_plan2_targetTime_${athleteStorageKey}`, "");
+  const [levelId, setLevelId] = usePersistedState(`raf_plan2_levelId_${athleteStorageKey}`, "intermedio");
+  const [daysPerWeek, setDaysPerWeek] = usePersistedState(`raf_plan2_daysPerWeek_${athleteStorageKey}`, 3);
+  const [startDate, setStartDate] = usePersistedState(`raf_plan2_startDate_${athleteStorageKey}`, formatLocalYMD(addDays(new Date(), 14)));
   const startDateRef = useRef(startDate);
   const [generatedPlan, setGeneratedPlan] = useState(null);
   const [planLoading, setPlanLoading] = useState(false);
@@ -64,12 +79,15 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, profileRole, onG
   const [openHistoryRows, setOpenHistoryRows] = useState(() => new Set());
   const [showNextBlockPanel, setShowNextBlockPanel] = useState(false);
   const [currentBlock, setCurrentBlock] = useState(1);
-  const [nextBlockParams, setNextBlockParams] = usePersistedState("raf_plan2_nextBlockParams", {
+  const [nextBlockParams, setNextBlockParams] = usePersistedState(`raf_plan2_nextBlock_${athleteStorageKey}`, {
     vdot: "",
     trainingDays: [2, 3, 6],
     focus: PLAN2_NEXT_BLOCK_FOCUSES[0],
     notes: "",
   });
+  // VDOT medido del atleta seleccionado. Se recarga SIEMPRE al cambiar de
+  // atleta; nextBlockParams.vdot es solo un override manual del coach.
+  const [vdotInfo, setVdotInfo] = useState({ loading: false, vdot: null, testDate: null });
   const monthKey = useMemo(() => getCurrentMonthKey(), []);
   const isBasicPlan = useMemo(() => {
     const p = String(coachPlan || "").toLowerCase();
@@ -100,6 +118,52 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, profileRole, onG
     () => PLAN_12_LEVELS.find((l) => l.id === levelId)?.label || levelId,
     [levelId],
   );
+
+  // El coach puede sobreescribir el VDOT a mano (p. ej. mejoro y aun no hay
+  // evaluacion nueva). Vacio = usar el de la evaluacion.
+  const vdotOverride = useMemo(() => {
+    const raw = String(nextBlockParams.vdot ?? "").trim();
+    if (raw === "") return null;
+    const n = Number(raw);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }, [nextBlockParams.vdot]);
+
+  /** VDOT que se va a usar de verdad, con su procedencia para la UI. */
+  const effectiveVdot = useMemo(() => {
+    if (vdotOverride != null) return { value: vdotOverride, source: "manual" };
+    if (vdotInfo.vdot != null) return { value: vdotInfo.vdot, source: "evaluation" };
+    return { value: null, source: "estimated" };
+  }, [vdotOverride, vdotInfo.vdot]);
+
+  const vdotPaceRanges = useMemo(
+    () => paceRangesForPrompt(effectiveVdot.value, String(levelId || "intermedio").toLowerCase()),
+    [effectiveVdot.value, levelId],
+  );
+
+  const vdotLabel = useMemo(() => {
+    if (vdotInfo.loading) return "Cargando VDOT del atleta…";
+    const shown = vdotPaceRanges ? Number(vdotPaceRanges.vdotUsed) : null;
+    if (shown == null) return "";
+    if (effectiveVdot.source === "manual") return `VDOT ${shown.toFixed(2)} (ajustado a mano por el coach)`;
+    if (effectiveVdot.source === "evaluation") {
+      const d = vdotInfo.testDate ? new Date(`${String(vdotInfo.testDate).slice(0, 10)}T12:00:00`) : null;
+      const when = d && !Number.isNaN(d.getTime()) ? d.toLocaleDateString("es-CO") : "fecha desconocida";
+      return `VDOT ${shown.toFixed(2)} (evaluación del ${when})`;
+    }
+    return `VDOT ${shown} (estimado — este atleta no tiene evaluación)`;
+  }, [vdotInfo.loading, vdotInfo.testDate, effectiveVdot.source, vdotPaceRanges]);
+
+  /** Aviso NO bloqueante si el tiempo objetivo no cuadra con el VDOT. */
+  const targetTimeWarning = useMemo(() => {
+    const meters = RACE_METERS_BY_COMPETITION[competition];
+    const secs = parseTimeToSeconds(targetTime);
+    const current = vdotPaceRanges ? Number(vdotPaceRanges.vdotUsed) : null;
+    if (!meters || !secs || current == null) return "";
+    const required = vdotRequiredForRace(meters, secs);
+    if (required == null || required - current < VDOT_GAP_WARNING) return "";
+    const currentText = effectiveVdot.source === "estimated" ? `${current} (estimado)` : current.toFixed(1);
+    return `El tiempo objetivo (${targetTime} en ${competition}) requiere un VDOT aproximado de ${required.toFixed(0)}, pero el atleta tiene ${currentText}. El plan puede ser poco realista.`;
+  }, [competition, targetTime, vdotPaceRanges, effectiveVdot.source]);
 
   useEffect(() => {
     startDateRef.current = startDate;
@@ -341,23 +405,37 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, profileRole, onG
     loadBlockHistory();
   }, [loadBlockHistory]);
 
+  // Recarga incondicional al cambiar de atleta: antes un guard impedia
+  // sobrescribir el valor previo y el plan del atleta B se generaba con el
+  // VDOT del atleta A. Orden por test_date (fecha real del test) y created_at
+  // como desempate, igual que en Builder.
   useEffect(() => {
-    if (!athleteId) return;
+    if (!athleteId) {
+      setVdotInfo({ loading: false, vdot: null, testDate: null });
+      return undefined;
+    }
     let cancelled = false;
+    setVdotInfo({ loading: true, vdot: null, testDate: null });
     (async () => {
       const { data, error } = await supabase
         .from("athlete_evaluations")
-        .select("vdot")
+        .select("vdot, test_date, created_at")
         .eq("athlete_id", athleteId)
+        .order("test_date", { ascending: false })
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
-      if (cancelled || error) return;
+      if (cancelled) return;
+      if (error) {
+        console.error("athlete_evaluations vdot:", error);
+        setVdotInfo({ loading: false, vdot: null, testDate: null });
+        return;
+      }
       const vdotVal = Number(data?.vdot);
-      if (!Number.isFinite(vdotVal) || vdotVal <= 0) return;
-      setNextBlockParams((prev) => {
-        if (prev.vdot && String(prev.vdot).trim() !== "") return prev;
-        return { ...prev, vdot: vdotVal.toFixed(2) };
+      setVdotInfo({
+        loading: false,
+        vdot: Number.isFinite(vdotVal) && vdotVal > 0 ? vdotVal : null,
+        testDate: data?.test_date || data?.created_at || null,
       });
     })();
     return () => {
@@ -435,7 +513,7 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, profileRole, onG
 
   const plan2UserPrompt = useMemo(() => {
     const levelKey = String(levelId || "intermedio").toLowerCase();
-    const pr = paceRangesForPrompt(nextBlockParams.vdot, levelKey);
+    const pr = vdotPaceRanges;
     const blockNumber = Number(currentBlock) || 1;
     const blockStartDate = startDate;
     // Obtener resumen del bloque anterior del historial
@@ -547,7 +625,7 @@ OUTPUT JSON SCHEMA:
 {"plan_title":"string","weeks":[{"week_number":1,"focus":"string","workouts":[{"weekday":2,"title":"string","type":"long|tempo|recovery|interval","total_km":0,"duration_min":0,"description":"Include specific pace, sets/reps for intervals, warmup/cooldown"}]}]}
 
 Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays both weeks, all numeric fields must be numbers, description must include specific paces from above.`;
-  }, [competition, targetTime, levelId, levelLabel, daysPerWeek, startDate, currentBlock, nextBlockParams, selectedTrainingDaysText, blockHistory]);
+  }, [competition, targetTime, levelId, levelLabel, daysPerWeek, startDate, currentBlock, nextBlockParams, selectedTrainingDaysText, blockHistory, vdotPaceRanges]);
 
   const generatePlan2 = async () => {
     const timeOk = /^\d{1,2}:\d{2}:\d{2}$/.test(String(targetTime || "").trim());
@@ -914,6 +992,51 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
                 ))}
               </select>
             </div>
+            <div
+              style={{
+                borderRadius: 10,
+                padding: "10px 12px",
+                border: `1px solid ${effectiveVdot.source === "estimated" ? "rgba(245,158,11,.45)" : "rgba(14,116,144,.35)"}`,
+                background: effectiveVdot.source === "estimated" ? "#fffbeb" : "rgba(14,116,144,.08)",
+              }}
+            >
+              <div style={{ ...labelStyle, marginBottom: 6 }}>VDOT que se usará en el plan</div>
+              <div
+                style={{
+                  fontSize: ".84em",
+                  fontWeight: 800,
+                  color: effectiveVdot.source === "estimated" ? "#92400e" : "#0e7490",
+                  lineHeight: 1.4,
+                }}
+              >
+                {vdotLabel || "Selecciona un atleta"}
+              </div>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8 }}>
+                <input
+                  type="number"
+                  min={0}
+                  step={0.1}
+                  value={nextBlockParams.vdot === "" && vdotInfo.vdot != null ? String(vdotInfo.vdot) : nextBlockParams.vdot}
+                  onChange={(e) => setNextBlockParams((prev) => ({ ...prev, vdot: e.target.value }))}
+                  placeholder={vdotPaceRanges ? String(vdotPaceRanges.vdotUsed) : "Ej: 48.2"}
+                  style={{ ...inputStyle, margin: 0 }}
+                />
+                {effectiveVdot.source === "manual" && vdotInfo.vdot != null ? (
+                  <button
+                    type="button"
+                    onClick={() => setNextBlockParams((prev) => ({ ...prev, vdot: "" }))}
+                    style={{ border: "1px solid #cbd5e1", background: "#fff", borderRadius: 8, padding: "8px 10px", color: "#334155", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".72em", whiteSpace: "nowrap" }}
+                  >
+                    Usar evaluación
+                  </button>
+                ) : null}
+              </div>
+              {effectiveVdot.source === "estimated" ? (
+                <div style={{ marginTop: 6, color: "#92400e", fontSize: ".72em", lineHeight: 1.4 }}>
+                  Los ritmos saldrán de un VDOT por nivel. Haz una evaluación al atleta para ajustarlos a su estado real.
+                </div>
+              ) : null}
+            </div>
             <div>
               <div style={labelStyle}>Competencia</div>
               <select value={competition} onChange={(e) => setCompetition(e.target.value)} style={inputStyle}>
@@ -931,6 +1054,11 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
                 placeholder={targetTimePlaceholder}
                 style={inputStyle}
               />
+              {targetTimeWarning ? (
+                <div style={{ marginTop: 6, padding: "8px 10px", borderRadius: 8, border: "1px solid rgba(245,158,11,.45)", background: "#fffbeb", color: "#92400e", fontSize: ".72em", fontWeight: 600, lineHeight: 1.45 }}>
+                  ⚠️ {targetTimeWarning}
+                </div>
+              ) : null}
             </div>
             <div>
               <div style={labelStyle}>Nivel</div>
@@ -1030,17 +1158,8 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
                 ⚙️ Parámetros del Bloque {currentBlock}
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                <div>
-                  <div style={labelStyle}>VDOT actual</div>
-                  <input
-                    type="number"
-                    min={0}
-                    step={0.1}
-                    value={nextBlockParams.vdot}
-                    onChange={(e) => setNextBlockParams((prev) => ({ ...prev, vdot: e.target.value }))}
-                    placeholder="Ej: 48.2"
-                    style={inputStyle}
-                  />
+                <div style={{ color: "#475569", fontSize: ".76em", lineHeight: 1.45 }}>
+                  {vdotLabel ? `Ritmos con ${vdotLabel}. Se edita arriba, en Parámetros del plan.` : ""}
                 </div>
                 <div>
                   <div style={labelStyle}>Días de entrenamiento</div>
