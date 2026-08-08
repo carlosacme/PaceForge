@@ -1168,11 +1168,36 @@ export default function AthleteHome({ profile }) {
             marginBottom: 12,
           }}
         >
-          <span style={{ fontSize: "1.2em" }}>🏃</span>
-          <div>
+          <span style={{ fontSize: "1.2em", flexShrink: 0 }}>🏃</span>
+          <div style={{ flex: "1 1 auto", minWidth: 0 }}>
             <div style={{ fontSize: ".68em", color: "#b45309", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".08em" }}>Tu coach</div>
-            <div style={{ fontSize: ".9em", fontWeight: 800, color: "#0f172a" }}>{coachName}</div>
+            {/* El nombre se trunca para que el boton de chat no se salga de la
+                tarjeta en pantallas estrechas. */}
+            <div style={{ fontSize: ".9em", fontWeight: 800, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{coachName}</div>
           </div>
+          <button
+            type="button"
+            onClick={() => setAthleteChatOpen(true)}
+            aria-label="Abrir chat con tu coach"
+            style={{
+              flexShrink: 0,
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              background: "linear-gradient(135deg,#f59e0b,#ea580c)",
+              border: "none",
+              borderRadius: 999,
+              padding: "7px 14px",
+              color: "#fff",
+              fontWeight: 800,
+              fontSize: ".78em",
+              fontFamily: "inherit",
+              cursor: "pointer",
+              boxShadow: "0 2px 8px rgba(234,88,12,.28)",
+            }}
+          >
+            <span aria-hidden="true">💬</span> Chat
+          </button>
         </div>
       ) : null}
       <WeatherWidget />

@@ -149,6 +149,9 @@ export const normalizeAthlete = (athlete) => ({
   weekly_km: Number.isFinite(Number(athlete?.weekly_km)) ? Number(athlete.weekly_km) : 0,
   email: typeof athlete?.email === "string" ? athlete.email : "",
   avatar: athlete?.avatar || "🏃",
+  // Foto de perfil que sube el atleta (bucket athlete-avatars). Viene en la
+  // misma consulta de la lista, no se pide aparte.
+  avatar_url: typeof athlete?.avatar_url === "string" ? athlete.avatar_url : "",
   status: athlete?.status || "on-track",
   next_race: athlete?.next_race || "Próxima carrera - Dec 31",
   workouts_done: Number.isFinite(Number(athlete?.workouts_done)) ? Number(athlete.workouts_done) : 0,

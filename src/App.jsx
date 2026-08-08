@@ -3961,6 +3961,46 @@ function Dashboard({
   );
 }
 
+/**
+ * Foto del atleta en la lista del coach. La URL viene con el resto del atleta
+ * en la consulta que ya carga la lista, asi que esto no dispara ninguna
+ * peticion extra. Si no hay foto, o si falla la carga, queda el emoji.
+ */
+const AthleteListAvatar = ({ url, fallback = "🏃", size = 32 }) => {
+  const [failed, setFailed] = useState(false);
+  const src = failed ? "" : String(url || "");
+  return (
+    <div
+      style={{
+        width: size,
+        height: size,
+        flexShrink: 0,
+        borderRadius: "50%",
+        overflow: "hidden",
+        background: "#f1f5f9",
+        border: "1px solid #e2e8f0",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        fontSize: size * 0.55,
+        lineHeight: 1,
+      }}
+    >
+      {src ? (
+        <img
+          src={src}
+          alt=""
+          loading="lazy"
+          onError={() => setFailed(true)}
+          style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+        />
+      ) : (
+        <span>{fallback}</span>
+      )}
+    </div>
+  );
+};
+
 function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWorkoutsDoneSync, onAthleteFcSync, coachDisplayName, onDeleteAthlete, notify, onOpenInviteModal }) {
   const S = styles;
   const athlete = (selected ? athletes.find(a => String(a.id) === String(selected.id)) : athletes[0]) || null;
@@ -5105,9 +5145,9 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
                   boxShadow: athlete.id === a.id ? "0 1px 3px rgba(0,0,0,0.08)" : "0 1px 2px rgba(0,0,0,0.04)",
                 }}
               >
-                <span style={{ fontSize: "1.3em" }}>{a.avatar}</span>
+                <AthleteListAvatar url={a.avatar_url} fallback={a.avatar} />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: ".85em", fontWeight: 700, color: "#0f172a" }}>{a.name}</div>
+                  <div style={{ fontSize: ".85em", fontWeight: 700, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name}</div>
                   <div style={{ fontSize: ".7em", color: "#64748b" }}>{a.pace} · {a.weekly_km}km</div>
                 </div>
                 <button

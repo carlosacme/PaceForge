@@ -718,11 +718,20 @@ DESCANSO Y DISTRIBUCIÓN
             <input type="text" value={createForm.price_cop} onChange={(e) => setCreateForm((f) => ({ ...f, price_cop: e.target.value }))} placeholder="ej: 120,000" style={{ width: "100%", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit", boxSizing: "border-box" }} />
           </div>
           <div style={{ gridColumn: "1 / -1" }}>
-            <label style={{ display: "block", fontSize: ".72em", color: "#64748b", marginBottom: 5, fontWeight: 700 }}>Workouts de muestra (JSON)</label>
-            <div style={{ fontSize: ".7em", color: "#64748b", marginBottom: 6 }}>
-              {'Formato: [{"week":1,"day":"Martes","title":"Rodaje suave","description":"...","duration_min":45,"distance_km":8}]'}
-            </div>
-            <textarea value={createForm.preview_workouts_text} onChange={(e) => setCreateForm((f) => ({ ...f, preview_workouts_text: e.target.value }))} rows={8} placeholder='[{"week":1,"day":"Martes","type":"easy","title":"Rodaje suave","description":"Rodaje a 6:00–6:45 min/km","pace_range":"6:00-6:45","duration_min":45,"distance_km":8}]' style={{ width: "100%", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "monospace", fontSize: ".78em", boxSizing: "border-box" }} />
+            {/* El JSON en crudo solo hace falta para arreglar a mano lo que la
+                IA genere mal: la tabla "Plan completo" de abajo ya lo muestra
+                legible, asi que el textarea arranca plegado. */}
+            <details style={{ border: "1px solid #e2e8f0", borderRadius: 8, background: "#f8fafc" }}>
+              <summary style={{ cursor: "pointer", padding: "9px 10px", fontSize: ".72em", color: "#64748b", fontWeight: 700, userSelect: "none" }}>
+                🔧 Ver/editar JSON (avanzado)
+              </summary>
+              <div style={{ padding: "0 10px 10px" }}>
+                <div style={{ fontSize: ".7em", color: "#64748b", marginBottom: 6 }}>
+                  {'Formato: [{"week":1,"day":"Martes","title":"Rodaje suave","description":"...","duration_min":45,"distance_km":8}]'}
+                </div>
+                <textarea value={createForm.preview_workouts_text} onChange={(e) => setCreateForm((f) => ({ ...f, preview_workouts_text: e.target.value }))} rows={8} placeholder='[{"week":1,"day":"Martes","type":"easy","title":"Rodaje suave","description":"Rodaje a 6:00–6:45 min/km","pace_range":"6:00-6:45","duration_min":45,"distance_km":8}]' style={{ width: "100%", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "monospace", fontSize: ".78em", boxSizing: "border-box", background: "#fff" }} />
+              </div>
+            </details>
           </div>
           <div style={{ gridColumn: "1 / -1" }}>
             <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 8, fontWeight: 800 }}>Plan completo</div>
