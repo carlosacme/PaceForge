@@ -271,6 +271,10 @@ export default function AthleteHome({ profile }) {
   const normalizeWorkoutRowStable = useCallback(normalizeWorkoutRow, []);
   const [athleteInfo, setAthleteInfo] = useState(null);
   const [coachName, setCoachName] = useState(null);
+  const [coachAvatarUrl, setCoachAvatarUrl] = useState("");
+  // Se guarda la URL que fallo, no un booleano, para que una foto nueva vuelva
+  // a intentarse en vez de quedarse con el emoji.
+  const [coachAvatarFailedUrl, setCoachAvatarFailedUrl] = useState("");
   const [coachCodeInput, setCoachCodeInput] = useState("");
   const [coachCodeSaving, setCoachCodeSaving] = useState(false);
   const [coachCodeMsg, setCoachCodeMsg] = useState("");
@@ -789,20 +793,23 @@ export default function AthleteHome({ profile }) {
     return true;
   }, [profile?.coach_id, profile?.user_id]);
 
-  // Cargar nombre del coach si el atleta tiene uno asignado
+  // Nombre y foto del coach asignado, en la misma consulta a coach_public.
   useEffect(() => {
     if (!profile?.coach_id) {
       setCoachName(null);
+      setCoachAvatarUrl("");
       return;
     }
     let cancelled = false;
     (async () => {
       const { data } = await supabase
         .from("coach_public")
-        .select("name")
+        .select("name, avatar_url")
         .eq("user_id", profile.coach_id)
         .maybeSingle();
-      if (!cancelled && data?.name) setCoachName(data.name);
+      if (cancelled) return;
+      if (data?.name) setCoachName(data.name);
+      setCoachAvatarUrl(data?.avatar_url || "");
     })();
     return () => { cancelled = true; };
   }, [profile?.coach_id]);
@@ -1018,10 +1025,11 @@ export default function AthleteHome({ profile }) {
       await linkAthleteToCoach(coachId);
       const { data: coachProf } = await supabase
         .from("coach_public")
-        .select("name")
+        .select("name, avatar_url")
         .eq("user_id", coachId)
         .maybeSingle();
       if (coachProf?.name) setCoachName(coachProf.name);
+      setCoachAvatarUrl(coachProf?.avatar_url || "");
       setCoachCodeMsg("Conectado con " + (coachProf?.name || "tu coach") + "!");
       setFindCoachCodeInput("");
     } catch (e) {
@@ -1170,7 +1178,17 @@ export default function AthleteHome({ profile }) {
             marginBottom: 12,
           }}
         >
-          <span style={{ fontSize: "1.2em", flexShrink: 0 }}>🏃</span>
+          {coachAvatarUrl && coachAvatarFailedUrl !== coachAvatarUrl ? (
+            <img
+              src={coachAvatarUrl}
+              alt=""
+              loading="lazy"
+              onError={() => setCoachAvatarFailedUrl(coachAvatarUrl)}
+              style={{ width: 34, height: 34, flexShrink: 0, borderRadius: "50%", objectFit: "cover", border: "1px solid rgba(245,158,11,.45)", display: "block" }}
+            />
+          ) : (
+            <span style={{ fontSize: "1.2em", flexShrink: 0 }}>🏃</span>
+          )}
           <div style={{ flex: "1 1 auto", minWidth: 0 }}>
             <div style={{ fontSize: ".68em", color: "#b45309", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".08em" }}>Tu coach</div>
             {/* El nombre se trunca para que el boton de chat no se salga de la
