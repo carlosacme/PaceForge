@@ -1154,7 +1154,9 @@ export default function AthleteHome({ profile }) {
         <img src="/pwa-192.png" alt="RAF" style={{ width: 38, height: 38, borderRadius: 10, objectFit: "cover", flexShrink: 0 }} />
       </div>
       <InstallAppButton />
-{coachName ? (
+{/* Con el boton flotante fuera, esta tarjeta es el unico acceso al chat, asi
+    que se muestra en cuanto hay coach aunque su nombre aun no haya cargado. */}
+{coachName || coachIdForChat ? (
         <div
           id="banner-coach-name"
           style={{
@@ -1173,7 +1175,7 @@ export default function AthleteHome({ profile }) {
             <div style={{ fontSize: ".68em", color: "#b45309", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".08em" }}>Tu coach</div>
             {/* El nombre se trunca para que el boton de chat no se salga de la
                 tarjeta en pantallas estrechas. */}
-            <div style={{ fontSize: ".9em", fontWeight: 800, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{coachName}</div>
+            <div style={{ fontSize: ".9em", fontWeight: 800, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{coachName || "Coach asignado"}</div>
           </div>
           <button
             type="button"
@@ -1372,8 +1374,6 @@ export default function AthleteHome({ profile }) {
           </div>
         </div>
       )}
-
-      <button type="button" onClick={() => setAthleteChatOpen(true)} style={{ position: "fixed", right: 18, bottom: 104, width: 52, height: 52, borderRadius: "50%", border: "none", background: "linear-gradient(135deg,#f59e0b,#ea580c)", color: "#fff", fontSize: "1.3em", boxShadow: "0 8px 20px rgba(234,88,12,.35)", cursor: "pointer", zIndex: 9000 }}>💬</button>
 
       <nav aria-label="Navegación atleta" style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 9999, display: "flex", flexDirection: "row", justifyContent: "space-around", alignItems: "center", background: "white", borderTop: "1px solid #e2e8f0", padding: "8px 0 12px 0", height: "60px" }}>
         <button type="button" style={{ minWidth: 60, color: athleteActiveTab === "home" ? "#c2410c" : "#64748b", background: athleteActiveTab === "home" ? "rgba(245,158,11,.14)" : "transparent", fontWeight: athleteActiveTab === "home" ? 800 : 600 }} onClick={() => handleAthleteNavTabChange("home")}><span className="pf-bnav-icon">🏠</span><span style={{ fontSize: "10px" }}>Inicio</span></button>
