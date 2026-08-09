@@ -7,6 +7,9 @@ import {
   planWeeklyVolume,
   planRaceContext,
   qualityWorkGuide,
+  fmtPace,
+  midPaceSecondsFromRange,
+  extractPaceSecondsFromText,
 } from "../lib/vdot";
 import { usePersistedState } from "../hooks/usePersistedState";
 import {
@@ -53,6 +56,37 @@ const DELOAD_FACTOR = 0.65;
 /** Bloques seguidos de carga creciente a partir de los que se sugiere bajar. */
 const BLOCKS_BEFORE_DELOAD_HINT = 3;
 
+/**
+ * Parte de la sesion que se corre a ritmo facil (calentamiento y vuelta a la
+ * calma). En tempo e intervalos el ritmo de las series NO es el ritmo medio de
+ * la sesion, y usarlo para convertir km en minutos se queda muy corto.
+ */
+const EASY_SHARE_BY_TYPE = { tempo: 0.35, interval: 0.5 };
+
+/** Zona de ritmo que le corresponde a cada tipo de sesion. */
+const PACE_ZONE_BY_TYPE = {
+  easy: "easy",
+  long: "easy",
+  recovery: "recovery",
+  tempo: "tempo",
+  interval: "interval",
+  race: "marathon",
+};
+
+/** Numeros seguidos de una unidad, ignorando los ritmos ("7:55 min/km"). */
+const numbersWithUnit = (text, unit) => {
+  const re = unit === "km"
+    ? /(^|[^\d:.,])(\d+(?:[.,]\d+)?)\s*km\b/gi
+    : /(^|[^\d:.,])(\d+(?:[.,]\d+)?)\s*min(?:utos)?\b(\s*\/)?/gi;
+  const out = [];
+  let m = re.exec(text);
+  while (m) {
+    if (!(unit === "min" && m[3])) out.push(Number(String(m[2]).replace(",", ".")));
+    m = re.exec(text);
+  }
+  return out.filter((n) => Number.isFinite(n));
+};
+
 function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, profileRole, onGoToPlans, onPlanAssigned }) {
   const S = styles;
   const [athleteId, setAthleteId] = useState(() => {
@@ -81,7 +115,12 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, profileRole, onG
     total_km: 0,
     duration_min: 0,
     weekday: 2,
+    description: "",
   });
+  // Valores con los que se abrio el editor: sirven para saber si el coach
+  // movio km o duracion y avisar de que la descripcion se quedo vieja.
+  const [editInitial, setEditInitial] = useState({ total_km: 0, duration_min: 0, hasStructure: false });
+  const [editManual, setEditManual] = useState(false);
   const [monthGenerations, setMonthGenerations] = useState(0);
   const [loadingGenerations, setLoadingGenerations] = useState(false);
   const [generationLimitMsg, setGenerationLimitMsg] = useState("");
@@ -406,7 +445,9 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, profileRole, onG
     const week = generatedPlan.weeks.find((w) => Number(w.week_number) === planEditModal.weekNumber);
     if (!week) return;
     if (planEditModal.workoutIdx === "new") {
-      setEditDraft({ title: "", type: "easy", total_km: 0, duration_min: 0, weekday: 2 });
+      setEditDraft({ title: "", type: "easy", total_km: 0, duration_min: 0, weekday: 2, description: "" });
+      setEditInitial({ total_km: 0, duration_min: 0, hasStructure: false });
+      setEditManual(false);
       return;
     }
     const wo = week.workouts?.[planEditModal.workoutIdx];
@@ -414,13 +455,18 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, profileRole, onG
       setPlanEditModal(null);
       return;
     }
+    const km = Number(wo.total_km ?? wo.km) || 0;
+    const min = Number(wo.duration_min) || 0;
     setEditDraft({
       title: String(wo.title || ""),
       type: WORKOUT_TYPES.some((t) => t.id === wo.type) ? wo.type : "easy",
-      total_km: Number(wo.total_km ?? wo.km) || 0,
-      duration_min: Number(wo.duration_min) || 0,
+      total_km: km,
+      duration_min: min,
       weekday: Math.min(7, Math.max(1, Number(wo.weekday) || 2)),
+      description: String(wo.description || ""),
     });
+    setEditInitial({ total_km: km, duration_min: min, hasStructure: Array.isArray(wo.structure) && wo.structure.length > 0 });
+    setEditManual(false);
   }, [planEditModal, generatedPlan]);
 
   const toggleWeek = (weekNum) => {
@@ -1138,16 +1184,103 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
           total_km: Number(editDraft.total_km) || 0,
           duration_min: Number(editDraft.duration_min) || 0,
           weekday: Math.min(7, Math.max(1, Number(editDraft.weekday) || 1)),
-          description: typeof prevWo.description === "string" ? prevWo.description : "",
+          description: String(editDraft.description || ""),
         };
         if (workoutIdx === "new") list.push(merged);
         else list[workoutIdx] = merged;
         return { ...w, workouts: list };
       }),
     };
+    // Sin esto la edicion se guardaba en el borrador pero la vista previa (y lo
+    // que se asigna al atleta) se quedaba con la sesion vieja.
+    setGeneratedPlan(updated);
     persistPlanDraft({ status: "draft", planJson: updated, startDateValue: startDate, blockNumber: currentBlock });
     setPlanEditModal(null);
   };
+
+  /**
+   * Ritmo medio (s/km) con el que se convierten km y minutos en el editor.
+   * Prioridad: el pace_range de la propia sesion, la mezcla por tipo cuando la
+   * sesion lleva calentamiento y series, el ritmo que escribio la IA en la
+   * descripcion y, por ultimo, la zona que toca segun el VDOT del atleta.
+   */
+  const editPace = useMemo(() => {
+    const pr = vdotPaceRanges;
+    const type = editDraft.type;
+    const workout = planEditModal && planEditModal.workoutIdx !== "new"
+      ? generatedPlan?.weeks?.find((w) => Number(w.week_number) === planEditModal.weekNumber)?.workouts?.[planEditModal.workoutIdx]
+      : null;
+
+    const fromField = midPaceSecondsFromRange(workout?.pace_range);
+    if (fromField) return { secs: fromField, source: "ritmo de la sesión" };
+
+    const zoneKey = PACE_ZONE_BY_TYPE[type] || "easy";
+    const zoneSecs = pr?.[zoneKey] ? midPaceSecondsFromRange(pr[zoneKey].pace_range) : null;
+    const easySecs = pr?.easy ? midPaceSecondsFromRange(pr.easy.pace_range) : null;
+    const easyShare = EASY_SHARE_BY_TYPE[type];
+    if (easyShare && zoneSecs && easySecs) {
+      return {
+        secs: zoneSecs * (1 - easyShare) + easySecs * easyShare,
+        source: "media de la sesión con calentamiento y vuelta a la calma",
+      };
+    }
+
+    const fromText = extractPaceSecondsFromText(editDraft.description);
+    if (fromText) return { secs: fromText, source: "ritmo de la descripción" };
+    if (zoneSecs) return { secs: zoneSecs, source: `zona ${zoneKey} del VDOT ${pr.vdotUsed}` };
+    return null;
+  }, [vdotPaceRanges, editDraft.type, editDraft.description, planEditModal, generatedPlan]);
+
+  const applyKmChange = (value) => {
+    const km = Number(value);
+    setEditDraft((d) => {
+      const next = { ...d, total_km: Number.isFinite(km) ? km : 0 };
+      if (!editManual && editPace?.secs && Number.isFinite(km) && km > 0) {
+        next.duration_min = Math.round((km * editPace.secs) / 60);
+      }
+      return next;
+    });
+  };
+
+  const applyDurationChange = (value) => {
+    const min = Number(value);
+    setEditDraft((d) => {
+      const next = { ...d, duration_min: Number.isFinite(min) ? min : 0 };
+      if (!editManual && editPace?.secs && Number.isFinite(min) && min > 0) {
+        next.total_km = Math.round(((min * 60) / editPace.secs) * 10) / 10;
+      }
+      return next;
+    });
+  };
+
+  /** Aviso si la descripcion sigue citando los km o minutos anteriores. */
+  const editDescriptionWarning = useMemo(() => {
+    const desc = String(editDraft.description || "");
+    if (!desc.trim()) return "";
+    const km = Number(editDraft.total_km) || 0;
+    const min = Number(editDraft.duration_min) || 0;
+    const kmChanged = Math.abs(km - (Number(editInitial.total_km) || 0)) > 0.05;
+    const minChanged = Math.abs(min - (Number(editInitial.duration_min) || 0)) > 0.5;
+    const kmNums = numbersWithUnit(desc, "km");
+    const minNums = numbersWithUnit(desc, "min");
+    const kmStale = kmChanged && kmNums.length > 0 && !kmNums.some((n) => Math.abs(n - km) <= 0.5);
+    const minStale = minChanged && minNums.length > 0 && !minNums.some((n) => Math.abs(n - min) <= 1);
+    if (kmStale && minStale) return "⚠️ Cambiaste los kilómetros y la duración. Revisa la descripción, aún menciona los valores anteriores.";
+    if (kmStale) return "⚠️ Cambiaste los kilómetros. Revisa la descripción, aún menciona los valores anteriores.";
+    if (minStale) return "⚠️ Cambiaste la duración. Revisa la descripción, aún menciona los valores anteriores.";
+    return "";
+  }, [editDraft.description, editDraft.total_km, editDraft.duration_min, editInitial]);
+
+  /**
+   * Los bloques del structure no se reescalan solos: son series concretas
+   * (6x800m), no una distancia que se pueda repartir, y estirarlas cambiaria
+   * la sesion que penso el coach. Se avisa y se revisan a mano.
+   */
+  const editStructureWarning = useMemo(() => {
+    if (!editInitial.hasStructure) return "";
+    const kmChanged = Math.abs((Number(editDraft.total_km) || 0) - (Number(editInitial.total_km) || 0)) > 0.05;
+    return kmChanged ? "Esta sesión tiene bloques definidos. Se conservan tal cual: revísalos si el nuevo total no cuadra." : "";
+  }, [editInitial, editDraft.total_km]);
 
   const inputStyle = {
     width: "100%",
@@ -1808,7 +1941,7 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
                     min={0}
                     step={0.1}
                     value={editDraft.total_km}
-                    onChange={(e) => setEditDraft((d) => ({ ...d, total_km: Number(e.target.value) }))}
+                    onChange={(e) => applyKmChange(e.target.value)}
                     style={inputStyle}
                   />
                 </div>
@@ -1819,10 +1952,48 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
                     min={0}
                     step={1}
                     value={editDraft.duration_min}
-                    onChange={(e) => setEditDraft((d) => ({ ...d, duration_min: Number(e.target.value) }))}
+                    onChange={(e) => applyDurationChange(e.target.value)}
                     style={inputStyle}
                   />
                 </div>
+              </div>
+              <div style={{ marginTop: -4 }}>
+                <div style={{ fontSize: ".72em", color: editManual ? "#94a3b8" : "#0e7490", fontWeight: 600, lineHeight: 1.4 }}>
+                  {editManual
+                    ? "Ajuste manual: km y duración no se recalculan entre sí."
+                    : editPace
+                      ? `Calculado a ${fmtPace(editPace.secs)} min/km (${editPace.source}).`
+                      : "Sin ritmo de referencia: los campos no se recalculan."}
+                </div>
+                <label style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 6, cursor: "pointer" }}>
+                  <input
+                    type="checkbox"
+                    checked={editManual}
+                    onChange={(e) => setEditManual(e.target.checked)}
+                    style={{ accentColor: "#b45309" }}
+                  />
+                  <span style={{ fontSize: ".74em", color: "#475569", fontWeight: 600 }}>Ajustar manualmente</span>
+                </label>
+              </div>
+              <div>
+                <div style={labelStyle}>Descripción</div>
+                <textarea
+                  value={editDraft.description}
+                  onChange={(e) => setEditDraft((d) => ({ ...d, description: e.target.value }))}
+                  rows={4}
+                  placeholder="Ritmos, series, calentamiento y vuelta a la calma"
+                  style={{ ...inputStyle, resize: "vertical", lineHeight: 1.45 }}
+                />
+                {editDescriptionWarning ? (
+                  <div style={{ marginTop: 6, color: "#92400e", fontSize: ".72em", fontWeight: 600, lineHeight: 1.45 }}>
+                    {editDescriptionWarning}
+                  </div>
+                ) : null}
+                {editStructureWarning ? (
+                  <div style={{ marginTop: 6, color: "#0e7490", fontSize: ".72em", fontWeight: 600, lineHeight: 1.45 }}>
+                    ℹ️ {editStructureWarning}
+                  </div>
+                ) : null}
               </div>
               <div>
                 <div style={labelStyle}>Día de la semana</div>

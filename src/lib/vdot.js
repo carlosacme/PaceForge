@@ -94,6 +94,39 @@ export function fmtPace(secs) {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
+/** "7:14" -> 434 segundos. null si no es un ritmo. */
+export function parsePaceToSeconds(text) {
+  const m = String(text || "").trim().match(/^(\d{1,2}):([0-5]\d)$/);
+  if (!m) return null;
+  return Number(m[1]) * 60 + Number(m[2]);
+}
+
+/**
+ * Punto medio de un rango de ritmo: "7:14-7:55" -> 449 s/km. Acepta guion
+ * normal o en, y tambien un ritmo suelto ("7:30").
+ */
+export function midPaceSecondsFromRange(range) {
+  const text = String(range || "").replace(/\s|min\/km/gi, "");
+  if (!text) return null;
+  const parts = text.split(/[-–—]/).map(parsePaceToSeconds).filter((n) => n != null);
+  if (!parts.length) return null;
+  return parts.reduce((a, b) => a + b, 0) / parts.length;
+}
+
+/**
+ * Busca el ritmo dentro de un texto libre ("...a ritmo de 7:14-7:55 min/km").
+ * Se queda con el primer rango o ritmo que encuentre.
+ */
+export function extractPaceSecondsFromText(text) {
+  const source = String(text || "");
+  if (!source) return null;
+  const range = source.match(/(\d{1,2}:[0-5]\d)\s*[-–—]\s*(\d{1,2}:[0-5]\d)/);
+  if (range) return midPaceSecondsFromRange(`${range[1]}-${range[2]}`);
+  const single = source.match(/(\d{1,2}:[0-5]\d)\s*(?:min\s*\/\s*km|min\/km)/i);
+  if (single) return parsePaceToSeconds(single[1]);
+  return null;
+}
+
 /** minutos decimales -> "m:ss"  (compat con paceMinKm del jsonb viejo) */
 export function fmtDecimalMin(min) {
   return fmtPace(min * 60);
