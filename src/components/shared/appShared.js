@@ -598,9 +598,53 @@ export const normalizeWorkoutStructure = (rawStructure) => {
         if (km != null) distance_km = String(km);
       }
       if (!block_type && !duration_min && !distance_km && !target_pace && !target_hr && !description) return null;
-      return { block_type, duration_min, distance_km, target_pace, target_hr, description };
+      // La IA nombra los bloques con la distancia ("Repetition 3 - 400m") y ese
+      // nombre no esta en WORKOUT_BLOCK_TYPES. Se guarda aparte para no
+      // perderlo al pasar por el editor, que solo maneja el vocabulario fijo.
+      const rawPhase = String(s?.phase || "").trim();
+      const block_label = rawPhase && !WORKOUT_BLOCK_TYPES.includes(rawPhase) ? rawPhase : "";
+      return { block_type, duration_min, distance_km, target_pace, target_hr, description, block_label };
     })
     .filter(Boolean);
+};
+
+/**
+ * Minutos de un bloque a partir de lo que haya escrito la IA o el coach:
+ * "12", "12 min", "90 sec", "1:30". null si no hay nada usable.
+ */
+export const blockDurationToMinutes = (value) => {
+  const text = String(value ?? "").trim().toLowerCase();
+  if (!text) return null;
+  const clock = text.match(/^(\d{1,2}):([0-5]\d)$/);
+  if (clock) return Number(clock[1]) + Number(clock[2]) / 60;
+  const num = text.match(/(\d+(?:[.,]\d+)?)/);
+  if (!num) return null;
+  const n = Number(String(num[1]).replace(",", "."));
+  if (!Number.isFinite(n)) return null;
+  return /\b(s|sec|seg|segundos?)\b/.test(text) ? n / 60 : n;
+};
+
+/**
+ * Suma de km y minutos de las filas del editor de bloques.
+ * kmComplete/minComplete dicen si TODAS las filas aportaron el dato: un
+ * calentamiento por tiempo no lleva distancia, y sumar solo las series daria
+ * un total mas corto que la sesion real.
+ */
+export const sumStructureRows = (rows) => {
+  const list = Array.isArray(rows) ? rows : [];
+  let km = 0;
+  let min = 0;
+  let kmComplete = list.length > 0;
+  let minComplete = list.length > 0;
+  for (const r of list) {
+    const d = Number(String(r?.distance_km ?? "").replace(",", "."));
+    if (Number.isFinite(d) && d > 0) km += d;
+    else kmComplete = false;
+    const m = blockDurationToMinutes(r?.duration_min);
+    if (m != null && m > 0) min += m;
+    else minComplete = false;
+  }
+  return { km: Math.round(km * 10) / 10, min: Math.round(min), kmComplete, minComplete };
 };
 
 export const emptyWorkoutStructureRow = () => ({ block_type: "Intervalo", duration_min: "", distance_km: "", target_pace: "", target_hr: "", description: "" });
@@ -625,8 +669,11 @@ export const editableRowsToWorkoutStructure = (rows) => {
       if (target_pace) o.target_pace = target_pace;
       if (target_hr) o.target_hr = target_hr;
       if (description) o.description = description;
-      // compatibilidad visual con código legado
-      o.phase = block_type;
+      // compatibilidad visual con código legado. El nombre original manda si
+      // existe: "Repetition 3 - 400m" es lo que el reloj y la tabla muestran.
+      const block_label = (r?.block_label ?? "").toString().trim();
+      if (block_label) o.block_label = block_label;
+      o.phase = block_label || block_type;
       o.duration = duration_min;
       o.pace = target_pace;
       o.intensity = target_hr || description;

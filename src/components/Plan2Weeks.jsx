@@ -31,13 +31,17 @@ import {
   startOfWeekMonday,
   extractJsonFromAnthropicText,
   extractAnthropicTextContent,
-  normalizeWorkoutStructure,
+  workoutStructureToEditableRows,
+  editableRowsToWorkoutStructure,
+  sumStructureRows,
+  buildAthleteHrZonesPromptText,
   normalizeAthlete,
   formatDurationClock,
   formatCopInt,
-  WORKOUT_BLOCK_TYPES,
   styles,
 } from "./shared/appShared";
+import WorkoutStructureEditor from "./shared/WorkoutStructureEditor";
+import { enrichStructureWithPaces } from "../lib/enrichPace";
 
 /** Metros por competencia, para validar el tiempo objetivo contra el VDOT. */
 const RACE_METERS_BY_COMPETITION = {
@@ -116,6 +120,7 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, profileRole, onG
     duration_min: 0,
     weekday: 2,
     description: "",
+    structureRows: [],
   });
   // Valores con los que se abrio el editor: sirven para saber si el coach
   // movio km o duracion y avisar de que la descripcion se quedo vieja.
@@ -445,7 +450,7 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, profileRole, onG
     const week = generatedPlan.weeks.find((w) => Number(w.week_number) === planEditModal.weekNumber);
     if (!week) return;
     if (planEditModal.workoutIdx === "new") {
-      setEditDraft({ title: "", type: "easy", total_km: 0, duration_min: 0, weekday: 2, description: "" });
+      setEditDraft({ title: "", type: "easy", total_km: 0, duration_min: 0, weekday: 2, description: "", structureRows: [] });
       setEditInitial({ total_km: 0, duration_min: 0, hasStructure: false });
       setEditManual(false);
       return;
@@ -457,6 +462,7 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, profileRole, onG
     }
     const km = Number(wo.total_km ?? wo.km) || 0;
     const min = Number(wo.duration_min) || 0;
+    const rows = workoutStructureToEditableRows(Array.isArray(wo.structure) ? wo.structure : []);
     setEditDraft({
       title: String(wo.title || ""),
       type: WORKOUT_TYPES.some((t) => t.id === wo.type) ? wo.type : "easy",
@@ -464,8 +470,9 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, profileRole, onG
       duration_min: min,
       weekday: Math.min(7, Math.max(1, Number(wo.weekday) || 2)),
       description: String(wo.description || ""),
+      structureRows: rows,
     });
-    setEditInitial({ total_km: km, duration_min: min, hasStructure: Array.isArray(wo.structure) && wo.structure.length > 0 });
+    setEditInitial({ total_km: km, duration_min: min, hasStructure: rows.length > 0 });
     setEditManual(false);
   }, [planEditModal, generatedPlan]);
 
@@ -821,6 +828,10 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, profileRole, onG
       ? `\nDELOAD BLOCK (the coach marked this block as recovery):\n- Volume is already reduced to about ${Math.round(DELOAD_FACTOR * 100)}% of the normal load. Keep ONE short quality session (for example 4-6 x 400m or a 15 min tempo) and run everything else easy.\n`
       : "";
 
+    // Zonas reales del atleta para el campo intensity de los bloques. Sin
+    // fc_max no hay zonas y la IA usa la notacion Z1-Z5 generica.
+    const hrZonesBlock = buildAthleteHrZonesPromptText(selectedAthlete);
+
     return `Generate a 2-week running training block as JSON only.
 IMPORTANT: Respond entirely in Spanish. All fields including plan_title, focus, title, and description MUST be in Spanish. Do not use English in any field.
 
@@ -858,7 +869,7 @@ TRAINING PACES for this athlete (derived from their measured VDOT ${pr.vdotUsed}
 - Reps / speed: ${pr.rep.desc}
 - Recovery runs: ${pr.recovery.desc}
 Reference pace_range strings for JSON: easy=${pr.easy.pace_range}, tempo=${pr.tempo.pace_range}, interval=${pr.interval.pace_range} (min/km, ASCII hyphen).
-
+${hrZonesBlock ? `\n${hrZonesBlock}\n` : ""}
 QUALITY WORK by VDOT ${pr.vdotUsed} (band ${quality.band}):
 - VDOT < 40: intervals of 200-600m, 4-6 reps, full recovery (equal to or longer than the interval)
 - VDOT 40-50: intervals of 400-1000m, 5-8 reps, recovery 50-100% of the interval time
@@ -894,10 +905,22 @@ If N<5 sessions, drop in order: Thursday(4), then Tuesday(2). NEVER drop Sunday(
 - Monday and Friday are rest days by default.
 
 OUTPUT JSON SCHEMA:
-{"plan_title":"string","weeks":[{"week_number":1,"focus":"string","workouts":[{"weekday":2,"title":"string","type":"easy|tempo|interval|long","total_km":0,"duration_min":0,"description":"Include specific pace, sets/reps for intervals, warmup/cooldown"}]}]}
+{"plan_title":"string","weeks":[{"week_number":1,"focus":"string","workouts":[{"weekday":2,"title":"string","type":"easy|tempo|interval|long","total_km":0,"duration_min":0,"description":"Include specific pace, sets/reps for intervals, warmup/cooldown","structure":[{"phase":"string","duration":"string","intensity":"string","pace":"string"}]}]}]}
+
+STRUCTURE RULES (field "structure" — the executable blocks that reach the athlete's watch):
+- Include the "structure" array ONLY for quality sessions (type: interval, tempo, fartlek, or any session with varied intensity blocks). For easy runs, recovery runs, and steady long runs (type: easy, recovery, long), OMIT the "structure" field entirely — those sessions run at a constant pace and don't need blocks.
+- This keeps the response compact. Quality sessions are 1-2 per week.
+- When structure IS included: each block is {phase, duration, intensity, pace}.
+- NEVER collapse repeated intervals into one block. For 6x400m, output 6 SEPARATE repetition blocks (phase "Repetition 1 - 400m", etc.), each followed by its own recovery block (except the last, followed by cooldown).
+- For distance-based intervals, name each block with the distance (e.g. "Repetition 3 - 400m").
+- Always use HR zone notation Z1-Z5 with bpm in the intensity field, e.g. "Z4-Z5 (150-170 bpm)".${hrZonesBlock ? " Use the athlete's real zones listed above." : ""}
+- Include warmup and cooldown blocks in every quality session that has structure.
+- The "duration" field of each block MUST be a plain number followed by a single unit: either "N sec" or "N min" (e.g. "60 sec", "2 min", "15 min"). Do NOT add extra words (no "caminar", no "trote suave", no "aprox"), do NOT use ranges (no "18-20 seg"), do NOT use clock format (no "1:30"), and do NOT use approximations (no "~2 min"). If a block is distance-based, still give a realistic single duration estimate.
+- The "pace" field of each block is the numeric min/km range (H:MM-H:MM, ASCII hyphen) taken from the TRAINING PACES above; recoveries use the recovery or easy pace.
+- The structure blocks must add up to the session's total_km and duration_min, and must match its description (structure is what gets executed, description is the readable text).
 
 Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays both weeks, all numeric fields must be numbers, description must include specific paces from above.`;
-  }, [competition, targetTime, levelId, levelLabel, daysPerWeek, startDate, currentBlock, nextBlockParams, selectedTrainingDaysText, blockHistory, vdotPaceRanges, volumePlan, blockWeekTargets, raceContext, isDeloadBlock]);
+  }, [competition, targetTime, levelId, levelLabel, daysPerWeek, startDate, currentBlock, nextBlockParams, selectedTrainingDaysText, blockHistory, vdotPaceRanges, volumePlan, blockWeekTargets, raceContext, isDeloadBlock, selectedAthlete]);
 
   const generatePlan2 = async () => {
     const timeOk = /^\d{1,2}:\d{2}:\d{2}$/.test(String(targetTime || "").trim());
@@ -928,8 +951,11 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           model: "claude-sonnet-5",
-          // Margen para JSON de 2 semanas (thinking desactivado en el body).
-          max_tokens: 16000,
+          // Margen para JSON de 2 semanas con structure por bloque: cada sesion
+          // de calidad son ~12-20 bloques y con 16000 la respuesta se truncaba
+          // (stop_reason max_tokens). Mismo techo que el generador del
+          // marketplace, que ya genera planes completos con bloques.
+          max_tokens: 32000,
           thinking: { type: "disabled" },
           system: plan2SystemPrompt,
           messages: [{ role: "user", content: plan2UserPrompt }],
@@ -1031,8 +1057,13 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
         const typeRaw = wo.type || "easy";
         const type = WORKOUT_TYPES.some((t) => t.id === typeRaw) ? typeRaw : "easy";
         const kmVal = wo.total_km ?? wo.km;
-        let structure = wo.structure;
-        if (!Array.isArray(structure)) structure = [];
+        // Los bloques llegan al reloj con ritmos numericos segun el VDOT del
+        // atleta, igual que hace el Builder al asignar un workout suelto.
+        const structure = enrichStructureWithPaces(
+          Array.isArray(wo.structure) ? wo.structure : [],
+          vdotPaceRanges?.vdotUsed,
+          selectedAthlete.fc_max,
+        );
         rows.push({
           athlete_id: selectedAthlete.id,
           title: String(wo.title || "Entrenamiento"),
@@ -1177,6 +1208,7 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
         if (Number(w.week_number) !== weekNumber) return w;
         const list = [...(w.workouts || [])];
         const prevWo = workoutIdx !== "new" ? { ...(list[workoutIdx] || {}) } : {};
+        const rows = editDraft.structureRows || [];
         const merged = {
           ...prevWo,
           title: editDraft.title.trim() || "Entrenamiento",
@@ -1185,6 +1217,7 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
           duration_min: Number(editDraft.duration_min) || 0,
           weekday: Math.min(7, Math.max(1, Number(editDraft.weekday) || 1)),
           description: String(editDraft.description || ""),
+          structure: rows.length ? editableRowsToWorkoutStructure(rows) : [],
         };
         if (workoutIdx === "new") list.push(merged);
         else list[workoutIdx] = merged;
@@ -1253,6 +1286,28 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
     });
   };
 
+  /** Suma de los bloques que se esta editando, para el total de la sesion. */
+  const editStructureTotals = useMemo(
+    () => sumStructureRows(editDraft.structureRows),
+    [editDraft.structureRows],
+  );
+
+  /**
+   * Al tocar los bloques, el total de la sesion se recalcula sumandolos: si no,
+   * el coach quita una serie y la sesion sigue diciendo los mismos km.
+   */
+  const applyStructureRowsChange = (rows) => {
+    const totals = sumStructureRows(rows);
+    setEditDraft((d) => {
+      const next = { ...d, structureRows: rows };
+      if (!editManual) {
+        if (totals.kmComplete && totals.km > 0) next.total_km = totals.km;
+        if (totals.minComplete && totals.min > 0) next.duration_min = totals.min;
+      }
+      return next;
+    });
+  };
+
   /** Aviso si la descripcion sigue citando los km o minutos anteriores. */
   const editDescriptionWarning = useMemo(() => {
     const desc = String(editDraft.description || "");
@@ -1272,15 +1327,20 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
   }, [editDraft.description, editDraft.total_km, editDraft.duration_min, editInitial]);
 
   /**
-   * Los bloques del structure no se reescalan solos: son series concretas
-   * (6x800m), no una distancia que se pueda repartir, y estirarlas cambiaria
-   * la sesion que penso el coach. Se avisa y se revisan a mano.
+   * Los bloques no se reescalan solos cuando el coach cambia el total a mano:
+   * son series concretas (6x800m), no una distancia repartible, y estirarlas
+   * cambiaria la sesion. Al reves si: editar bloques recalcula el total.
    */
   const editStructureWarning = useMemo(() => {
-    if (!editInitial.hasStructure) return "";
-    const kmChanged = Math.abs((Number(editDraft.total_km) || 0) - (Number(editInitial.total_km) || 0)) > 0.05;
-    return kmChanged ? "Esta sesión tiene bloques definidos. Se conservan tal cual: revísalos si el nuevo total no cuadra." : "";
-  }, [editInitial, editDraft.total_km]);
+    if (!(editDraft.structureRows || []).length) return "";
+    if (!editStructureTotals.kmComplete) return "";
+    const km = Number(editDraft.total_km) || 0;
+    const blocksKm = editStructureTotals.km;
+    if (blocksKm > 0 && Math.abs(km - blocksKm) > 0.5) {
+      return `Los bloques suman ${blocksKm} km y la sesión dice ${km} km. Ajusta los bloques o el total.`;
+    }
+    return "";
+  }, [editDraft.structureRows, editDraft.total_km, editStructureTotals]);
 
   const inputStyle = {
     width: "100%",
@@ -1777,6 +1837,9 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
                                     <div style={{ fontWeight: 700, color: "#0f172a", fontSize: ".88em" }}>{wo.title || "Sin título"}</div>
                                     <div style={{ fontSize: ".76em", color: "#94a3b8", marginTop: 4 }}>
                                       {Number(wo.total_km ?? wo.km) || 0} km · {wo.duration_min} min · <span style={{ color: wt.color }}>{wt.label}</span>
+                                      {Array.isArray(wo.structure) && wo.structure.length > 0 ? (
+                                        <span style={{ color: "#0e7490", fontWeight: 700 }}> · {wo.structure.length} bloques</span>
+                                      ) : null}
                                     </div>
                                     {wo.description && <div style={{ fontSize: ".78em", color: "#cbd5e1", marginTop: 8, lineHeight: 1.45 }}>{wo.description}</div>}
                                   </div>
@@ -1904,7 +1967,7 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
             return null;
           })()}
           <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 220, padding: 16 }}>
-          <div style={{ ...S.card, width: "100%", maxWidth: 420, margin: 0 }}>
+          <div style={{ ...S.card, width: "100%", maxWidth: (editDraft.structureRows || []).length ? 560 : 420, margin: 0, maxHeight: "90vh", overflowY: "auto" }}>
             <div style={{ fontSize: ".95em", fontWeight: 700, color: "#0f172a", marginBottom: 6 }}>
               {planEditModal.workoutIdx === "new" ? "Nueva sesión" : "Editar sesión"}
             </div>
@@ -2007,6 +2070,23 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
                   ))}
                 </select>
               </div>
+              {(editDraft.structureRows || []).length > 0 ? (
+                <div style={{ borderTop: "1px solid #e2e8f0", paddingTop: 14 }}>
+                  <WorkoutStructureEditor
+                    rows={editDraft.structureRows}
+                    onRowsChange={applyStructureRowsChange}
+                    minRows={0}
+                  />
+                  <div style={{ marginTop: 8, fontSize: ".72em", color: "#0e7490", fontWeight: 600, lineHeight: 1.45 }}>
+                    Los bloques suman {editStructureTotals.km} km · {editStructureTotals.min} min.
+                    {editManual
+                      ? " Ajuste manual: el total de la sesión no se toca."
+                      : !editStructureTotals.kmComplete
+                        ? " Hay bloques sin distancia (calentamiento, recuperaciones), así que los km de la sesión se dejan como están."
+                        : " Ese es el total de la sesión."}
+                  </div>
+                </div>
+              ) : null}
             </div>
             <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 18 }}>
               <button

@@ -4,7 +4,6 @@ import { enrichStructureWithPaces } from "../lib/enrichPace";
 import {
   BRAND_NAME,
   WORKOUT_TYPES,
-  WORKOUT_BLOCK_TYPES,
   TAB_KEY_CREATE_WORKOUT,
   getCurrentMonthKey,
   formatLocalYMD,
@@ -24,6 +23,7 @@ import {
   styles,
   WORKOUT_BLOCK_COLORS,
 } from "./shared/appShared";
+import WorkoutStructureEditor from "./shared/WorkoutStructureEditor";
 
 const WorkoutStructureTable = ({ structure = [] }) => {
   const rows = normalizeWorkoutStructure(structure);
@@ -371,16 +371,6 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
     }
   };
 
-  const moveManualPhase = (idx, dir) => {
-    setManualForm((f) => {
-      const next = [...f.structureRows];
-      const j = idx + dir;
-      if (j < 0 || j >= next.length) return f;
-      [next[idx], next[j]] = [next[j], next[idx]];
-      return { ...f, structureRows: next };
-    });
-  };
-
   const wtPreview = previewWorkout ? WORKOUT_TYPES.find((t) => t.id === previewWorkout.type) || WORKOUT_TYPES[0] : null;
 
   return (
@@ -546,195 +536,10 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
                   style={{ width: "100%", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", color: "#0f172a", fontFamily: "inherit", fontSize: ".85em", resize: "vertical", boxSizing: "border-box" }}
                 />
               </div>
-              <div style={{ fontSize: ".65em", letterSpacing: ".13em", color: "#475569", textTransform: "uppercase", marginBottom: 10 }}>ESTRUCTURA DEL WORKOUT</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                {manualForm.structureRows.map((row, idx) => (
-                  <div
-                    key={idx}
-                    style={{
-                      border: "1px solid #e2e8f0",
-                      borderRadius: 10,
-                      padding: "12px 12px",
-                      background: "#f8fafc",
-                    }}
-                  >
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 8 }}>
-                      <span style={{ fontSize: ".75em", fontWeight: 800, color: "#334155" }}>Paso {idx + 1}</span>
-                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                        <button
-                          type="button"
-                          disabled={idx === 0}
-                          onClick={() => moveManualPhase(idx, -1)}
-                          style={{
-                            background: idx === 0 ? "#f1f5f9" : "#fff",
-                            border: "1px solid #e2e8f0",
-                            borderRadius: 6,
-                            padding: "4px 10px",
-                            fontSize: ".72em",
-                            cursor: idx === 0 ? "not-allowed" : "pointer",
-                            fontFamily: "inherit",
-                            fontWeight: 700,
-                          }}
-                        >
-                          ↑
-                        </button>
-                        <button
-                          type="button"
-                          disabled={idx >= manualForm.structureRows.length - 1}
-                          onClick={() => moveManualPhase(idx, 1)}
-                          style={{
-                            background: idx >= manualForm.structureRows.length - 1 ? "#f1f5f9" : "#fff",
-                            border: "1px solid #e2e8f0",
-                            borderRadius: 6,
-                            padding: "4px 10px",
-                            fontSize: ".72em",
-                            cursor: idx >= manualForm.structureRows.length - 1 ? "not-allowed" : "pointer",
-                            fontFamily: "inherit",
-                            fontWeight: 700,
-                          }}
-                        >
-                          ↓
-                        </button>
-                        <button
-                          type="button"
-                          disabled={manualForm.structureRows.length <= 1}
-                          onClick={() =>
-                            setManualForm((f) => ({
-                              ...f,
-                              structureRows: f.structureRows.length <= 1 ? f.structureRows : f.structureRows.filter((_, j) => j !== idx),
-                            }))
-                          }
-                          style={{
-                            background: "transparent",
-                            border: "1px solid #fecaca",
-                            borderRadius: 6,
-                            padding: "4px 10px",
-                            fontSize: ".72em",
-                            color: manualForm.structureRows.length <= 1 ? "#cbd5e1" : "#b91c1c",
-                            cursor: manualForm.structureRows.length <= 1 ? "not-allowed" : "pointer",
-                            fontFamily: "inherit",
-                            fontWeight: 700,
-                          }}
-                        >
-                          🗑️
-                        </button>
-                      </div>
-                    </div>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 8 }}>
-                      <div>
-                        <div style={{ fontSize: ".65em", color: "#94a3b8", marginBottom: 4 }}>Tipo de bloque</div>
-                        <select
-                          value={row.block_type}
-                          onChange={(e) =>
-                            setManualForm((f) => {
-                              const next = [...f.structureRows];
-                              next[idx] = { ...next[idx], block_type: e.target.value };
-                              return { ...f, structureRows: next };
-                            })
-                          }
-                          style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", fontSize: ".82em", fontFamily: "inherit", boxSizing: "border-box" }}
-                        >
-                          {WORKOUT_BLOCK_TYPES.map((bt) => <option key={bt} value={bt}>{bt}</option>)}
-                        </select>
-                      </div>
-                      <div>
-                        <div style={{ fontSize: ".65em", color: "#94a3b8", marginBottom: 4 }}>Duración (minutos)</div>
-                        <input
-                          value={row.duration_min}
-                          onChange={(e) =>
-                            setManualForm((f) => {
-                              const next = [...f.structureRows];
-                              next[idx] = { ...next[idx], duration_min: e.target.value };
-                              return { ...f, structureRows: next };
-                            })
-                          }
-                          placeholder="Ej: 12"
-                          style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", fontSize: ".82em", fontFamily: "inherit", boxSizing: "border-box" }}
-                        />
-                      </div>
-                      <div>
-                        <div style={{ fontSize: ".65em", color: "#94a3b8", marginBottom: 4 }}>Distancia (km)</div>
-                        <input
-                          value={row.distance_km}
-                          onChange={(e) =>
-                            setManualForm((f) => {
-                              const next = [...f.structureRows];
-                              next[idx] = { ...next[idx], distance_km: e.target.value };
-                              return { ...f, structureRows: next };
-                            })
-                          }
-                          placeholder="Opcional"
-                          style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", fontSize: ".82em", fontFamily: "inherit", boxSizing: "border-box" }}
-                        />
-                      </div>
-                      <div>
-                        <div style={{ fontSize: ".65em", color: "#94a3b8", marginBottom: 4 }}>Ritmo objetivo (MM:SS /km)</div>
-                        <input
-                          value={row.target_pace}
-                          onChange={(e) =>
-                            setManualForm((f) => {
-                              const next = [...f.structureRows];
-                              next[idx] = { ...next[idx], target_pace: e.target.value };
-                              return { ...f, structureRows: next };
-                            })
-                          }
-                          placeholder="Ej: 4:30"
-                          style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", fontSize: ".82em", fontFamily: "inherit", boxSizing: "border-box" }}
-                        />
-                      </div>
-                      <div>
-                        <div style={{ fontSize: ".65em", color: "#94a3b8", marginBottom: 4 }}>FC objetivo (lpm)</div>
-                        <input
-                          value={row.target_hr}
-                          onChange={(e) =>
-                            setManualForm((f) => {
-                              const next = [...f.structureRows];
-                              next[idx] = { ...next[idx], target_hr: e.target.value };
-                              return { ...f, structureRows: next };
-                            })
-                          }
-                          placeholder="Ej: 140-160"
-                          style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", fontSize: ".82em", fontFamily: "inherit", boxSizing: "border-box" }}
-                        />
-                      </div>
-                      <div style={{ gridColumn: "1 / -1" }}>
-                        <div style={{ fontSize: ".65em", color: "#94a3b8", marginBottom: 4 }}>Descripción</div>
-                        <input
-                          value={row.description}
-                          onChange={(e) =>
-                            setManualForm((f) => {
-                              const next = [...f.structureRows];
-                              next[idx] = { ...next[idx], description: e.target.value };
-                              return { ...f, structureRows: next };
-                            })
-                          }
-                          placeholder="Texto libre"
-                          style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", fontSize: ".82em", fontFamily: "inherit", boxSizing: "border-box" }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <button
-                type="button"
-                onClick={() => setManualForm((f) => ({ ...f, structureRows: [...f.structureRows, emptyWorkoutStructureRow()] }))}
-                style={{
-                  marginTop: 12,
-                  width: "100%",
-                  background: "#eff6ff",
-                  border: "1px solid #bfdbfe",
-                  borderRadius: 8,
-                  padding: "10px 14px",
-                  color: "#1d4ed8",
-                  fontWeight: 800,
-                  cursor: "pointer",
-                  fontFamily: "inherit",
-                  fontSize: ".82em",
-                }}
-              >
-                ➕ Agregar bloque
-              </button>
+              <WorkoutStructureEditor
+                rows={manualForm.structureRows}
+                onRowsChange={(rows) => setManualForm((f) => ({ ...f, structureRows: rows.length ? rows : [emptyWorkoutStructureRow()] }))}
+              />
             </>
           )}
         </div>

@@ -13,10 +13,10 @@ import {
   buildMarketplaceAiPacePromptSection,
   applyMarketplaceAiPaceDefaultsToPreviewRows,
   normalizeWorkoutStructure,
-  WORKOUT_BLOCK_TYPES,
   formatCopInt,
   getMarketplacePlanWorkoutRows,
 } from "./shared/appShared";
+import WorkoutStructureEditor from "./shared/WorkoutStructureEditor";
 
 /** Columnas livianas para la LISTA de planes (sin JSONB pesados). */
 const PLAN_LIST_COLUMNS =
@@ -395,18 +395,6 @@ function AdminMarketplacePanel({ notify, styles }) {
     setPlanSessionModalIndex(idx);
     setPlanSessionForm(rowToPlanSessionForm(previewRows[idx]));
     setPlanSessionModalOpen(true);
-  };
-
-  const movePlanSessionStructureRow = (idx, delta) => {
-    setPlanSessionForm((f) => {
-      const arr = [...f.structureRows];
-      const j = idx + delta;
-      if (j < 0 || j >= arr.length) return f;
-      const tmp = arr[idx];
-      arr[idx] = arr[j];
-      arr[j] = tmp;
-      return { ...f, structureRows: arr };
-    });
   };
 
   const savePlanSessionModal = () => {
@@ -1051,199 +1039,11 @@ DESCANSO Y DISTRIBUCIÓN
                 />
               </div>
             </div>
-            <div style={{ fontSize: ".65em", letterSpacing: ".13em", color: "#475569", textTransform: "uppercase", marginBottom: 10 }}>Estructura de intervalos</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {planSessionForm.structureRows.map((row, idx) => (
-                <div
-                  key={idx}
-                  style={{
-                    border: "1px solid #e2e8f0",
-                    borderRadius: 10,
-                    padding: "12px 12px",
-                    background: "#f8fafc",
-                  }}
-                >
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 8 }}>
-                    <span style={{ fontSize: ".75em", fontWeight: 800, color: "#334155" }}>Paso {idx + 1}</span>
-                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                      <button
-                        type="button"
-                        disabled={idx === 0}
-                        onClick={() => movePlanSessionStructureRow(idx, -1)}
-                        style={{
-                          background: idx === 0 ? "#f1f5f9" : "#fff",
-                          border: "1px solid #e2e8f0",
-                          borderRadius: 6,
-                          padding: "4px 10px",
-                          fontSize: ".72em",
-                          cursor: idx === 0 ? "not-allowed" : "pointer",
-                          fontFamily: "inherit",
-                          fontWeight: 700,
-                        }}
-                      >
-                        ↑
-                      </button>
-                      <button
-                        type="button"
-                        disabled={idx >= planSessionForm.structureRows.length - 1}
-                        onClick={() => movePlanSessionStructureRow(idx, 1)}
-                        style={{
-                          background: idx >= planSessionForm.structureRows.length - 1 ? "#f1f5f9" : "#fff",
-                          border: "1px solid #e2e8f0",
-                          borderRadius: 6,
-                          padding: "4px 10px",
-                          fontSize: ".72em",
-                          cursor: idx >= planSessionForm.structureRows.length - 1 ? "not-allowed" : "pointer",
-                          fontFamily: "inherit",
-                          fontWeight: 700,
-                        }}
-                      >
-                        ↓
-                      </button>
-                      <button
-                        type="button"
-                        disabled={planSessionForm.structureRows.length <= 1}
-                        onClick={() =>
-                          setPlanSessionForm((f) => ({
-                            ...f,
-                            structureRows: f.structureRows.length <= 1 ? f.structureRows : f.structureRows.filter((_, j) => j !== idx),
-                          }))
-                        }
-                        style={{
-                          background: "transparent",
-                          border: "1px solid #fecaca",
-                          borderRadius: 6,
-                          padding: "4px 10px",
-                          fontSize: ".72em",
-                          color: planSessionForm.structureRows.length <= 1 ? "#cbd5e1" : "#b91c1c",
-                          cursor: planSessionForm.structureRows.length <= 1 ? "not-allowed" : "pointer",
-                          fontFamily: "inherit",
-                          fontWeight: 700,
-                        }}
-                      >
-                        🗑️
-                      </button>
-                    </div>
-                  </div>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 8 }}>
-                    <div>
-                      <div style={{ fontSize: ".65em", color: "#94a3b8", marginBottom: 4 }}>Tipo de bloque</div>
-                      <select
-                        value={row.block_type}
-                        onChange={(e) =>
-                          setPlanSessionForm((f) => {
-                            const next = [...f.structureRows];
-                            next[idx] = { ...next[idx], block_type: e.target.value };
-                            return { ...f, structureRows: next };
-                          })
-                        }
-                        style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", fontSize: ".82em", fontFamily: "inherit", boxSizing: "border-box" }}
-                      >
-                        {WORKOUT_BLOCK_TYPES.map((bt) => (
-                          <option key={bt} value={bt}>
-                            {bt}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <div style={{ fontSize: ".65em", color: "#94a3b8", marginBottom: 4 }}>Duración (minutos)</div>
-                      <input
-                        value={row.duration_min}
-                        onChange={(e) =>
-                          setPlanSessionForm((f) => {
-                            const next = [...f.structureRows];
-                            next[idx] = { ...next[idx], duration_min: e.target.value };
-                            return { ...f, structureRows: next };
-                          })
-                        }
-                        placeholder="Ej: 12"
-                        style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", fontSize: ".82em", fontFamily: "inherit", boxSizing: "border-box" }}
-                      />
-                    </div>
-                    <div>
-                      <div style={{ fontSize: ".65em", color: "#94a3b8", marginBottom: 4 }}>Distancia (km)</div>
-                      <input
-                        value={row.distance_km}
-                        onChange={(e) =>
-                          setPlanSessionForm((f) => {
-                            const next = [...f.structureRows];
-                            next[idx] = { ...next[idx], distance_km: e.target.value };
-                            return { ...f, structureRows: next };
-                          })
-                        }
-                        placeholder="Opcional"
-                        style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", fontSize: ".82em", fontFamily: "inherit", boxSizing: "border-box" }}
-                      />
-                    </div>
-                    <div>
-                      <div style={{ fontSize: ".65em", color: "#94a3b8", marginBottom: 4 }}>Ritmo objetivo (MM:SS /km)</div>
-                      <input
-                        value={row.target_pace}
-                        onChange={(e) =>
-                          setPlanSessionForm((f) => {
-                            const next = [...f.structureRows];
-                            next[idx] = { ...next[idx], target_pace: e.target.value };
-                            return { ...f, structureRows: next };
-                          })
-                        }
-                        placeholder="Ej: 4:30"
-                        style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", fontSize: ".82em", fontFamily: "inherit", boxSizing: "border-box" }}
-                      />
-                    </div>
-                    <div>
-                      <div style={{ fontSize: ".65em", color: "#94a3b8", marginBottom: 4 }}>FC objetivo (lpm)</div>
-                      <input
-                        value={row.target_hr}
-                        onChange={(e) =>
-                          setPlanSessionForm((f) => {
-                            const next = [...f.structureRows];
-                            next[idx] = { ...next[idx], target_hr: e.target.value };
-                            return { ...f, structureRows: next };
-                          })
-                        }
-                        placeholder="Ej: 140-160"
-                        style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", fontSize: ".82em", fontFamily: "inherit", boxSizing: "border-box" }}
-                      />
-                    </div>
-                    <div style={{ gridColumn: "1 / -1" }}>
-                      <div style={{ fontSize: ".65em", color: "#94a3b8", marginBottom: 4 }}>Descripción</div>
-                      <input
-                        value={row.description}
-                        onChange={(e) =>
-                          setPlanSessionForm((f) => {
-                            const next = [...f.structureRows];
-                            next[idx] = { ...next[idx], description: e.target.value };
-                            return { ...f, structureRows: next };
-                          })
-                        }
-                        placeholder="Texto libre"
-                        style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", fontSize: ".82em", fontFamily: "inherit", boxSizing: "border-box" }}
-                      />
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <button
-              type="button"
-              onClick={() => setPlanSessionForm((f) => ({ ...f, structureRows: [...f.structureRows, emptyWorkoutStructureRow()] }))}
-              style={{
-                marginTop: 12,
-                width: "100%",
-                background: "#eff6ff",
-                border: "1px solid #bfdbfe",
-                borderRadius: 8,
-                padding: "10px 14px",
-                color: "#1d4ed8",
-                fontWeight: 800,
-                cursor: "pointer",
-                fontFamily: "inherit",
-                fontSize: ".82em",
-              }}
-            >
-              ➕ Agregar bloque
-            </button>
+            <WorkoutStructureEditor
+              rows={planSessionForm.structureRows}
+              onRowsChange={(rows) => setPlanSessionForm((f) => ({ ...f, structureRows: rows.length ? rows : [emptyWorkoutStructureRow()] }))}
+              title="Estructura de intervalos"
+            />
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18, flexWrap: "wrap" }}>
               <button type="button" onClick={closePlanSessionModal} style={{ border: "1px solid #e2e8f0", borderRadius: 8, background: "#fff", padding: "10px 16px", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, color: "#475569" }}>
                 Cancelar
