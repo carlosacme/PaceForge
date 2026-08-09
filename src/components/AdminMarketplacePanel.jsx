@@ -15,6 +15,7 @@ import {
   normalizeWorkoutStructure,
   formatCopInt,
   getMarketplacePlanWorkoutRows,
+  reconcileWorkoutList,
 } from "./shared/appShared";
 import WorkoutStructureEditor from "./shared/WorkoutStructureEditor";
 
@@ -540,6 +541,7 @@ Reglas de estructura (campo "structure") — mismo formato que el Builder; compa
 - The "duration" field of each block MUST be a plain number followed by a single unit: either "N sec" or "N min" (e.g. "60 sec", "2 min", "15 min"). Do NOT add extra words (no "caminar", no "trote suave", no "aprox"), do NOT use ranges (no "18-20 seg"), do NOT use clock format (no "1:30"), and do NOT use approximations (no "~2 min"). If a block is distance-based, still give a realistic single duration estimate.
 - El campo "pace" de cada bloque es el rango numérico min/km (H:MM-H:MM, guión ASCII) coherente con el esfuerzo del bloque y el level del plan; las recuperaciones usan un ritmo fácil.
 - Los bloques de structure deben ser coherentes con "description" y "pace_range" de la sesión (structure es lo que se ejecuta; description es el texto legible del preview).
+- COHERENCIA NUMÉRICA: "distance_km" tiene que cuadrar con "duration_min" y con los ritmos. Calcula distance_km como la suma de (duración del bloque / ritmo del bloque), y duration_min como el tiempo total. NO devuelvas números redondos que contradigan los ritmos (60 min a 7:30 min/km son 8 km, no 10).
 Reglas de periodización y progresión (obligatorias — el plan NO debe tener semanas casi idénticas):
 PERIODIZACIÓN
 - Divide el plan en fases: BASE (primer 40% de las semanas: volumen aeróbico progresivo, intensidad baja), ESPECÍFICA (siguiente 40%: trabajo a ritmo objetivo, intensidad creciente), y AFINAMIENTO (últimas 2-3 semanas: reducción de volumen 30-50% manteniendo intensidad).
@@ -615,7 +617,17 @@ DESCANSO Y DISTRIBUCIÓN
         : isPreviewWorkoutRowShape(parsed.preview_workouts)
           ? [parsed.preview_workouts]
           : [];
-      const normalizedPreview = applyMarketplaceAiPaceDefaultsToPreviewRows(rawPreview, resolvedLevel);
+      const withPaces = applyMarketplaceAiPaceDefaultsToPreviewRows(rawPreview, resolvedLevel);
+      // Los ritmos ya estan puestos, asi que ahora se puede cuadrar la
+      // distancia con la duracion de cada sesion (aqui el campo es
+      // distance_km, no total_km).
+      const { list: normalizedPreview, fixed: reconciledCount } = reconcileWorkoutList(withPaces, {
+        kmKey: "distance_km",
+        logLabel: "plan-ia",
+      });
+      if (reconciledCount) {
+        console.log(`[plan-ia] ${reconciledCount} sesiones ajustadas para que distancia y duración cuadren`);
+      }
       setCreateForm((prev) => ({
         ...prev,
         editing_plan_id: null,

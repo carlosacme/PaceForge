@@ -34,6 +34,9 @@ import {
   workoutStructureToEditableRows,
   editableRowsToWorkoutStructure,
   sumStructureRows,
+  reconcileWorkoutList,
+  EASY_SHARE_BY_TYPE,
+  PACE_ZONE_BY_TYPE,
   buildAthleteHrZonesPromptText,
   normalizeAthlete,
   formatDurationClock,
@@ -59,23 +62,6 @@ const DELOAD_FACTOR = 0.65;
 
 /** Bloques seguidos de carga creciente a partir de los que se sugiere bajar. */
 const BLOCKS_BEFORE_DELOAD_HINT = 3;
-
-/**
- * Parte de la sesion que se corre a ritmo facil (calentamiento y vuelta a la
- * calma). En tempo e intervalos el ritmo de las series NO es el ritmo medio de
- * la sesion, y usarlo para convertir km en minutos se queda muy corto.
- */
-const EASY_SHARE_BY_TYPE = { tempo: 0.35, interval: 0.5 };
-
-/** Zona de ritmo que le corresponde a cada tipo de sesion. */
-const PACE_ZONE_BY_TYPE = {
-  easy: "easy",
-  long: "easy",
-  recovery: "recovery",
-  tempo: "tempo",
-  interval: "interval",
-  race: "marathon",
-};
 
 /** Numeros seguidos de una unidad, ignorando los ritmos ("7:55 min/km"). */
 const numbersWithUnit = (text, unit) => {
@@ -892,6 +878,7 @@ VOLUME RULES (percentages of the ${week1Km} km of week 1):
 - Easy runs (Tuesday, Thursday): remaining km at ${paces.easy}; keep the day after a long run or a quality session at ${paces.recovery}
 - Marathon-pace segments (when prescribed): ${paces.marathon}; reps/strides: ${paces.rep}
 - The sum of total_km of the ${daysPerWeek} sessions of week 1 MUST land within ±10% of ${week1Km} km.
+- COHERENCE: in every session total_km MUST be consistent with duration_min and the paces above. Compute total_km as the sum of (block duration / block pace) across the session, and duration_min as its total time. Do NOT output round numbers that contradict the paces (60 min at ${paces.easy} is not 10 km).
 
 SESSION STRUCTURE (fixed weekdays):
 weekday 2 (Tuesday): type "easy" — Rodaje suave, recovery from Sunday's long run
@@ -1001,7 +988,22 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
         notify("El plan no respeta la distribución fija (miércoles tempo, sábado intervalos, domingo largo…). Reintenta la generación.");
         return;
       }
-      const normalizedPlan = { ...parsed, weeks: orderedWeeks };
+      // Cuadrar km y duracion de cada sesion con los ritmos del atleta antes
+      // de mostrar el plan: la IA cumple el volumen semanal pero dentro de
+      // cada sesion suelta numeros redondos que no salen a esos ritmos.
+      let reconciledCount = 0;
+      const reconciledWeeks = orderedWeeks.map((w) => {
+        const { list, fixed } = reconcileWorkoutList(w.workouts, {
+          paceRanges: vdotPaceRanges,
+          logLabel: "plan2-ia",
+        });
+        reconciledCount += fixed;
+        return { ...w, workouts: list };
+      });
+      if (reconciledCount) {
+        console.log(`[plan2-ia] ${reconciledCount} sesiones ajustadas para que km y duración cuadren`);
+      }
+      const normalizedPlan = { ...parsed, weeks: reconciledWeeks };
       setGeneratedPlan(normalizedPlan);
       setShowNextBlockPanel(false);
       setTimeout(() => setOpenWeeks(new Set([1, 2])), 100);

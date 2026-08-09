@@ -22,7 +22,9 @@ import {
   normalizeLibraryRow,
   styles,
   WORKOUT_BLOCK_COLORS,
+  reconcileWorkoutKmDuration,
 } from "./shared/appShared";
+import { fmtPace } from "../lib/vdot";
 import WorkoutStructureEditor from "./shared/WorkoutStructureEditor";
 
 const WorkoutStructureTable = ({ structure = [] }) => {
@@ -292,7 +294,7 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
       const hrAthlete = builderHrAthleteId ? athletes.find((a) => String(a.id) === String(builderHrAthleteId)) : null;
       const zonesBlock = hrAthlete ? buildAthleteHrZonesPromptText(hrAthlete) : "";
       const baseSystem =
-        'You are an elite running coach. Generate a structured workout in JSON only. No markdown, no backticks. Format: {"title":"...","type":"easy|tempo|interval|long|recovery","total_km":number,"duration_min":number,"description":"...","structure":[{"phase":"...","duration":"...","intensity":"...","pace":"..."}]}. NEVER collapse repeated intervals into one block. For 8x400m, output 8 SEPARATE repetition blocks, each named "Repetition N - 400m", each followed by its own recovery block (except the last, followed by cooldown). For distance-based intervals, name each block with the distance (e.g. "Repetition 3 - 400m"). Always use HR zone notation Z1-Z5 with bpm in the intensity field. The \'duration\' field of each block MUST be a plain number followed by a single unit: either \'N sec\' or \'N min\' (e.g. \'60 sec\', \'2 min\', \'15 min\'). Do NOT add extra words (no \'caminar\', no \'trote suave\', no \'aprox\'), do NOT use ranges (no \'18-20 seg\'), do NOT use clock format (no \'1:30\'), and do NOT use approximations (no \'~2 min\'). If a block is distance-based, still give a realistic single duration estimate.';
+        'You are an elite running coach. Generate a structured workout in JSON only. No markdown, no backticks. Format: {"title":"...","type":"easy|tempo|interval|long|recovery","total_km":number,"duration_min":number,"description":"...","structure":[{"phase":"...","duration":"...","intensity":"...","pace":"..."}]}. NEVER collapse repeated intervals into one block. For 8x400m, output 8 SEPARATE repetition blocks, each named "Repetition N - 400m", each followed by its own recovery block (except the last, followed by cooldown). For distance-based intervals, name each block with the distance (e.g. "Repetition 3 - 400m"). Always use HR zone notation Z1-Z5 with bpm in the intensity field. The \'duration\' field of each block MUST be a plain number followed by a single unit: either \'N sec\' or \'N min\' (e.g. \'60 sec\', \'2 min\', \'15 min\'). Do NOT add extra words (no \'caminar\', no \'trote suave\', no \'aprox\'), do NOT use ranges (no \'18-20 seg\'), do NOT use clock format (no \'1:30\'), and do NOT use approximations (no \'~2 min\'). If a block is distance-based, still give a realistic single duration estimate. total_km MUST be consistent with duration_min and the paces of the blocks: compute total_km as the sum of (block duration / block pace) across all blocks, and duration_min as the sum of the block durations. Do NOT output round numbers that contradict the paces (a 60 min run at 7:30 min/km is 8 km, not 10).';
       const system = zonesBlock
         ? `${baseSystem}\n\n${zonesBlock}\nWhen setting structure, align intensity with these HR zones where it fits (reference bpm or zone Z1-Z5 in the intensity field when useful).`
         : baseSystem;
@@ -321,7 +323,15 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
         setAiWorkout(null);
         return;
       }
-      setAiWorkout(JSON.parse(text));
+      // La IA a veces devuelve una distancia redonda que no cuadra con la
+      // duracion a los ritmos que ella misma escribio. Se cuadra antes de
+      // mostrarla: el coach no tiene por que revisar la aritmetica.
+      const { workout: reconciled, changed, field, from, to, paceSecs, paceSource, reason } =
+        reconcileWorkoutKmDuration(JSON.parse(text));
+      if (changed) {
+        console.log(`[builder-ia] ${field} ${from} -> ${to} (${reason}, ritmo ${fmtPace(paceSecs)} min/km desde ${paceSource})`);
+      }
+      setAiWorkout(reconciled);
       await incrementGenerationCounter();
     } catch { setAiWorkout(null); }
     finally { setAiLoading(false); }

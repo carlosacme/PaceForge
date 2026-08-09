@@ -1,7 +1,13 @@
 import FitParser from "fit-file-parser";
 import { supabase } from "../../lib/supabase";
 import { readStructure } from "../../lib/workoutStructure";
-import { PACE_RANGES_BY_LEVEL, normalizeRacePriority } from "../../lib/vdot";
+import {
+  PACE_RANGES_BY_LEVEL,
+  normalizeRacePriority,
+  midPaceSecondsFromRange,
+  extractPaceSecondsFromText,
+  fmtPace,
+} from "../../lib/vdot";
 import { distKmFromLabel } from "../../lib/intervals";
 
 export const BRAND_NAME = "RunningApexFlow";
@@ -681,6 +687,161 @@ export const editableRowsToWorkoutStructure = (rows) => {
     })
     .filter(Boolean);
   return out;
+};
+
+/**
+ * Parte de la sesion que se corre a ritmo facil (calentamiento y vuelta a la
+ * calma). En tempo e intervalos el ritmo de las series NO es el ritmo medio de
+ * la sesion, y usarlo para convertir km en minutos se queda muy corto.
+ */
+export const EASY_SHARE_BY_TYPE = { tempo: 0.35, interval: 0.5 };
+
+/** Zona de ritmo que le corresponde a cada tipo de sesion. */
+export const PACE_ZONE_BY_TYPE = {
+  easy: "easy",
+  long: "easy",
+  recovery: "recovery",
+  tempo: "tempo",
+  interval: "interval",
+  race: "marathon",
+};
+
+/**
+ * Tipos en los que manda la distancia. Un rodaje largo se prescribe en km
+ * ("hoy toca el largo de 25 km"); el resto se prescribe en tiempo, asi que si
+ * los numeros no cuadran se corrigen los km, no los minutos.
+ */
+const KM_PRIMARY_TYPES = new Set(["long"]);
+
+/** Discrepancia relativa a partir de la que se considera incoherente. */
+export const KM_DURATION_TOLERANCE = 0.05;
+
+/**
+ * Ritmo medio de una sesion en segundos por km, con su procedencia.
+ *
+ * Prioridad: los bloques del structure (tiempo total / distancia total, que es
+ * el ritmo real de la sesion incluyendo recuperaciones), el pace_range de la
+ * propia sesion, la mezcla por tipo con los ritmos del VDOT del atleta y, por
+ * ultimo, el ritmo que la IA escribio en la descripcion. null si no hay nada.
+ */
+export const sessionMeanPaceSeconds = (workout, { paceRanges = null } = {}) => {
+  const type = String(workout?.type || "").toLowerCase();
+
+  const blocks = normalizeWorkoutStructure(readStructure(workout));
+  if (blocks.length) {
+    let seconds = 0;
+    let km = 0;
+    let resolved = 0;
+    for (const b of blocks) {
+      const durMin = blockDurationToMinutes(b.duration_min);
+      const paceSecs = midPaceSecondsFromRange(b.target_pace);
+      const distRaw = Number(String(b.distance_km ?? "").replace(",", "."));
+      const dist = Number.isFinite(distRaw) && distRaw > 0 ? distRaw : null;
+      if (durMin != null && paceSecs) {
+        seconds += durMin * 60;
+        km += (durMin * 60) / paceSecs;
+        resolved += 1;
+      } else if (dist != null && paceSecs) {
+        seconds += dist * paceSecs;
+        km += dist;
+        resolved += 1;
+      } else if (dist != null && durMin != null) {
+        seconds += durMin * 60;
+        km += dist;
+        resolved += 1;
+      }
+    }
+    // Solo sirve si TODOS los bloques aportaron datos: con la mitad resueltos
+    // el "ritmo medio" seria el de un trozo de la sesion, no el de la sesion.
+    if (resolved === blocks.length && km > 0 && seconds > 0) {
+      return { secs: seconds / km, source: "bloques" };
+    }
+  }
+
+  const fromField = midPaceSecondsFromRange(workout?.pace_range);
+  if (fromField) return { secs: fromField, source: "pace_range" };
+
+  // Mismo orden que el editor manual (editPace en Plan2Weeks), para que la
+  // correccion automatica y la manual usen el mismo ritmo.
+  const zoneKey = PACE_ZONE_BY_TYPE[type] || "easy";
+  const zoneSecs = paceRanges?.[zoneKey] ? midPaceSecondsFromRange(paceRanges[zoneKey].pace_range) : null;
+  const easySecs = paceRanges?.easy ? midPaceSecondsFromRange(paceRanges.easy.pace_range) : null;
+  const easyShare = EASY_SHARE_BY_TYPE[type];
+  if (easyShare && zoneSecs && easySecs) {
+    return { secs: zoneSecs * (1 - easyShare) + easySecs * easyShare, source: "VDOT (calentamiento + series)" };
+  }
+
+  const fromText = extractPaceSecondsFromText(workout?.description);
+  if (fromText) return { secs: fromText, source: "descripción" };
+
+  if (zoneSecs) return { secs: zoneSecs, source: `zona ${zoneKey} del VDOT` };
+
+  return null;
+};
+
+/**
+ * Cuadra los km y los minutos de una sesion generada por IA.
+ *
+ * La IA devuelve total_km y duration_min como campos independientes y a veces
+ * suelta un numero redondo que no cuadra con los ritmos ("10 km en 60 min" a
+ * 7:30 min/km son 8 km, no 10). Esto recalcula el campo secundario a partir
+ * del primario y del ritmo medio, para que lo que ve el atleta sea coherente.
+ *
+ * No toca la estructura de bloques ni ningun otro campo.
+ *
+ * @returns {{workout: object, changed: boolean, field?: string, from?: number,
+ *   to?: number, paceSecs?: number, paceSource?: string, reason: string}}
+ */
+export const reconcileWorkoutKmDuration = (workout, { paceRanges = null, tolerance = KM_DURATION_TOLERANCE, kmKey = null } = {}) => {
+  if (!workout || typeof workout !== "object") return { workout, changed: false, reason: "sesión vacía" };
+
+  // El marketplace guarda la distancia en distance_km; el resto en total_km.
+  const key = kmKey
+    || (workout.total_km != null ? "total_km" : workout.distance_km != null ? "distance_km" : "total_km");
+  const km = Number(workout[key]);
+  const min = Number(workout.duration_min);
+  const kmOk = Number.isFinite(km) && km > 0;
+  const minOk = Number.isFinite(min) && min > 0;
+  if (!kmOk && !minOk) return { workout, changed: false, reason: "sin km ni duración" };
+
+  const pace = sessionMeanPaceSeconds(workout, { paceRanges });
+  if (!pace?.secs) return { workout, changed: false, reason: "sin ritmo de referencia" };
+
+  const kmFromMin = Math.round(((min * 60) / pace.secs) * 10) / 10;
+  const minFromKm = Math.round((km * pace.secs) / 60);
+  const meta = { paceSecs: pace.secs, paceSource: pace.source };
+
+  if (!kmOk) {
+    return { workout: { ...workout, [key]: kmFromMin }, changed: true, field: key, from: km || 0, to: kmFromMin, reason: "faltaban los km", ...meta };
+  }
+  if (!minOk) {
+    return { workout: { ...workout, duration_min: minFromKm }, changed: true, field: "duration_min", from: min || 0, to: minFromKm, reason: "faltaba la duración", ...meta };
+  }
+
+  const drift = Math.abs(minFromKm - min) / min;
+  if (drift <= tolerance) return { workout, changed: false, reason: "coherente", ...meta };
+
+  if (KM_PRIMARY_TYPES.has(String(workout.type || "").toLowerCase())) {
+    return { workout: { ...workout, duration_min: minFromKm }, changed: true, field: "duration_min", from: min, to: minFromKm, reason: "la distancia manda en el rodaje largo", ...meta };
+  }
+  return { workout: { ...workout, [key]: kmFromMin }, changed: true, field: key, from: km, to: kmFromMin, reason: "la duración manda en esta sesión", ...meta };
+};
+
+/** Aplica reconcileWorkoutKmDuration a una lista y loguea lo que corrigió. */
+export const reconcileWorkoutList = (list, { paceRanges = null, kmKey = null, logLabel = "ia" } = {}) => {
+  let fixed = 0;
+  const out = (Array.isArray(list) ? list : []).map((wo) => {
+    const r = reconcileWorkoutKmDuration(wo, { paceRanges, kmKey });
+    if (r.changed) {
+      fixed += 1;
+      console.log(
+        `[${logLabel}] "${wo?.title || "sesión"}": ${r.field} ${r.from} -> ${r.to}`,
+        `(${r.reason}, ritmo ${fmtPace(r.paceSecs)} min/km desde ${r.paceSource})`,
+      );
+    }
+    return r.workout;
+  });
+  return { list: out, fixed };
 };
 
 export const normalizeLibraryRow = (row) => {
