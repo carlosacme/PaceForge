@@ -21,12 +21,11 @@
 -- Importa especialmente porque el chat usa Supabase Realtime, que respeta RLS:
 -- una policy mal escrita hace que los eventos no lleguen, sin ningun error.
 --
--- STAFF: ademas del coach dueño, el staff con el atleta asignado en
--- staff_athletes escribe y borra como 'coach'. Funciona porque la policy de
--- SELECT de staff_athletes ya permite staff_id = auth.uid(), y las subconsultas
--- de una policy tambien pasan por RLS. OJO: las policies de SELECT y UPDATE de
--- messages NO incluyen al staff, asi que hoy podria escribir sin poder leer el
--- historial. Si el staff va a usar el chat de verdad, hay que ampliarlas igual.
+-- STAFF: a proposito NO se incluye a staff_athletes en ninguna rama. Las
+-- policies de SELECT y UPDATE no contemplan al staff, asi que darle INSERT y
+-- DELETE lo dejaria escribiendo y borrando mensajes que no puede leer. Hoy
+-- ningun flujo de la app escribe en el chat como staff. Cuando haga falta, se
+-- añade a las CUATRO policies de una vez.
 
 ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
 
@@ -51,15 +50,6 @@ CREATE POLICY "Usuario inserta mensajes"
   WITH CHECK (
     -- El coach dueño de la conversacion escribiendo como coach
     (coach_id = auth.uid() AND sender_role = 'coach')
-    -- El staff con ese atleta asignado, tambien como coach
-    OR (
-      sender_role = 'coach'
-      AND EXISTS (
-        SELECT 1 FROM public.staff_athletes sa
-        WHERE sa.staff_id = auth.uid()
-          AND sa.athlete_id = messages.athlete_id
-      )
-    )
     -- El atleta de esa conversacion escribiendo como atleta
     OR (
       sender_role = 'athlete'
@@ -75,16 +65,20 @@ CREATE POLICY "Usuario inserta mensajes"
   );
 
 -- ---------------------------------------------------------------
--- DELETE: mismo criterio de participante que SELECT y UPDATE, mas
--- el staff asignado. El coach borra la conversacion con SU atleta;
--- el staff, la de los atletas que tiene asignados; el atleta, los
--- mensajes de su propia conversacion; el admin, cualquiera (lo
+-- DELETE: exactamente el mismo criterio de participante que SELECT
+-- y UPDATE. El coach borra la conversacion con SU atleta; el atleta
+-- los mensajes de su propia conversacion; el admin, cualquiera (lo
 -- necesita el borrado de atleta desde el panel de admin).
 --
+-- La rama del atleta NO lleva a.coach_id = messages.coach_id, al
+-- contrario que en el INSERT: aqui el criterio debe coincidir con
+-- el de SELECT, o el atleta veria mensajes viejos (de un coach
+-- anterior) que no puede borrar.
+--
 -- Se resuelve al atleta SOLO por athletes.user_id, sin el fallback
--- por email que traia 0015, para que DELETE, SELECT y UPDATE usen
--- exactamente el mismo criterio. Hoy los 7 atletas tienen user_id,
--- y sin user_id el atleta ya no puede ni leer sus mensajes.
+-- por email que traia 0015, por el mismo motivo de coherencia. Hoy
+-- los 7 atletas tienen user_id, y sin user_id el atleta ya no puede
+-- ni leer sus mensajes.
 -- ---------------------------------------------------------------
 DROP POLICY IF EXISTS "messages_delete_coach"        ON public.messages;
 DROP POLICY IF EXISTS "messages_delete_athlete"      ON public.messages;
@@ -95,11 +89,6 @@ CREATE POLICY "Usuario borra sus mensajes"
   USING (
     coach_id = auth.uid()
     OR public.is_admin()
-    OR EXISTS (
-      SELECT 1 FROM public.staff_athletes sa
-      WHERE sa.staff_id = auth.uid()
-        AND sa.athlete_id = messages.athlete_id
-    )
     OR EXISTS (
       SELECT 1 FROM public.athletes a
       WHERE a.id = messages.athlete_id
