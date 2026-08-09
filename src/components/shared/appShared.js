@@ -1073,14 +1073,26 @@ export const PLAN2_TRAINING_DAY_OPTIONS = [
 
 export const PLAN2_ATHLETE_STORAGE_KEY = "raf_plan2_athlete";
 
+/**
+ * Plantilla fija del plan de 2 semanas.
+ *
+ * El largo va en DOMINGO: es la sesion mas larga (puede pasar de 18 km) y
+ * necesita una mañana libre y el resto del dia para recuperar. Antes caia en
+ * martes, dia laborable, y ademas habia dos sesiones "long".
+ *
+ * Lunes y viernes son descanso, asi que las dos sesiones de calidad (miercoles
+ * tempo y sabado intervalos) nunca caen en dias consecutivos.
+ */
 const PLAN2_FIXED_SLOTS = [
-  { weekday: 2, type: "long" },
+  { weekday: 2, type: "easy" },
   { weekday: 3, type: "tempo" },
-  { weekday: 4, type: "recovery" },
+  { weekday: 4, type: "easy" },
   { weekday: 6, type: "interval" },
   { weekday: 7, type: "long" },
 ];
-const PLAN2_OMIT_ORDER = [7, 4, 3];
+// Se cae primero el jueves y luego el martes (los rodajes suaves). El domingo
+// no se descarta nunca: sin largo no hay plan.
+const PLAN2_OMIT_ORDER = [4, 2, 3];
 
 export const getPlan2ExpectedSlots = (sessionsPerWeek) => {
   let slots = [...PLAN2_FIXED_SLOTS];

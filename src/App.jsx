@@ -315,42 +315,6 @@ const PLAN2_TRAINING_DAY_OPTIONS = [
 ];
 const PLAN2_ATHLETE_STORAGE_KEY = "raf_plan2_athlete";
 
-/** Plantilla fija plan 2 semanas: omitir domingo, luego jueves, luego miércoles si N<5 */
-const PLAN2_FIXED_SLOTS = [
-  { weekday: 2, type: "long" },
-  { weekday: 3, type: "tempo" },
-  { weekday: 4, type: "recovery" },
-  { weekday: 6, type: "interval" },
-  { weekday: 7, type: "long" },
-];
-const PLAN2_OMIT_ORDER = [7, 4, 3];
-
-const getPlan2ExpectedSlots = (sessionsPerWeek) => {
-  let slots = [...PLAN2_FIXED_SLOTS];
-  for (const wd of PLAN2_OMIT_ORDER) {
-    if (slots.length <= sessionsPerWeek) break;
-    slots = slots.filter((s) => s.weekday !== wd);
-  }
-  return slots;
-};
-
-const validatePlan2Distribution = (weeks, sessionsPerWeek) => {
-  const expected = getPlan2ExpectedSlots(sessionsPerWeek);
-  if (expected.length !== sessionsPerWeek) return "template";
-  for (const week of weeks) {
-    const list = Array.isArray(week.workouts) ? week.workouts : [];
-    if (list.length !== sessionsPerWeek) return "count";
-    const byWd = new Map(list.map((w) => [Number(w.weekday), w]));
-    for (const slot of expected) {
-      const wo = byWd.get(slot.weekday);
-      if (!wo) return "missing";
-      if (wo.type !== slot.type) return "type";
-    }
-    if (byWd.size !== expected.length) return "extra";
-  }
-  return null;
-};
-
 const clampWorkoutRpe = (n) => {
   const v = Number(n);
   if (!Number.isFinite(v)) return null;

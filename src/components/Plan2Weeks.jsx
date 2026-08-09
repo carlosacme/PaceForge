@@ -94,7 +94,7 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, profileRole, onG
   const [currentBlock, setCurrentBlock] = useState(1);
   const [nextBlockParams, setNextBlockParams] = usePersistedState(`raf_plan2_nextBlock_${athleteStorageKey}`, {
     vdot: "",
-    trainingDays: [2, 3, 6],
+    trainingDays: [3, 6, 7],
     focus: PLAN2_NEXT_BLOCK_FOCUSES[0],
     notes: "",
   });
@@ -128,10 +128,16 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, profileRole, onG
     () => (athletes || []).find((a) => String(a.id) === String(athleteId)) || null,
     [athletes, athleteId],
   );
+  // Los dias los fija la plantilla segun el numero de sesiones, no la seleccion
+  // del coach: la validacion posterior exige justamente esos weekdays, y si el
+  // prompt pedia otros la generacion se rechazaba sola.
   const selectedTrainingDaysText = useMemo(() => {
-    const selected = PLAN2_TRAINING_DAY_OPTIONS.filter((d) => nextBlockParams.trainingDays.includes(d.weekday));
-    return selected.map((d) => `${d.label}(${d.weekday})`).join(", ");
-  }, [nextBlockParams.trainingDays]);
+    const expected = getPlan2ExpectedSlots(daysPerWeek).map((s) => s.weekday);
+    return PLAN2_TRAINING_DAY_OPTIONS
+      .filter((d) => expected.includes(d.weekday))
+      .map((d) => `${d.label}(${d.weekday})`)
+      .join(", ");
+  }, [daysPerWeek]);
   const levelLabel = useMemo(
     () => PLAN_12_LEVELS.find((l) => l.id === levelId)?.label || levelId,
     [levelId],
@@ -598,7 +604,9 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, profileRole, onG
         : [...prev.trainingDays, weekday].sort((a, b) => a - b);
       const nextSessions = Math.min(5, Math.max(3, nextDays.length || 3));
       setDaysPerWeek(nextSessions);
-      return { ...prev, trainingDays: nextDays };
+      // Los dias salen de la plantilla: al quitar uno se recalcula que dia cae
+      // de verdad (primero el jueves, luego el martes), nunca el domingo.
+      return { ...prev, trainingDays: getPlan2ExpectedSlots(nextSessions).map((s) => s.weekday) };
     });
   };
 
@@ -779,7 +787,7 @@ ATHLETE PROFILE:
 - Block start date: ${blockStartDate}. Week 1 starts on this date, week 2 starts 7 days later.
 - Previous block summary: ${prevBlockSummary}
 - Current weekly volume: ${declaredVolumeText}
-- Preferred weekdays (1=Mon..7=Sun): ${selectedTrainingDaysText || "2,3,4,6,7"}
+- Training weekdays for ${daysPerWeek} sessions, fixed by the template (1=Mon..7=Sun): ${selectedTrainingDaysText || "3,6,7"}
 ${raceProfileLines.length ? `${raceProfileLines.join("\n")}\n` : ""}
 WEEKLY VOLUME (hard requirement, this athlete's real training load):
 - Week 1 total volume MUST be approximately ${week1Km} km (sum of the ${daysPerWeek} sessions, ±10%).${week1Info.cutPct ? ` This week is already reduced ${week1Info.cutPct}% for the race (normal load would be ${week1Info.normalKm} km).` : ` ${progressionText}${vol.cappedByLevel ? ` It is also trimmed by the level safety cap (${vol.capKm} km).` : ""}`}
@@ -821,23 +829,26 @@ PERIODIZATION:
 - Coach notes: ${nextBlockParams.notes || "none"}
 
 VOLUME RULES (percentages of the ${week1Km} km of week 1):
-- Easy/Long runs: 30-40% of weekly km, pace ${paces.easy}
+- Sunday long run: 25-35% of weekly km, pace ${paces.easy}
 - Tempo runs: 20-25% of weekly km at ${paces.tempo}
 - Intervals: 15-20% of weekly km at ${paces.interval}, following the QUALITY WORK section above (warmup and cooldown included in the session km)
-- Recovery runs: remaining km at ${paces.recovery}
+- Easy runs (Tuesday, Thursday): remaining km at ${paces.easy}; keep the day after a long run or a quality session at ${paces.recovery}
 - Marathon-pace segments (when prescribed): ${paces.marathon}; reps/strides: ${paces.rep}
 - The sum of total_km of the ${daysPerWeek} sessions of week 1 MUST land within ±10% of ${week1Km} km.
 
 SESSION STRUCTURE (fixed weekdays):
-weekday 2 (Tuesday): type "long" — Rodaje largo at easy pace
-weekday 3 (Wednesday): type "tempo" — Tempo run
-weekday 4 (Thursday): type "recovery" — Recuperación suave
-weekday 6 (Saturday): type "interval" — Intervalos
-weekday 7 (Sunday): type "long" — Largo suave
-If N<5 sessions, drop in order: Sunday(7), Thursday(4), Wednesday(3).
+weekday 2 (Tuesday): type "easy" — Rodaje suave, recovery from Sunday's long run
+weekday 3 (Wednesday): type "tempo" — Tempo run (quality session)
+weekday 4 (Thursday): type "easy" — Rodaje suave
+weekday 6 (Saturday): type "interval" — Intervalos (quality session, legs fresh after Friday rest)
+weekday 7 (Sunday): type "long" — Rodaje largo, THE LONGEST SESSION OF THE WEEK
+If N<5 sessions, drop in order: Thursday(4), then Tuesday(2). NEVER drop Sunday(7): the long run is the most important session of the plan.
+- The Sunday long run must be the longest session of the week, typically 25-35% of weekly volume.
+- Never schedule two quality sessions (tempo, interval) on consecutive days. There must be at least one easy day between them.
+- Monday and Friday are rest days by default.
 
 OUTPUT JSON SCHEMA:
-{"plan_title":"string","weeks":[{"week_number":1,"focus":"string","workouts":[{"weekday":2,"title":"string","type":"long|tempo|recovery|interval","total_km":0,"duration_min":0,"description":"Include specific pace, sets/reps for intervals, warmup/cooldown"}]}]}
+{"plan_title":"string","weeks":[{"week_number":1,"focus":"string","workouts":[{"weekday":2,"title":"string","type":"easy|tempo|interval|long","total_km":0,"duration_min":0,"description":"Include specific pace, sets/reps for intervals, warmup/cooldown"}]}]}
 
 Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays both weeks, all numeric fields must be numbers, description must include specific paces from above.`;
   }, [competition, targetTime, levelId, levelLabel, daysPerWeek, startDate, currentBlock, nextBlockParams, selectedTrainingDaysText, blockHistory, vdotPaceRanges, volumePlan, blockWeekTargets, raceContext, isDeloadBlock]);
@@ -915,7 +926,7 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
       }
       const distErr = validatePlan2Distribution(orderedWeeks, daysPerWeek);
       if (distErr) {
-        notify("El plan no respeta la distribución fija (martes largo, miércoles tempo, etc.). Reintenta la generación.");
+        notify("El plan no respeta la distribución fija (miércoles tempo, sábado intervalos, domingo largo…). Reintenta la generación.");
         return;
       }
       const normalizedPlan = { ...parsed, weeks: orderedWeeks };
@@ -1180,7 +1191,7 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
       <div style={{ marginBottom: 24 }}>
         <h1 style={S.pageTitle}>Plan 2 Semanas</h1>
         <p style={{ color: "#475569", fontSize: ".82em", marginTop: 4 }}>
-          Distribución fija: mar largo · mié tempo · jue recuperación · sáb intervalos · dom largo. Con menos de 5 sesiones se quitan primero domingo, luego jueves y miércoles. Semana 2 = semana de carrera.
+          Distribución fija: mar suave · mié tempo · jue suave · sáb intervalos · dom largo (la sesión más larga). Lunes y viernes descansan. Con menos de 5 sesiones se quitan primero el jueves y luego el martes; el domingo nunca se quita.
         </p>
         <div style={{ marginTop: 8, color: isAdminRole ? "#16a34a" : "#64748b", fontSize: ".8em", fontWeight: 600 }}>
           {isAdminRole ? "Generaciones ilimitadas ∞" : isBasicPlan ? `${loadingGenerations ? "…" : monthGenerations} / 100 generaciones usadas este mes` : "Ilimitado"}
@@ -1461,6 +1472,9 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
                 </div>
                 <div>
                   <div style={labelStyle}>Días de entrenamiento</div>
+                  <div style={{ color: "#64748b", fontSize: ".72em", lineHeight: 1.4, marginBottom: 6 }}>
+                    Los fija la plantilla según el número de sesiones: el domingo (largo) siempre entra.
+                  </div>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 8 }}>
                     {PLAN2_TRAINING_DAY_OPTIONS.map((day) => {
                       const checked = nextBlockParams.trainingDays.includes(day.weekday);
