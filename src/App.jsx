@@ -4264,6 +4264,10 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
   });
   const [raceMoveDate, setRaceMoveDate] = useState("");
   const [raceActionBusy, setRaceActionBusy] = useState(false);
+  const [rangeDeleteOpen, setRangeDeleteOpen] = useState(false);
+  const [rangeDeleteFrom, setRangeDeleteFrom] = useState("");
+  const [rangeDeleteTo, setRangeDeleteTo] = useState("");
+  const [rangeDeleteBusy, setRangeDeleteBusy] = useState(false);
   const [chatClearing, setChatClearing] = useState(false);
 const [expandedWorkoutLogs, setExpandedWorkoutLogs] = useState({});
 const [coachAnalysisModal, setCoachAnalysisModal] = useState(null);
@@ -4864,6 +4868,106 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
     notify?.("Workout eliminado");
   };
 
+  /** Fecha legible a partir de un YYYY-MM-DD, sin desfase de zona horaria. */
+  const rangeDayLabel = (ymd) => {
+    if (!ymd) return "";
+    const d = new Date(`${ymd}T12:00:00`);
+    if (Number.isNaN(d.getTime())) return ymd;
+    return d.toLocaleDateString("es-CO", { day: "2-digit", month: "short", year: "numeric" });
+  };
+
+  const openRangeDeleteModal = () => {
+    // Arranca con el mes que el coach esta viendo: es el rango que va a querer
+    // limpiar el 90% de las veces.
+    const { y, m } = calendarViewMonth;
+    setRangeDeleteFrom(formatLocalYMD(new Date(y, m, 1)));
+    setRangeDeleteTo(formatLocalYMD(new Date(y, m + 1, 0)));
+    setRangeDeleteOpen(true);
+  };
+
+  const rangeDeleteValid = Boolean(rangeDeleteFrom && rangeDeleteTo && rangeDeleteFrom <= rangeDeleteTo);
+
+  /** Entrenos del atleta actual dentro del rango (scheduled_date es YYYY-MM-DD). */
+  const rangeDeleteWorkouts = useMemo(() => {
+    if (!rangeDeleteValid) return [];
+    return workouts.filter((w) => {
+      const d = String(w?.scheduled_date || "");
+      return d && d >= rangeDeleteFrom && d <= rangeDeleteTo;
+    });
+  }, [workouts, rangeDeleteFrom, rangeDeleteTo, rangeDeleteValid]);
+
+  /** Carreras en el rango: solo para avisar de que NO se van a tocar. */
+  const rangeDeleteRaces = useMemo(() => {
+    if (!rangeDeleteValid) return [];
+    return (races || []).filter((r) => {
+      const d = String(r?.date || "");
+      return d && d >= rangeDeleteFrom && d <= rangeDeleteTo;
+    });
+  }, [races, rangeDeleteFrom, rangeDeleteTo, rangeDeleteValid]);
+
+  const rangeDeleteDoneCount = useMemo(
+    () => rangeDeleteWorkouts.filter((w) => w.done).length,
+    [rangeDeleteWorkouts],
+  );
+
+  const deleteWorkoutsInRange = async () => {
+    if (!athlete?.id) return;
+    if (!rangeDeleteFrom || !rangeDeleteTo) {
+      notify?.("Elige las dos fechas del rango");
+      return;
+    }
+    if (rangeDeleteFrom > rangeDeleteTo) {
+      notify?.('La fecha "Desde" es posterior a "Hasta"');
+      return;
+    }
+    const ids = rangeDeleteWorkouts.map((w) => w.id).filter((id) => id != null);
+    if (!ids.length) {
+      notify?.("No hay entrenos en ese rango");
+      return;
+    }
+    const lines = [
+      `Se eliminarán ${ids.length} ${ids.length === 1 ? "entreno" : "entrenos"} entre ` +
+        `${rangeDayLabel(rangeDeleteFrom)} y ${rangeDayLabel(rangeDeleteTo)}. ` +
+        "Esta acción no se puede deshacer.",
+    ];
+    if (rangeDeleteRaces.length) lines.push("Las carreras en este rango NO se eliminarán.");
+    if (!window.confirm(lines.join("\n\n"))) return;
+
+    setRangeDeleteBusy(true);
+    const prev = workouts;
+    const requested = new Set(ids.map(String));
+    setWorkouts((rows) => rows.filter((x) => !requested.has(String(x.id))));
+    // El .eq("athlete_id") es un cinturon de seguridad: los ids ya salen del
+    // atleta seleccionado, pero asi ni un estado obsoleto puede tocar a otro.
+    const { data, error } = await supabase
+      .from("workouts")
+      .delete()
+      .in("id", ids)
+      .eq("athlete_id", athlete.id)
+      .select("id");
+    setRangeDeleteBusy(false);
+    if (error) {
+      console.error("Error eliminando entrenos por rango:", error);
+      setWorkouts(prev);
+      notify?.(`Error eliminando entrenos: ${error.message}`);
+      return;
+    }
+    // La RLS filtra en silencio lo que no es del coach: se borra sin error pero
+    // con menos filas. Se reconstruye el estado con lo que REALMENTE se borro,
+    // para no dejar en pantalla un calendario que miente.
+    const deletedIds = new Set((data || []).map((r) => String(r.id)));
+    setWorkouts(prev.filter((x) => !deletedIds.has(String(x.id))));
+    if (deletedIds.size === 0) {
+      notify?.("No se eliminó ningún entreno (no tienes permiso sobre esas filas)");
+      return;
+    }
+    if (deletedIds.size < ids.length) {
+      notify?.(`Se eliminaron ${deletedIds.size} de ${ids.length} entrenos (el resto no se pudo borrar por permisos).`);
+    } else {
+      notify?.(`${deletedIds.size} ${deletedIds.size === 1 ? "entreno eliminado" : "entrenos eliminados"}`);
+    }
+    setRangeDeleteOpen(false);
+  };
 
   const loadCoachChat = useCallback(async () => {
     if (!athlete?.id || !coachId) {
@@ -5739,6 +5843,24 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
               >
                 🏁 Agregar Carrera
               </button>
+              <button
+                type="button"
+                onClick={openRangeDeleteModal}
+                title="Eliminar todos los entrenos de un rango de fechas"
+                style={{
+                  background: "#fff",
+                  border: "1px solid #fecaca",
+                  borderRadius: 8,
+                  padding: "6px 12px",
+                  color: "#b91c1c",
+                  fontWeight: 800,
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                  fontSize: ".78em",
+                }}
+              >
+                🗑 Eliminar rango
+              </button>
             </div>
           </div>
           {loadingWorkouts ? (
@@ -6569,6 +6691,98 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
                 style={{ background: raceSaving ? "#e2e8f0" : "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 8, padding: "8px 12px", color: raceSaving ? "#64748b" : "#fff", cursor: raceSaving ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 800, fontSize: ".82em" }}
               >
                 {raceSaving ? "Guardando…" : "Guardar carrera"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {rangeDeleteOpen && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 215, padding: 16 }}>
+          <div style={{ ...S.card, width: "100%", maxWidth: 460, margin: 0 }}>
+            <div style={{ fontSize: ".95em", fontWeight: 800, color: "#0f172a", marginBottom: 4 }}>🗑 Eliminar entrenos por rango</div>
+            <div style={{ fontSize: ".78em", color: "#64748b", marginBottom: 12 }}>
+              Solo se eliminan los entrenos de {athlete?.name || "este atleta"}. Las carreras no se tocan.
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 10 }}>
+              <div>
+                <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Desde</div>
+                <input
+                  type="date"
+                  value={rangeDeleteFrom}
+                  onChange={(e) => setRangeDeleteFrom(e.target.value)}
+                  style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", color: "#0f172a", fontFamily: "inherit", fontSize: ".84em", boxSizing: "border-box" }}
+                />
+              </div>
+              <div>
+                <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Hasta</div>
+                <input
+                  type="date"
+                  value={rangeDeleteTo}
+                  onChange={(e) => setRangeDeleteTo(e.target.value)}
+                  style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", color: "#0f172a", fontFamily: "inherit", fontSize: ".84em", boxSizing: "border-box" }}
+                />
+              </div>
+            </div>
+            <div
+              style={{
+                marginTop: 12,
+                padding: "10px 12px",
+                borderRadius: 10,
+                background: rangeDeleteWorkouts.length ? "#fef2f2" : "#f8fafc",
+                border: `1px solid ${rangeDeleteWorkouts.length ? "#fecaca" : "#e2e8f0"}`,
+                fontSize: ".82em",
+                color: "#334155",
+                lineHeight: 1.5,
+              }}
+            >
+              {!rangeDeleteValid ? (
+                <span>Elige un rango válido: la fecha «Desde» no puede ser posterior a «Hasta».</span>
+              ) : rangeDeleteWorkouts.length === 0 ? (
+                <span>No hay entrenos en ese rango.</span>
+              ) : (
+                <>
+                  <div style={{ fontWeight: 800, color: "#b91c1c" }}>
+                    {rangeDeleteWorkouts.length} {rangeDeleteWorkouts.length === 1 ? "entreno" : "entrenos"} en el rango
+                  </div>
+                  {rangeDeleteDoneCount > 0 ? (
+                    <div style={{ marginTop: 4 }}>
+                      {rangeDeleteDoneCount} {rangeDeleteDoneCount === 1 ? "ya está marcado" : "ya están marcados"} como hechos: se borra también ese historial.
+                    </div>
+                  ) : null}
+                  {rangeDeleteRaces.length > 0 ? (
+                    <div style={{ marginTop: 4, color: "#b45309" }}>
+                      🏁 {rangeDeleteRaces.length} {rangeDeleteRaces.length === 1 ? "carrera" : "carreras"} en este rango NO se eliminarán.
+                    </div>
+                  ) : null}
+                </>
+              )}
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 14 }}>
+              <button
+                type="button"
+                onClick={() => setRangeDeleteOpen(false)}
+                disabled={rangeDeleteBusy}
+                style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 12px", color: "#64748b", cursor: rangeDeleteBusy ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: ".82em" }}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={deleteWorkoutsInRange}
+                disabled={rangeDeleteBusy || !rangeDeleteWorkouts.length}
+                style={{
+                  background: rangeDeleteBusy || !rangeDeleteWorkouts.length ? "#e2e8f0" : "linear-gradient(135deg,#b91c1c,#ef4444)",
+                  border: "none",
+                  borderRadius: 8,
+                  padding: "8px 12px",
+                  color: rangeDeleteBusy || !rangeDeleteWorkouts.length ? "#64748b" : "#fff",
+                  cursor: rangeDeleteBusy || !rangeDeleteWorkouts.length ? "not-allowed" : "pointer",
+                  fontFamily: "inherit",
+                  fontWeight: 800,
+                  fontSize: ".82em",
+                }}
+              >
+                {rangeDeleteBusy ? "Eliminando…" : `Eliminar ${rangeDeleteWorkouts.length || ""} ${rangeDeleteWorkouts.length === 1 ? "entreno" : "entrenos"}`.trim()}
               </button>
             </div>
           </div>
