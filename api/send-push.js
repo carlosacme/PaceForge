@@ -6,6 +6,12 @@ const FCM_SEND_URL = "https://fcm.googleapis.com/v1/projects/runningapexflow/mes
 
 const APP_URL = process.env.APP_URL || "https://www.runningapexflow.com";
 
+// Canal de notificaciones de Android. La app NO declara ninguno todavia (ni por
+// manifest ni con PushNotifications.createChannel), asi que hasta que lo haga
+// el SDK de Firebase cae en su canal de reserva. Mandarlo igual no rompe nada y
+// deja el envio listo para cuando el canal exista, sin tocar el APK.
+const ANDROID_CHANNEL_ID = "fcm_default_channel";
+
 // Traduce el `data` de la notificacion a una URL de la app. El SW/navegador
 // abre esta URL al tocar la notificacion (via webpush.fcm_options.link).
 function buildDeepLink(data) {
@@ -15,6 +21,21 @@ function buildDeepLink(data) {
   if (data.athlete_id) p.set("athlete_id", String(data.athlete_id));
   if (data.workout_id) p.set("workout_id", String(data.workout_id));
   return `${APP_URL}/?${p.toString()}`;
+}
+
+// Agrupa en Android las notificaciones de la misma conversacion: con el mismo
+// tag, el mensaje nuevo REEMPLAZA al anterior en vez de apilar diez avisos del
+// mismo chat, que es justo el comportamiento de cualquier app de mensajeria.
+//
+// Solo se etiquetan los chats. Los avisos de eventos (workout completado, no
+// llego al 100%, solicitud de entrenador) comparten type y athlete_id, asi que
+// un tag comun haria que el ultimo tapara a los anteriores y el coach perderia
+// avisos distintos. Esos se apilan a proposito.
+function androidNotificationTag(data) {
+  const type = data && data.type ? String(data.type) : "";
+  if (!type.includes("chat")) return null;
+  const scope = data.athlete_id ?? data.workout_id;
+  return scope != null ? `${type}-${scope}` : type;
 }
 
 async function sendFCM(token, title, body, data) {
@@ -47,6 +68,18 @@ async function sendFCM(token, title, body, data) {
         .map(([k, v]) => [k, String(v)])
     );
   }
+  // Android nativo (APK) ignora el bloque webpush. priority "high" evita que
+  // Doze retrase la entrega, y el deep link viaja en `data`, que es de donde lo
+  // lee pushNotificationActionPerformed en el cliente Capacitor.
+  message.android = {
+    priority: "high",
+    notification: {
+      channel_id: ANDROID_CHANNEL_ID,
+      default_sound: true,
+    },
+  };
+  const tag = androidNotificationTag(data);
+  if (tag) message.android.notification.tag = tag;
   if (link) {
     message.webpush = {
       notification: { icon: "/pwa-192.png", badge: "/pwa-192.png" },
