@@ -21,6 +21,9 @@ import {
   applyMarketplaceAiPaceDefaultsToPreviewRows,
   getMarketplacePlanWorkoutRows,
   normalizeAthlete,
+  fetchActiveDeviceConnections,
+  providerLabel,
+  formatDeviceSyncDate,
   PAYMENT_METHOD_OPTIONS,
   PAYMENT_PLAN_OPTIONS,
   defaultPaymentAmountStringForPlan,
@@ -3974,6 +3977,52 @@ const AthleteListAvatar = ({ url, fallback = "🏃", size = 32 }) => {
   );
 };
 
+/**
+ * Estado de sincronizacion del atleta en la lista del coach: un badge verde
+ * por cada plataforma conectada (intervals.icu hoy, garmin/coros/strava
+ * despues) o uno gris si no tiene ninguna. Las conexiones llegan ya cargadas
+ * en una sola consulta para toda la lista, no una por atleta.
+ */
+const DeviceConnectionBadges = ({ connections }) => {
+  const list = Array.isArray(connections) ? connections : [];
+  const base = {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 4,
+    borderRadius: 999,
+    padding: "2px 7px",
+    fontSize: ".62em",
+    fontWeight: 700,
+    lineHeight: 1.4,
+    whiteSpace: "nowrap",
+  };
+  if (!list.length) {
+    return (
+      <div style={{ marginTop: 4 }}>
+        <span style={{ ...base, background: "#f1f5f9", color: "#94a3b8" }} title="Sin dispositivos conectados">
+          <span aria-hidden="true">●</span> sin conectar
+        </span>
+      </div>
+    );
+  }
+  return (
+    <div style={{ marginTop: 4, display: "flex", flexWrap: "wrap", gap: 4 }}>
+      {list.map((c, i) => {
+        const label = providerLabel(c.provider);
+        return (
+          <span
+            key={`${c.provider}-${i}`}
+            style={{ ...base, background: "#dcfce7", color: "#166534" }}
+            title={`Conectado a ${label} — última sincronización: ${formatDeviceSyncDate(c.last_pull_at)}`}
+          >
+            <span aria-hidden="true">●</span> {label}
+          </span>
+        );
+      })}
+    </div>
+  );
+};
+
 function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWorkoutsDoneSync, onAthleteFcSync, coachDisplayName, onDeleteAthlete, notify, onOpenInviteModal }) {
   const S = styles;
   const athlete = (selected ? athletes.find(a => String(a.id) === String(selected.id)) : athletes[0]) || null;
@@ -4021,6 +4070,38 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
   const filteredAthletes = normalized
     ? athletes.filter(a => (a.name || "").toLowerCase().includes(normalized) || (a.goal || "").toLowerCase().includes(normalized))
     : athletes;
+
+  // Conexiones de dispositivo de TODA la lista en una sola consulta. La clave
+  // en las dependencias es la lista de ids, no el array: asi no se repite la
+  // consulta cada vez que el padre reconstruye el array de atletas.
+  const [deviceConnections, setDeviceConnections] = useState({});
+  const [deviceConnectionsReady, setDeviceConnectionsReady] = useState(false);
+  const athleteIdsKey = athletes
+    .map((a) => Number(a.id))
+    .filter((n) => Number.isFinite(n))
+    .sort((x, y) => x - y)
+    .join(",");
+
+  useEffect(() => {
+    let cancelled = false;
+    const ids = athleteIdsKey ? athleteIdsKey.split(",").map(Number) : [];
+    if (!ids.length) {
+      setDeviceConnections({});
+      setDeviceConnectionsReady(true);
+      return undefined;
+    }
+    setDeviceConnectionsReady(false);
+    fetchActiveDeviceConnections(ids).then(({ ok, byAthlete }) => {
+      if (cancelled) return;
+      setDeviceConnections(byAthlete);
+      // Si la consulta falla no se pinta nada: decir "sin conectar" cuando en
+      // realidad no pudimos leerlo seria mentir en la ficha del atleta.
+      setDeviceConnectionsReady(ok);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [athleteIdsKey]);
 
   useEffect(() => {
     if (!athlete?.id) {
@@ -5128,6 +5209,7 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: ".85em", fontWeight: 700, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name}</div>
                   <div style={{ fontSize: ".7em", color: "#64748b" }}>{a.pace} · {a.weekly_km}km</div>
+                  {deviceConnectionsReady ? <DeviceConnectionBadges connections={deviceConnections[String(a.id)]} /> : null}
                 </div>
                 <button
                   type="button"

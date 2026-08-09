@@ -1270,6 +1270,67 @@ export const buildAthleteHrZonesPromptText = (athlete) => {
   return `Athlete heart rate zones (${basis}):\n${lines.join("\n")}`;
 };
 
+/** Nombre bonito de cada plataforma de dispositivo. */
+export const DEVICE_PROVIDER_LABELS = {
+  intervals_icu: "intervals.icu",
+  garmin: "Garmin",
+  coros: "COROS",
+  strava: "Strava",
+};
+
+/** "intervals_icu" -> "intervals.icu"; lo desconocido se capitaliza tal cual. */
+export const providerLabel = (provider) => {
+  const raw = String(provider || "").trim();
+  if (!raw) return "Dispositivo";
+  const known = DEVICE_PROVIDER_LABELS[raw.toLowerCase()];
+  if (known) return known;
+  return raw.charAt(0).toUpperCase() + raw.slice(1);
+};
+
+/** Fecha de la ultima sincronizacion para el tooltip del badge. */
+export const formatDeviceSyncDate = (value) => {
+  if (!value) return "sin datos aún";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "sin datos aún";
+  return d.toLocaleString("es-CO", { dateStyle: "short", timeStyle: "short" });
+};
+
+/**
+ * Conexiones activas de una tanda de atletas, en UNA sola consulta.
+ *
+ * Lee la vista athlete_device_status y no la tabla device_connections: esa
+ * tabla guarda api_key, access_token y refresh_token, y dar SELECT al coach
+ * sobre ella le entregaria los tokens del atleta. La vista expone solo el
+ * estado (provider, status, last_pull_at).
+ *
+ * Devuelve { ok, byAthlete }. ok=false cuando la consulta falla (por ejemplo
+ * si la vista aun no existe), para poder no pintar nada en vez de asegurar en
+ * falso que el atleta no tiene dispositivo.
+ */
+export const fetchActiveDeviceConnections = async (athleteIds) => {
+  const ids = [...new Set((athleteIds || []).map((v) => Number(v)).filter((n) => Number.isFinite(n)))];
+  if (!ids.length) return { ok: true, byAthlete: {} };
+  const { data, error } = await supabase
+    .from("athlete_device_status")
+    .select("athlete_id, provider, last_pull_at")
+    .eq("status", "active")
+    .in("athlete_id", ids);
+  if (error) {
+    console.error("Error cargando conexiones de dispositivos:", error);
+    return { ok: false, byAthlete: {} };
+  }
+  const byAthlete = {};
+  for (const row of data || []) {
+    const key = String(row.athlete_id);
+    if (!byAthlete[key]) byAthlete[key] = [];
+    byAthlete[key].push({ provider: row.provider, last_pull_at: row.last_pull_at });
+  }
+  for (const key of Object.keys(byAthlete)) {
+    byAthlete[key].sort((a, b) => providerLabel(a.provider).localeCompare(providerLabel(b.provider)));
+  }
+  return { ok: true, byAthlete };
+};
+
 export async function sendWorkoutAssignmentPushToAthlete({ athleteUserId, workoutTitle, scheduledDate }) {
   if (!athleteUserId) return;
   await sendChatPushNotification({
