@@ -844,6 +844,59 @@ export const reconcileWorkoutList = (list, { paceRanges = null, kmKey = null, lo
   return { list: out, fixed };
 };
 
+/**
+ * Mensajes sin leer por atleta, en UNA sola consulta para toda la lista del
+ * coach (nunca una por atleta). Para el coach "sin leer" es lo que le mando el
+ * atleta; el senderRole se puede invertir para el caso simetrico.
+ *
+ * ok=false cuando la consulta falla: mejor no pintar nada que inventar ceros.
+ */
+export const fetchUnreadMessageCounts = async ({ coachId, athleteIds, senderRole = "athlete" }) => {
+  const ids = (Array.isArray(athleteIds) ? athleteIds : []).map(Number).filter((n) => Number.isFinite(n));
+  if (!coachId || !ids.length) return { ok: true, byAthlete: {} };
+  const { data, error } = await supabase
+    .from("messages")
+    .select("athlete_id")
+    .eq("coach_id", coachId)
+    .eq("sender_role", senderRole)
+    .eq("read", false)
+    .in("athlete_id", ids);
+  if (error) {
+    console.warn("[chat] no se pudieron contar los mensajes sin leer:", error.message);
+    return { ok: false, byAthlete: {} };
+  }
+  const byAthlete = {};
+  for (const row of data || []) {
+    const key = String(row?.athlete_id ?? "");
+    if (!key) continue;
+    byAthlete[key] = (byAthlete[key] || 0) + 1;
+  }
+  return { ok: true, byAthlete };
+};
+
+/**
+ * Marca como leidos los mensajes que el OTRO lado envio en la conversacion.
+ * readerRole "coach" marca los del atleta; "athlete" marca los del coach.
+ * Devuelve cuantas filas se marcaron (0 si no habia nada o si la RLS filtro).
+ */
+export const markConversationRead = async ({ coachId, athleteId, readerRole }) => {
+  if (!athleteId) return 0;
+  const senderRole = readerRole === "coach" ? "athlete" : "coach";
+  let q = supabase
+    .from("messages")
+    .update({ read: true })
+    .eq("athlete_id", athleteId)
+    .eq("sender_role", senderRole)
+    .eq("read", false);
+  if (coachId) q = q.eq("coach_id", coachId);
+  const { data, error } = await q.select("id");
+  if (error) {
+    console.warn("[chat] no se pudieron marcar como leidos:", error.message);
+    return 0;
+  }
+  return Array.isArray(data) ? data.length : 0;
+};
+
 export const normalizeLibraryRow = (row) => {
   const structure = normalizeWorkoutStructure(readStructure(row));
   const type = row.type && WORKOUT_TYPES.some((t) => t.id === row.type) ? row.type : "easy";

@@ -22,6 +22,8 @@ import {
   getMarketplacePlanWorkoutRows,
   normalizeAthlete,
   fetchActiveDeviceConnections,
+  fetchUnreadMessageCounts,
+  markConversationRead,
   providerLabel,
   formatDeviceSyncDate,
   PAYMENT_METHOD_OPTIONS,
@@ -4070,6 +4072,38 @@ const DeviceConnectionBadges = ({ connections }) => {
   );
 };
 
+/**
+ * Punto rojo de mensajes sin leer en la lista de atletas. Lleva el numero
+ * dentro porque saber si hay uno o siete cambia la urgencia; a partir de 10 se
+ * corta a "9+" para no ensanchar la fila.
+ */
+const UnreadMessagesBadge = ({ count }) => {
+  const n = Number(count) || 0;
+  if (n <= 0) return null;
+  return (
+    <span
+      title={`${n} mensaje${n === 1 ? "" : "s"} sin leer`}
+      style={{
+        flexShrink: 0,
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        minWidth: 18,
+        height: 18,
+        padding: "0 5px",
+        borderRadius: 999,
+        background: "#ef4444",
+        color: "#fff",
+        fontSize: ".62em",
+        fontWeight: 800,
+        lineHeight: 1,
+      }}
+    >
+      {n > 9 ? "9+" : n}
+    </span>
+  );
+};
+
 function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWorkoutsDoneSync, onAthleteFcSync, coachDisplayName, onDeleteAthlete, notify, onOpenInviteModal }) {
   const S = styles;
   const athlete = (selected ? athletes.find(a => String(a.id) === String(selected.id)) : athletes[0]) || null;
@@ -4149,6 +4183,49 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
       cancelled = true;
     };
   }, [athleteIdsKey]);
+
+  // Mensajes sin leer de toda la lista, tambien en una sola consulta. El
+  // contador se refresca al marcar leido y al llegar un mensaje por realtime.
+  const [unreadByAthlete, setUnreadByAthlete] = useState({});
+  const [unreadRefresh, setUnreadRefresh] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    const ids = athleteIdsKey ? athleteIdsKey.split(",").map(Number) : [];
+    if (!coachId || !ids.length) {
+      setUnreadByAthlete({});
+      return undefined;
+    }
+    fetchUnreadMessageCounts({ coachId, athleteIds: ids }).then(({ ok, byAthlete }) => {
+      if (cancelled || !ok) return;
+      setUnreadByAthlete(byAthlete);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [athleteIdsKey, coachId, unreadRefresh]);
+
+  // Un mensaje nuevo del atleta enciende el punto sin recargar la lista. Si el
+  // coach tiene ese chat abierto no se cuenta: lo esta leyendo ahora mismo y el
+  // efecto de marcar leido lo dejaria en cero un instante despues.
+  useEffect(() => {
+    if (!coachId) return undefined;
+    const channel = supabase
+      .channel(`unread-coach-${coachId}`)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "messages", filter: `coach_id=eq.${coachId}` },
+        (payload) => {
+          const row = payload?.new;
+          if (!row || row.sender_role !== "athlete" || row.read) return;
+          const key = String(row.athlete_id ?? "");
+          if (!key || key === String(athlete?.id ?? "")) return;
+          setUnreadByAthlete((prev) => ({ ...prev, [key]: (Number(prev[key]) || 0) + 1 }));
+        },
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [coachId, athlete?.id]);
 
   useEffect(() => {
     if (!athlete?.id) {
@@ -5110,6 +5187,23 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
     loadCoachChat();
   }, [loadCoachChat]);
 
+  // El chat vive en la ficha del atleta, asi que abrir la ficha ES abrir la
+  // conversacion: se marcan leidos los mensajes del atleta y se apaga el punto
+  // al instante. chatMessages.length en las dependencias cubre los mensajes que
+  // llegan mientras la ficha esta abierta.
+  useEffect(() => {
+    if (!athlete?.id || !coachId) return undefined;
+    let cancelled = false;
+    markConversationRead({ coachId, athleteId: athlete.id, readerRole: "coach" }).then((marked) => {
+      if (cancelled || !marked) return;
+      setUnreadByAthlete((prev) => ({ ...prev, [String(athlete.id)]: 0 }));
+      setUnreadRefresh((n) => n + 1);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [athlete?.id, coachId, chatMessages.length]);
+
   useEffect(() => {
     loadAthletePayments();
   }, [loadAthletePayments]);
@@ -5358,7 +5452,10 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
               >
                 <AthleteListAvatar url={a.avatar_url} fallback={a.avatar} />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: ".85em", fontWeight: 700, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name}</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                    <div style={{ flex: 1, minWidth: 0, fontSize: ".85em", fontWeight: 700, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name}</div>
+                    <UnreadMessagesBadge count={unreadByAthlete[String(a.id)]} />
+                  </div>
                   <div style={{ fontSize: ".7em", color: "#64748b" }}>{a.pace} · {a.weekly_km}km</div>
                   {deviceConnectionsReady ? <DeviceConnectionBadges connections={deviceConnections[String(a.id)]} /> : null}
                 </div>

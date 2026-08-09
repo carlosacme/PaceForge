@@ -28,6 +28,7 @@ import {
   resolveCoachUserIdFromPublicCode,
   resolveDefaultCoachUserId,
   sendChatPushNotification,
+  markConversationRead,
   registerFcmToken,
   normalizeScheduledDateYmd,
   formatDurationMinutesTotal,
@@ -979,6 +980,14 @@ export default function AthleteHome({ profile }) {
   }, [athleteInfo?.id]);
 
   useEffect(() => { loadAthleteChat(); }, [loadAthleteChat]);
+
+  // Simetrico al coach: con el panel de chat abierto, los mensajes del coach
+  // pasan a leidos. athleteChatMessages.length cubre los que llegan con el
+  // panel ya abierto.
+  useEffect(() => {
+    if (!athleteChatOpen || !athleteInfo?.id || !coachIdForChat) return;
+    markConversationRead({ coachId: coachIdForChat, athleteId: athleteInfo.id, readerRole: "athlete" });
+  }, [athleteChatOpen, athleteInfo?.id, coachIdForChat, athleteChatMessages.length]);
   useEffect(() => { loadMyPayments(); }, [loadMyPayments]);
   useEffect(() => { loadIntervalsConnected(); }, [loadIntervalsConnected]);
 

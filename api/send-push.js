@@ -136,7 +136,10 @@ async function handleDailyReminders(res) {
     const minText = w.duration_min ? ` · ${w.duration_min}min` : "";
     const body = `${w.title || w.type || "Entrenamiento"}${kmText}${minText}`;
     try {
-      await sendFCM(token, "🏃 Tienes un entreno hoy", body);
+      await sendFCM(token, "🏃 Tienes un entreno hoy", body, {
+        type: "athlete_calendar",
+        workout_id: w.id,
+      });
       sent++;
       console.log(`[remind] ✓ ${userId}: ${body}`);
     } catch (e) {
