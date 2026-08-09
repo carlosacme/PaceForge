@@ -99,6 +99,13 @@ import {
   requestNotificationPermission,
   clearFcmToken,
 } from "./firebase.js";
+import { Capacitor } from "@capacitor/core";
+import {
+  isNativePush,
+  registerNativePush,
+  nativePushPermissionState,
+  clearNativePush,
+} from "./lib/nativePush";
 import InstallAppButton from "./components/InstallAppButton";
 const CoachSettings = React.lazy(() => import("./components/CoachSettings"));
 const WorkoutLibrary = React.lazy(() => import("./components/WorkoutLibrary"));
@@ -1079,6 +1086,7 @@ export default function App() {
   const [pushInviteDismissed, setPushInviteDismissed] = useState(() =>
     typeof localStorage !== "undefined" && localStorage.getItem("raf_push_invite_dismissed") === "1",
   );
+  const [nativePushPermission, setNativePushPermission] = useState(null);
   const [inviteCodeFromUrl, setInviteCodeFromUrl] = useState("");
   const [inviteParentCoachId, setInviteParentCoachId] = useState("");
   const [staffParentCoachId, setStaffParentCoachId] = useState("");
@@ -1126,6 +1134,14 @@ export default function App() {
       if (!uid) {
         return;
       }
+      // En la APK no existen ni Notification ni el service worker, asi que el
+      // flujo web nunca obtenia token. El nativo pide permiso con el plugin y
+      // entrega el token por el listener "registration" a la misma
+      // registerFcmToken().
+      if (Capacitor.isNativePlatform()) {
+        await registerNativePush({ notify });
+        return;
+      }
       const token = await requestNotificationPermission();
       if (!token) {
         return;
@@ -1140,12 +1156,35 @@ export default function App() {
     } catch (e) {
       console.warn("syncFcmTokenToProfile", e);
     }
-  }, [session?.user?.id]);
+  }, [session?.user?.id, notify]);
 
   const dismissPushInvite = useCallback(() => {
     if (typeof localStorage !== "undefined") localStorage.setItem("raf_push_invite_dismissed", "1");
     setPushInviteDismissed(true);
   }, []);
+
+  /**
+   * El banner de "activa las notificaciones" mira Notification.permission en
+   * web, pero ese objeto no existe en el WebView: en nativo el estado sale de
+   * PushNotifications.checkPermissions().
+   */
+  const refreshNativePushPermission = useCallback(async () => {
+    if (!isNativePush()) return;
+    setNativePushPermission(await nativePushPermissionState());
+  }, []);
+
+  useEffect(() => {
+    if (!session?.user?.id) return;
+    void refreshNativePushPermission();
+  }, [session?.user?.id, refreshNativePushPermission]);
+
+  const pushPermissionGranted = isNativePush()
+    ? nativePushPermission === "granted"
+    : typeof Notification !== "undefined" && Notification.permission === "granted";
+  const pushPermissionKnown = isNativePush()
+    ? nativePushPermission != null
+    : typeof Notification !== "undefined";
+  const showPushInvite = Boolean(session) && pushPermissionKnown && !pushPermissionGranted && !pushInviteDismissed;
 
   const coachNavItems = useMemo(() => {
     const role = profile?.role;
@@ -1568,9 +1607,15 @@ export default function App() {
   }, [session?.user?.id, profile, viewRestored, allowedCoachViews]);
 
   useEffect(() => {
-    if (authLoading || !session?.user?.id) return;
+    if (authLoading || !session?.user?.id) return undefined;
     let cancelled = false;
     (async () => {
+      // Nativo: register() vuelve a emitir el token en cada arranque, asi que
+      // esto cubre tambien las rotaciones que hace FCM.
+      if (Capacitor.isNativePlatform()) {
+        await registerNativePush({ notify });
+        return;
+      }
       const tok = await refreshFcmTokenIfGranted();
       if (cancelled || !tok) return;
       await registerFcmToken(tok);
@@ -1578,10 +1623,12 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [authLoading, session?.user?.id]);
+  }, [authLoading, session?.user?.id, notify]);
 
   useEffect(() => {
-    if (!session) return undefined;
+    // En nativo el primer plano lo cubre el listener pushNotificationReceived
+    // de nativePush.js; firebase/messaging no funciona en el WebView.
+    if (!session || Capacitor.isNativePlatform()) return undefined;
     let unsub = () => {};
     (async () => {
       const m = await initMessaging();
@@ -1991,7 +2038,9 @@ const handleSignOut = async () => {
     try {
       const uid = session?.user?.id;
       if (uid) await supabase.from("profiles").update({ fcm_token: null }).eq("user_id", uid);
-      await clearFcmToken();
+      if (Capacitor.isNativePlatform()) await clearNativePush();
+      else await clearFcmToken();
+      setNativePushPermission(null);
     } catch (e) {
       console.warn("[FCM] limpieza en logout:", e);
     }
@@ -2920,10 +2969,7 @@ const handleSignOut = async () => {
         <div style={{ padding: "12px 16px 0" }}>
           <InstallAppButton />
         </div>
-        {typeof Notification !== "undefined" &&
-          session &&
-          Notification.permission !== "granted" &&
-          !pushInviteDismissed && (
+        {showPushInvite && (
             <div
               style={{
                 margin: "12px 16px 0",
@@ -2947,6 +2993,7 @@ const handleSignOut = async () => {
                   onClick={async () => {
                     if (typeof localStorage !== "undefined") localStorage.removeItem("raf_push_invite_dismissed");
                     await syncFcmTokenToProfile();
+                    await refreshNativePushPermission();
                   }}
                   style={{
                     padding: "8px 14px",

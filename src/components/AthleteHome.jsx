@@ -136,6 +136,8 @@ const CoachLinkActions = ({
   );
 };
 import { refreshFcmTokenIfGranted, clearFcmToken } from "../firebase.js";
+import { Capacitor } from "@capacitor/core";
+import { registerNativePush, clearNativePush } from "../lib/nativePush";
 
 function MarketplacePlanWorkoutsAccordion({ previewWorkouts, resetKey, lockAfterWeek1 = false }) {
   const list = Array.isArray(previewWorkouts) ? previewWorkouts : [];
@@ -337,6 +339,12 @@ export default function AthleteHome({ profile }) {
   const S = styles;
   const EMPTY_ARRAY = useMemo(() => [], []);
   const notifyCallback = useCallback((msg) => setMessage(msg), []);
+  // Aviso pasajero para las push que llegan con la app abierta: se borra solo,
+  // y solo si sigue siendo el mismo texto (no pisa un mensaje posterior).
+  const notifyPush = useCallback((msg) => {
+    setMessage(msg);
+    setTimeout(() => setMessage((cur) => (cur === msg ? "" : cur)), 4200);
+  }, []);
   const normalizeWorkoutRowStable = useCallback(normalizeWorkoutRow, []);
   const [athleteInfo, setAthleteInfo] = useState(null);
   const [coachName, setCoachName] = useState(null);
@@ -501,9 +509,15 @@ export default function AthleteHome({ profile }) {
       if (authData?.user?.id) {
         const { error: linkErr } = await supabase.from("athletes").update({ user_id: authData.user.id }).eq("id", athleteRow.id);
         if (linkErr) console.warn("[AthleteHome] link user_id:", linkErr);
-        const tok = await refreshFcmTokenIfGranted();
-        // El backend limpia el token de otros perfiles antes de asignarlo.
-        if (tok) await registerFcmToken(tok);
+        // El backend limpia el token de otros perfiles antes de asignarlo. En
+        // la APK el token sale del plugin nativo: la Notification API del web
+        // no existe dentro del WebView.
+        if (Capacitor.isNativePlatform()) {
+          await registerNativePush({ notify: notifyPush });
+        } else {
+          const tok = await refreshFcmTokenIfGranted();
+          if (tok) await registerFcmToken(tok);
+        }
       }
       const [wRes, eRes] = await Promise.all([
         supabase.from("workouts").select("*").eq("athlete_id", athleteRow.id).order("scheduled_date", { ascending: true }),
@@ -541,7 +555,7 @@ export default function AthleteHome({ profile }) {
     };
     load();
     return () => { cancelled = true; };
-  }, [profileUserId]);
+  }, [profileUserId, notifyPush]);
 
   const athleteCoachIdPrimitive = athleteInfo?.coach_id ?? null;
   const achievementDisplayProgress = useMemo(() => computeAthleteAchievementVisualProgress(workouts, athleteEvaluations), [workouts, athleteEvaluations]);
@@ -1912,7 +1926,8 @@ export default function AthleteHome({ profile }) {
                   try {
                     const { data: { user } } = await supabase.auth.getUser();
                     if (user?.id) await supabase.from("profiles").update({ fcm_token: null }).eq("user_id", user.id);
-                    await clearFcmToken();
+                    if (Capacitor.isNativePlatform()) await clearNativePush();
+                    else await clearFcmToken();
                   } catch (e) {
                     console.warn("[FCM] limpieza en logout:", e);
                   }

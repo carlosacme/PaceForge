@@ -33,6 +33,11 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- Notificaciones push nativas (@capacitor/push-notifications). Desde
+         Android 13 el permiso hay que pedirlo en tiempo de ejecucion, y sin
+         declararlo aqui la peticion se deniega sola sin preguntar al usuario. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <!-- Ubicacion: la usa el widget de clima via @capacitor/geolocation.
          Sin estos permisos el WebView deniega la peticion sin preguntar y el
          clima caia siempre en las coordenadas de respaldo. -->

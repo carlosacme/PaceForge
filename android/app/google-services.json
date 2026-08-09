@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "224127738625",
+    "project_id": "runningapexflow",
+    "storage_bucket": "runningapexflow.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:224127738625:android:73cb01e45c5957818bf100",
+        "android_client_info": {
+          "package_name": "com.runningapexflow.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAhPujlzI9u6G7E7lwPhWQThKpk6_GoiC4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
