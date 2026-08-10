@@ -311,10 +311,14 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
     setSaving(true);
     const language = form.language === "en" ? "en" : "es";
     const currency = form.currency === "USD" ? "USD" : "COP";
+    // El nombre vive en dos sitios: coach_profiles.full_name (esta pantalla) y
+    // profiles.name (lo que ve el atleta y lo que sale en el PDF del plan). Se
+    // escriben los dos aqui o quedan desincronizados para siempre.
+    const fullName = form.full_name.trim() || null;
     const payload = {
       user_id: coachUserId,
       avatar_url: form.avatar_url || null,
-      full_name: form.full_name.trim() || null,
+      full_name: fullName,
       email: form.email.trim() || null,
       phone: form.phone.trim() || null,
       country: form.country.trim() || null,
@@ -329,25 +333,41 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
       subscription_renews_at: form.subscription_renews_at ? form.subscription_renews_at : null,
       updated_at: new Date().toISOString(),
     };
-    const { data: existingRow, error: loadErr } = await supabase.from("coach_profiles").select("user_id").eq("user_id", coachUserId).maybeSingle();
-    if (loadErr) {
-      console.error(loadErr);
-      setSaving(false);
-      notify(loadErr.message || "Error al comprobar el perfil");
-      return;
-    }
-    const upsertPayload = existingRow?.user_id
-      ? payload
-      : {
-          ...payload,
-        };
-    const { error } = await supabase.from("coach_profiles").upsert(upsertPayload, { onConflict: "user_id" });
-    setSaving(false);
+    // El .select() no es decorativo: un upsert bloqueado por RLS responde 200
+    // con CERO filas, sin error. Sin comprobar las filas escritas dariamos
+    // "Cambios guardados" sobre algo que no se guardo.
+    const { data: savedCoachRows, error } = await supabase
+      .from("coach_profiles")
+      .upsert(payload, { onConflict: "user_id" })
+      .select("user_id");
     if (error) {
       console.error(error);
+      setSaving(false);
       notify(error.message || "Error al guardar");
       return;
     }
+    if (!savedCoachRows?.length) {
+      setSaving(false);
+      notify("No se guardó el perfil: la base rechazó la escritura en coach_profiles (permisos)");
+      return;
+    }
+
+    const { data: savedProfileRows, error: profileErr } = await supabase
+      .from("profiles")
+      .update({ name: fullName })
+      .eq("user_id", coachUserId)
+      .select("user_id");
+    setSaving(false);
+    if (profileErr) {
+      console.error(profileErr);
+      notify(`Perfil guardado, pero el nombre visible no se sincronizó: ${profileErr.message}`);
+      return;
+    }
+    if (!savedProfileRows?.length) {
+      notify("Perfil guardado, pero el nombre visible no se actualizó (sin permiso o sin fila en profiles)");
+      return;
+    }
+
     notify("Cambios guardados");
     isDirtyRef.current = false;
     await loadProfile();
