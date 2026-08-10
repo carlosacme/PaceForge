@@ -158,6 +158,7 @@ export default function PushDiagnosticsPanel({ notify, cardStyle }) {
         <div style={{ marginTop: 12, borderTop: "1px solid #e2e8f0", paddingTop: 8 }}>
           {native ? (
             <>
+              <Row label="Canales de notificación" value={fmt(diag.channelsAt) || "sin crear"} ok={Boolean(diag.channelsAt)} />
               <Row label="Permiso" value={diag.permission || "sin comprobar"} ok={diag.permission ? diag.permission === "granted" : null} />
               <Row label="Registro pedido a Firebase" value={fmt(diag.registerAt) || "nunca"} ok={diag.registerAt ? true : null} />
               <Row

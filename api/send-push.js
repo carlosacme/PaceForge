@@ -13,11 +13,22 @@ const FCM_SEND_URL = "https://fcm.googleapis.com/v1/projects/runningapexflow/mes
 
 const APP_URL = process.env.APP_URL || "https://www.runningapexflow.com";
 
-// Canal de notificaciones de Android. La app NO declara ninguno todavia (ni por
-// manifest ni con PushNotifications.createChannel), asi que hasta que lo haga
-// el SDK de Firebase cae en su canal de reserva. Mandarlo igual no rompe nada y
-// deja el envio listo para cuando el canal exista, sin tocar el APK.
+// Canales de notificacion de Android. Los declara la app en
+// src/lib/nativePush.js con PushNotifications.createChannel: estos ids tienen
+// que coincidir EXACTAMENTE con los de alli, o Android ignora el canal y cae en
+// el de reserva. Estan duplicados porque uno es servidor y el otro cliente.
+//
+// El chat va por un canal propio de importancia alta (suena y sale como
+// heads-up); los recordatorios y avisos van por el de siempre, con importancia
+// normal. Una APK antigua, sin canales declarados, sigue recibiendo por el
+// canal de reserva igual que hasta ahora.
 const ANDROID_CHANNEL_ID = "fcm_default_channel";
+const ANDROID_CHAT_CHANNEL_ID = "chat_messages";
+
+function androidChannelId(data) {
+  const type = data && data.type ? String(data.type) : "";
+  return type.includes("chat") ? ANDROID_CHAT_CHANNEL_ID : ANDROID_CHANNEL_ID;
+}
 
 // Traduce el `data` de la notificacion a una URL de la app. El SW/navegador
 // abre esta URL al tocar la notificacion (via webpush.fcm_options.link).
@@ -206,7 +217,7 @@ async function sendFCM(token, title, body, data) {
   message.android = {
     priority: "high",
     notification: {
-      channel_id: ANDROID_CHANNEL_ID,
+      channel_id: androidChannelId(data),
       default_sound: true,
     },
   };

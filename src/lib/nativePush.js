@@ -31,6 +31,48 @@ let notifyHandler = null;
  */
 const NOTIFY_EVERY_STEP = true;
 
+/**
+ * Canales de notificacion de Android.
+ *
+ * Sin canal declarado, el channel_id que manda el backend no apunta a nada y
+ * Android mete todo en su canal de reserva: mismo sonido y misma prioridad para
+ * un mensaje del coach que para un recordatorio de entreno.
+ *
+ * Estos ids tienen que coincidir EXACTAMENTE con los que pone
+ * api/send-push.js en message.android.notification.channel_id. Viven duplicados
+ * porque uno es cliente y el otro servidor: si cambias uno, cambia el otro.
+ *
+ * Un canal es INMUTABLE una vez creado. Android ignora cualquier cambio de
+ * importancia, sonido o vibracion en los dispositivos que ya lo tengan, asi que
+ * cambiar el comportamiento mas adelante obliga a estrenar id.
+ */
+const CHAT_CHANNEL_ID = "chat_messages";
+const DEFAULT_CHANNEL_ID = "fcm_default_channel";
+
+const CHANNELS = [
+  {
+    id: CHAT_CHANNEL_ID,
+    name: "Mensajes de chat",
+    description: "Mensajes de tu coach o de tus atletas.",
+    importance: 4, // HIGH: suena y aparece como heads-up sobre lo que estes viendo.
+    vibration: true,
+    // `sound` se omite a proposito. El plugin solo llama a setSound() si le
+    // pasas un nombre, y ese nombre tiene que existir en res/raw, carpeta que
+    // este proyecto no tiene: un nombre inventado dejaria el canal MUDO para
+    // siempre. Sin sound, el canal usa el sonido de notificacion del sistema.
+  },
+  {
+    id: DEFAULT_CHANNEL_ID,
+    name: "Entrenamientos y avisos",
+    description: "Recordatorios de tus entrenos y avisos de la app.",
+    importance: 3, // DEFAULT: suena sin interrumpir, que es como se comportan hoy.
+    vibration: true,
+  },
+];
+
+/** Los canales se crean una sola vez por sesion de app. */
+let channelsPromise = null;
+
 const DIAG_STORAGE_KEY = "raf_push_diag";
 
 /** Ultimos 8 caracteres del token: suficiente para comparar, sin exponerlo. */
@@ -38,6 +80,7 @@ const tokenTail = (t) => (t ? `…${String(t).slice(-8)}` : null);
 
 const emptyDiag = () => ({
   platform: null,
+  channelsAt: null,
   permission: null,
   registerAt: null,
   tokenAt: null,
@@ -95,6 +138,7 @@ export const formatPushDiagnostics = () => {
   const when = (iso) => (iso ? new Date(iso).toLocaleString("es-CO") : "nunca");
   return [
     `plataforma: ${d.platform || "?"}`,
+    `canales creados: ${d.channelsAt ? when(d.channelsAt) : "no"}`,
     `permiso: ${d.permission || "?"}`,
     `register(): ${when(d.registerAt)}`,
     `token recibido: ${d.tokenAt ? `${when(d.tokenAt)} (${d.tokenTail})` : "nunca"}`,
@@ -163,6 +207,32 @@ const saveToken = async (value, { attempt = 1, maxAttempts = 3 } = {}) => {
   reportError(`fallo al guardar (${res.reason}). Reintento ${attempt + 1} de ${maxAttempts}…`);
   await new Promise((r) => setTimeout(r, attempt * 3000));
   return saveToken(value, { attempt: attempt + 1, maxAttempts });
+};
+
+/**
+ * Declara los canales una sola vez. Solo en Android: en iOS el plugin responde
+ * "unavailable" y en web no hay plugin.
+ *
+ * Volver a crear un canal que ya existe no es un error para Android, asi que
+ * llamarlo en cada arranque es inofensivo y cubre a quien actualiza la app.
+ *
+ * Nunca tumba el registro: si esto falla, las notificaciones siguen llegando
+ * por el canal de reserva, que es exactamente lo que pasa hoy.
+ */
+const ensureChannels = () => {
+  if (Capacitor.getPlatform() !== "android") return Promise.resolve();
+  if (!channelsPromise) {
+    channelsPromise = Promise.all(CHANNELS.map((channel) => PushNotifications.createChannel(channel)))
+      .then(() => {
+        patchDiag({ channelsAt: new Date().toISOString() });
+        console.log("[push-nativo] canales declarados:", CHANNELS.map((c) => c.id).join(", "));
+      })
+      .catch((e) => {
+        channelsPromise = null;
+        reportError(`no se pudieron crear los canales: ${String(e?.message || e)}`);
+      });
+  }
+  return channelsPromise;
 };
 
 const attachListeners = async () => {
@@ -239,6 +309,11 @@ export async function registerNativePush({ notify: notifyFn } = {}) {
   if (notifyFn) setNativePushNotifier(notifyFn);
   patchDiag({ platform: Capacitor.getPlatform() });
   try {
+    // Los canales, antes que nada: una notificacion que llegue con la app
+    // cerrada se pinta con el canal que exista en ese momento, asi que tienen
+    // que estar declarados desde el arranque anterior.
+    await ensureChannels();
+
     // Los listeners van ANTES de pedir permiso: si el usuario concede desde los
     // ajustes de Android y la app reintenta, ya estan puestos.
     await ensureListeners();
@@ -305,7 +380,9 @@ export async function clearNativePush() {
     await PushNotifications.removeAllListeners();
     listenersPromise = null;
     notifyHandler = null;
-    patchDiag({ ...emptyDiag(), platform: Capacitor.getPlatform() });
+    // Los canales sobreviven al logout (viven en los ajustes de Android, no en
+    // la sesion), asi que su fecha no se borra: channelsPromise tampoco.
+    patchDiag({ ...emptyDiag(), platform: Capacitor.getPlatform(), channelsAt: loadDiag().channelsAt });
   } catch (e) {
     console.warn("[push-nativo] clearNativePush", e);
   }
