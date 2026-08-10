@@ -165,7 +165,12 @@ export default function PushDiagnosticsPanel({ notify, cardStyle }) {
                 value={diag.tokenAt ? `${fmt(diag.tokenAt)} · ${diag.tokenTail}` : "nunca"}
                 ok={diag.tokenAt ? true : false}
               />
-              <Row label="Guardado en tu perfil" value={fmt(diag.savedAt) || "no"} ok={Boolean(diag.savedAt)} />
+              <Row
+                label="Respuesta del servidor"
+                value={diag.serverStatus || "sin llamar"}
+                ok={diag.serverStatus ? diag.serverStatus === "OK" || diag.serverStatus === "200" : null}
+              />
+              <Row label="Guardado" value={fmt(diag.savedAt) || "no"} ok={Boolean(diag.savedAt)} />
               <Row
                 label="Comprobado en la base de datos"
                 value={

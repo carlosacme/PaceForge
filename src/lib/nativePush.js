@@ -12,8 +12,8 @@ import { registerFcmTokenDetailed, readOwnFcmToken, readOwnDeviceTokens } from "
  * la MISMA tuberia de registro, asi que el backend y la tabla no cambian.
  *
  * Dentro de la APK no hay consola donde leer un console.warn, asi que cada paso
- * de la cadena (permiso -> token -> guardado -> verificado contra la BD) deja
- * rastro en un diagnostico que la app puede enseñar en pantalla.
+ * de la cadena (permiso -> token -> guardado -> verificado contra la BD) avisa
+ * en pantalla y deja rastro en un diagnostico que la app puede enseñar.
  */
 
 /** Los listeners se registran una sola vez por sesion de app. */
@@ -21,6 +21,15 @@ let listenersPromise = null;
 
 /** Toast in-app para mensajes en primer plano; lo inyecta quien llama. */
 let notifyHandler = null;
+
+/**
+ * Avisar tambien de los pasos que SALEN BIEN, no solo de los fallos.
+ *
+ * Con avisos solo de error, un tester que no ve nada no puede distinguir "todo
+ * fue bien" de "la cadena nunca arranco", que es justo la duda que hay que
+ * despejar en remoto. Poner en false deja unicamente los avisos de fallo.
+ */
+const NOTIFY_EVERY_STEP = true;
 
 const DIAG_STORAGE_KEY = "raf_push_diag";
 
@@ -34,6 +43,7 @@ const emptyDiag = () => ({
   tokenAt: null,
   tokenTail: null,
   savedAt: null,
+  serverStatus: null,
   verified: null,
   lastError: null,
   updatedAt: null,
@@ -88,16 +98,28 @@ export const formatPushDiagnostics = () => {
     `permiso: ${d.permission || "?"}`,
     `register(): ${when(d.registerAt)}`,
     `token recibido: ${d.tokenAt ? `${when(d.tokenAt)} (${d.tokenTail})` : "nunca"}`,
-    `guardado en el perfil: ${d.savedAt ? when(d.savedAt) : "no"}`,
+    `respuesta del servidor: ${d.serverStatus || "?"}`,
+    `guardado: ${d.savedAt ? when(d.savedAt) : "no"}`,
     `verificado en la BD: ${d.verified === true ? "si" : d.verified === false ? "no" : "?"}`,
     `ultimo error: ${d.lastError || "ninguno"}`,
   ].join("\n");
 };
 
+const notify = (msg) => {
+  if (notifyHandler) notifyHandler(`Notificaciones: ${msg}`);
+};
+
+/** Paso que va bien. Solo se enseña si la build lleva los avisos completos. */
+const reportStep = (msg) => {
+  console.log("[push-nativo]", msg);
+  if (NOTIFY_EVERY_STEP) notify(msg);
+};
+
+/** Paso que falla. Se enseña SIEMPRE: es lo que el tester tiene que reportar. */
 const reportError = (reason) => {
   patchDiag({ lastError: reason });
   console.warn("[push-nativo]", reason);
-  if (notifyHandler) notifyHandler(`Notificaciones: ${reason}`);
+  notify(reason);
 };
 
 /** Conecta el toast de la app (el mismo notify que usa onMessage en web). */
@@ -114,15 +136,31 @@ export const isNativePush = () => Capacitor.isNativePlatform();
  * el siguiente arranque de la app.
  */
 const saveToken = async (value, { attempt = 1, maxAttempts = 3 } = {}) => {
+  if (attempt === 1) reportStep("enviando token al servidor…");
   const res = await registerFcmTokenDetailed(value);
+  const serverStatus = res.status ? String(res.status) : res.ok ? "OK" : "sin respuesta";
   if (res.ok) {
-    patchDiag({ savedAt: new Date().toISOString(), verified: res.verified === true, lastError: res.reason || null });
+    patchDiag({
+      savedAt: new Date().toISOString(),
+      serverStatus,
+      verified: res.verified === true,
+      lastError: res.reason || null,
+    });
+    reportStep(
+      res.verified === true
+        ? `servidor OK (${serverStatus}), token guardado y verificado`
+        : `servidor OK (${serverStatus}), guardado sin verificar${res.reason ? `: ${res.reason}` : ""}`
+    );
     return true;
   }
+  patchDiag({ serverStatus });
   if (attempt >= maxAttempts) {
-    reportError(`no se pudo guardar el token (${res.reason})`);
+    reportError(`el servidor no guardo el token (${res.reason})`);
     return false;
   }
+  // Cada reintento se anuncia: si no, el tester pasa hasta nueve segundos sin
+  // saber si la app sigue intentandolo o ya se rindio.
+  reportError(`fallo al guardar (${res.reason}). Reintento ${attempt + 1} de ${maxAttempts}…`);
   await new Promise((r) => setTimeout(r, attempt * 3000));
   return saveToken(value, { attempt: attempt + 1, maxAttempts });
 };
@@ -131,10 +169,11 @@ const attachListeners = async () => {
   await PushNotifications.addListener("registration", async (token) => {
     const value = token?.value;
     if (!value) {
-      reportError("el evento registration llego sin token");
+      reportError("el sistema respondio SIN token");
       return;
     }
     patchDiag({ tokenAt: new Date().toISOString(), tokenTail: tokenTail(value), lastError: null });
+    reportStep(`token recibido del sistema (${tokenTail(value)})`);
     await saveToken(value);
   });
 
@@ -195,9 +234,9 @@ export async function nativePushPermissionState() {
  * @param {{ notify?: (msg: string) => void }} options
  * @returns {Promise<boolean>} true si el dispositivo quedo registrado.
  */
-export async function registerNativePush({ notify } = {}) {
+export async function registerNativePush({ notify: notifyFn } = {}) {
   if (!isNativePush()) return false;
-  if (notify) setNativePushNotifier(notify);
+  if (notifyFn) setNativePushNotifier(notifyFn);
   patchDiag({ platform: Capacitor.getPlatform() });
   try {
     // Los listeners van ANTES de pedir permiso: si el usuario concede desde los
@@ -210,12 +249,16 @@ export async function registerNativePush({ notify } = {}) {
     }
     patchDiag({ permission: status.receive || null });
     if (status.receive !== "granted") {
-      reportError(`permiso no concedido (${status.receive})`);
+      reportError(`permiso denegado (${status.receive})`);
       return false;
     }
+    reportStep("permiso concedido");
 
     await PushNotifications.register();
     patchDiag({ registerAt: new Date().toISOString() });
+    // Si el tester no ve ningun aviso despues de este, el sistema nunca entrego
+    // el token y el problema esta antes de la app.
+    reportStep("registro pedido al sistema, esperando token…");
     return true;
   } catch (e) {
     reportError(`register() fallo: ${String(e?.message || e)}`);
@@ -253,8 +296,8 @@ export async function checkFcmTokenInProfile() {
 
 /**
  * Limpieza al cerrar sesion: quita los listeners para que el proximo usuario
- * del mismo dispositivo no herede los del anterior. El fcm_token del perfil se
- * pone a null fuera de aqui, igual que en web. Nunca debe romper el logout.
+ * del mismo dispositivo no herede los del anterior. El token del dispositivo se
+ * retira fuera de aqui, igual que en web. Nunca debe romper el logout.
  */
 export async function clearNativePush() {
   if (!isNativePush()) return;
