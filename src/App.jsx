@@ -111,6 +111,7 @@ import {
   clearNativePush,
 } from "./lib/nativePush";
 import InstallAppButton from "./components/InstallAppButton";
+import PushDiagnosticsPanel from "./components/shared/PushDiagnosticsPanel";
 const CoachSettings = React.lazy(() => import("./components/CoachSettings"));
 const WorkoutLibrary = React.lazy(() => import("./components/WorkoutLibrary"));
 const MarketplaceHub = React.lazy(() => import("./components/MarketplaceHub"));
@@ -3033,6 +3034,11 @@ const handleSignOut = async () => {
               </div>
             </div>
           )}
+        {session ? (
+          <div style={{ padding: "0 16px" }}>
+            <PushDiagnosticsPanel notify={notify} cardStyle={styles.card} />
+          </div>
+        ) : null}
         {showTrialBanner ? (
           <div
             style={{

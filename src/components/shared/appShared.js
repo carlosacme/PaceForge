@@ -1659,11 +1659,56 @@ const pushBodySnippet = (text, max = 400) => {
  * actual, evitando que varios usuarios del mismo navegador compartan token.
  */
 export async function registerFcmToken(token) {
-  if (!token || typeof window === "undefined") return false;
+  const r = await registerFcmTokenDetailed(token);
+  if (!r.ok) console.warn("[fcm] no se registro el token:", r.reason);
+  return r.ok;
+}
+
+/**
+ * Lee el fcm_token que tiene AHORA el perfil del usuario. La RLS de profiles
+ * deja a cada uno leer su propia fila, asi que sirve para comprobar de verdad
+ * si el token quedo guardado en vez de fiarse del 200 del endpoint.
+ */
+export async function readOwnFcmToken() {
   try {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session?.access_token) return false;
-    const res = await fetch("/api/register-fcm-token", {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user?.id) return { ok: false, reason: "sin usuario autenticado" };
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("fcm_token")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    if (error) return { ok: false, reason: error.message };
+    if (!data) return { ok: false, reason: "el usuario no tiene fila en profiles" };
+    return { ok: true, token: data.fcm_token ?? null };
+  } catch (e) {
+    return { ok: false, reason: String(e?.message || e) };
+  }
+}
+
+/**
+ * Igual que registerFcmToken pero contando QUE fallo. Cada eslabon de la
+ * cadena (sesion, red, respuesta del endpoint, fila realmente escrita) devuelve
+ * su propio motivo, para poder enseñarlo en pantalla: dentro de la APK no hay
+ * consola donde leer un console.warn.
+ *
+ * @returns {Promise<{ok: boolean, reason?: string, status?: number, verified?: boolean}>}
+ */
+export async function registerFcmTokenDetailed(token) {
+  if (!token) return { ok: false, reason: "el plugin no entrego ningun token" };
+  if (typeof window === "undefined") return { ok: false, reason: "sin window" };
+
+  let session = null;
+  try {
+    ({ data: { session } } = await supabase.auth.getSession());
+  } catch (e) {
+    return { ok: false, reason: `no se pudo leer la sesion: ${String(e?.message || e)}` };
+  }
+  if (!session?.access_token) return { ok: false, reason: "todavia no hay sesion iniciada" };
+
+  let res;
+  try {
+    res = await fetch("/api/register-fcm-token", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -1671,15 +1716,24 @@ export async function registerFcmToken(token) {
       },
       body: JSON.stringify({ token }),
     });
-    if (!res.ok) {
-      console.warn("[fcm] register-fcm-token respuesta no OK", await res.text());
-      return false;
-    }
-    return true;
   } catch (e) {
-    console.warn("[fcm] register-fcm-token error", e);
-    return false;
+    return { ok: false, reason: `la peticion no salio: ${String(e?.message || e)}` };
   }
+  if (!res.ok) {
+    let body = "";
+    try { body = pushBodySnippet(await res.text(), 140); } catch { /* respuesta sin cuerpo */ }
+    return { ok: false, status: res.status, reason: `el endpoint respondio ${res.status}${body ? `: ${body}` : ""}` };
+  }
+
+  // El endpoint hace un UPDATE sin comprobar filas afectadas: si el usuario no
+  // tuviera fila en profiles responderia 200 sin haber guardado nada. Releer la
+  // fila convierte ese falso exito en un error visible.
+  const saved = await readOwnFcmToken();
+  if (!saved.ok) return { ok: true, status: 200, verified: false, reason: `guardado sin verificar: ${saved.reason}` };
+  if (saved.token !== token) {
+    return { ok: false, status: 200, verified: false, reason: "el endpoint respondio OK pero el perfil sigue sin el token" };
+  }
+  return { ok: true, status: 200, verified: true };
 }
 
 export async function sendChatPushNotification({ toUserId, title, body, data = null, logLabel = "chat push" }) {

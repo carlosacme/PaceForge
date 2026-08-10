@@ -139,6 +139,7 @@ const CoachLinkActions = ({
 import { refreshFcmTokenIfGranted, clearFcmToken } from "../firebase.js";
 import { Capacitor } from "@capacitor/core";
 import { registerNativePush, clearNativePush } from "../lib/nativePush";
+import PushDiagnosticsPanel from "./shared/PushDiagnosticsPanel";
 
 function MarketplacePlanWorkoutsAccordion({ previewWorkouts, resetKey, lockAfterWeek1 = false }) {
   const list = Array.isArray(previewWorkouts) ? previewWorkouts : [];
@@ -1918,6 +1919,8 @@ export default function AthleteHome({ profile }) {
                     </div>
                   </>
                 ) : null}
+
+                <PushDiagnosticsPanel notify={notifyPush} cardStyle={S.card} />
 
                 <DeleteAccountSection notify={notifyCallback} cardStyle={S.card} />
 

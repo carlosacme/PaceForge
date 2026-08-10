@@ -1,6 +1,6 @@
 import { Capacitor } from "@capacitor/core";
 import { PushNotifications } from "@capacitor/push-notifications";
-import { registerFcmToken } from "../components/shared/appShared";
+import { registerFcmTokenDetailed, readOwnFcmToken } from "../components/shared/appShared";
 
 /**
  * Push nativo para la APK.
@@ -9,14 +9,96 @@ import { registerFcmToken } from "../components/shared/appShared";
  * service worker, y ninguno de los dos existe dentro del WebView de Android:
  * por eso los usuarios de la APK nunca llegaban a registrar fcm_token. Este
  * modulo hace lo mismo con @capacitor/push-notifications y entrega el token a
- * la MISMA registerFcmToken(), asi que el backend y la tabla no cambian.
+ * la MISMA tuberia de registro, asi que el backend y la tabla no cambian.
+ *
+ * Dentro de la APK no hay consola donde leer un console.warn, asi que cada paso
+ * de la cadena (permiso -> token -> guardado -> verificado contra la BD) deja
+ * rastro en un diagnostico que la app puede enseñar en pantalla.
  */
 
 /** Los listeners se registran una sola vez por sesion de app. */
-let listenersReady = false;
+let listenersPromise = null;
 
 /** Toast in-app para mensajes en primer plano; lo inyecta quien llama. */
 let notifyHandler = null;
+
+const DIAG_STORAGE_KEY = "raf_push_diag";
+
+/** Ultimos 8 caracteres del token: suficiente para comparar, sin exponerlo. */
+const tokenTail = (t) => (t ? `…${String(t).slice(-8)}` : null);
+
+const emptyDiag = () => ({
+  platform: null,
+  permission: null,
+  registerAt: null,
+  tokenAt: null,
+  tokenTail: null,
+  savedAt: null,
+  verified: null,
+  lastError: null,
+  updatedAt: null,
+});
+
+let diag = emptyDiag();
+let diagLoaded = false;
+const diagSubscribers = new Set();
+
+const loadDiag = () => {
+  if (diagLoaded) return diag;
+  diagLoaded = true;
+  try {
+    const raw = typeof localStorage !== "undefined" ? localStorage.getItem(DIAG_STORAGE_KEY) : null;
+    if (raw) diag = { ...emptyDiag(), ...JSON.parse(raw) };
+  } catch {
+    diag = emptyDiag();
+  }
+  return diag;
+};
+
+const patchDiag = (patch) => {
+  loadDiag();
+  diag = { ...diag, ...patch, updatedAt: new Date().toISOString() };
+  try {
+    if (typeof localStorage !== "undefined") localStorage.setItem(DIAG_STORAGE_KEY, JSON.stringify(diag));
+  } catch {
+    // Sin localStorage el diagnostico vive solo en memoria; no es critico.
+  }
+  for (const cb of diagSubscribers) {
+    try { cb(diag); } catch { /* un suscriptor roto no puede tumbar el registro */ }
+  }
+  return diag;
+};
+
+/** Estado del ultimo intento de registro, para pintarlo en la app. */
+export const readPushDiagnostics = () => ({ ...loadDiag() });
+
+/** Avisa cuando cambia el diagnostico. Devuelve la funcion para desuscribirse. */
+export const subscribePushDiagnostics = (cb) => {
+  if (typeof cb !== "function") return () => {};
+  diagSubscribers.add(cb);
+  return () => diagSubscribers.delete(cb);
+};
+
+/** Texto plano del diagnostico, para que el tester pueda copiarlo y mandarlo. */
+export const formatPushDiagnostics = () => {
+  const d = loadDiag();
+  const when = (iso) => (iso ? new Date(iso).toLocaleString("es-CO") : "nunca");
+  return [
+    `plataforma: ${d.platform || "?"}`,
+    `permiso: ${d.permission || "?"}`,
+    `register(): ${when(d.registerAt)}`,
+    `token recibido: ${d.tokenAt ? `${when(d.tokenAt)} (${d.tokenTail})` : "nunca"}`,
+    `guardado en el perfil: ${d.savedAt ? when(d.savedAt) : "no"}`,
+    `verificado en la BD: ${d.verified === true ? "si" : d.verified === false ? "no" : "?"}`,
+    `ultimo error: ${d.lastError || "ninguno"}`,
+  ].join("\n");
+};
+
+const reportError = (reason) => {
+  patchDiag({ lastError: reason });
+  console.warn("[push-nativo]", reason);
+  if (notifyHandler) notifyHandler(`Notificaciones: ${reason}`);
+};
 
 /** Conecta el toast de la app (el mismo notify que usa onMessage en web). */
 export function setNativePushNotifier(fn) {
@@ -25,21 +107,39 @@ export function setNativePushNotifier(fn) {
 
 export const isNativePush = () => Capacitor.isNativePlatform();
 
-const ensureListeners = async () => {
-  if (listenersReady) return;
-  listenersReady = true;
+/**
+ * Guarda el token que entrego el plugin. Si falla, reintenta: el evento
+ * "registration" se consume una sola vez, y sin reintento un fallo pasajero
+ * (arranque sin red, sesion aun sin restaurar) dejaba el perfil sin token hasta
+ * el siguiente arranque de la app.
+ */
+const saveToken = async (value, { attempt = 1, maxAttempts = 3 } = {}) => {
+  const res = await registerFcmTokenDetailed(value);
+  if (res.ok) {
+    patchDiag({ savedAt: new Date().toISOString(), verified: res.verified === true, lastError: res.reason || null });
+    return true;
+  }
+  if (attempt >= maxAttempts) {
+    reportError(`no se pudo guardar el token (${res.reason})`);
+    return false;
+  }
+  await new Promise((r) => setTimeout(r, attempt * 3000));
+  return saveToken(value, { attempt: attempt + 1, maxAttempts });
+};
 
+const attachListeners = async () => {
   await PushNotifications.addListener("registration", async (token) => {
     const value = token?.value;
-    if (!value) return;
-    // Misma tuberia que el web: el endpoint corre con service_role y limpia el
-    // token de otros perfiles antes de asignarlo al usuario actual.
-    const ok = await registerFcmToken(value);
-    if (!ok) console.warn("[push-nativo] no se pudo registrar el token en el backend");
+    if (!value) {
+      reportError("el evento registration llego sin token");
+      return;
+    }
+    patchDiag({ tokenAt: new Date().toISOString(), tokenTail: tokenTail(value), lastError: null });
+    await saveToken(value);
   });
 
   await PushNotifications.addListener("registrationError", (err) => {
-    console.warn("[push-nativo] error de registro:", err?.error || err);
+    reportError(`Firebase rechazo el registro: ${err?.error || JSON.stringify(err)}`);
   });
 
   // App en primer plano: Android no pinta la notificacion, la entrega aqui.
@@ -55,6 +155,21 @@ const ensureListeners = async () => {
   await PushNotifications.addListener("pushNotificationActionPerformed", (action) => {
     console.log("[push-nativo] notificacion abierta", action?.notification?.data);
   });
+};
+
+/**
+ * Deja los listeners puestos una sola vez. Se guarda la PROMESA, no una
+ * bandera: con una bandera, una segunda llamada concurrente seguia adelante y
+ * podia llamar a register() con los listeners aun a medio enganchar.
+ */
+const ensureListeners = () => {
+  if (!listenersPromise) {
+    listenersPromise = attachListeners().catch((e) => {
+      listenersPromise = null;
+      throw e;
+    });
+  }
+  return listenersPromise;
 };
 
 /**
@@ -75,7 +190,7 @@ export async function nativePushPermissionState() {
 /**
  * Pide permiso si hace falta, registra el dispositivo en FCM y deja los
  * listeners puestos. El token llega por el listener "registration", no por el
- * valor de retorno: register() solo dispara el proceso.
+ * valor de retorno: register() solo dispara el proceso y vuelve enseguida.
  *
  * @param {{ notify?: (msg: string) => void }} options
  * @returns {Promise<boolean>} true si el dispositivo quedo registrado.
@@ -83,22 +198,42 @@ export async function nativePushPermissionState() {
 export async function registerNativePush({ notify } = {}) {
   if (!isNativePush()) return false;
   if (notify) setNativePushNotifier(notify);
+  patchDiag({ platform: Capacitor.getPlatform() });
   try {
+    // Los listeners van ANTES de pedir permiso: si el usuario concede desde los
+    // ajustes de Android y la app reintenta, ya estan puestos.
+    await ensureListeners();
+
     let status = await PushNotifications.checkPermissions();
     if (status.receive !== "granted") {
       status = await PushNotifications.requestPermissions();
     }
+    patchDiag({ permission: status.receive || null });
     if (status.receive !== "granted") {
-      console.warn("[push-nativo] permiso no concedido:", status.receive);
+      reportError(`permiso no concedido (${status.receive})`);
       return false;
     }
-    await ensureListeners();
+
     await PushNotifications.register();
+    patchDiag({ registerAt: new Date().toISOString() });
     return true;
   } catch (e) {
-    console.warn("[push-nativo] registerNativePush", e);
+    reportError(`register() fallo: ${String(e?.message || e)}`);
     return false;
   }
+}
+
+/**
+ * Contrasta el diagnostico con la realidad: mira si el perfil tiene AHORA un
+ * token guardado. Sirve para que el panel no dependa solo de lo que recuerda
+ * esta sesion de la app.
+ */
+export async function checkFcmTokenInProfile() {
+  const res = await readOwnFcmToken();
+  if (!res.ok) return { ok: false, reason: res.reason };
+  const hasToken = Boolean(res.token);
+  patchDiag({ verified: hasToken });
+  return { ok: true, hasToken, tokenTail: tokenTail(res.token) };
 }
 
 /**
@@ -110,8 +245,9 @@ export async function clearNativePush() {
   if (!isNativePush()) return;
   try {
     await PushNotifications.removeAllListeners();
-    listenersReady = false;
+    listenersPromise = null;
     notifyHandler = null;
+    patchDiag({ ...emptyDiag(), platform: Capacitor.getPlatform() });
   } catch (e) {
     console.warn("[push-nativo] clearNativePush", e);
   }
