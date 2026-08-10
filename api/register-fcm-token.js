@@ -44,15 +44,22 @@ export default async function handler(req, res) {
     return jsonError(res, 500, "No se pudo limpiar el token de otros perfiles");
   }
 
-  // 2) Asignarlo al usuario actual.
-  const { error: setErr } = await supabase
+  // 2) Asignarlo al usuario actual. El .select() es imprescindible: un UPDATE
+  //    que no encuentra fila responde igual que uno correcto, y el cliente daba
+  //    por registrado un token que nunca se guardo.
+  const { data: updated, error: setErr } = await supabase
     .from("profiles")
     .update({ fcm_token: token })
-    .eq("user_id", user.id);
+    .eq("user_id", user.id)
+    .select("user_id");
   if (setErr) {
     console.error("[register-fcm] guardar en perfil propio:", setErr.message);
     return jsonError(res, 500, "No se pudo guardar el token");
   }
+  if (!updated?.length) {
+    console.error("[register-fcm] sin fila en profiles para", user.id);
+    return jsonError(res, 404, "El usuario no tiene perfil donde guardar el token");
+  }
 
-  return res.status(200).json({ ok: true });
+  return res.status(200).json({ ok: true, saved: true });
 }
