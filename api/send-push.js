@@ -1,6 +1,13 @@
 import { GoogleAuth } from "google-auth-library";
 import { createClient } from "@supabase/supabase-js";
-import { requireUser, areRelated, fcmTokenByUserId, jsonError } from "../lib/apiAuth.js";
+import {
+  requireUser,
+  areRelated,
+  fcmTokenByUserId,
+  deviceTokensByUserId,
+  deviceTokensByUserIds,
+  jsonError,
+} from "../lib/apiAuth.js";
 
 const FCM_SEND_URL = "https://fcm.googleapis.com/v1/projects/runningapexflow/messages:send";
 
@@ -46,16 +53,31 @@ function adminClient() {
   return createClient(supabaseUrl, serviceKey);
 }
 
+/** Ultimos caracteres del token: identifican el dispositivo en el log sin guardar la credencial. */
+function tokenTail(token) {
+  return token ? String(token).slice(-8) : null;
+}
+
 /**
- * Deja constancia del intento. Nunca puede tumbar el envio: si el log falla,
- * el push ya salio (o ya fallo) y eso es lo que importa.
+ * Deja constancia del intento, uno por DISPOSITIVO. Nunca puede tumbar el
+ * envio: si el log falla, el push ya salio (o ya fallo) y eso es lo que importa.
  */
-async function logDelivery({ fromUserId = null, toUserId, kind = null, title = null, status, reason = null, messageId = null }) {
+async function logDelivery({
+  fromUserId = null,
+  toUserId,
+  kind = null,
+  title = null,
+  status,
+  reason = null,
+  messageId = null,
+  platform = null,
+  token = null,
+}) {
   if (!toUserId || !status) return;
   try {
     const supabase = adminClient();
     if (!supabase) return;
-    await supabase.from("push_deliveries").insert({
+    const base = {
       from_user_id: fromUserId,
       to_user_id: toUserId,
       kind,
@@ -63,7 +85,15 @@ async function logDelivery({ fromUserId = null, toUserId, kind = null, title = n
       status,
       reason: reason ? String(reason).slice(0, 300) : null,
       fcm_message_id: messageId,
-    });
+    };
+    const { error } = await supabase
+      .from("push_deliveries")
+      .insert({ ...base, platform, token_tail: tokenTail(token) });
+    if (!error) return;
+    // Con la 0061 sin aplicar, platform y token_tail no existen aun. Quedarse
+    // sin saber el dispositivo es mucho menos grave que perder el registro.
+    const retry = await supabase.from("push_deliveries").insert(base);
+    if (retry.error) console.warn("[push-log] no se pudo registrar el envio:", retry.error.message);
   } catch (e) {
     console.warn("[push-log] no se pudo registrar el envio:", e.message);
   }
@@ -78,27 +108,66 @@ function fcmErrorCode(err) {
 }
 
 /**
- * Un token que FCM ya no reconoce no vuelve a funcionar nunca. Si se deja en la
- * fila, TODOS los envios futuros a ese usuario fallan igual y el perfil sigue
- * pareciendo correcto. Ponerlo a null hace que la app lo detecte como "sin push
- * activo" y lo registre de nuevo en el siguiente arranque.
+ * Un token que FCM ya no reconoce no vuelve a funcionar nunca. Si se deja, TODOS
+ * los envios futuros a ese dispositivo fallan igual y el usuario sigue
+ * pareciendo notificable.
+ *
+ * Se retira la FILA del dispositivo, no la cuenta entera: quien tenga movil y
+ * navegador conserva el que si funciona. Se limpia tambien profiles.fcm_token
+ * porque es la reserva del envio, y dejarlo ahi haria que un token muerto
+ * volviera a intentarse por la puerta de atras.
  */
 async function forgetDeadToken(token, code) {
   if (!token || !["UNREGISTERED", "NOT_FOUND"].includes(String(code))) return false;
+  const supabase = adminClient();
+  if (!supabase) return false;
+  let removed = false;
   try {
-    const supabase = adminClient();
-    if (!supabase) return false;
-    const { data } = await supabase
+    const { data, error } = await supabase
+      .from("device_tokens")
+      .delete()
+      .eq("token", token)
+      .select("id,platform");
+    if (error) console.warn("[push] no se pudo borrar el dispositivo muerto:", error.message);
+    else if (data?.length) {
+      removed = true;
+      console.log(`[push] dispositivo muerto (${code}) retirado: ${data.map((d) => d.platform).join(", ")}`);
+    }
+  } catch (e) {
+    console.warn("[push] no se pudo borrar el dispositivo muerto:", e.message);
+  }
+  try {
+    const { data, error } = await supabase
       .from("profiles")
       .update({ fcm_token: null })
       .eq("fcm_token", token)
       .select("user_id");
-    if (data?.length) console.log(`[push] token muerto (${code}) retirado de ${data.length} perfil(es)`);
-    return Boolean(data?.length);
+    if (error) console.warn("[push] no se pudo limpiar el token muerto del perfil:", error.message);
+    else if (data?.length) {
+      removed = true;
+      console.log(`[push] token muerto (${code}) retirado de ${data.length} perfil(es)`);
+    }
   } catch (e) {
-    console.warn("[push] no se pudo limpiar el token muerto:", e.message);
-    return false;
+    console.warn("[push] no se pudo limpiar el token muerto del perfil:", e.message);
   }
+  return removed;
+}
+
+/**
+ * A que dispositivos hay que mandar el aviso.
+ *
+ * device_tokens es la fuente de verdad. profiles.fcm_token solo entra en juego
+ * cuando el usuario no tiene ninguna fila (todavia no ha vuelto a registrar) o
+ * cuando la tabla no responde, para que el envio no se caiga por el orden en que
+ * se despliegue el codigo y se aplique la migracion.
+ */
+async function pushTargets(userId) {
+  const rows = await deviceTokensByUserId(userId);
+  if (Array.isArray(rows) && rows.length) {
+    return rows.map((r) => ({ token: r.token, platform: r.platform || null }));
+  }
+  const legacy = await fcmTokenByUserId(userId);
+  return legacy ? [{ token: legacy, platform: null }] : [];
 }
 
 async function sendFCM(token, title, body, data) {
@@ -163,6 +232,53 @@ async function sendFCM(token, title, body, data) {
   return result;
 }
 
+/**
+ * Manda el mismo aviso a todos los dispositivos del destinatario y devuelve el
+ * recuento. Un dispositivo caido no impide que suene el otro: cada token se
+ * intenta, se audita y, si esta muerto, se retira por separado.
+ */
+async function sendToAllDevices({ targets, toUserId, fromUserId = null, kind, title, body, pushData }) {
+  let delivered = 0;
+  let dead = 0;
+  let lastError = null;
+  let lastCode = null;
+
+  for (const target of targets) {
+    try {
+      const result = await sendFCM(target.token, title, body, pushData);
+      delivered += 1;
+      await logDelivery({
+        fromUserId,
+        toUserId,
+        kind,
+        title,
+        status: "sent",
+        messageId: result?.name || null,
+        platform: target.platform,
+        token: target.token,
+      });
+    } catch (err) {
+      const code = fcmErrorCode(err);
+      lastError = err;
+      lastCode = code;
+      if (await forgetDeadToken(target.token, code)) dead += 1;
+      await logDelivery({
+        fromUserId,
+        toUserId,
+        kind,
+        title,
+        status: err?.data ? "rejected" : "error",
+        reason: [code, err?.data?.error?.message || err?.message].filter(Boolean).join(" · "),
+        platform: target.platform,
+        token: target.token,
+      });
+      console.warn(`[push] ✗ ${toUserId} (${target.platform || "sin plataforma"}):`, err.message);
+    }
+  }
+
+  return { delivered, dead, lastError, lastCode, devices: targets.length };
+}
+
 async function handleDailyReminders(res) {
   const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -187,39 +303,43 @@ async function handleDailyReminders(res) {
   const { data: athletes } = await supabase.from("athletes").select("id,user_id").in("id", athleteIds);
   const athleteMap = Object.fromEntries((athletes || []).map((a) => [a.id, a.user_id]));
   const userIds = Object.values(athleteMap).filter(Boolean);
+
+  // Los dispositivos de toda la tanda en UNA consulta, con profiles de reserva
+  // para quien aun no tenga fila en device_tokens.
+  const devicesByUser = await deviceTokensByUserIds(userIds);
   const { data: profiles } = await supabase.from("profiles").select("user_id,fcm_token").in("user_id", userIds);
   const tokenMap = Object.fromEntries((profiles || []).filter((p) => p.fcm_token).map((p) => [p.user_id, p.fcm_token]));
+  const targetsFor = (userId) => {
+    const rows = devicesByUser?.[userId];
+    if (rows?.length) return rows.map((r) => ({ token: r.token, platform: r.platform || null }));
+    const legacy = tokenMap[userId];
+    return legacy ? [{ token: legacy, platform: null }] : [];
+  };
 
   let sent = 0;
+  let devices = 0;
   for (const w of workouts) {
     const userId = athleteMap[w.athlete_id];
-    const token = tokenMap[userId];
-    if (!token) continue;
+    const targets = targetsFor(userId);
+    if (!targets.length) continue;
     const kmText = w.total_km ? ` · ${w.total_km}km` : "";
     const minText = w.duration_min ? ` · ${w.duration_min}min` : "";
     const body = `${w.title || w.type || "Entrenamiento"}${kmText}${minText}`;
-    try {
-      const result = await sendFCM(token, "🏃 Tienes un entreno hoy", body, {
-        type: "athlete_calendar",
-        workout_id: w.id,
-      });
-      sent++;
-      await logDelivery({ toUserId: userId, kind: "athlete_calendar", title: "Tienes un entreno hoy", status: "sent", messageId: result?.name || null });
-      console.log(`[remind] ✓ ${userId}: ${body}`);
-    } catch (e) {
-      const code = fcmErrorCode(e);
-      await forgetDeadToken(token, code);
-      await logDelivery({
-        toUserId: userId,
-        kind: "athlete_calendar",
-        title: "Tienes un entreno hoy",
-        status: e?.data ? "rejected" : "error",
-        reason: [code, e?.data?.error?.message || e.message].filter(Boolean).join(" · "),
-      });
-      console.warn(`[remind] ✗ ${userId}:`, e.message);
+    const outcome = await sendToAllDevices({
+      targets,
+      toUserId: userId,
+      kind: "athlete_calendar",
+      title: "🏃 Tienes un entreno hoy",
+      body,
+      pushData: { type: "athlete_calendar", workout_id: w.id },
+    });
+    devices += outcome.delivered;
+    if (outcome.delivered > 0) {
+      sent += 1;
+      console.log(`[remind] ✓ ${userId} (${outcome.delivered}/${outcome.devices} disp.): ${body}`);
     }
   }
-  return res.status(200).json({ ok: true, date: today, workouts: workouts.length, sent });
+  return res.status(200).json({ ok: true, date: today, workouts: workouts.length, sent, devices });
 }
 
 export default async function handler(req, res) {
@@ -245,48 +365,49 @@ export default async function handler(req, res) {
   const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
   if (!raw) return res.status(500).json({ error: "FIREBASE_SERVICE_ACCOUNT no configurada" });
 
-  // El cliente solo declara A QUIEN notifica. El token NUNCA sale de la
-  // base: lo resolvemos aqui con service_role tras validar la relacion
+  // El cliente solo declara A QUIEN notifica. Los tokens NUNCA salen de la
+  // base: los resolvemos aqui con service_role tras validar la relacion
   // coach<->atleta.
   if (!(await areRelated(user.id, to_user_id))) {
     return jsonError(res, 403, "Sin relación con el destinatario");
   }
   const kind = pushData && pushData.type ? String(pushData.type) : null;
-  const destToken = await fcmTokenByUserId(to_user_id);
-  if (!destToken) {
+  const targets = await pushTargets(to_user_id);
+  if (!targets.length) {
     // No es error de envio, pero el remitente necesita saberlo: su mensaje
     // llego a la app y el destinatario no se va a enterar por notificacion.
     await logDelivery({ fromUserId: user.id, toUserId: to_user_id, kind, title, status: "no_token" });
     return res.status(200).json({ ok: true, sent: false, reason: "sin token" });
   }
-  try {
-    const result = await sendFCM(destToken, title, body, pushData);
-    await logDelivery({
-      fromUserId: user.id,
-      toUserId: to_user_id,
-      kind,
-      title,
-      status: "sent",
-      messageId: result?.name || null,
+
+  const outcome = await sendToAllDevices({
+    targets,
+    toUserId: to_user_id,
+    fromUserId: user.id,
+    kind,
+    title,
+    body,
+    pushData,
+  });
+
+  // Basta con que suene en un dispositivo para que el aviso haya llegado.
+  if (outcome.delivered > 0) {
+    return res.status(200).json({
+      ok: true,
+      sent: true,
+      devices: outcome.devices,
+      delivered: outcome.delivered,
     });
-    return res.status(200).json({ ok: true, sent: true, ...result });
-  } catch (err) {
-    console.error("send-push:", err);
-    const code = fcmErrorCode(err);
-    const cleared = await forgetDeadToken(destToken, code);
-    await logDelivery({
-      fromUserId: user.id,
-      toUserId: to_user_id,
-      kind,
-      title,
-      status: err?.data ? "rejected" : "error",
-      reason: [code, err?.data?.error?.message || err?.message].filter(Boolean).join(" · "),
-    });
-    if (cleared) {
-      // El token ya no valia: para el remitente equivale a no tener push.
-      return res.status(200).json({ ok: true, sent: false, reason: "token caducado", code });
-    }
-    const status = err?.data ? 502 : 500;
-    return res.status(status).json({ error: err?.message || "Error enviando push", code, ...(err?.data || {}) });
   }
+  if (outcome.dead >= outcome.devices) {
+    // Ningun dispositivo valido: para el remitente equivale a no tener push.
+    return res.status(200).json({ ok: true, sent: false, reason: "token caducado", code: outcome.lastCode });
+  }
+  console.error("send-push:", outcome.lastError);
+  const status = outcome.lastError?.data ? 502 : 500;
+  return res.status(status).json({
+    error: outcome.lastError?.message || "Error enviando push",
+    code: outcome.lastCode,
+    devices: outcome.devices,
+  });
 }

@@ -52,7 +52,7 @@ export default function PushDiagnosticsPanel({ notify, cardStyle }) {
 
   const refreshProfileToken = useCallback(async () => {
     const res = await checkFcmTokenInProfile();
-    setProfileToken(res.ok ? { hasToken: res.hasToken, tail: res.tokenTail } : { error: res.reason });
+    setProfileToken(res.ok ? { hasToken: res.hasToken, tail: res.tokenTail, devices: res.devices } : { error: res.reason });
     return res;
   }, []);
 
@@ -61,7 +61,7 @@ export default function PushDiagnosticsPanel({ notify, cardStyle }) {
     let cancelled = false;
     checkFcmTokenInProfile().then((res) => {
       if (cancelled) return;
-      setProfileToken(res.ok ? { hasToken: res.hasToken, tail: res.tokenTail } : { error: res.reason });
+      setProfileToken(res.ok ? { hasToken: res.hasToken, tail: res.tokenTail, devices: res.devices } : { error: res.reason });
     });
     return () => {
       cancelled = true;
@@ -177,6 +177,13 @@ export default function PushDiagnosticsPanel({ notify, cardStyle }) {
                 }
                 ok={profileToken?.error ? null : Boolean(profileToken?.hasToken)}
               />
+              {profileToken?.devices != null ? (
+                <Row
+                  label="Dispositivos registrados"
+                  value={profileToken.devices === 1 ? "1 (este)" : String(profileToken.devices)}
+                  ok={profileToken.devices > 0}
+                />
+              ) : null}
               {diag.lastError ? <Row label="Último error" value={diag.lastError} ok={false} /> : null}
             </>
           ) : null}

@@ -1,6 +1,6 @@
 import { Capacitor } from "@capacitor/core";
 import { PushNotifications } from "@capacitor/push-notifications";
-import { registerFcmTokenDetailed, readOwnFcmToken } from "../components/shared/appShared";
+import { registerFcmTokenDetailed, readOwnFcmToken, readOwnDeviceTokens } from "../components/shared/appShared";
 
 /**
  * Push nativo para la APK.
@@ -224,11 +224,26 @@ export async function registerNativePush({ notify } = {}) {
 }
 
 /**
- * Contrasta el diagnostico con la realidad: mira si el perfil tiene AHORA un
- * token guardado. Sirve para que el panel no dependa solo de lo que recuerda
- * esta sesion de la app.
+ * Contrasta el diagnostico con la realidad: mira si la base tiene AHORA un token
+ * guardado. Sirve para que el panel no dependa solo de lo que recuerda esta
+ * sesion de la app.
+ *
+ * Se consulta device_tokens, que es a donde mira el envio, y de paso dice
+ * CUANTOS dispositivos estan registrados: con navegador y APK deben salir dos.
+ * profiles solo se usa de reserva si esa tabla no responde.
  */
 export async function checkFcmTokenInProfile() {
+  const devices = await readOwnDeviceTokens();
+  if (devices.ok) {
+    const hasToken = devices.tokens.length > 0;
+    patchDiag({ verified: hasToken });
+    return {
+      ok: true,
+      hasToken,
+      tokenTail: tokenTail(devices.tokens[0]?.token),
+      devices: devices.tokens.length,
+    };
+  }
   const res = await readOwnFcmToken();
   if (!res.ok) return { ok: false, reason: res.reason };
   const hasToken = Boolean(res.token);

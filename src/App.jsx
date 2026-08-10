@@ -97,6 +97,7 @@ import {
   RESTING_HR_MAX,
   MIN_HR_RESERVE,
   formatMessageTimestamp,
+  unregisterOwnDeviceToken,
 } from "./components/shared/appShared";
 import {
   initMessaging,
@@ -2031,10 +2032,12 @@ export default function App() {
 
 const handleSignOut = async () => {
   if (typeof window !== "undefined" && window.posthog) window.posthog.reset();
-    // Limpiar el token FCM de este navegador ANTES de salir, para que el
-    // proximo usuario no herede las notificaciones del que se va. Nunca debe
-    // impedir el logout si algo falla.
+    // Retirar el token de push de ESTE dispositivo ANTES de salir, para que el
+    // proximo usuario no herede las notificaciones del que se va. Los otros
+    // dispositivos del coach siguen recibiendo. Nunca debe impedir el logout si
+    // algo falla.
     try {
+      await unregisterOwnDeviceToken();
       const uid = session?.user?.id;
       if (uid) await supabase.from("profiles").update({ fcm_token: null }).eq("user_id", uid);
       if (Capacitor.isNativePlatform()) await clearNativePush();

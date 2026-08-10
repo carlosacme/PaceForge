@@ -31,6 +31,7 @@ import {
   PUSH_INACTIVE_REASONS,
   markConversationRead,
   registerFcmToken,
+  unregisterOwnDeviceToken,
   normalizeScheduledDateYmd,
   formatDurationMinutesTotal,
   normalizeWorkoutStructure,
@@ -1944,10 +1945,12 @@ export default function AthleteHome({ profile }) {
                     localStorage.removeItem("raf_athlete_progress_tab");
                     localStorage.removeItem("raf_lastView");
                   }
-                  // Limpiar el token FCM de este navegador ANTES de salir, para
-                  // que el proximo usuario no herede las notificaciones. No debe
+                  // Retirar el token de push de ESTE dispositivo ANTES de salir,
+                  // para que el proximo usuario no herede las notificaciones. Los
+                  // otros dispositivos del atleta siguen recibiendo. No debe
                   // impedir el logout si falla.
                   try {
+                    await unregisterOwnDeviceToken();
                     const { data: { user } } = await supabase.auth.getUser();
                     if (user?.id) await supabase.from("profiles").update({ fcm_token: null }).eq("user_id", user.id);
                     if (Capacitor.isNativePlatform()) await clearNativePush();

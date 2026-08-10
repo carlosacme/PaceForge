@@ -1,4 +1,5 @@
 import FitParser from "fit-file-parser";
+import { Capacitor } from "@capacitor/core";
 import { supabase } from "../../lib/supabase";
 import { readStructure } from "../../lib/workoutStructure";
 import {
@@ -1654,14 +1655,91 @@ const pushBodySnippet = (text, max = 400) => {
 };
 
 /**
- * Registra el fcm_token de este navegador en el backend (service_role).
- * El endpoint lo limpia de cualquier otro perfil antes de asignarlo al usuario
+ * Registra el token de push de este dispositivo en el backend (service_role).
+ * El endpoint lo retira de cualquier otro dueño antes de asignarlo al usuario
  * actual, evitando que varios usuarios del mismo navegador compartan token.
  */
 export async function registerFcmToken(token) {
   const r = await registerFcmTokenDetailed(token);
   if (!r.ok) console.warn("[fcm] no se registro el token:", r.reason);
   return r.ok;
+}
+
+/** Que dispositivo es este, para distinguir las filas de device_tokens. */
+export function currentPushPlatform() {
+  try {
+    if (Capacitor?.isNativePlatform?.()) {
+      const platform = String(Capacitor.getPlatform?.() || "").toLowerCase();
+      if (platform === "android" || platform === "ios") return platform;
+    }
+  } catch {
+    /* fuera de Capacitor: es un navegador */
+  }
+  return "web";
+}
+
+// El token de ESTE dispositivo, para poder retirar su fila al cerrar sesion sin
+// tocar los demas dispositivos del usuario. En web se podria volver a pedir a
+// Firebase, pero en nativo el plugin solo lo entrega en el evento de registro.
+const PUSH_TOKEN_STORAGE_KEY = "raf_push_token";
+
+const rememberPushToken = (token) => {
+  try {
+    if (token) localStorage.setItem(PUSH_TOKEN_STORAGE_KEY, token);
+  } catch {
+    /* almacenamiento no disponible */
+  }
+};
+
+/**
+ * Tokens de push del usuario, uno por dispositivo. La RLS de device_tokens deja
+ * a cada uno leer los suyos, asi que sirve para comprobar de verdad si el token
+ * quedo guardado en vez de fiarse del 200 del endpoint.
+ */
+export async function readOwnDeviceTokens() {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user?.id) return { ok: false, reason: "sin usuario autenticado" };
+    const { data, error } = await supabase
+      .from("device_tokens")
+      .select("token, platform, last_seen_at")
+      .eq("user_id", user.id);
+    if (error) return { ok: false, reason: error.message };
+    return { ok: true, tokens: data || [] };
+  } catch (e) {
+    return { ok: false, reason: String(e?.message || e) };
+  }
+}
+
+/**
+ * Retira el token de ESTE dispositivo al cerrar sesion, para que el siguiente
+ * usuario del mismo navegador no herede las notificaciones del anterior.
+ *
+ * Borra solo la fila de este token, nunca todas las del usuario: quien cierra
+ * sesion en el portatil debe seguir recibiendo en el movil. La RLS ya limita el
+ * borrado a las filas propias.
+ */
+export async function unregisterOwnDeviceToken() {
+  if (typeof window === "undefined") return false;
+  let token = null;
+  try {
+    token = localStorage.getItem(PUSH_TOKEN_STORAGE_KEY);
+  } catch {
+    /* almacenamiento no disponible */
+  }
+  if (!token) return false;
+  try {
+    const { error } = await supabase.from("device_tokens").delete().eq("token", token);
+    if (error) console.warn("[fcm] no se pudo retirar este dispositivo:", error.message);
+  } catch (e) {
+    console.warn("[fcm] no se pudo retirar este dispositivo:", String(e?.message || e));
+  }
+  try {
+    localStorage.removeItem(PUSH_TOKEN_STORAGE_KEY);
+  } catch {
+    /* almacenamiento no disponible */
+  }
+  return true;
 }
 
 /**
@@ -1714,7 +1792,7 @@ export async function registerFcmTokenDetailed(token) {
         "Content-Type": "application/json",
         Authorization: `Bearer ${session.access_token}`,
       },
-      body: JSON.stringify({ token }),
+      body: JSON.stringify({ token, platform: currentPushPlatform() }),
     });
   } catch (e) {
     return { ok: false, reason: `la peticion no salio: ${String(e?.message || e)}` };
@@ -1725,14 +1803,28 @@ export async function registerFcmTokenDetailed(token) {
     return { ok: false, status: res.status, reason: `el endpoint respondio ${res.status}${body ? `: ${body}` : ""}` };
   }
 
-  // El endpoint hace un UPDATE sin comprobar filas afectadas: si el usuario no
-  // tuviera fila en profiles responderia 200 sin haber guardado nada. Releer la
-  // fila convierte ese falso exito en un error visible.
+  // Releer la fila convierte en error visible el falso exito de un endpoint que
+  // responde 200 sin haber escrito nada. Se comprueba device_tokens, que es la
+  // fuente de verdad del envio; profiles solo se consulta si esa tabla no
+  // responde (migracion 0061 todavia sin aplicar).
+  const devices = await readOwnDeviceTokens();
+  if (devices.ok) {
+    if (devices.tokens.some((t) => t.token === token)) {
+      rememberPushToken(token);
+      return { ok: true, status: 200, verified: true };
+    }
+    return { ok: false, status: 200, verified: false, reason: "el endpoint respondio OK pero device_tokens sigue sin el token" };
+  }
+
   const saved = await readOwnFcmToken();
-  if (!saved.ok) return { ok: true, status: 200, verified: false, reason: `guardado sin verificar: ${saved.reason}` };
+  if (!saved.ok) {
+    rememberPushToken(token);
+    return { ok: true, status: 200, verified: false, reason: `guardado sin verificar: ${saved.reason}` };
+  }
   if (saved.token !== token) {
     return { ok: false, status: 200, verified: false, reason: "el endpoint respondio OK pero el perfil sigue sin el token" };
   }
+  rememberPushToken(token);
   return { ok: true, status: 200, verified: true };
 }
 
