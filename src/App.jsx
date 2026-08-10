@@ -23,6 +23,8 @@ import {
   normalizeAthlete,
   fetchActiveDeviceConnections,
   fetchUnreadMessageCounts,
+  fetchWeeklyKmByAthlete,
+  sumWeekKm,
   markConversationRead,
   providerLabel,
   formatDeviceSyncDate,
@@ -3615,10 +3617,11 @@ function Dashboard({
     };
   }, [coachUserId, loadDashboardData]);
 
-  const totalWeeklyKmTarget = useMemo(
-    () => dashAthletes.reduce((sum, a) => sum + (Number(a.weekly_km) || 0), 0),
-    [dashAthletes],
-  );
+  // Km de la semana a partir de los workouts que ya estan cargados (misma
+  // consulta de siempre), no del weekly_km declarado en la ficha del atleta.
+  const weekKm = useMemo(() => sumWeekKm(weekWorkouts), [weekWorkouts]);
+
+  const weekKmDonePct = weekKm.planned > 0 ? Math.round((weekKm.actual / weekKm.planned) * 100) : 0;
 
   const { weekWorkoutsTotal, weekWorkoutsDone, weekAvgRpe, weekRpeCount } = useMemo(() => {
     const total = weekWorkouts.length;
@@ -3639,14 +3642,14 @@ function Dashboard({
       const weekDone = forAthlete.filter((w) => w.done).length;
       const adherencePct = weekTotal > 0 ? Math.round((weekDone / weekTotal) * 100) : 0;
       const { name: raceName, daysLeft } = getRaceMeta(a.next_race);
-      return { athlete: a, weekTotal, weekDone, adherencePct, raceName, daysLeft };
+      return { athlete: a, weekTotal, weekDone, adherencePct, raceName, daysLeft, km: sumWeekKm(forAthlete) };
     });
   }, [dashAthletes, weekWorkouts]);
 
-  const maxWeeklyKm = useMemo(() => {
-    const m = Math.max(1, ...dashAthletes.map((a) => Number(a.weekly_km) || 0));
-    return m;
-  }, [dashAthletes]);
+  const maxWeeklyKm = useMemo(
+    () => Math.max(1, ...athleteRows.map((r) => r.km.planned)),
+    [athleteRows],
+  );
 
   return (
     <div style={{ ...S.page, display: "flex", flexDirection: "column" }}>
@@ -3839,7 +3842,16 @@ function Dashboard({
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 14, marginBottom: 28 }}>
             {[
               { label: "Atletas activos", value: dashAthletes.length, sub: "Registrados bajo tu cuenta", icon: "🏃", color: "#f59e0b" },
-              { label: "Km objetivo / semana", value: `${totalWeeklyKmTarget} km`, sub: "Suma de weekly_km de tus atletas", icon: "📍", color: "#3b82f6" },
+              { label: "Km programados / semana", value: `${weekKm.planned} km`, sub: "Suma de los workouts de esta semana", icon: "📍", color: "#3b82f6" },
+              {
+                label: "Km corridos / semana",
+                value: `${weekKm.actual} km`,
+                sub: weekKm.planned > 0
+                  ? `${weekKmDonePct}% de lo programado · solo sesiones marcadas como hechas`
+                  : "Sin kilómetros programados esta semana",
+                icon: "🏁",
+                color: weekKm.planned > 0 && weekKm.actual >= weekKm.planned ? "#16a34a" : "#d97706",
+              },
               {
                 label: "Adherencia global",
                 value: weekWorkoutsTotal ? `${globalAdherencePct}%` : "—",
@@ -3874,7 +3886,7 @@ function Dashboard({
                 <thead>
                   <tr style={{ background: "#f1f5f9", textAlign: "left", color: "#94a3b8" }}>
                     <th style={{ padding: "12px 14px", fontWeight: 700 }}>Atleta</th>
-                    <th style={{ padding: "12px 14px", fontWeight: 700 }}>Km / sem</th>
+                    <th style={{ padding: "12px 14px", fontWeight: 700 }}>Km sem · plan / real</th>
                     <th style={{ padding: "12px 14px", fontWeight: 700, minWidth: 160 }}>Adherencia (semana)</th>
                     <th style={{ padding: "12px 14px", fontWeight: 700 }}>Próxima carrera</th>
                     <th style={{ padding: "12px 14px", fontWeight: 700 }}>Días restantes</th>
@@ -3888,14 +3900,23 @@ function Dashboard({
                       </td>
                     </tr>
                   ) : (
-                    athleteRows.map(({ athlete: a, weekTotal, weekDone, adherencePct, raceName, daysLeft }) => (
+                    athleteRows.map(({ athlete: a, weekTotal, weekDone, adherencePct, raceName, daysLeft, km }) => (
                       <tr
                         key={a.id}
                         onClick={() => onSelect(a)}
                         style={{ borderTop: "1px solid #e2e8f0", cursor: "pointer" }}
                       >
                         <td style={{ padding: "12px 14px", color: "#0f172a", fontWeight: 600 }}>{a.name}</td>
-                        <td style={{ padding: "12px 14px", color: "#cbd5e1", fontFamily: "monospace" }}>{a.weekly_km} km</td>
+                        <td style={{ padding: "12px 14px", color: "#64748b", fontFamily: "monospace" }}>
+                          {km.planned > 0 ? (
+                            <>
+                              {km.planned} /{" "}
+                              <span style={{ color: km.actual >= km.planned ? "#16a34a" : "#d97706", fontWeight: 700 }}>{km.actual}</span> km
+                            </>
+                          ) : (
+                            "—"
+                          )}
+                        </td>
                         <td style={{ padding: "12px 14px" }}>
                           <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 4 }}>
                             {weekTotal ? `${weekDone}/${weekTotal} · ${adherencePct}%` : "Sin workouts esta semana"}
@@ -3914,7 +3935,7 @@ function Dashboard({
             </div>
           </div>
 
-          <div style={{ fontSize: ".72em", letterSpacing: ".15em", color: "#475569", textTransform: "uppercase", marginBottom: 14 }}>Km semanales por atleta</div>
+          <div style={{ fontSize: ".72em", letterSpacing: ".15em", color: "#475569", textTransform: "uppercase", marginBottom: 14 }}>Km programados esta semana, por atleta</div>
           <div style={{ ...S.card, padding: "18px 16px 22px" }}>
             {dashAthletes.length === 0 ? (
               <div style={{ color: "#64748b", fontSize: ".85em" }}>Sin datos para graficar.</div>
@@ -3929,8 +3950,8 @@ function Dashboard({
                   paddingTop: 8,
                 }}
               >
-                {dashAthletes.map((a) => {
-                  const km = Number(a.weekly_km) || 0;
+                {athleteRows.map(({ athlete: a, km: weekKmForAthlete }) => {
+                  const km = weekKmForAthlete.planned;
                   const hPct = Math.max(6, (km / maxWeeklyKm) * 100);
                   return (
                     <div
@@ -3944,7 +3965,7 @@ function Dashboard({
                         alignItems: "center",
                         gap: 8,
                       }}
-                      title={`${a.name}: ${km} km/semana`}
+                      title={`${a.name}: ${km} km programados · ${weekKmForAthlete.actual} km corridos`}
                     >
                       <div
                         style={{
@@ -4104,6 +4125,26 @@ const UnreadMessagesBadge = ({ count }) => {
   );
 };
 
+/**
+ * Carga de la semana en la tarjeta del atleta: lo programado frente a lo
+ * corrido. Sustituye a athletes.weekly_km, que era un dato declarado que nadie
+ * actualizaba y no decia nada de la semana en curso.
+ */
+const WeeklyLoadLine = ({ load }) => {
+  const planned = Number(load?.planned) || 0;
+  const actual = Number(load?.actual) || 0;
+  if (planned <= 0) {
+    return <span style={{ color: "#94a3b8" }}>Sin plan esta semana</span>;
+  }
+  const cumplio = actual >= planned;
+  return (
+    <>
+      Plan {planned} ·{" "}
+      <span style={{ color: cumplio ? "#16a34a" : "#d97706", fontWeight: 700 }}>Real {actual}</span> km
+    </>
+  );
+};
+
 function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWorkoutsDoneSync, onAthleteFcSync, coachDisplayName, onDeleteAthlete, notify, onOpenInviteModal }) {
   const S = styles;
   const athlete = (selected ? athletes.find(a => String(a.id) === String(selected.id)) : athletes[0]) || null;
@@ -4183,6 +4224,30 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
       cancelled = true;
     };
   }, [athleteIdsKey]);
+
+  // Carga de la semana (programado vs corrido) de toda la lista, en una sola
+  // consulta. Se recalcula al cambiar la lista y cuando se tocan los workouts.
+  const [weekLoadByAthlete, setWeekLoadByAthlete] = useState({});
+  const [weekLoadReady, setWeekLoadReady] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const ids = athleteIdsKey ? athleteIdsKey.split(",").map(Number) : [];
+    if (!ids.length) {
+      setWeekLoadByAthlete({});
+      setWeekLoadReady(true);
+      return undefined;
+    }
+    setWeekLoadReady(false);
+    fetchWeeklyKmByAthlete(ids).then(({ ok, byAthlete }) => {
+      if (cancelled) return;
+      setWeekLoadByAthlete(byAthlete);
+      setWeekLoadReady(ok);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [athleteIdsKey, workoutsRefresh]);
 
   // Mensajes sin leer de toda la lista, tambien en una sola consulta. El
   // contador se refresca al marcar leido y al llegar un mensaje por realtime.
@@ -5456,7 +5521,10 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
                     <div style={{ flex: 1, minWidth: 0, fontSize: ".85em", fontWeight: 700, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name}</div>
                     <UnreadMessagesBadge count={unreadByAthlete[String(a.id)]} />
                   </div>
-                  <div style={{ fontSize: ".7em", color: "#64748b" }}>{a.pace} · {a.weekly_km}km</div>
+                  <div style={{ fontSize: ".7em", color: "#64748b" }}>
+                    {a.pace}
+                    {weekLoadReady ? <> · <WeeklyLoadLine load={weekLoadByAthlete[String(a.id)]} /></> : null}
+                  </div>
                   {deviceConnectionsReady ? <DeviceConnectionBadges connections={deviceConnections[String(a.id)]} /> : null}
                 </div>
                 <button

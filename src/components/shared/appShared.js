@@ -845,6 +845,76 @@ export const reconcileWorkoutList = (list, { paceRanges = null, kmKey = null, lo
 };
 
 /**
+ * Lunes y domingo (YYYY-MM-DD) de la semana en curso, en la hora local del
+ * navegador, que es la misma convencion que usa el calendario del coach.
+ */
+export const currentWeekRangeYmd = (ref = new Date()) => {
+  const monday = startOfWeekMonday(ref);
+  return { from: formatLocalYMD(monday), to: formatLocalYMD(addDays(monday, 6)) };
+};
+
+/**
+ * Distancia REALMENTE corrida de un workout: manda lo que sincronizo el reloj
+ * y, si no hay, lo que el atleta tecleo a mano. 0 si no hay ninguno de los dos.
+ */
+export const workoutActualKm = (w) => {
+  const fromDevice = Number(w?.actual_distance_km);
+  if (Number.isFinite(fromDevice) && fromDevice > 0) return fromDevice;
+  const manual = Number(w?.manual_distance_km);
+  if (Number.isFinite(manual) && manual > 0) return manual;
+  return 0;
+};
+
+const roundKm = (n) => Math.round(n * 10) / 10;
+
+/**
+ * Km programados y corridos de un conjunto de workouts ya cargados.
+ * Solo cuentan como corridos los marcados done: un workout con distancia del
+ * reloj pero sin marcar no esta cerrado todavia.
+ */
+export const sumWeekKm = (rows) => {
+  let planned = 0;
+  let actual = 0;
+  for (const w of Array.isArray(rows) ? rows : []) {
+    const km = Number(w?.total_km);
+    if (Number.isFinite(km) && km > 0) planned += km;
+    if (w?.done) actual += workoutActualKm(w);
+  }
+  return { planned: roundKm(planned), actual: roundKm(actual) };
+};
+
+/**
+ * Km programados y corridos de esta semana por atleta, en UNA sola consulta
+ * para toda la lista (nunca una por atleta). ok=false si la consulta falla:
+ * mejor no pintar nada que enseñar ceros que no son ciertos.
+ */
+export const fetchWeeklyKmByAthlete = async (athleteIds, range) => {
+  const ids = (Array.isArray(athleteIds) ? athleteIds : []).map(Number).filter((n) => Number.isFinite(n));
+  if (!ids.length) return { ok: true, byAthlete: {} };
+  const { from, to } = range || currentWeekRangeYmd();
+  const { data, error } = await supabase
+    .from("workouts")
+    .select("athlete_id, total_km, done, actual_distance_km, manual_distance_km")
+    .in("athlete_id", ids)
+    .gte("scheduled_date", from)
+    .lte("scheduled_date", to);
+  if (error) {
+    console.warn("[carga semanal] no se pudieron leer los workouts de la semana:", error.message);
+    return { ok: false, byAthlete: {} };
+  }
+  const rowsByAthlete = {};
+  for (const row of data || []) {
+    const key = String(row?.athlete_id ?? "");
+    if (!key) continue;
+    if (!rowsByAthlete[key]) rowsByAthlete[key] = [];
+    rowsByAthlete[key].push(row);
+  }
+  const byAthlete = {};
+  for (const [key, rows] of Object.entries(rowsByAthlete)) byAthlete[key] = sumWeekKm(rows);
+  return { ok: true, byAthlete };
+};
+
+/**
  * Mensajes sin leer por atleta, en UNA sola consulta para toda la lista del
  * coach (nunca una por atleta). Para el coach "sin leer" es lo que le mando el
  * atleta; el senderRole se puede invertir para el caso simetrico.
