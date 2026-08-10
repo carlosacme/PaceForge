@@ -1986,11 +1986,38 @@ export async function evaluateAndAwardAthleteAchievements(athleteId) {
   }
 }
 
-export const formatMessageTimestamp = (iso) => {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleString("es", { dateStyle: "short", timeStyle: "short" });
+/**
+ * messages.created_at es `timestamp without time zone` y guarda UTC, así que llega sin offset
+ * y `new Date()` lo tomaría como hora local (5 h de desfase en Bogotá). Los mensajes optimistas
+ * del cliente sí traen `Z`, y una futura migración a timestamptz traería `+00:00`: de ahí el test.
+ */
+export const parseUtcTimestamp = (value) => {
+  if (!value) return null;
+  const raw = String(value).trim();
+  if (!raw) return null;
+  const iso = raw.includes("T") ? raw : raw.replace(" ", "T");
+  const hasZone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(iso);
+  const d = new Date(hasZone ? iso : `${iso}Z`);
+  return Number.isNaN(d.getTime()) ? null : d;
+};
+
+const pad2 = (n) => String(n).padStart(2, "0");
+
+const isSameLocalDay = (a, b) =>
+  a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+
+/** Se construye a mano para dar el mismo resultado en cualquier navegador o WebView, sin depender de Intl. */
+export const formatMessageTimestamp = (value) => {
+  const d = parseUtcTimestamp(value);
+  if (!d) return "";
+  const time = `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+  const now = new Date();
+  if (isSameLocalDay(d, now)) return `hoy ${time}`;
+  const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+  if (isSameLocalDay(d, yesterday)) return `ayer ${time}`;
+  const dayMonth = `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}`;
+  if (d.getFullYear() === now.getFullYear()) return `${dayMonth} ${time}`;
+  return `${dayMonth}/${String(d.getFullYear()).slice(-2)} ${time}`;
 };
 
 export const normalizeWorkoutRow = (row) => {

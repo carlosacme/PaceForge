@@ -96,6 +96,7 @@ import {
   RESTING_HR_MIN,
   RESTING_HR_MAX,
   MIN_HR_RESERVE,
+  formatMessageTimestamp,
 } from "./components/shared/appShared";
 import {
   initMessaging,
@@ -281,14 +282,6 @@ async function evaluateAndAwardAthleteAchievements(athleteId) {
     return { newAwards: [], snapshot: { achievements: [], earned: [] }, progress: null };
   }
 }
-
-const formatMessageTimestamp = (iso) => {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleString("es", { dateStyle: "short", timeStyle: "short" });
-};
-
 
 /** YYYY-MM-DD desde componentes locales (celdas del calendario); evita desfaces vs strings ISO del workout. */
 
