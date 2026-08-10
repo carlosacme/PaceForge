@@ -1736,11 +1736,21 @@ export async function registerFcmTokenDetailed(token) {
   return { ok: true, status: 200, verified: true };
 }
 
+/**
+ * Manda una push al otro lado de la conversacion.
+ *
+ * Devuelve el resultado en vez de tragarselo: un 200 con sent=false (el
+ * destinatario no tiene push activo, o su token ya caduco) no es un error de
+ * red, pero quien escribe merece saber que su mensaje no va a sonar en el otro
+ * telefono. El envio nunca debe romper el flujo que lo llama.
+ *
+ * @returns {Promise<{sent: boolean, reason?: string, error?: string}>}
+ */
 export async function sendChatPushNotification({ toUserId, title, body, data = null, logLabel = "chat push" }) {
-  if (!toUserId || typeof window === "undefined") return;
+  if (!toUserId || typeof window === "undefined") return { sent: false, reason: "sin destinatario" };
   try {
     const { data: { session } } = await supabase.auth.getSession();
-    if (!session?.access_token) return;
+    if (!session?.access_token) return { sent: false, reason: "sin sesion" };
     const res = await fetch("/api/send-push", {
       method: "POST",
       headers: {
@@ -1754,9 +1764,45 @@ export async function sendChatPushNotification({ toUserId, title, body, data = n
         data: data && typeof data === "object" ? data : undefined,
       }),
     });
-    if (!res.ok) console.warn(`[${logLabel}] /api/send-push respuesta no OK`, await res.text());
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      console.warn(`[${logLabel}] /api/send-push respuesta no OK`, text);
+      return { sent: false, error: `HTTP ${res.status}`, reason: pushBodySnippet(text, 160) };
+    }
+    const json = await res.json().catch(() => ({}));
+    if (json.sent === false) console.warn(`[${logLabel}] no se envio: ${json.reason || "sin motivo"}`);
+    return { sent: json.sent !== false, reason: json.reason };
   } catch (e) {
     console.warn(`[${logLabel}] /api/send-push error`, e);
+    return { sent: false, error: String(e?.message || e) };
+  }
+}
+
+/** Motivos por los que el destinatario no tiene notificaciones funcionando. */
+export const PUSH_INACTIVE_REASONS = new Set(["sin token", "token caducado"]);
+
+/**
+ * Ultimo aviso que INTENTARON enviarte, con el resultado. Lo escribe el backend
+ * en push_deliveries y la RLS deja leerlo al destinatario, asi que responde a la
+ * pregunta "¿me mandaron algo y no me llego?" sin salir de la app.
+ */
+export async function readMyLastPushDelivery() {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user?.id) return null;
+    const { data, error } = await supabase
+      .from("push_deliveries")
+      .select("created_at, kind, title, status, reason")
+      .eq("to_user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(1);
+    if (error) {
+      console.warn("[push-log] no se pudo leer el historial:", error.message);
+      return null;
+    }
+    return data?.[0] || null;
+  } catch {
+    return null;
   }
 }
 

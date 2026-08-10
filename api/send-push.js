@@ -38,6 +38,69 @@ function androidNotificationTag(data) {
   return scope != null ? `${type}-${scope}` : type;
 }
 
+/** Cliente con service_role para el log y la limpieza de tokens muertos. */
+function adminClient() {
+  const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !serviceKey) return null;
+  return createClient(supabaseUrl, serviceKey);
+}
+
+/**
+ * Deja constancia del intento. Nunca puede tumbar el envio: si el log falla,
+ * el push ya salio (o ya fallo) y eso es lo que importa.
+ */
+async function logDelivery({ fromUserId = null, toUserId, kind = null, title = null, status, reason = null, messageId = null }) {
+  if (!toUserId || !status) return;
+  try {
+    const supabase = adminClient();
+    if (!supabase) return;
+    await supabase.from("push_deliveries").insert({
+      from_user_id: fromUserId,
+      to_user_id: toUserId,
+      kind,
+      title: title ? String(title).slice(0, 120) : null,
+      status,
+      reason: reason ? String(reason).slice(0, 300) : null,
+      fcm_message_id: messageId,
+    });
+  } catch (e) {
+    console.warn("[push-log] no se pudo registrar el envio:", e.message);
+  }
+}
+
+/** Codigo de error de FCM v1: viene en error.details[].errorCode. */
+function fcmErrorCode(err) {
+  const error = err?.data?.error;
+  if (!error) return null;
+  const detail = (error.details || []).find((d) => d.errorCode);
+  return detail?.errorCode || error.status || null;
+}
+
+/**
+ * Un token que FCM ya no reconoce no vuelve a funcionar nunca. Si se deja en la
+ * fila, TODOS los envios futuros a ese usuario fallan igual y el perfil sigue
+ * pareciendo correcto. Ponerlo a null hace que la app lo detecte como "sin push
+ * activo" y lo registre de nuevo en el siguiente arranque.
+ */
+async function forgetDeadToken(token, code) {
+  if (!token || !["UNREGISTERED", "NOT_FOUND"].includes(String(code))) return false;
+  try {
+    const supabase = adminClient();
+    if (!supabase) return false;
+    const { data } = await supabase
+      .from("profiles")
+      .update({ fcm_token: null })
+      .eq("fcm_token", token)
+      .select("user_id");
+    if (data?.length) console.log(`[push] token muerto (${code}) retirado de ${data.length} perfil(es)`);
+    return Boolean(data?.length);
+  } catch (e) {
+    console.warn("[push] no se pudo limpiar el token muerto:", e.message);
+    return false;
+  }
+}
+
 async function sendFCM(token, title, body, data) {
   const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
   if (!raw) throw new Error("FIREBASE_SERVICE_ACCOUNT no configurada");
@@ -136,13 +199,23 @@ async function handleDailyReminders(res) {
     const minText = w.duration_min ? ` · ${w.duration_min}min` : "";
     const body = `${w.title || w.type || "Entrenamiento"}${kmText}${minText}`;
     try {
-      await sendFCM(token, "🏃 Tienes un entreno hoy", body, {
+      const result = await sendFCM(token, "🏃 Tienes un entreno hoy", body, {
         type: "athlete_calendar",
         workout_id: w.id,
       });
       sent++;
+      await logDelivery({ toUserId: userId, kind: "athlete_calendar", title: "Tienes un entreno hoy", status: "sent", messageId: result?.name || null });
       console.log(`[remind] ✓ ${userId}: ${body}`);
     } catch (e) {
+      const code = fcmErrorCode(e);
+      await forgetDeadToken(token, code);
+      await logDelivery({
+        toUserId: userId,
+        kind: "athlete_calendar",
+        title: "Tienes un entreno hoy",
+        status: e?.data ? "rejected" : "error",
+        reason: [code, e?.data?.error?.message || e.message].filter(Boolean).join(" · "),
+      });
       console.warn(`[remind] ✗ ${userId}:`, e.message);
     }
   }
@@ -178,17 +251,42 @@ export default async function handler(req, res) {
   if (!(await areRelated(user.id, to_user_id))) {
     return jsonError(res, 403, "Sin relación con el destinatario");
   }
+  const kind = pushData && pushData.type ? String(pushData.type) : null;
   const destToken = await fcmTokenByUserId(to_user_id);
   if (!destToken) {
-    // No es error: el destinatario simplemente no tiene push activo.
+    // No es error de envio, pero el remitente necesita saberlo: su mensaje
+    // llego a la app y el destinatario no se va a enterar por notificacion.
+    await logDelivery({ fromUserId: user.id, toUserId: to_user_id, kind, title, status: "no_token" });
     return res.status(200).json({ ok: true, sent: false, reason: "sin token" });
   }
   try {
     const result = await sendFCM(destToken, title, body, pushData);
+    await logDelivery({
+      fromUserId: user.id,
+      toUserId: to_user_id,
+      kind,
+      title,
+      status: "sent",
+      messageId: result?.name || null,
+    });
     return res.status(200).json({ ok: true, sent: true, ...result });
   } catch (err) {
     console.error("send-push:", err);
+    const code = fcmErrorCode(err);
+    const cleared = await forgetDeadToken(destToken, code);
+    await logDelivery({
+      fromUserId: user.id,
+      toUserId: to_user_id,
+      kind,
+      title,
+      status: err?.data ? "rejected" : "error",
+      reason: [code, err?.data?.error?.message || err?.message].filter(Boolean).join(" · "),
+    });
+    if (cleared) {
+      // El token ya no valia: para el remitente equivale a no tener push.
+      return res.status(200).json({ ok: true, sent: false, reason: "token caducado", code });
+    }
     const status = err?.data ? 502 : 500;
-    return res.status(status).json({ error: err?.message || "Error enviando push", ...(err?.data || {}) });
+    return res.status(status).json({ error: err?.message || "Error enviando push", code, ...(err?.data || {}) });
   }
 }

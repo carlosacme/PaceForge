@@ -89,6 +89,7 @@ import {
   ATHLETE_ACHIEVEMENT_DISPLAY_LIST,
   computeAthleteAchievementVisualProgress,
   sendChatPushNotification,
+  PUSH_INACTIVE_REASONS,
   sendWorkoutAssignmentPushToAthlete,
   registerFcmToken,
   computeHrZones,
@@ -4164,6 +4165,8 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
   const [chatMessages, setChatMessages] = useState([]);
   const [chatDraft, setChatDraft] = useState("");
   const [chatSending, setChatSending] = useState(false);
+  /** Atletas a los que ya se avisó de que no tienen push, para no repetirlo. */
+  const pushWarnedAthletesRef = useRef(new Set());
   const [coachAthleteEvaluations, setCoachAthleteEvaluations] = useState([]);
   const [earnedAchievements, setEarnedAchievements] = useState([]);
   const [dragWorkoutId, setDragWorkoutId] = useState(null);
@@ -5452,7 +5455,16 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
         body,
         data: { type: "athlete_chat" },
         logLabel: "chat coach→atleta",
-      }).catch(() => {});
+      })
+        .then((r) => {
+          // Una vez por atleta: el coach necesita saber que ese mensaje no va a
+          // sonar en el telefono del atleta, sin que se lo repitan cada linea.
+          if (r.sent || !PUSH_INACTIVE_REASONS.has(r.reason)) return;
+          if (pushWarnedAthletesRef.current.has(String(athlete.id))) return;
+          pushWarnedAthletesRef.current.add(String(athlete.id));
+          notify(`${athlete.name || "El atleta"} no tiene las notificaciones activas: verá el mensaje al abrir la app.`);
+        })
+        .catch(() => {});
       // Reconciliar el id real del mensaje optimista, sin await bloqueante.
       loadCoachChat();
     } finally {

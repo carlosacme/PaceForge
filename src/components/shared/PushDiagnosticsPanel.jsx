@@ -7,6 +7,7 @@ import {
   registerNativePush,
   subscribePushDiagnostics,
 } from "../../lib/nativePush";
+import { readMyLastPushDelivery } from "./appShared";
 
 /**
  * Estado de las notificaciones dentro de la APK.
@@ -45,6 +46,7 @@ export default function PushDiagnosticsPanel({ notify, cardStyle }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [profileToken, setProfileToken] = useState(null);
+  const [lastDelivery, setLastDelivery] = useState(null);
 
   useEffect(() => subscribePushDiagnostics(setDiag), []);
 
@@ -66,14 +68,45 @@ export default function PushDiagnosticsPanel({ notify, cardStyle }) {
     };
   }, []);
 
-  if (!isNativePush()) return null;
+  useEffect(() => {
+    let cancelled = false;
+    readMyLastPushDelivery().then((row) => {
+      if (!cancelled) setLastDelivery(row);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
+  // En la APK el panel siempre esta disponible (es donde se diagnostica el
+  // registro nativo). En navegador solo aparece si el ultimo aviso dirigido a
+  // este usuario NO se pudo entregar: si todo va bien, no estorba.
+  const deliveryFailed = Boolean(lastDelivery) && lastDelivery.status !== "sent";
+  if (!isNativePush() && !deliveryFailed) return null;
+
+  const native = isNativePush();
   const saved = Boolean(diag.savedAt) && profileToken?.hasToken !== false;
-  const headline = saved
-    ? "Notificaciones activas"
-    : diag.permission && diag.permission !== "granted"
-      ? "Falta el permiso de notificaciones"
-      : "Notificaciones sin activar";
+  const ok = native ? saved && !deliveryFailed : !deliveryFailed;
+  const headline = !native
+    ? "No pudimos entregarte el último aviso"
+    : saved
+      ? deliveryFailed ? "Activas, pero el último aviso no llegó" : "Notificaciones activas"
+      : diag.permission && diag.permission !== "granted"
+        ? "Falta el permiso de notificaciones"
+        : "Notificaciones sin activar";
+
+  const deliveryLabel = (() => {
+    if (!lastDelivery) return "ninguno registrado";
+    const when = fmt(lastDelivery.created_at) || "";
+    const estado = lastDelivery.status === "sent"
+      ? "entregado a Firebase"
+      : lastDelivery.status === "no_token"
+        ? "no tenías notificaciones activas"
+        : lastDelivery.status === "rejected"
+          ? `rechazado (${lastDelivery.reason || "sin detalle"})`
+          : `error (${lastDelivery.reason || "sin detalle"})`;
+    return `${when} · ${estado}`;
+  })();
 
   const retry = async () => {
     setBusy(true);
@@ -86,7 +119,7 @@ export default function PushDiagnosticsPanel({ notify, cardStyle }) {
   const copy = async () => {
     const text = `${formatPushDiagnostics()}\nperfil: ${
       profileToken?.error ? `error (${profileToken.error})` : profileToken?.hasToken ? `con token ${profileToken.tail}` : "sin token"
-    }`;
+    }\nultimo aviso hacia mi: ${deliveryLabel}`;
     try {
       await navigator.clipboard.writeText(text);
       if (notify) notify("Diagnóstico copiado");
@@ -96,7 +129,7 @@ export default function PushDiagnosticsPanel({ notify, cardStyle }) {
   };
 
   return (
-    <div style={{ ...(cardStyle || {}), marginTop: 12, border: `1px solid ${saved ? "rgba(34,197,94,.35)" : "rgba(245,158,11,.45)"}` }}>
+    <div style={{ ...(cardStyle || {}), marginTop: 12, border: `1px solid ${ok ? "rgba(34,197,94,.35)" : "rgba(245,158,11,.45)"}` }}>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -115,7 +148,7 @@ export default function PushDiagnosticsPanel({ notify, cardStyle }) {
         }}
       >
         <span style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 800, fontSize: ".84em" }}>
-          <span style={{ color: saved ? "#16a34a" : "#d97706" }}>●</span>
+          <span style={{ color: ok ? "#16a34a" : "#d97706" }}>●</span>
           {headline}
         </span>
         <span style={{ color: "#94a3b8", fontSize: ".74em" }}>{open ? "Ocultar" : "Ver detalle"}</span>
@@ -123,32 +156,43 @@ export default function PushDiagnosticsPanel({ notify, cardStyle }) {
 
       {open ? (
         <div style={{ marginTop: 12, borderTop: "1px solid #e2e8f0", paddingTop: 8 }}>
-          <Row label="Permiso" value={diag.permission || "sin comprobar"} ok={diag.permission ? diag.permission === "granted" : null} />
-          <Row label="Registro pedido a Firebase" value={fmt(diag.registerAt) || "nunca"} ok={diag.registerAt ? true : null} />
-          <Row
-            label="Token recibido"
-            value={diag.tokenAt ? `${fmt(diag.tokenAt)} · ${diag.tokenTail}` : "nunca"}
-            ok={diag.tokenAt ? true : false}
-          />
-          <Row label="Guardado en tu perfil" value={fmt(diag.savedAt) || "no"} ok={Boolean(diag.savedAt)} />
-          <Row
-            label="Comprobado en la base de datos"
-            value={
-              profileToken?.error
-                ? `no se pudo leer (${profileToken.error})`
-                : profileToken?.hasToken
-                  ? `con token ${profileToken.tail}`
-                  : "sin token"
-            }
-            ok={profileToken?.error ? null : Boolean(profileToken?.hasToken)}
-          />
-          {diag.lastError ? <Row label="Último error" value={diag.lastError} ok={false} /> : null}
+          {native ? (
+            <>
+              <Row label="Permiso" value={diag.permission || "sin comprobar"} ok={diag.permission ? diag.permission === "granted" : null} />
+              <Row label="Registro pedido a Firebase" value={fmt(diag.registerAt) || "nunca"} ok={diag.registerAt ? true : null} />
+              <Row
+                label="Token recibido"
+                value={diag.tokenAt ? `${fmt(diag.tokenAt)} · ${diag.tokenTail}` : "nunca"}
+                ok={diag.tokenAt ? true : false}
+              />
+              <Row label="Guardado en tu perfil" value={fmt(diag.savedAt) || "no"} ok={Boolean(diag.savedAt)} />
+              <Row
+                label="Comprobado en la base de datos"
+                value={
+                  profileToken?.error
+                    ? `no se pudo leer (${profileToken.error})`
+                    : profileToken?.hasToken
+                      ? `con token ${profileToken.tail}`
+                      : "sin token"
+                }
+                ok={profileToken?.error ? null : Boolean(profileToken?.hasToken)}
+              />
+              {diag.lastError ? <Row label="Último error" value={diag.lastError} ok={false} /> : null}
+            </>
+          ) : null}
+          <Row label="Último aviso hacia ti" value={deliveryLabel} ok={lastDelivery ? lastDelivery.status === "sent" : null} />
+          {!native ? (
+            <p style={{ margin: "10px 0 0", color: "#64748b", fontSize: ".72em", lineHeight: 1.45 }}>
+              Tu permiso de notificaciones caducó en este navegador. Vuelve a activarlas para recibir los avisos.
+            </p>
+          ) : null}
 
           <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
             <button
               type="button"
               onClick={retry}
-              disabled={busy}
+              disabled={busy || !native}
+              hidden={!native}
               style={{
                 padding: "8px 14px",
                 borderRadius: 8,

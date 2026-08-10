@@ -28,6 +28,7 @@ import {
   resolveCoachUserIdFromPublicCode,
   resolveDefaultCoachUserId,
   sendChatPushNotification,
+  PUSH_INACTIVE_REASONS,
   markConversationRead,
   registerFcmToken,
   normalizeScheduledDateYmd,
@@ -385,6 +386,8 @@ export default function AthleteHome({ profile }) {
     typeof localStorage !== "undefined" && localStorage.getItem("raf_push_invite_dismissed") === "1",
   );
   const athleteChatScrollRef = useRef(null);
+  /** El aviso de "tu coach no tiene push" se da una vez, no en cada mensaje. */
+  const coachPushWarnedRef = useRef(false);
   const [athleteCalendarCtxMenu, setAthleteCalendarCtxMenu] = useState(null);
   const athleteCalendarCtxMenuRef = useRef(null);
   const [not100Modal, setNot100Modal] = useState(null);
@@ -1049,8 +1052,17 @@ export default function AthleteHome({ profile }) {
         setMessage(`Error al enviar mensaje: ${error.message}`);
         return;
       }
-      // Notificar sin bloquear la UI (fire and forget).
-      sendChatPushNotification({ toUserId: coachIdForChat, title: `Tu atleta ${athleteName} respondió`, body, data: { type: "coach_chat", athlete_id: athleteInfo.id }, logLabel: "chat atleta→coach" }).catch(() => {});
+      // Notificar sin bloquear la UI (fire and forget). Si el coach no tiene
+      // push activo se avisa UNA vez por sesion: el mensaje esta guardado, pero
+      // el atleta no debe quedarse esperando una respuesta que nadie sabe que
+      // tiene pendiente.
+      sendChatPushNotification({ toUserId: coachIdForChat, title: `Tu atleta ${athleteName} respondió`, body, data: { type: "coach_chat", athlete_id: athleteInfo.id }, logLabel: "chat atleta→coach" })
+        .then((r) => {
+          if (r.sent || !PUSH_INACTIVE_REASONS.has(r.reason) || coachPushWarnedRef.current) return;
+          coachPushWarnedRef.current = true;
+          setMessage("Mensaje enviado. Tu coach no tiene las notificaciones activas, así que puede tardar en verlo.");
+        })
+        .catch(() => {});
       // Reconciliar el id real del mensaje optimista, sin await bloqueante.
       loadAthleteChat();
     } finally { setAthleteChatSending(false); }
