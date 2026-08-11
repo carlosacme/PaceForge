@@ -140,7 +140,7 @@ const CoachLinkActions = ({
 };
 import { refreshFcmTokenIfGranted, clearFcmToken } from "../firebase.js";
 import { Capacitor } from "@capacitor/core";
-import { registerNativePush, clearNativePush } from "../lib/nativePush";
+import { registerNativePush, clearNativePush, consumePendingDeepLink, subscribeDeepLink } from "../lib/nativePush";
 import PushDiagnosticsPanel from "./shared/PushDiagnosticsPanel";
 
 function MarketplacePlanWorkoutsAccordion({ previewWorkouts, resetKey, lockAfterWeek1 = false }) {
@@ -915,32 +915,55 @@ export default function AthleteHome({ profile }) {
   };
 
   const athleteName = profile?.name || athleteInfo?.name || "Atleta";
-  const handleAthleteNavTabChange = (tabId) => {
+  const handleAthleteNavTabChange = useCallback((tabId) => {
     setAthleteChatOpen(false);
     setAthleteActiveTab(tabId);
     if (typeof localStorage !== "undefined") localStorage.setItem(RAF_ATHLETE_NAV_TAB_KEY, tabId);
-  };
+  }, []);
 
-  // Deep link desde notificaciones push (tipos athlete_*). Usa
-  // handleAthleteNavTabChange para que persista el tab igual que un cambio
-  // manual. Consume el parametro para no reprocesarlo en recargas.
+  /**
+   * Salta al destino de un aviso push. La web lo recibe en la URL y la APK en
+   * el `data` de la notificacion, pero la navegacion es la misma. Usa
+   * handleAthleteNavTabChange para que el tab persista igual que un cambio
+   * manual.
+   */
+  const applyAthleteDeepLink = useCallback((type) => {
+    if (type === "athlete_calendar") {
+      handleAthleteNavTabChange("home");
+    } else if (type === "athlete_chat") {
+      handleAthleteNavTabChange("home");
+      setAthleteChatOpen(true);
+    }
+  }, [handleAthleteNavTabChange]);
+
+  const [nativeDeepLinkTick, setNativeDeepLinkTick] = useState(0);
+
+  // Un tap con la app ya montada no vuelve a ejecutar el efecto de abajo por si
+  // solo (en la APK no hay recarga ni cambio de URL): el plugin avisa y este
+  // contador lo despierta.
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return undefined;
+    return subscribeDeepLink(() => setNativeDeepLinkTick((n) => n + 1));
+  }, []);
+
+  // Deep link desde notificaciones push (tipos athlete_*). El destino se
+  // consume una sola vez para no reprocesarlo al recargar ni al re-renderizar.
   useEffect(() => {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
     const open = params.get("open");
-    if (!open || !open.startsWith("athlete_")) return;
-
-    if (open === "athlete_calendar") {
-      handleAthleteNavTabChange("home");
-    } else if (open === "athlete_chat") {
-      handleAthleteNavTabChange("home");
-      setAthleteChatOpen(true);
+    if (open && open.startsWith("athlete_")) {
+      applyAthleteDeepLink(open);
+      params.delete("open"); params.delete("athlete_id"); params.delete("workout_id");
+      const qs = params.toString();
+      window.history.replaceState({}, "", window.location.pathname + (qs ? `?${qs}` : ""));
+      return;
     }
-
-    params.delete("open"); params.delete("athlete_id"); params.delete("workout_id");
-    const qs = params.toString();
-    window.history.replaceState({}, "", window.location.pathname + (qs ? `?${qs}` : ""));
-  }, []);
+    // En la APK la URL nunca cambia al tocar la notificacion: el destino lo
+    // dejo el listener nativo.
+    const pending = consumePendingDeepLink("athlete_");
+    if (pending) applyAthleteDeepLink(String(pending.type));
+  }, [nativeDeepLinkTick, applyAthleteDeepLink]);
   const nextRaceText = athleteInfo?.next_race ? `🏁 ${getRaceCountdownText(athleteInfo.next_race)}` : "🏁 Próxima carrera · fecha pendiente";
   const coachIdForChat = athleteInfo?.coach_id || null;
 

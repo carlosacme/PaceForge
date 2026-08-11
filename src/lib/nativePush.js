@@ -73,6 +73,45 @@ const CHANNELS = [
 /** Los canales se crean una sola vez por sesion de app. */
 let channelsPromise = null;
 
+/**
+ * Destino de la ultima notificacion que el usuario toco.
+ *
+ * El tap puede llegar con la app CERRADA: Android la arranca, el listener se
+ * dispara y React todavia no ha montado nada, asi que navegar en ese momento no
+ * lleva a ninguna parte. El destino espera aqui hasta que la vista pregunte.
+ *
+ * En la APK esto sustituye al deep link de la web: alli el destino viaja en la
+ * URL, pero dentro del WebView la URL nunca cambia al tocar una notificacion.
+ */
+let pendingDeepLink = null;
+const deepLinkSubscribers = new Set();
+
+/**
+ * Devuelve el destino pendiente y lo borra, para que no se reprocese.
+ *
+ * `prefix` acota por tipo ("coach_" | "athlete_"): la vista del coach no puede
+ * tragarse un destino del atleta ni al reves, porque quien lo consume lo
+ * descarta para siempre.
+ */
+export const consumePendingDeepLink = (prefix = "") => {
+  if (!pendingDeepLink) return null;
+  if (prefix && !String(pendingDeepLink.type || "").startsWith(prefix)) return null;
+  const data = pendingDeepLink;
+  pendingDeepLink = null;
+  return data;
+};
+
+/**
+ * Avisa de un tap con la app YA montada. Sin esto, tocar la notificacion con la
+ * app en segundo plano no navegaria a ningun sitio: el efecto que recoge el
+ * destino no se vuelve a ejecutar solo porque el usuario vuelva a la app.
+ */
+export const subscribeDeepLink = (cb) => {
+  if (typeof cb !== "function") return () => {};
+  deepLinkSubscribers.add(cb);
+  return () => deepLinkSubscribers.delete(cb);
+};
+
 const DIAG_STORAGE_KEY = "raf_push_diag";
 
 /** Ultimos 8 caracteres del token: suficiente para comparar, sin exponerlo. */
@@ -259,10 +298,17 @@ const attachListeners = async () => {
     if (notifyHandler) notifyHandler(text || "Nueva notificación");
   });
 
-  // El usuario toco la notificacion. De momento solo se registra: navegar al
-  // chat o al calendario segun data.type queda para el siguiente paso.
+  // El usuario toco la notificacion. El destino viaja en `data` (type,
+  // athlete_id, workout_id) tal como lo mando send-push; se guarda y lo recoge
+  // la vista, que es la unica que sabe navegar y puede no existir todavia.
   await PushNotifications.addListener("pushNotificationActionPerformed", (action) => {
-    console.log("[push-nativo] notificacion abierta", action?.notification?.data);
+    const data = action?.notification?.data;
+    console.log("[push-nativo] notificacion abierta", data);
+    if (!data || !data.type) return;
+    pendingDeepLink = { ...data };
+    for (const cb of deepLinkSubscribers) {
+      try { cb(pendingDeepLink); } catch { /* un suscriptor roto no puede tragarse el destino */ }
+    }
   });
 };
 
@@ -380,6 +426,9 @@ export async function clearNativePush() {
     await PushNotifications.removeAllListeners();
     listenersPromise = null;
     notifyHandler = null;
+    // Un destino sin consumir no puede sobrevivir al logout: llevaria al
+    // siguiente usuario del dispositivo al chat del anterior.
+    pendingDeepLink = null;
     // Los canales sobreviven al logout (viven en los ajustes de Android, no en
     // la sesion), asi que su fecha no se borra: channelsPromise tampoco.
     patchDiag({ ...emptyDiag(), platform: Capacitor.getPlatform(), channelsAt: loadDiag().channelsAt });
