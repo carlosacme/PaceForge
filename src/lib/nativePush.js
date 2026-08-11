@@ -25,11 +25,12 @@ let notifyHandler = null;
 /**
  * Avisar tambien de los pasos que SALEN BIEN, no solo de los fallos.
  *
- * Con avisos solo de error, un tester que no ve nada no puede distinguir "todo
- * fue bien" de "la cadena nunca arranco", que es justo la duda que hay que
- * despejar en remoto. Poner en false deja unicamente los avisos de fallo.
+ * En false (lo normal) solo se avisa de lo que falla: un usuario corriente no
+ * tiene por que ver cuatro toasts en cada arranque para enterarse de algo que
+ * funciona. Ponerlo en true los reactiva, que es como se diagnostico en remoto
+ * el registro del token cuando un tester no podia darnos una consola.
  */
-const NOTIFY_EVERY_STEP = true;
+const NOTIFY_EVERY_STEP = false;
 
 /**
  * Canales de notificacion de Android.
