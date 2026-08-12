@@ -200,7 +200,10 @@ function normalizeBlock(b, vdot) {
     // Las recuperaciones van SIEMPRE por tiempo, aunque el nombre mencione
     // metros ("Recuperacion (400m trote)"): no son un intervalo de distancia.
     // El dato distance_km manda; el nombre ("400m") queda como red de seguridad.
-    const distKm = isRecovery(label)
+    // El calentamiento y la activacion van por TIEMPO si lo traen: su
+    // distance_km es la de UNA repeticion ("0.1" en un 4x100m), no la del
+    // bloque, y exportarlo por distancia convierte 5 min en 100 metros.
+    const distKm = isRecovery(label) || (secs && isWarmupish(label))
       ? null
       : (parseDistKm(b.distance_km) ?? distKmFromLabel(label));
     // Un bloque por distancia sobrevive aunque no tenga duracion parseable.
@@ -215,7 +218,7 @@ function normalizeBlock(b, vdot) {
   // Formato A (builder manual): phase / pace / duration
   const label = b.phase || "";
   const secs = durationToSecs(b.duration);
-  const distKm = isRecovery(label)
+  const distKm = isRecovery(label) || (secs && isWarmupish(label))
     ? null
     : (parseDistKm(b.distance_km) ?? distKmFromLabel(label));
   if (!secs && distKm == null) return null;
@@ -234,6 +237,17 @@ function isRecovery(label) {
   return /recovery|recuperaci|descanso|rest|trote|jog/.test(String(label).toLowerCase());
 }
 
+/**
+ * Calentamiento y progresivos de activacion.
+ *
+ * Un "4x100m progresivos" NO es una serie de intervalos: es un bloque continuo
+ * cuyo nombre describe lo que se hace dentro. Tratarlo como intervalos lo parte
+ * en trozos por distancia y le borra los minutos que si traia.
+ */
+function isWarmupish(label) {
+  return /activaci[oó]n|progresiv|calentamiento|warm/.test(String(label).toLowerCase());
+}
+
 // Un bloque con distancia en el nombre ("400m") se exporta POR DISTANCIA
 // ("0.4km"): el reloj marca la vuelta al cumplir los metros, como se corren
 // los intervalos de verdad. Si no hay distancia, va por tiempo (comportamiento
@@ -249,23 +263,30 @@ const stepLine = (s) => {
  */
 function groupRepeats(steps) {
   const out = [];
+  const sigOf = (x) => `${x.secs}|${x.distKm}|${x.pace}`;
+  const pairSig = (x, y) => `${sigOf(x)}|${sigOf(y)}`;
   let i = 0;
   while (i < steps.length) {
-    if (i + 3 < steps.length) {
-      const a = steps[i], b = steps[i + 1];
-      if (isRecovery(b.label) && !isRecovery(a.label)) {
-        const sig = (x, y) =>
-          `${x.secs}|${x.distKm}|${x.pace}|${y.secs}|${y.distKm}|${y.pace}`;
-        const base = sig(a, b);
-        let reps = 1, j = i + 2;
-        while (j + 1 < steps.length && sig(steps[j], steps[j + 1]) === base) {
-          reps++; j += 2;
-        }
-        if (reps > 1) {
-          out.push({ type: "repeat", reps, steps: [a, b] });
-          i = j;
-          continue;
-        }
+    const a = steps[i], b = steps[i + 1];
+    if (b && isRecovery(b.label) && !isRecovery(a.label)) {
+      const base = pairSig(a, b);
+      let reps = 1, j = i + 2;
+      while (j + 1 < steps.length && pairSig(steps[j], steps[j + 1]) === base) {
+        reps++; j += 2;
+      }
+      // La ultima serie no lleva recuperacion detras (la sigue el enfriamiento),
+      // pero es la misma serie: entra en el grupo en vez de quedarse suelta como
+      // un paso huerfano que el reloj no relaciona con las anteriores. Solo si
+      // es identica en distancia y ritmo, y solo al final: mas adelante, la
+      // recuperacion que ICU añade a esa repeticion si alteraria la sesion.
+      const trailing = steps[j];
+      if (trailing && j === steps.length - 1 && !isRecovery(trailing.label) && sigOf(trailing) === sigOf(a)) {
+        reps++; j++;
+      }
+      if (reps > 1) {
+        out.push({ type: "repeat", reps, steps: [a, b] });
+        i = j;
+        continue;
       }
     }
     out.push({ type: "single", step: steps[i] });
@@ -292,7 +313,9 @@ function expandRepeatBlocks(structure) {
     const name = String(b.phase ?? b.block_type ?? "");
     const m = name.match(/(\d+)\s*[x×]\s*(\d+(?:\.\d+)?)\s*(km|m)(?![a-z])/i);
     const reps = m ? parseInt(m[1], 10) : 0;
-    if (!m || reps < 2) { out.push(b); continue; }
+    // Un calentamiento o una activacion con "Nx" en el nombre describen lo que
+    // pasa DENTRO de un bloque continuo, no una serie de intervalos.
+    if (!m || reps < 2 || isWarmupish(name)) { out.push(b); continue; }
 
     const unit = m[3].toLowerCase();
     const distKmVal = unit === "km" ? parseFloat(m[2]) : parseFloat(m[2]) / 1000;
