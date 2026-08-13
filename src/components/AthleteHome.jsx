@@ -141,6 +141,7 @@ const CoachLinkActions = ({
 import { refreshFcmTokenIfGranted, clearFcmToken } from "../firebase.js";
 import { Capacitor } from "@capacitor/core";
 import { registerNativePush, clearNativePush, consumePendingDeepLink, subscribeDeepLink } from "../lib/nativePush";
+import { useAppResumeRefresh } from "../hooks/useAppResumeRefresh";
 
 function MarketplacePlanWorkoutsAccordion({ previewWorkouts, resetKey, lockAfterWeek1 = false }) {
   const list = Array.isArray(previewWorkouts) ? previewWorkouts : [];
@@ -471,6 +472,34 @@ export default function AthleteHome({ profile }) {
 
   const prevProfileUserIdRef = useRef(null);
 
+  /**
+   * Trae y normaliza los workouts del atleta.
+   *
+   * SILENCIOSA a proposito: no toca setLoading ni la pestaña abierta, porque
+   * tambien corre al volver a la app y taparle la pantalla al atleta cada vez
+   * que sale y entra seria peor que no refrescar.
+   *
+   * Si la consulta falla NO vacia la lista: quedarse con lo ultimo bueno es
+   * mejor que dejar el calendario en blanco por un fallo de red.
+   *
+   * @returns {Promise<{ok: boolean, rows: Array|null}>}
+   */
+  const refreshWorkouts = useCallback(async (athleteId) => {
+    if (!athleteId) return { ok: false, rows: null };
+    const { data, error } = await supabase
+      .from("workouts")
+      .select("*")
+      .eq("athlete_id", athleteId)
+      .order("scheduled_date", { ascending: true });
+    if (error) {
+      console.error("Error cargando workouts atleta:", error);
+      return { ok: false, rows: null };
+    }
+    const rows = (data || []).map(normalizeWorkoutRow);
+    setWorkouts(rows);
+    return { ok: true, rows };
+  }, []);
+
   useEffect(() => {
     if (profileUserId == null) {
       prevProfileUserIdRef.current = null;
@@ -524,21 +553,19 @@ export default function AthleteHome({ profile }) {
           if (tok) await registerFcmToken(tok);
         }
       }
-      const [wRes, eRes] = await Promise.all([
-        supabase.from("workouts").select("*").eq("athlete_id", athleteRow.id).order("scheduled_date", { ascending: true }),
+      const [wOut, eRes] = await Promise.all([
+        refreshWorkouts(athleteRow.id),
         supabase.from("athlete_evaluations").select("vdot, created_at").eq("athlete_id", athleteRow.id).order("created_at", { ascending: true }),
       ]);
       if (cancelled) return;
-      const workoutsRows = wRes.data;
-      const workoutsErr = wRes.error;
       const evalRows = eRes.data;
       if (eRes.error) console.warn("[AthleteHome] athlete_evaluations:", eRes.error);
-      if (workoutsErr) {
-        console.error("Error cargando workouts atleta:", workoutsErr);
+      if (!wOut.ok) {
+        // En la carga inicial no hay nada que preservar, y dejar la lista vacia
+        // es lo que hace que se pinte el estado "sin entrenos" en vez de nada.
         setWorkouts([]); setAthleteEvaluations(evalRows || []);
       } else {
-        const normalizedWorkouts = (workoutsRows || []).map(normalizeWorkoutRow);
-        setWorkouts(normalizedWorkouts);
+        const normalizedWorkouts = wOut.rows;
         setAthleteEvaluations(evalRows || []);
         if ((normalizedWorkouts || []).some((w) => w.done)) {
           setTimeout(() => {
@@ -560,7 +587,17 @@ export default function AthleteHome({ profile }) {
     };
     load();
     return () => { cancelled = true; };
-  }, [profileUserId, notifyPush]);
+  }, [profileUserId, notifyPush, refreshWorkouts]);
+
+  // Esta pantalla solo cargaba una vez por sesion, asi que un entreno que el
+  // coach añadiera o borrara despues no aparecia hasta reiniciar la app. Volver
+  // a ella es el momento natural para ponerla al dia.
+  useAppResumeRefresh(() => {
+    // Hasta que la carga inicial no termina no se refresca: seria repetir la
+    // consulta que 'load' ya tiene en vuelo.
+    if (prevProfileUserIdRef.current !== profileUserId) return;
+    refreshWorkouts(athleteInfo?.id);
+  }, Boolean(athleteInfo?.id));
 
   const athleteCoachIdPrimitive = athleteInfo?.coach_id ?? null;
   const achievementDisplayProgress = useMemo(() => computeAthleteAchievementVisualProgress(workouts, athleteEvaluations), [workouts, athleteEvaluations]);

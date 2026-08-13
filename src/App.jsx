@@ -8,6 +8,7 @@ import { readStructure } from "./lib/workoutStructure";
 import { compareBlocks } from "./lib/blockComparison";
 import { fmtPace } from "./lib/vdot";
 import { usePersistedState } from "./hooks/usePersistedState";
+import { useAppResumeRefresh } from "./hooks/useAppResumeRefresh";
 import {
   BRAND_NAME,
   WORKOUT_TYPES,
@@ -3633,6 +3634,13 @@ function Dashboard({
     loadDashboardData(false);
   }, [loadDashboardData]);
 
+  // El refresco por Realtime de mas abajo no llega a dispararse: las tablas
+  // athletes y workouts no estan publicadas en supabase_realtime, solo messages.
+  // Volver a la app es hoy la unica forma de que el dashboard se actualice.
+  useAppResumeRefresh(() => {
+    loadDashboardData(true);
+  }, Boolean(coachUserId));
+
   useEffect(() => {
     if (!coachUserId) return undefined;
     const channel = supabase
@@ -4330,32 +4338,58 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
     return () => { supabase.removeChannel(channel); };
   }, [coachId, athlete?.id]);
 
+  // Con que atleta se esta pintando el calendario ahora mismo. Lo consulta
+  // refreshWorkouts al recibir la respuesta: si el coach cambio de atleta
+  // mientras llegaba, pintar esos workouts seria mostrarle el plan de otro.
+  const shownAthleteIdRef = useRef(null);
+  useEffect(() => {
+    shownAthleteIdRef.current = athlete?.id ?? null;
+  }, [athlete?.id]);
+
+  /**
+   * Carga los workouts del atleta seleccionado.
+   *
+   * En modo `silent` no toca el spinner ni vacia la lista si falla: se usa al
+   * volver a la app, donde ya hay un calendario en pantalla y hacerlo parpadear
+   * (o borrarlo por un fallo de red) seria peor que dejarlo como estaba.
+   */
+  const refreshWorkouts = useCallback(async (athleteId, { silent = false } = {}) => {
+    if (!athleteId) return false;
+    if (!silent) setLoadingWorkouts(true);
+    const { data, error } = await supabase
+      .from("workouts")
+      .select("*")
+      .eq("athlete_id", athleteId)
+      .order("scheduled_date", { ascending: true });
+    const stale = String(shownAthleteIdRef.current ?? "") !== String(athleteId);
+    if (stale) return false;
+    if (error) {
+      console.error("Error cargando workouts:", error);
+      if (!silent) {
+        setWorkouts([]);
+        setLoadingWorkouts(false);
+      }
+      return false;
+    }
+    setWorkouts((data || []).map(normalizeWorkoutRow));
+    if (!silent) setLoadingWorkouts(false);
+    return true;
+  }, []);
+
   useEffect(() => {
     if (!athlete?.id) {
       setWorkouts([]);
       setCoachWorkoutAnalysis({});
       return;
     }
-    let cancelled = false;
-    const load = async () => {
-      setLoadingWorkouts(true);
-      const { data, error } = await supabase
-        .from("workouts")
-        .select("*")
-        .eq("athlete_id", athlete.id)
-        .order("scheduled_date", { ascending: true });
-      if (cancelled) return;
-      if (error) {
-        console.error("Error cargando workouts:", error);
-        setWorkouts([]);
-      } else {
-        setWorkouts((data || []).map(normalizeWorkoutRow));
-      }
-      setLoadingWorkouts(false);
-    };
-    load();
-    return () => { cancelled = true; };
-  }, [athlete?.id, workoutsRefresh]);
+    refreshWorkouts(athlete.id);
+  }, [athlete?.id, workoutsRefresh, refreshWorkouts]);
+
+  // El coach vuelve a la app despues de que sus atletas hayan entrenado: al
+  // volver ve los entrenos marcados como hechos sin tener que recargar.
+  useAppResumeRefresh(() => {
+    refreshWorkouts(athlete?.id, { silent: true });
+  }, Boolean(athlete?.id));
 
   useEffect(() => {
     if (!athlete?.id) {
