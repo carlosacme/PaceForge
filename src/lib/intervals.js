@@ -389,6 +389,29 @@ export function toIntervalsText(workout, vdot = 42.5) {
 }
 
 /**
+ * La marca con la que cada evento de intervals.icu queda atado a su fila de
+ * `workouts`. Es la UNICA correspondencia entre las dos bases: el id que
+ * devuelve intervals.icu al crear el evento no se guarda en ningun sitio, asi
+ * que todo (reenviar, actualizar, borrar) se resuelve por esta convencion.
+ */
+export function intervalsExternalId(workoutId) {
+  return `raf-${workoutId}`;
+}
+
+/**
+ * Cuerpo para PUT /api/v1/athlete/{id}/events/bulk-delete, que acepta borrar
+ * por `external_id` sin conocer el id del evento. De ahi que no haga falta
+ * haberlo guardado nunca.
+ *
+ * @param {Array<number|string>} workoutIds - ids de la tabla workouts
+ * @returns {Array<{external_id: string}>} lista sin repetidos ni vacios
+ */
+export function buildIntervalsDeletePayload(workoutIds) {
+  const ids = [...new Set((workoutIds || []).map((v) => String(v ?? "").trim()).filter(Boolean))];
+  return ids.map((id) => ({ external_id: intervalsExternalId(id) }));
+}
+
+/**
  * Construye el payload completo del evento para POST a
  * /api/v1/athlete/{id}/events?upsertOnUid=true
  *
@@ -397,7 +420,7 @@ export function toIntervalsText(workout, vdot = 42.5) {
 export function buildIntervalsEvent(workout, vdot = 42.5) {
   // uid = lo que usa upsertOnUid=true; external_id = id de sync externo.
   // Ambos con el mismo valor evita duplicados al reenviar.
-  const uid = `raf-${workout.id}`;
+  const uid = intervalsExternalId(workout.id);
   return {
     category: "WORKOUT",
     start_date_local: `${workout.scheduled_date}T06:00:00`,

@@ -22,6 +22,7 @@ import {
   getMarketplacePlanWorkoutRows,
   normalizeAthlete,
   fetchActiveDeviceConnections,
+  deleteIntervalsEvents,
   fetchUnreadMessageCounts,
   fetchWeeklyKmByAthlete,
   sumWeekKm,
@@ -5027,6 +5028,35 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
     closeWorkoutPanel();
   };
 
+  /**
+   * ¿Merece la pena preguntar a intervals.icu por este atleta?
+   *
+   * Solo se ahorra la llamada cuando SABEMOS que no hay conexion. Si el mapa de
+   * conexiones no se pudo leer, se llama: dejar un evento huerfano en el reloj
+   * por una consulta que fallo es peor que una peticion de mas, y el servidor ya
+   * responde "sin conexión" sin tocar nada.
+   */
+  const mayHaveIntervals = (athleteId) => {
+    if (!deviceConnectionsReady) return true;
+    const conns = deviceConnections[String(athleteId)] || [];
+    return conns.some((c) => c.provider === "intervals_icu");
+  };
+
+  /**
+   * Retira los eventos de intervals.icu de unos workouts ya borrados. Best
+   * effort y sin await: el borrado local ya termino y no se bloquea al usuario
+   * por el reloj. Si falla, queda el aviso en consola y el evento huerfano.
+   */
+  const forgetIntervalsEvents = (athleteId, ids) => {
+    if (!athleteId || !ids.length || !mayHaveIntervals(athleteId)) return;
+    deleteIntervalsEvents(athleteId, ids).then((r) => {
+      if (r.ok) return;
+      notify?.(ids.length === 1
+        ? "El entreno se eliminó, pero no pudimos quitarlo del reloj del atleta."
+        : "Los entrenos se eliminaron, pero no pudimos quitarlos del reloj del atleta.");
+    });
+  };
+
   const deleteCalendarWorkout = async (w) => {
     if (!w?.id) return;
     if (!window.confirm("¿Eliminar este workout? Esta acción no se puede deshacer.")) return;
@@ -5036,7 +5066,10 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
     setWorkoutFormSaving(true);
     const prev = workouts;
     setWorkouts((rows) => rows.filter((x) => String(x.id) !== String(id)));
-    const { error } = await supabase.from("workouts").delete().eq("id", id);
+    // El .select() confirma que la fila se borro de verdad: la RLS filtra en
+    // silencio (200 y cero filas), y ahi no hay que tocar el reloj ni decir que
+    // se elimino algo que sigue en el calendario.
+    const { data, error } = await supabase.from("workouts").delete().eq("id", id).select("id");
     setWorkoutFormSaving(false);
     if (error) {
       console.error("Error eliminando workout:", error);
@@ -5044,7 +5077,14 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
       notify?.(`Error eliminando workout: ${error.message}`);
       return;
     }
+    if (!(data || []).length) {
+      setWorkouts(prev);
+      notify?.("No se eliminó el workout (no tienes permiso sobre esa fila)");
+      return;
+    }
     notify?.("Workout eliminado");
+    // Ya no esta en la app: que tampoco siga llegando al reloj.
+    forgetIntervalsEvents(w.athlete_id ?? athlete?.id, [id]);
   };
 
   /** Fecha legible a partir de un YYYY-MM-DD, sin desfase de zona horaria. */
@@ -5145,6 +5185,9 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
     } else {
       notify?.(`${deletedIds.size} ${deletedIds.size === 1 ? "entreno eliminado" : "entrenos eliminados"}`);
     }
+    // Solo los que REALMENTE se borraron: los que la RLS bloqueo siguen en la
+    // app, asi que su evento debe seguir en el reloj.
+    forgetIntervalsEvents(athlete.id, [...deletedIds]);
     setRangeDeleteOpen(false);
   };
 

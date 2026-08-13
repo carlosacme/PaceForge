@@ -1616,6 +1616,48 @@ export const fetchActiveDeviceConnections = async (athleteIds) => {
   return { ok: true, byAthlete };
 };
 
+/**
+ * Retira de intervals.icu los eventos de unos workouts ya borrados en la app.
+ *
+ * Va por /api/integrations a proposito: las credenciales del atleta (api_key o
+ * access_token de OAuth) NUNCA salen del servidor, asi que el cliente no puede
+ * hablar con intervals.icu por su cuenta.
+ *
+ * BEST EFFORT: nunca lanza. El borrado local ya ocurrio y es lo primario; si
+ * esto falla, el evento queda huerfano en el calendario del atleta, que es
+ * mucho menos grave que dejar en la app un entreno que el coach quiso borrar.
+ *
+ * @returns {Promise<{ok: boolean, requested?: number, deleted?: number, skipped?: string, reason?: string}>}
+ */
+export const deleteIntervalsEvents = async (athleteId, workoutIds) => {
+  const ids = [...new Set((workoutIds || []).map((v) => String(v ?? "").trim()).filter(Boolean))];
+  if (!athleteId || !ids.length) return { ok: true, requested: 0 };
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) return { ok: false, reason: "sin sesión" };
+    const res = await fetch("/api/integrations", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({ action: "delete-workout", athlete_id: athleteId, workout_ids: ids }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      console.warn(`[intervals] no se pudo borrar ${ids.length} evento(s):`, data?.error || res.status);
+      return { ok: false, reason: data?.error || `Error ${res.status}` };
+    }
+    if (!data?.skipped) {
+      console.log(`[intervals] eventos retirados del reloj: ${data?.deleted ?? "?"} de ${ids.length} pedido(s)`);
+    }
+    return { ok: true, requested: data?.requested ?? ids.length, deleted: data?.deleted, skipped: data?.skipped };
+  } catch (e) {
+    console.warn(`[intervals] no se pudo borrar ${ids.length} evento(s):`, e.message);
+    return { ok: false, reason: e.message };
+  }
+};
+
 export async function sendWorkoutAssignmentPushToAthlete({ athleteUserId, workoutTitle, scheduledDate }) {
   if (!athleteUserId) return;
   await sendChatPushNotification({

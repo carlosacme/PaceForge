@@ -15,6 +15,8 @@
  *   push-workout   { athlete_id, workout_id }
  *   push-range     { athlete_id, from?, to? }  empuja workouts pendientes
  *                  (rango por defecto: hoy -> workout mas lejano, tope 90d)
+ *   delete-workout { athlete_id, workout_id | workout_ids[] }
+ *                  borra en intervals.icu los eventos de esos workouts
  *   pull-activity  { athlete_id, workout_id } trae lo ejecutado del reloj
  *   activity-intervals { athlete_id, activity_id } laps crudos (comparacion por bloque)
  *   oauth-start    { athlete_id }            inicia OAuth (JWT); devuelve authorize_url
@@ -29,7 +31,7 @@
 
 import crypto from "crypto";
 import { requireUser, canAccessAthlete, jsonError } from "../lib/apiAuth.js";
-import { buildIntervalsEvent, isRunWorkout } from "../src/lib/intervals.js";
+import { buildIntervalsEvent, buildIntervalsDeletePayload, isRunWorkout } from "../src/lib/intervals.js";
 
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 const SERVICE_KEY  = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -421,6 +423,59 @@ async function actionPushRange(res, athleteId, from, to) {
   });
 }
 
+/**
+ * Borra en intervals.icu los eventos de estos workouts.
+ *
+ * Se usa bulk-delete porque acepta `external_id`, y ese es el unico dato que
+ * tenemos: el id numerico del evento nunca se guardo. Ademas resuelve el borrado
+ * por rango en UNA llamada en vez de una por entreno.
+ */
+async function deleteWorkoutEvents(conn, workoutIds) {
+  const payload = buildIntervalsDeletePayload(workoutIds);
+  if (!payload.length) return { ok: true, requested: 0, deleted: 0, status: 200, error: null };
+  const r = await icuFetch(conn, "/athlete/0/events/bulk-delete", {
+    method: "PUT",
+    body: payload,
+  });
+  // intervals.icu devuelve cuantos borro de verdad: los external_id que ya no
+  // existian no cuentan, y eso no es un fallo (el evento ya no molestaba).
+  const deleted = Number(r.data?.deleted);
+  console.log(`[deleteWorkoutEvents] pedidos=${payload.length} borrados=${Number.isFinite(deleted) ? deleted : "?"} status=${r.status}`);
+  return {
+    ok: r.ok,
+    requested: payload.length,
+    deleted: Number.isFinite(deleted) ? deleted : null,
+    status: r.status,
+    error: r.ok ? null : (r.text || "").slice(0, 200),
+  };
+}
+
+/**
+ * Acepta un workout (workout_id) o varios (workout_ids), para que el borrado
+ * individual y el borrado por rango usen la misma accion.
+ *
+ * NO comprueba que los workouts existan: cuando esto se llama, ya se borraron de
+ * la tabla. Lo que autoriza es `canAccessAthlete`, en el handler.
+ */
+async function actionDeleteWorkoutEvents(res, athleteId, workoutIds) {
+  const ids = (Array.isArray(workoutIds) ? workoutIds : [workoutIds])
+    .filter((v) => v != null && String(v).trim() !== "");
+  if (!ids.length) return jsonError(res, 400, "Falta workout_id o workout_ids");
+
+  // Un atleta sin reloj conectado no es un error: no hay nada que borrar alla.
+  // Devolver 400 llenaria de ruido rojo un borrado que fue perfecto. Con la
+  // conexion caida tampoco se intenta: sin credenciales validas solo saldria un
+  // 401 y un aviso inutil para el coach.
+  const conn = await getConnection(athleteId);
+  if (!conn || conn.status !== "active") {
+    return res.status(200).json({ ok: true, requested: ids.length, skipped: "sin conexión activa a intervals.icu" });
+  }
+
+  const out = await deleteWorkoutEvents(conn, ids);
+  if (!out.ok) return jsonError(res, 502, `intervals.icu rechazó el borrado: ${out.error}`);
+  return res.status(200).json({ ok: true, requested: out.requested, deleted: out.deleted });
+}
+
 // Logica PURA del pull: no depende de res, devuelve un objeto con el resultado.
 // La usan tanto la ruta HTTP (actionPullActivity) como el webhook.
 async function pullActivityCore(athleteId, workoutId) {
@@ -788,6 +843,7 @@ export default async function handler(req, res) {
       case "status":        return await actionStatus(res, athlete_id);
       case "push-workout":  return await actionPushWorkout(res, athlete_id, body.workout_id);
       case "push-range":    return await actionPushRange(res, athlete_id, body.from, body.to);
+      case "delete-workout": return await actionDeleteWorkoutEvents(res, athlete_id, body.workout_ids ?? body.workout_id);
       case "pull-activity": return await actionPullActivity(res, athlete_id, body.workout_id);
       case "activity-intervals": return await actionActivityIntervals(res, athlete_id, body.activity_id);
       case "oauth-start":   return await actionOauthStart(res, athlete_id, user.id);
