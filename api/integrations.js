@@ -21,11 +21,16 @@
  *   activity-intervals { athlete_id, activity_id } laps crudos (comparacion por bloque)
  *   oauth-start    { athlete_id }            inicia OAuth (JWT); devuelve authorize_url
  *   oauth-callback (GET ?action=oauth-callback&code&state)  SIN JWT; verificado por state
+ *   icu-webhook    (POST ?action=icu-webhook) SIN JWT; verificado por 'secret'
+ *                  avisos de intervals.icu: marca hechos los workouts ejecutados
  *
  * SEGURIDAD: casi todas exigen JWT de Supabase (Authorization: Bearer <token>)
- * y validan que el usuario sea el atleta o su coach. Excepcion: oauth-callback
- * llega como GET desde el navegador (redirigido por intervals.icu) sin sesion;
- * se asegura con el 'state' anti-CSRF guardado en oauth_states.
+ * y validan que el usuario sea el atleta o su coach. Dos excepciones, ambas
+ * llamadas desde fuera y sin sesion posible:
+ *   - oauth-callback: GET del navegador redirigido por intervals.icu; se asegura
+ *     con el 'state' anti-CSRF guardado en oauth_states.
+ *   - icu-webhook: POST de los servidores de intervals.icu; se asegura con el
+ *     'secret' compartido que viaja en el body. Falla cerrado.
  * -----------------------------------------------------------
  */
 
@@ -49,7 +54,8 @@ const REDIRECT_URI      = `${APP_URL}/oauth/intervals/callback`;
 // y escribir calendario (para empujar los workouts planificados).
 const ICU_SCOPES = "ACTIVITY:READ,CALENDAR:WRITE";
 
-// Webhook de intervals.icu (fase 4). Aun no se verifica; solo descubrimos payload.
+// Secreto del webhook de intervals.icu. Llega en el body de cada entrega y se
+// verifica en handleIcuWebhook: si esta variable falta, se rechaza todo (401).
 const ICU_WEBHOOK_SECRET = process.env.INTERVALS_WEBHOOK_SECRET;
 
 /* ---------- Supabase REST (el cliente JS cuelga en serverless) ---------- */
@@ -477,7 +483,8 @@ async function actionDeleteWorkoutEvents(res, athleteId, workoutIds) {
 }
 
 // Logica PURA del pull: no depende de res, devuelve un objeto con el resultado.
-// La usan tanto la ruta HTTP (actionPullActivity) como el webhook.
+// La usa la ruta HTTP (actionPullActivity), que la pide para UN workout concreto.
+// El webhook NO pasa por aqui: tiene su propio flujo (autoCompleteFromWebhook).
 async function pullActivityCore(athleteId, workoutId) {
   const conn = await getConnection(athleteId);
   if (!conn) return { ok: false, reason: "sin conexion" };
@@ -528,42 +535,102 @@ function localDateStr(offsetHours = -5, base = Date.now()) {
   return new Date(base + offsetHours * 3600000).toISOString().slice(0, 10);
 }
 
-// Flujo AUTOMATICO del webhook: trae la actividad reciente del atleta, la valida,
-// la empareja con el workout PLANEADO y PENDIENTE del dia y lo marca hecho con
-// los actual_*. Devuelve un objeto describiendo el resultado (para logs). No usa
-// res; el caller responde 200 igualmente.
+// Tiempo en movimiento (segundos) y distancia (metros) en CRUDO de una actividad.
+function activityRaw(act) {
+  return {
+    movS:  Number(act?.moving_time ?? act?.elapsed_time ?? 0) || 0,
+    distM: Number(act?.distance ?? act?.icu_distance ?? 0) || 0,
+  };
+}
+
+/**
+ * La actividad que viene DENTRO del evento del webhook.
+ *
+ * Los webhooks ACTIVITY_UPLOADED y ACTIVITY_ANALYZED incluyen el objeto
+ * `activity` completo (documentado en el cookbook de intervals.icu), con los
+ * mismos campos que devuelve la lista de actividades. Se exige `id` porque sin
+ * el no hay candado de idempotencia: en ese caso es mejor ir a preguntar.
+ */
+function webhookActivity(ev) {
+  const act = ev?.activity;
+  return act && typeof act === "object" && act.id != null ? act : null;
+}
+
+/**
+ * Un mismo webhook puede traer VARIOS eventos de la misma actividad:
+ * ACTIVITY_ANALYZED se envia con 60s de retraso justamente para consolidar en
+ * una entrega lo que ya se aviso con ACTIVITY_UPLOADED. Procesar los dos
+ * repetia la pasada completa; la idempotencia evitaba marcar el workout dos
+ * veces, pero las llamadas ya se habian gastado.
+ *
+ * Clave de deduplicacion: el id de la actividad. Cuando el evento no la trae,
+ * la clave es el atleta, porque entonces el procesamiento es "la mas reciente
+ * del rango" y dos eventos del mismo atleta hacen exactamente el mismo trabajo.
+ * NO se deduplica por atleta si hay actividad: dos actividades distintas del
+ * mismo atleta son dos entrenos distintos que marcar.
+ *
+ * Gana ACTIVITY_ANALYZED, que llega con los datos ya calculados.
+ */
+function dedupeActivityEvents(events) {
+  const byKey = new Map();
+  for (const ev of events) {
+    if (ev?.type !== "ACTIVITY_UPLOADED" && ev?.type !== "ACTIVITY_ANALYZED") continue;
+    const act = webhookActivity(ev);
+    const key = act ? `activity:${act.id}` : `athlete:${ev.athlete_id}`;
+    const prev = byKey.get(key);
+    if (!prev || (ev.type === "ACTIVITY_ANALYZED" && prev.type !== "ACTIVITY_ANALYZED")) {
+      byKey.set(key, ev);
+    }
+  }
+  return [...byKey.values()];
+}
+
+// Flujo AUTOMATICO del webhook: valida la actividad ejecutada, la empareja con
+// el workout PLANEADO y PENDIENTE del dia y lo marca hecho con los actual_*.
+// Devuelve un objeto describiendo el resultado (para logs). No usa res; el
+// caller responde 200 igualmente.
 //
-// Requiere la conexion COMPLETA (con access_token/api_key) para icuFetch.
-async function autoCompleteFromWebhook(conn) {
+// `activity` es la del payload del webhook. Si no llega (o llega en esqueleto),
+// se consulta a intervals.icu, y para eso hace falta la conexion COMPLETA
+// (access_token/api_key). `source` en el resultado dice cual de las dos fue.
+async function autoCompleteFromWebhook(conn, activity = null) {
   const athleteId = conn.athlete_id;
   // Fechas en la zona del atleta (UTC-5), no en UTC.
   const hoy  = localDateStr(-5);
   const ayer = localDateStr(-5, Date.now() - 86400000);
 
-  // athlete id explicito (i473586) en vez de "0": el token es per-atleta y "0"
-  // ya resuelve al dueno, pero el id evita ambiguedad si el scope fuera amplio.
-  const icuAth = conn.provider_athlete_id || "0";
+  // Paso 1: la actividad. El webhook ya la trae, asi que lo normal es no
+  // preguntar nada. El GET queda como FALLBACK en dos casos: eventos sin
+  // `activity`, y actividades que llegan en esqueleto. ACTIVITY_UPLOADED puede
+  // avisar antes de que intervals.icu procese el fichero, sin distancia ni
+  // tiempo todavia; confiar en ese esqueleto lo descartaria como "muy corta".
+  const enPayload = activityRaw(activity);
+  let act = activity && (enPayload.movS > 0 || enPayload.distM > 0) ? activity : null;
+  const source = act ? "payload" : "fetch";
+  if (!act) {
+    // athlete id explicito (i473586) en vez de "0": el token es per-atleta y "0"
+    // ya resuelve al dueno, pero el id evita ambiguedad si el scope fuera amplio.
+    const icuAth = conn.provider_athlete_id || "0";
+    const r = await icuFetch(conn, `/athlete/${icuAth}/activities?oldest=${ayer}&newest=${hoy}`);
+    if (!r.ok) return { ok: false, reason: `icu ${r.status}` };
+    const activities = Array.isArray(r.data) ? r.data : [];
+    if (!activities.length) return { ok: true, reason: "sin actividades" };
 
-  // Paso 1: traer actividades del rango [ayer, hoy] y tomar la mas reciente.
-  const r = await icuFetch(conn, `/athlete/${icuAth}/activities?oldest=${ayer}&newest=${hoy}`);
-  if (!r.ok) return { ok: false, reason: `icu ${r.status}` };
-  const activities = Array.isArray(r.data) ? r.data : [];
-  if (!activities.length) return { ok: true, reason: "sin actividades" };
-
-  // El payload del webhook no trae activity_id, asi que tomamos la mas reciente
-  // del rango. Guard + idempotencia + fecha cubren el caso de re-subidas.
-  const act = activities.reduce((best, a) => {
-    const ka = String(a.start_date_local || a.start_date || "");
-    const kb = String(best.start_date_local || best.start_date || "");
-    return ka > kb ? a : best;
-  }, activities[0]);
+    // Sin la actividad en el payload solo queda adivinar: la mas reciente del
+    // rango. De ahi que sea preferible la del evento, que no se equivoca cuando
+    // el atleta sube dos seguidas. Guard + idempotencia + fecha acotan el error.
+    act = activities.reduce((best, a) => {
+      const ka = String(a.start_date_local || a.start_date || "");
+      const kb = String(best.start_date_local || best.start_date || "");
+      return ka > kb ? a : best;
+    }, activities[0]);
+  }
 
   // Paso 2 (candado 1): guard de validez sobre CRUDOS (metros/segundos), antes
   // de mapear. Descarta pruebas cortas (el falso positivo de los 47s).
-  const movS  = Number(act.moving_time ?? act.elapsed_time ?? 0);
-  const distM = Number(act.distance ?? act.icu_distance ?? 0);
+  const { movS, distM } = activityRaw(act);
   if (movS < 300 || distM < 500) {
-    return { ok: true, discarded: true, activity_id: act.id ?? null,
+    return { ok: true, source, discarded: true, activity_id: act.id ?? null,
       reason: `muy corta (${movS}s / ${Math.round(distM)}m)` };
   }
 
@@ -575,7 +642,7 @@ async function autoCompleteFromWebhook(conn) {
       `workouts?intervals_activity_id=eq.${encodeURIComponent(act.id)}&select=id&limit=1`
     );
     if (dup?.[0]) {
-      return { ok: true, activity_id: act.id, workout_id: dup[0].id, reason: "ya procesada" };
+      return { ok: true, source, activity_id: act.id, workout_id: dup[0].id, reason: "ya procesada" };
     }
   }
 
@@ -587,7 +654,7 @@ async function autoCompleteFromWebhook(conn) {
     `&done=is.false&select=id&order=id.asc&limit=1`
   );
   const w = ws?.[0];
-  if (!w) return { ok: true, activity_id: act.id ?? null,
+  if (!w) return { ok: true, source, activity_id: act.id ?? null,
     reason: `sin workout planeado pendiente para ${fecha}` };
 
   // Paso 4: marcar hecho + llenar actual_* (mapActivityToActual ya incluye
@@ -601,7 +668,7 @@ async function autoCompleteFromWebhook(conn) {
     method: "PATCH", body: patch, prefer: "return=minimal",
   });
 
-  return { ok: true, marked: true, workout_id: w.id, activity_id: act.id ?? null, fecha };
+  return { ok: true, source, marked: true, workout_id: w.id, activity_id: act.id ?? null, fecha };
 }
 
 // Trae los intervalos/laps crudos de una actividad para la comparacion por
@@ -748,10 +815,26 @@ async function handleOauthCallback(req, res) {
   return redirectToApp(res, { intervals: "connected" });
 }
 
-/* ---------- Webhook intervals.icu (fase 4: logica) ---------- */
+/* ---------- Webhook intervals.icu ---------- */
+/**
+ * Recibe los avisos de intervals.icu y marca hechos los workouts ejecutados.
+ *
+ * Solo atiende ACTIVITY_UPLOADED y ACTIVITY_ANALYZED; los de calendario
+ * (CALENDAR_UPDATED y los legacy CALENDAR_EVENT_*) se cuentan y se ignoran,
+ * porque el puente con el reloj es de ida: lo que el atleta cambie en su
+ * calendario de intervals.icu no vuelve a la app.
+ *
+ * Se autentica con el `secret` del body y responde SIEMPRE 200 con cuerpo
+ * cuando el secret es valido: intervals.icu reintenta con backoff exponencial
+ * ante cualquier respuesta que no sea 2xx (y hay reportes de que un 204 tambien
+ * le dispara reintentos), asi que nada que ya se haya procesado debe salir de
+ * aqui con otro codigo.
+ */
 async function handleIcuWebhook(req, res) {
   const body = typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {});
-  console.log("[icu-webhook] recibido:", JSON.stringify(body?.events?.map(e => ({ type: e.type, athlete_id: e.athlete_id }))));
+  console.log("[icu-webhook] recibido:", JSON.stringify(body?.events?.map(e => ({
+    type: e.type, athlete_id: e.athlete_id, activity_id: e.activity?.id ?? null,
+  }))));
 
   // 1) Verificar el secret (viene en el body, no en headers)
   if (!ICU_WEBHOOK_SECRET || body.secret !== ICU_WEBHOOK_SECRET) {
@@ -759,21 +842,26 @@ async function handleIcuWebhook(req, res) {
     return res.status(401).json({ error: "Unauthorized" });
   }
   const events = Array.isArray(body.events) ? body.events : [];
-  console.log("[icu-webhook] secret OK, eventos:", events.length);
 
-  // 2) Procesar ANTES de responder. En serverless, el trabajo que queda pendiente
+  // 2) Deduplicar: de los dos avisos de una misma actividad sale UNA pasada.
+  const pending = dedupeActivityEvents(events);
+  console.log(
+    `[icu-webhook] secret OK eventos=${events.length} a_procesar=${pending.length}`,
+  );
+
+  // 3) Procesar ANTES de responder. En serverless, el trabajo que queda pendiente
   //    despues de enviar la respuesta puede quedar congelado por el runtime. El
   //    procesamiento es corto y la idempotencia (intervals_activity_id) cubre los
   //    reintentos si tardamos, asi que es seguro procesar y luego responder 200.
   const results = [];
-  for (const ev of events) {
-    // ACTIVITY_UPLOADED llega enseguida (a veces sin datos); ACTIVITY_ANALYZED
-    // llega ~60s despues con los datos completos. Aceptamos ambos.
-    if (ev.type !== "ACTIVITY_UPLOADED" && ev.type !== "ACTIVITY_ANALYZED") continue;
-    console.log("[icu-webhook] procesando", ev.type, "athlete", ev.athlete_id);
+  for (const ev of pending) {
+    const activity = webhookActivity(ev);
+    console.log("[icu-webhook] procesando", ev.type, "athlete", ev.athlete_id,
+      "activity", activity?.id ?? "(no viene en el payload)");
     try {
-      // El evento NO trae activity_id, solo el atleta. Buscamos su conexion
-      // COMPLETA por provider_athlete_id (necesitamos el token para icuFetch).
+      // El evento identifica al atleta por su id de intervals.icu. Buscamos su
+      // conexion COMPLETA por provider_athlete_id: hace falta el token para
+      // icuFetch si toca recurrir al fallback.
       const rows = await sb(
         `device_connections?provider_athlete_id=eq.${encodeURIComponent(ev.athlete_id)}` +
         `&provider=eq.intervals_icu&select=*`
@@ -784,7 +872,7 @@ async function handleIcuWebhook(req, res) {
         continue;
       }
       console.log("[icu-webhook] conexion athlete_id", conn.athlete_id);
-      const pr = await autoCompleteFromWebhook(conn);
+      const pr = await autoCompleteFromWebhook(conn, activity);
       console.log("[icu-webhook] resultado:", JSON.stringify(pr));
       if (pr.marked) {
         console.log(`[icu-webhook] workout ${pr.workout_id} marcado hecho athlete ${conn.athlete_id}`);
@@ -795,8 +883,10 @@ async function handleIcuWebhook(req, res) {
     }
   }
 
-  // 3) Responder 200 una vez terminado TODO el procesamiento.
-  return res.status(200).json({ ok: true, received: events.length, results });
+  // 4) Responder 200 una vez terminado TODO el procesamiento.
+  return res.status(200).json({
+    ok: true, received: events.length, processed: pending.length, results,
+  });
 }
 
 /* ---------- Handler ---------- */
@@ -813,8 +903,8 @@ export default async function handler(req, res) {
     return handleOauthCallback(req, res);
   }
 
-  // Webhook de intervals.icu (servidores de David, sin sesion).
-  // TEMPORAL: aun NO verifica el secret; solo descubrimos el payload.
+  // Webhook de intervals.icu (servidores de David, sin sesion). Se autentica
+  // con el 'secret' que viene en el body, verificado dentro del handler.
   if (qAction === "icu-webhook") {
     return handleIcuWebhook(req, res);
   }
