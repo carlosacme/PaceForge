@@ -413,13 +413,14 @@ export function buildIntervalsDeletePayload(workoutIds) {
 
 /**
  * Construye el payload completo del evento para POST a
- * /api/v1/athlete/{id}/events?upsertOnUid=true
+ * /api/v1/athlete/{id}/events/bulk?upsert=true
  *
- * external_id evita duplicados al reenviar el mismo workout.
+ * external_id es lo que empareja el upsert: al reenviar el mismo workout se
+ * actualiza su evento en vez de duplicarlo.
  */
 export function buildIntervalsEvent(workout, vdot = 42.5) {
-  // uid = lo que usa upsertOnUid=true; external_id = id de sync externo.
-  // Ambos con el mismo valor evita duplicados al reenviar.
+  // uid = clave del calendario; external_id = id de sync externo (el que usa
+  // el upsert del bulk). Ambos con el mismo valor evita duplicados al reenviar.
   const uid = intervalsExternalId(workout.id);
   return {
     category: "WORKOUT",

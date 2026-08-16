@@ -31,7 +31,12 @@
 
 import crypto from "crypto";
 import { requireUser, canAccessAthlete, jsonError } from "../lib/apiAuth.js";
-import { buildIntervalsEvent, buildIntervalsDeletePayload, isRunWorkout } from "../src/lib/intervals.js";
+import {
+  buildIntervalsEvent,
+  buildIntervalsDeletePayload,
+  intervalsExternalId,
+  isRunWorkout,
+} from "../src/lib/intervals.js";
 
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 const SERVICE_KEY  = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -227,75 +232,115 @@ async function actionStatus(res, athleteId) {
   });
 }
 
-/** Empuja una lista de workouts a intervals.icu (crea o actualiza). */
+/**
+ * Empareja la respuesta del bulk con los eventos que se enviaron.
+ *
+ * intervals.icu devuelve la representacion completa de cada evento creado o
+ * actualizado, asi que el emparejamiento va por `external_id` (raf-<workout.id>),
+ * la unica correspondencia que tenemos con la tabla `workouts`. Si algun evento
+ * viniera sin external_id se cae al orden del array, que respeta el del envio.
+ *
+ * @returns {Map<string, {ok: boolean, event: object|null, error: string|null}>}
+ *          indexado por external_id del evento enviado
+ */
+function matchBulkResponse(events, r) {
+  const out = new Map();
+
+  // El lote entero fallo (401, 429, 5xx...): ningun evento se guardo.
+  if (!r.ok) {
+    const error = (r.text || `intervals.icu respondió ${r.status}`).slice(0, 200);
+    for (const ev of events) out.set(ev.external_id, { ok: false, event: null, error });
+    return out;
+  }
+
+  const list = Array.isArray(r.data) ? r.data : [];
+  const byExternalId = new Map();
+  for (const ev of list) {
+    if (ev?.external_id) byExternalId.set(String(ev.external_id), ev);
+  }
+  const echoesExternalId = byExternalId.size > 0;
+
+  events.forEach((sent, i) => {
+    // Solo se recurre a la posicion si NINGUN evento trae external_id: con la
+    // respuesta a medias, emparejar por indice mezclaria entrenos distintos.
+    const got = echoesExternalId
+      ? byExternalId.get(String(sent.external_id)) || null
+      : (list.length === events.length ? list[i] : null);
+
+    if (!got) {
+      out.set(sent.external_id, {
+        ok: false, event: null,
+        error: `intervals.icu no devolvió el evento ${sent.external_id}`,
+      });
+      return;
+    }
+    // Si la respuesta trae detalle por evento, manda ese error.
+    const perEvent = got.error || got.errors;
+    if (perEvent) {
+      out.set(sent.external_id, {
+        ok: false, event: got,
+        error: String(Array.isArray(perEvent) ? perEvent.join("; ") : perEvent).slice(0, 200),
+      });
+      return;
+    }
+    out.set(sent.external_id, { ok: true, event: got, error: null });
+  });
+
+  return out;
+}
+
+/**
+ * Empuja una lista de workouts a intervals.icu en UNA sola llamada.
+ *
+ * events/bulk?upsert=true crea los que no existen y ACTUALIZA los que ya
+ * estan, emparejando por external_id. Al resolverlo el servidor sobran las dos
+ * cosas que hacia esto antes: la consulta previa del calendario para decidir
+ * POST vs PUT, y una llamada por entreno. Un plan de dos semanas pasa de ~15
+ * llamadas a 1, que es lo que pide David para no chocar con los rate limits.
+ *
+ * Contrapartida: la respuesta no dice si cada evento se creo o se actualizo,
+ * asi que la accion reportada es "upserted" para todos.
+ */
 async function pushWorkouts(conn, workouts, vdot) {
   if (!workouts?.length) return [];
 
-  // Indexar eventos existentes del rango por external_id/uid para evitar
-  // duplicados. upsertOnUid solo matchea el campo `uid` (NO external_id),
-  // por eso antes se duplicaban: enviabamos solo external_id.
-  const dates = workouts.map((w) => w.scheduled_date).filter(Boolean).sort();
-  const oldest = dates[0];
-  const newest = dates[dates.length - 1];
-  const byKey = new Map();
-  if (oldest && newest) {
-    const existingRes = await icuFetch(
-      conn,
-      `/athlete/0/events?oldest=${oldest}&newest=${newest}`,
+  // Sin fecha no hay sitio en el calendario: no ocupan hueco en el lote.
+  const sendable = workouts.filter((w) => w.scheduled_date);
+  const events = sendable.map((w) => buildIntervalsEvent(w, vdot));
+
+  let byExternalId = new Map();
+  if (events.length) {
+    const r = await icuFetch(conn, "/athlete/0/events/bulk?upsert=true", {
+      method: "POST",
+      body: events,
+    });
+    byExternalId = matchBulkResponse(events, r);
+    const ok = [...byExternalId.values()].filter((v) => v.ok).length;
+    console.log(
+      `[pushWorkouts] bulk upsert enviados=${events.length} ok=${ok} status=${r.status}`,
     );
-    const list = Array.isArray(existingRes.data) ? existingRes.data : [];
-    for (const ev of list) {
-      if (ev?.external_id) byKey.set(String(ev.external_id), ev);
-      if (ev?.uid) byKey.set(String(ev.uid), ev);
-    }
   }
 
-  const results = [];
-  let created = 0;
-  let updated = 0;
-  for (const w of workouts) {
+  return workouts.map((w) => {
     if (!w.scheduled_date) {
-      results.push({ id: w.id, ok: false, error: "sin scheduled_date" });
-      continue;
+      return {
+        id: w.id, title: w.title, ok: false, action: null,
+        steps: 0, moving_time: null, error: "sin scheduled_date",
+      };
     }
-    const event = buildIntervalsEvent(w, vdot);
-    const key = event.external_id; // raf-<workout.id>
-    const existing = byKey.get(key);
-    let r;
-    let action;
-    if (existing?.id != null) {
-      r = await icuFetch(conn, `/athlete/0/events/${existing.id}`, {
-        method: "PUT",
-        body: event,
-      });
-      action = "updated";
-      if (r.ok) updated++;
-    } else {
-      // POST + upsertOnUid (uid=raf-<id>) como red de seguridad.
-      r = await icuFetch(conn, "/athlete/0/events?upsertOnUid=true", {
-        method: "POST",
-        body: event,
-      });
-      action = "created";
-      if (r.ok) {
-        created++;
-        if (r.data?.id != null) byKey.set(key, r.data);
-      }
-    }
-    results.push({
+    const out = byExternalId.get(intervalsExternalId(w.id)) || {
+      ok: false, event: null, error: "sin respuesta de intervals.icu",
+    };
+    return {
       id: w.id,
       title: w.title,
-      ok: r.ok,
-      action,
-      steps: r.data?.workout_doc?.steps?.length ?? 0,
-      moving_time: r.data?.moving_time ?? null,
-      error: r.ok ? null : (r.text || "").slice(0, 200),
-    });
-  }
-  console.log(
-    `[pushWorkouts] created=${created} updated=${updated} total=${workouts.length}`,
-  );
-  return results;
+      ok: out.ok,
+      action: "upserted",
+      steps: out.event?.workout_doc?.steps?.length ?? 0,
+      moving_time: out.event?.moving_time ?? null,
+      error: out.error,
+    };
+  });
 }
 
 async function finishPush(athleteId, connId, results) {
@@ -383,7 +428,7 @@ async function actionPushRange(res, athleteId, from, to) {
   );
   if (!workouts?.length) {
     return res.status(200).json({
-      ok: true, pushed: 0, created: 0, updated: 0, results: [],
+      ok: true, pushed: 0, upserted: 0, results: [],
       from: fromDate, to: toDate,
     });
   }
@@ -406,17 +451,17 @@ async function actionPushRange(res, athleteId, from, to) {
   const results = await pushWorkouts(conn, runnable, vdot);
   await finishPush(athleteId, conn.id, results);
 
-  const created = results.filter((r) => r.ok && r.action === "created").length;
-  const updated = results.filter((r) => r.ok && r.action === "updated").length;
+  // Ya no se distingue creado de actualizado: el bulk con upsert=true lo
+  // resuelve el servidor y no dice cual de las dos cosas hizo con cada evento.
+  const pushed = results.filter((r) => r.ok).length;
 
   return res.status(200).json({
     ok: true,
     vdot_used: vdot,
     from: fromDate,
     to: toDate,
-    pushed: results.filter((r) => r.ok).length,
-    created,
-    updated,
+    pushed,
+    upserted: pushed,
     failed: results.filter((r) => !r.ok).length,
     skipped,
     results,

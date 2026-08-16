@@ -15,8 +15,9 @@ import { supabase } from "../lib/supabase";
  *   - atleta sin intervals.icu    -> 400
  *   - sesiones que no son carrera -> skipped
  *   - workouts con fecha pasada   -> skipped
- * Y actualiza (PUT) los eventos ya existentes por uid/external_id
- * raf-<workout.id> para no duplicar al reenviar.
+ * Todo el lote va en UNA llamada al bulk de intervals.icu con upsert=true, que
+ * crea los nuevos y actualiza los que ya existen por external_id
+ * raf-<workout.id>. Por eso no se distingue "nuevo" de "actualizado".
  *
  * Uso en App.jsx (cabecera del atleta, junto a "Exportar PDF"):
  *   <PushToWatchButton athleteId={athlete?.id} athleteName={athlete?.name} />
@@ -24,7 +25,7 @@ import { supabase } from "../lib/supabase";
  */
 export default function PushToWatchButton({ athleteId, athleteName }) {
   const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState(null);   // { ok, pushed, created, updated, skipped, failed, results }
+  const [result, setResult] = useState(null);   // { ok, pushed, upserted, skipped, failed, results }
   const [error, setError] = useState("");
 
   const handlePush = async () => {
@@ -105,12 +106,6 @@ export default function PushToWatchButton({ athleteId, athleteName }) {
             <div style={S.ok}>
               ✅ {result.pushed} entrenamiento{result.pushed !== 1 ? "s" : ""} enviado
               {result.pushed !== 1 ? "s" : ""} al reloj
-              {(result.created != null || result.updated != null) ? (
-                <span style={{ fontWeight: 600, color: "#64748b" }}>
-                  {" "}({result.created || 0} nuevo{(result.created || 0) !== 1 ? "s" : ""}
-                  , {result.updated || 0} actualizado{(result.updated || 0) !== 1 ? "s" : ""})
-                </span>
-              ) : null}
             </div>
           ) : (
             <div style={S.warn}>
@@ -148,8 +143,6 @@ export default function PushToWatchButton({ athleteId, athleteName }) {
               {result.results.map((r) => (
                 <li key={r.id} style={{ marginBottom: 2 }}>
                   {r.ok ? "✅" : "❌"} {r.title}
-                  {r.ok && r.action === "updated" ? " · actualizado" : ""}
-                  {r.ok && r.action === "created" ? " · nuevo" : ""}
                   {r.ok && r.steps ? ` · ${r.steps} paso${r.steps !== 1 ? "s" : ""}` : ""}
                   {!r.ok && r.error ? ` · ${r.error}` : ""}
                 </li>
