@@ -23,6 +23,7 @@
  *   oauth-callback (GET ?action=oauth-callback&code&state)  SIN JWT; verificado por state
  *   icu-webhook    (POST ?action=icu-webhook) SIN JWT; verificado por 'secret'
  *                  avisos de intervals.icu: marca hechos los workouts ejecutados
+ *                  y resincroniza los futuros cuando cambian las zonas del atleta
  *
  * SEGURIDAD: casi todas exigen JWT de Supabase (Authorization: Bearer <token>)
  * y validan que el usuario sea el atleta o su coach. Dos excepciones, ambas
@@ -630,6 +631,22 @@ function dedupeActivityEvents(events) {
   return [...byKey.values()];
 }
 
+/**
+ * Un cambio de ajustes puede llegar repetido en la misma entrega: el atleta
+ * toca las zonas de varios deportes de una vez y sale un aviso por cada uno.
+ * Todos provocarian exactamente el mismo reenvio, asi que se queda uno por
+ * atleta.
+ */
+function dedupeSettingsEvents(events) {
+  const byAthlete = new Map();
+  for (const ev of events) {
+    if (ev?.type !== "SPORT_SETTINGS_UPDATED") continue;
+    const key = `athlete:${ev.athlete_id}`;
+    if (!byAthlete.has(key)) byAthlete.set(key, ev);
+  }
+  return [...byAthlete.values()];
+}
+
 // Flujo AUTOMATICO del webhook: valida la actividad ejecutada, la empareja con
 // el workout PLANEADO y PENDIENTE del dia y lo marca hecho con los actual_*.
 // Devuelve un objeto describiendo el resultado (para logs). No usa res; el
@@ -714,6 +731,68 @@ async function autoCompleteFromWebhook(conn, activity = null) {
   });
 
   return { ok: true, source, marked: true, workout_id: w.id, activity_id: act.id ?? null, fecha };
+}
+
+// Ventana de reenvio cuando cambian las zonas del atleta. Un plan puede ocupar
+// meses, y reenviarlo entero en cada cambio gastaria rate limit en entrenos que
+// aun pueden cambiar de sitio o desaparecer. Cuatro semanas cubre lo que el
+// atleta va a correr de verdad antes del siguiente ajuste.
+const RESYNC_WINDOW_DAYS = 28;
+
+/**
+ * Reenvia los workouts futuros pendientes del atleta para que sus ritmos se
+ * recalculen con el VDOT actual.
+ *
+ * Se dispara con SPORT_SETTINGS_UPDATED: si el atleta cambia su umbral o sus
+ * zonas en intervals.icu, todo lo que ya le enviamos quedo con ritmos calculados
+ * sobre los valores viejos.
+ *
+ * No duplica nada porque pushWorkouts va por events/bulk?upsert=true: empareja
+ * por external_id (raf-<id>) y ACTUALIZA el evento en su sitio.
+ *
+ * OJO: los ritmos se regeneran desde NUESTRO VDOT, no desde las zonas nuevas de
+ * intervals.icu. Lo que arregla esto es que el reloj vuelva a tener los ritmos
+ * que el coach planifico, no adoptar el criterio del atleta.
+ */
+async function resyncFutureWorkouts(conn) {
+  const athleteId = conn.athlete_id;
+  const hoy = localDateStr(-5);
+  const hasta = localDateStr(-5, Date.now() + RESYNC_WINDOW_DAYS * 86400000);
+
+  // Sin evaluacion no hay ritmos que recalcular, y mandar un VDOT inventado al
+  // reloj es peor que no mandar nada (mismo criterio que el envio manual).
+  const vdot = await getLatestVdot(athleteId);
+  if (!vdot) return { ok: true, resynced: 0, reason: "el atleta no tiene VDOT" };
+
+  const rows = await sb(
+    `workouts?athlete_id=eq.${athleteId}` +
+    `&scheduled_date=gte.${hoy}&scheduled_date=lte.${hasta}` +
+    // not.is.true y no is.false: si `done` viniera en NULL, ese entreno tampoco
+    // esta hecho y dejarlo fuera seria dejarlo con los ritmos viejos.
+    `&done=not.is.true&select=*&order=scheduled_date.asc`
+  );
+  // Lo que no es de carrera (gimnasio, fuerza) no lleva ritmos que recalcular.
+  const runnable = (rows || []).filter((w) => isRunWorkout(w, vdot));
+  if (!runnable.length) {
+    return { ok: true, resynced: 0, reason: "sin workouts futuros pendientes en la ventana" };
+  }
+
+  const results = await pushWorkouts(conn, runnable, vdot);
+  const resynced = results.filter((r) => r.ok).length;
+  try {
+    await finishPush(athleteId, conn.id, results);
+  } catch (e) {
+    // El sello en device_connections es informativo: no vale perder por el el
+    // resultado de un reenvio que si ocurrio.
+    console.warn("[icu-webhook] no se pudo sellar last_push_at:", e.message);
+  }
+  return {
+    ok: true,
+    resynced,
+    failed: results.length - resynced,
+    vdot_used: vdot,
+    window: `${hoy}..${hasta}`,
+  };
 }
 
 // Trae los intervalos/laps crudos de una actividad para la comparacion por
@@ -862,12 +941,15 @@ async function handleOauthCallback(req, res) {
 
 /* ---------- Webhook intervals.icu ---------- */
 /**
- * Recibe los avisos de intervals.icu y marca hechos los workouts ejecutados.
+ * Recibe los avisos de intervals.icu y hace dos cosas:
+ * - ACTIVITY_UPLOADED / ACTIVITY_ANALYZED: marcan hecho el workout ejecutado.
+ * - SPORT_SETTINGS_UPDATED: el atleta cambio su umbral o sus zonas, asi que se
+ *   reenvian sus workouts futuros para que el reloj recupere los ritmos que el
+ *   coach planifico.
  *
- * Solo atiende ACTIVITY_UPLOADED y ACTIVITY_ANALYZED; los de calendario
- * (CALENDAR_UPDATED y los legacy CALENDAR_EVENT_*) se cuentan y se ignoran,
- * porque el puente con el reloj es de ida: lo que el atleta cambie en su
- * calendario de intervals.icu no vuelve a la app.
+ * Los de calendario (CALENDAR_UPDATED y los legacy CALENDAR_EVENT_*) se cuentan
+ * y se ignoran, porque el puente con el reloj es de ida: lo que el atleta cambie
+ * en su calendario de intervals.icu no vuelve a la app.
  *
  * Se autentica con el `secret` del body y responde SIEMPRE 200 con cuerpo
  * cuando el secret es valido: intervals.icu reintenta con backoff exponencial
@@ -888,8 +970,9 @@ async function handleIcuWebhook(req, res) {
   }
   const events = Array.isArray(body.events) ? body.events : [];
 
-  // 2) Deduplicar: de los dos avisos de una misma actividad sale UNA pasada.
-  const pending = dedupeActivityEvents(events);
+  // 2) Deduplicar: de los dos avisos de una misma actividad sale UNA pasada, y
+  //    de varios cambios de ajustes del mismo atleta, un solo reenvio.
+  const pending = [...dedupeActivityEvents(events), ...dedupeSettingsEvents(events)];
   console.log(
     `[icu-webhook] secret OK eventos=${events.length} a_procesar=${pending.length}`,
   );
@@ -900,9 +983,10 @@ async function handleIcuWebhook(req, res) {
   //    reintentos si tardamos, asi que es seguro procesar y luego responder 200.
   const results = [];
   for (const ev of pending) {
-    const activity = webhookActivity(ev);
+    const esAjustes = ev.type === "SPORT_SETTINGS_UPDATED";
+    const activity = esAjustes ? null : webhookActivity(ev);
     console.log("[icu-webhook] procesando", ev.type, "athlete", ev.athlete_id,
-      "activity", activity?.id ?? "(no viene en el payload)");
+      esAjustes ? "(cambio de zonas)" : `activity ${activity?.id ?? "(no viene en el payload)"}`);
     try {
       // El evento identifica al atleta por su id de intervals.icu. Buscamos su
       // conexion COMPLETA por provider_athlete_id: hace falta el token para
@@ -917,13 +1001,24 @@ async function handleIcuWebhook(req, res) {
         continue;
       }
       console.log("[icu-webhook] conexion athlete_id", conn.athlete_id);
-      const pr = await autoCompleteFromWebhook(conn, activity);
+      const pr = esAjustes
+        ? await resyncFutureWorkouts(conn)
+        : await autoCompleteFromWebhook(conn, activity);
       console.log("[icu-webhook] resultado:", JSON.stringify(pr));
+      if (esAjustes) {
+        console.log(
+          `[icu-webhook] SPORT_SETTINGS_UPDATED athlete ${conn.athlete_id}: ` +
+          `resincronizados ${pr.resynced} workouts` +
+          (pr.reason ? ` (${pr.reason})` : ""),
+        );
+      }
       if (pr.marked) {
         console.log(`[icu-webhook] workout ${pr.workout_id} marcado hecho athlete ${conn.athlete_id}`);
       }
       results.push(pr);
     } catch (e) {
+      // Best effort: un fallo nuestro de resync no debe provocar reintentos de
+      // intervals.icu, asi que se loguea y la respuesta sigue siendo 200.
       console.error("[icu-webhook] error evento:", e.message);
     }
   }
