@@ -18,6 +18,7 @@ import {
   FIT_IMPORT_STEP_TYPES,
   formatCopInt,
   sendWorkoutAssignmentPushToAthlete,
+  insertAssignedWorkouts,
 } from "./shared/appShared";
 
 function WorkoutLibrary({
@@ -499,11 +500,14 @@ function WorkoutLibrary({
         duration_min: Number(row.duration_min) || 0,
         description: row.description || "",
         structure,
+        // Con que VDOT quedaron escritos estos ritmos. Sin este dato no se pueden
+        // recalcular despues: un ritmo absoluto no dice a que zona pertenece.
+        generated_with_vdot: Number(targetVdot) || null,
         done: false,
         scheduled_date: assignDate,
       };
     });
-    const { error } = await supabase.from("workouts").insert(payload);
+    const { error } = await insertAssignedWorkouts(payload);
     setAssignSaving(false);
     if (error) {
       console.error(error);

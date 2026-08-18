@@ -19,6 +19,8 @@
  *                  borra en intervals.icu los eventos de esos workouts
  *   pull-activity  { athlete_id, workout_id } trae lo ejecutado del reloj
  *   activity-intervals { athlete_id, activity_id } laps crudos (comparacion por bloque)
+ *   vdot-resync    { athlete_id }            reescribe los ritmos de los workouts
+ *                  futuros al VDOT de la ultima evaluacion y los reenvia al reloj
  *   oauth-start    { athlete_id }            inicia OAuth (JWT); devuelve authorize_url
  *   oauth-callback (GET ?action=oauth-callback&code&state)  SIN JWT; verificado por state
  *   icu-webhook    (POST ?action=icu-webhook) SIN JWT; verificado por 'secret'
@@ -43,6 +45,9 @@ import {
   intervalsExternalId,
   isRunWorkout,
 } from "../src/lib/intervals.js";
+import { rescaleStructureToVdot } from "../src/lib/enrichPace.js";
+import { readStructure } from "../src/lib/workoutStructure.js";
+import { resolveTargetVdotAfterTest } from "../src/lib/vdot.js";
 
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 const SERVICE_KEY  = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -795,6 +800,156 @@ async function resyncFutureWorkouts(conn) {
   };
 }
 
+/* ---------- Recalculo de ritmos tras una evaluacion nueva ---------- */
+
+// Ventana maxima del recalculo. Mas alla de 6 semanas el plan se reescribe
+// igual, asi que los ritmos de dentro de tres meses no son un problema de hoy.
+const VDOT_RESYNC_WINDOW_DAYS = 42;
+
+// Un workout de prueba cierra la ventana: lo que venga despues se planificara
+// con el VDOT que mida ESE test, no con el de ahora.
+// "marat[oó]n" ya cubre "MEDIA MARATON", que lo contiene.
+const TEST_WORKOUT_RE = /(test|marat[oó]n)/i;
+
+/**
+ * Reescribe los ritmos de los workouts futuros del atleta al VDOT de su ultima
+ * evaluacion y los reenvia al reloj.
+ *
+ * Los ritmos se guardan absolutos ("4:23-4:31"), y un ritmo absoluto es opaco:
+ * para llevarlo al VDOT nuevo hay que deducir primero su zona Daniels, y eso
+ * solo sale bien sabiendo con que VDOT se escribio. De ahi la columna
+ * generated_with_vdot. Cuando falta, la fila se SALTA a proposito: con el origen
+ * equivocado el mapeo se desplaza de zona entera y en silencio (a VDOT 42.5 la
+ * zona R son 4:03, que en un plan escrito a 47.2 es la zona I), y un workout con
+ * los ritmos viejos es mucho menos dano que uno con los ritmos de otra zona.
+ *
+ * Idempotente: cada fila recalculada guarda el target como nuevo origen, asi que
+ * repetir la operacion no vuelve a desplazar nada.
+ */
+async function resyncPacesAfterEvaluation(athleteId) {
+  // Toda la serie de tests: hace falta el primero (tope), el anterior (guardas)
+  // y el ultimo (lo medido). Orden unificado con el resto de la app: manda la
+  // fecha real del test y created_at solo desempata entre tests del mismo dia.
+  const evals = await sb(
+    `athlete_evaluations?athlete_id=eq.${athleteId}&select=vdot,test_date,created_at` +
+    `&order=test_date.asc,created_at.asc`
+  );
+  const vdots = (evals || [])
+    .map((e) => Number(e.vdot))
+    .filter((v) => Number.isFinite(v) && v > 0);
+  if (!vdots.length) {
+    return { ok: true, recalculated: 0, reason: "el atleta no tiene evaluaciones con VDOT" };
+  }
+
+  const measured = vdots[vdots.length - 1];
+  const previous = vdots.length > 1 ? vdots[vdots.length - 2] : null;
+  const first = vdots[0];
+  const { target, delta, reason } = resolveTargetVdotAfterTest({ measured, previous, first });
+
+  const hoy   = localDateStr(-5);
+  const limite = localDateStr(-5, Date.now() + VDOT_RESYNC_WINDOW_DAYS * 86400000);
+  const rows = await sb(
+    `workouts?athlete_id=eq.${athleteId}` +
+    `&scheduled_date=gte.${hoy}&scheduled_date=lte.${limite}` +
+    // not.is.true y no is.false: un `done` en NULL tampoco esta hecho.
+    `&done=not.is.true&select=*&order=scheduled_date.asc`
+  );
+
+  // El corte es el proximo test ESTRICTAMENTE futuro. Si el test que se acaba de
+  // hacer sigue en el calendario sin marcar, cortar en el dejaria la ventana en
+  // un solo dia y el recalculo no tocaria nada.
+  const nextTest = (rows || []).find(
+    (w) => w.scheduled_date > hoy && TEST_WORKOUT_RE.test(String(w.title || ""))
+  );
+  // El propio test entra en la ventana: su ritmo objetivo tambien sale del VDOT.
+  const hasta = nextTest?.scheduled_date || limite;
+  const enVentana = (rows || []).filter((w) => w.scheduled_date <= hasta);
+
+  const actualizados = [];
+  let sinOrigen = 0;
+  let sinCambio = 0;
+
+  for (const w of enVentana) {
+    const origen = Number(w.generated_with_vdot);
+    if (!Number.isFinite(origen) || origen <= 0) { sinOrigen += 1; continue; }
+
+    const antes = readStructure(w);
+    if (!antes.length) { sinCambio += 1; continue; }
+
+    const despues = rescaleStructureToVdot(antes, target, origen);
+    if (JSON.stringify(antes) === JSON.stringify(despues)) { sinCambio += 1; continue; }
+
+    await sb(`workouts?id=eq.${w.id}`, {
+      method: "PATCH",
+      prefer: "return=minimal",
+      body: { structure: despues, generated_with_vdot: target },
+    });
+    actualizados.push({ ...w, structure: despues, generated_with_vdot: target });
+  }
+
+  // Reenvio al reloj: bulk con upsert por external_id, actualiza en su sitio.
+  let pushed = 0;
+  let pushFailed = 0;
+  let pushSkipped = null;
+  if (!actualizados.length) {
+    pushSkipped = "sin workouts recalculados";
+  } else {
+    // Desconectar BORRA la fila, asi que "existe conexion" ya significa activa.
+    const conn = await getConnection(athleteId);
+    if (!conn) {
+      pushSkipped = "el atleta no tiene intervals.icu conectado";
+    } else {
+      // Lo que no es de carrera (fuerza, gimnasio) no lleva ritmos al reloj.
+      const runnable = actualizados.filter((w) => isRunWorkout(w, target));
+      if (!runnable.length) {
+        pushSkipped = "nada de carrera que enviar";
+      } else {
+        const results = await pushWorkouts(conn, runnable, target);
+        pushed = results.filter((r) => r.ok).length;
+        pushFailed = results.length - pushed;
+        try {
+          await finishPush(athleteId, conn.id, results);
+        } catch (e) {
+          // El sello es informativo: no vale perder por el un reenvio que ocurrio.
+          console.warn("[vdot-resync] no se pudo sellar last_push_at:", e.message);
+        }
+      }
+    }
+  }
+
+  console.log(
+    `[vdot-resync] atleta ${athleteId}: test VDOT ${measured} → target ${target} ` +
+    `(${reason}), ${actualizados.length} workouts recalculados hasta ${hasta}` +
+    ` · sin VDOT de origen ${sinOrigen} · sin cambio ${sinCambio}` +
+    ` · reenviados al reloj ${pushed}${pushFailed ? ` (fallaron ${pushFailed})` : ""}` +
+    `${pushSkipped ? ` · sin reenviar: ${pushSkipped}` : ""}`
+  );
+
+  return {
+    ok: true,
+    measured,
+    previous,
+    first,
+    target,
+    delta,
+    reason,
+    until: hasta,
+    capped_by_test: nextTest ? { title: nextTest.title, date: nextTest.scheduled_date } : null,
+    scanned: enVentana.length,
+    recalculated: actualizados.length,
+    without_origin: sinOrigen,
+    unchanged: sinCambio,
+    pushed,
+    push_failed: pushFailed,
+    push_skipped: pushSkipped,
+  };
+}
+
+async function actionVdotResync(res, athleteId) {
+  const out = await resyncPacesAfterEvaluation(athleteId);
+  return res.status(200).json(out);
+}
+
 // Trae los intervalos/laps crudos de una actividad para la comparacion por
 // bloque del coach (plan vs ejecutado). No escribe nada; solo lee.
 async function actionActivityIntervals(res, athleteId, activityId) {
@@ -1076,6 +1231,7 @@ export default async function handler(req, res) {
       case "delete-workout": return await actionDeleteWorkoutEvents(res, athlete_id, body.workout_ids ?? body.workout_id);
       case "pull-activity": return await actionPullActivity(res, athlete_id, body.workout_id);
       case "activity-intervals": return await actionActivityIntervals(res, athlete_id, body.activity_id);
+      case "vdot-resync":   return await actionVdotResync(res, athlete_id);
       case "oauth-start":   return await actionOauthStart(res, athlete_id, user.id);
       default:              return jsonError(res, 400, `Acción no soportada: ${action}`);
     }

@@ -195,6 +195,72 @@ export function progressionDelta(vdot) {
   return 1;
 }
 
+/**
+ * Tope de mejora acumulada sobre el PRIMER test del atleta. Sin el, cada
+ * evaluacion apila su delta aspiracional y a los seis tests el plan pide ritmos
+ * que el atleta no ha demostrado nunca.
+ */
+export const VDOT_MAX_CUMULATIVE_GAIN = 8;
+
+/**
+ * VDOT al que se escriben los ritmos tras un test.
+ *
+ * El caso normal apunta algo por encima de lo medido (progressionDelta), que es
+ * como se entrena. Las guardas existen porque esto se aplica AUTOMATICAMENTE y
+ * los ritmos llegan al reloj sin que nadie los revise:
+ *
+ *  - Si el VDOT bajo (lesion, mala racha) se usa lo medido y punto. Apretar a
+ *    quien retrocedio es como un bajon se convierte en una lesion.
+ *  - Si la mejora real ya alcanzo el delta que se le habia aplicado, tampoco se
+ *    suma otra vez: el atleta ya sube mas rapido que lo aspiracional, y volver a
+ *    adelantarle los ritmos solo acumula riesgo.
+ *  - El tope sobre el primer test solo QUITA el delta; nunca devuelve un VDOT por
+ *    debajo del medido, porque a quien demostro 53 no se le entrena a 50.
+ *
+ * @param {{measured:number, previous?:number|null, first?:number|null}} args
+ * @returns {{target:number, delta:number, reason:string}|null}
+ */
+export function resolveTargetVdotAfterTest({ measured, previous = null, first = null }) {
+  // OJO: Number(null) es 0 y Number.isFinite(0) es true, asi que un atleta sin
+  // test anterior entraria en las ramas de comparacion con un "anterior = 0" y
+  // saldria siempre por "ya mejoró". Solo un VDOT positivo cuenta como dato.
+  const vdotOrNull = (v) => {
+    const n = Number(v);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  };
+  const medido = vdotOrNull(measured);
+  if (medido == null) return null;
+  const anterior = vdotOrNull(previous);
+  const primero = vdotOrNull(first);
+
+  const delta = progressionDelta(medido) ?? 0;
+  let target = medido + delta;
+  let reason = `+${delta} por nivel`;
+
+  if (anterior != null && medido < anterior) {
+    target = medido;
+    reason = `bajó desde ${anterior}: sin delta`;
+  } else if (anterior != null) {
+    const deltaPrevio = progressionDelta(anterior) ?? delta;
+    const mejora = medido - anterior;
+    if (mejora >= deltaPrevio) {
+      target = medido;
+      reason = `ya mejoró ${mejora.toFixed(1)} (>= ${deltaPrevio}): sin delta`;
+    }
+  }
+
+  if (primero != null && target > primero + VDOT_MAX_CUMULATIVE_GAIN) {
+    target = Math.max(medido, primero + VDOT_MAX_CUMULATIVE_GAIN);
+    reason += ` · tope de +${VDOT_MAX_CUMULATIVE_GAIN} sobre el primer test (${primero})`;
+  }
+
+  return {
+    target: Number(target.toFixed(2)),
+    delta: Number((target - medido).toFixed(2)),
+    reason,
+  };
+}
+
 /** "7:14" -> 434 segundos. null si no es un ritmo. */
 export function parsePaceToSeconds(text) {
   const m = String(text || "").trim().match(/^(\d{1,2}):([0-5]\d)$/);

@@ -41,6 +41,7 @@ import {
   normalizeAthlete,
   formatDurationClock,
   formatCopInt,
+  insertAssignedWorkouts,
   styles,
 } from "./shared/appShared";
 import WorkoutStructureEditor from "./shared/WorkoutStructureEditor";
@@ -1074,6 +1075,9 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
           duration_min: Number.isFinite(Number(wo.duration_min)) ? Number(wo.duration_min) : 0,
           description: String(wo.description || ""),
           structure,
+          // Con que VDOT quedaron escritos estos ritmos, para poder recalcularlos
+          // cuando el atleta vuelva a evaluarse.
+          generated_with_vdot: Number(vdotPaceRanges?.vdotUsed) || null,
           scheduled_date,
           done: false,
         });
@@ -1114,7 +1118,7 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
 
     setAssignLoading(true);
     try {
-      const { error } = await supabase.from("workouts").insert(payload);
+      const { error } = await insertAssignedWorkouts(payload);
       if (error) {
         console.error("Error insertando plan:", error);
         alert(`Error: ${error.message}`);

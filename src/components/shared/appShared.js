@@ -1759,6 +1759,101 @@ export const deleteIntervalsEvents = async (athleteId, workoutIds) => {
   }
 };
 
+/**
+ * Inserta workouts asignados tolerando que 0062 aun no este aplicada.
+ *
+ * El codigo va a Vercel en cuanto se hace push, y la migracion la aplica una
+ * persona: entre las dos cosas hay una ventana en la que `generated_with_vdot`
+ * no existe todavia y PostgREST rechaza el insert ENTERO con PGRST204. Sin esta
+ * red, esa ventana deja al coach sin poder asignar entrenos.
+ *
+ * El reintento pierde el VDOT de origen (esos workouts quedaran fuera del
+ * recalculo automatico), que es un precio bajisimo comparado con no asignar.
+ * En cuanto la migracion este aplicada este camino no se recorre nunca; se puede
+ * borrar entonces.
+ */
+export const insertAssignedWorkouts = async (rows) => {
+  const { error } = await supabase.from("workouts").insert(rows);
+  if (!error) return { error: null };
+  const falta = error.code === "PGRST204" || /generated_with_vdot/i.test(error.message || "");
+  if (!falta) return { error };
+  console.warn("[workouts] generated_with_vdot no existe todavía (falta migración 0062); se asigna sin él");
+  const limpios = rows.map((r) => {
+    const copia = { ...r };
+    delete copia.generated_with_vdot;
+    return copia;
+  });
+  return await supabase.from("workouts").insert(limpios);
+};
+
+/**
+ * Reescribe los ritmos de los workouts futuros del atleta al VDOT de su ultima
+ * evaluacion, y los reenvia al reloj.
+ *
+ * Va por /api/integrations por dos razones: las credenciales de intervals.icu no
+ * salen del servidor, y el recalculo escribe en `workouts` con service_role sin
+ * depender de la RLS del coach que guardo la evaluacion.
+ *
+ * BEST EFFORT: nunca lanza. La evaluacion ya quedo guardada, que es lo primario;
+ * si el recalculo falla, el plan sigue con los ritmos del test anterior.
+ *
+ * @returns {Promise<{ok: boolean, measured?: number, target?: number, recalculated?: number, until?: string, without_origin?: number, pushed?: number, reason?: string}>}
+ */
+export const resyncPacesAfterEvaluation = async (athleteId) => {
+  if (!athleteId) return { ok: false, reason: "sin atleta" };
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) return { ok: false, reason: "sin sesión" };
+    const res = await fetch("/api/integrations", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({ action: "vdot-resync", athlete_id: athleteId }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      console.warn("[vdot-resync] no se pudo recalcular:", data?.error || res.status);
+      return { ok: false, reason: data?.error || `Error ${res.status}` };
+    }
+    console.log(
+      `[vdot-resync] VDOT ${data?.measured} → ${data?.target}: ` +
+      `${data?.recalculated ?? 0} workouts recalculados hasta ${data?.until}`,
+    );
+    return { ok: true, ...data };
+  } catch (e) {
+    console.warn("[vdot-resync] no se pudo recalcular:", e.message);
+    return { ok: false, reason: e.message };
+  }
+};
+
+/**
+ * Avisa al atleta de que sus ritmos cambiaron tras un test.
+ *
+ * Distingue el VDOT MEDIDO (lo que corrio) del VDOT OBJETIVO (al que se
+ * escribieron los ritmos): son distintos casi siempre, porque se entrena algo
+ * por encima de lo medido, y mezclarlos hace que el atleta no reconozca su
+ * propio resultado. El deep-link lleva al calendario, donde ve los ritmos nuevos.
+ */
+export async function sendPaceUpdatePushToAthlete({ athleteUserId, testLabel, prevVdot, measuredVdot, targetVdot, count }) {
+  if (!athleteUserId) return;
+  const salto = Number.isFinite(Number(prevVdot))
+    ? `VDOT ${prevVdot} → ${measuredVdot}`
+    : `VDOT ${measuredVdot}`;
+  const sesiones = count === 1 ? "1 sesión" : `${count} sesiones`;
+  const ritmos = Number(targetVdot) !== Number(measuredVdot)
+    ? `Tus ritmos se ajustaron a VDOT ${targetVdot} en ${sesiones}.`
+    : `Tus ritmos se ajustaron en ${sesiones}.`;
+  await sendChatPushNotification({
+    toUserId: athleteUserId,
+    title: "📈 Tus ritmos se actualizaron",
+    body: `Tras el ${testLabel}: ${salto}. ${ritmos}`,
+    data: { type: "athlete_calendar" },
+    logLabel: "vdot resync coach→athlete",
+  });
+}
+
 export async function sendWorkoutAssignmentPushToAthlete({ athleteUserId, workoutTitle, scheduledDate }) {
   if (!athleteUserId) return;
   await sendChatPushNotification({

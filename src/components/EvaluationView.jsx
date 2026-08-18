@@ -9,6 +9,8 @@ import {
   RESTING_HR_MIN,
   RESTING_HR_MAX,
   MIN_HR_RESERVE,
+  resyncPacesAfterEvaluation,
+  sendPaceUpdatePushToAthlete,
 } from "./shared/appShared";
 import { usePersistedState } from "../hooks/usePersistedState";
 
@@ -70,6 +72,19 @@ const restingHrErrorFor = (fcRest, fcMax) => {
     return `La diferencia entre tu FC máxima (${Math.round(max)}) y tu FC en reposo (${Math.round(rest)}) es muy pequeña. Revisa ambos datos.`;
   }
   return "";
+};
+
+/**
+ * Nombre del test para el aviso al atleta ("Tras el TEST 10K: VDOT 47 → 49").
+ * Sale de lo que se guardo, no del formulario, para que no mienta si el coach
+ * cambia de pestana despues de calcular.
+ */
+const testLabelFor = (dataObj) => {
+  const method = dataObj?.method || dataObj?.source?.method;
+  if (method === "cooper") return "TEST DE COOPER";
+  if (method === "threshold") return "TEST DE UMBRAL";
+  const label = EVAL_DISTANCES.find((d) => d.id === dataObj?.source?.distance_id)?.label;
+  return label ? `TEST ${label}` : "TEST";
 };
 
 /** FC media del test de umbral: entero de referencia, o null. */
@@ -301,13 +316,48 @@ export default function EvaluationView({ athletes, currentUserId, notify, athlet
       .from("athletes")
       .update(athleteUpdate)
       .eq("id", athleteId);
-    setSaving(false);
     if (updErr) {
       console.error(updErr);
       notify?.(`Evaluación guardada, pero no se pudo actualizar el perfil del atleta: ${updErr.message}`);
     } else {
       notify?.("Evaluación guardada y aplicada al atleta");
     }
+
+    // Un VDOT nuevo deja los ritmos del plan calculados sobre el test viejo.
+    // `history` es lo que habia ANTES de este insert, asi que su primera fila es
+    // la evaluacion anterior. Si el VDOT no se movio no hay nada que recalcular.
+    const prevVdot = Number(history?.[0]?.vdot);
+    const vdotChanged = !Number.isFinite(prevVdot) || Math.abs(payload.vdot - prevVdot) >= 0.05;
+    if (vdotChanged) {
+      notify?.("Recalculando los ritmos de los entrenos futuros…");
+      const out = await resyncPacesAfterEvaluation(athleteId);
+      if (!out.ok) {
+        notify?.(`No se pudieron recalcular los ritmos: ${out.reason}. El plan sigue con los del test anterior.`);
+      } else if (!out.recalculated) {
+        notify?.(
+          out.without_origin
+            ? `Sin ritmos que recalcular: ${out.without_origin} entrenos futuros no guardan con qué VDOT se generaron.`
+            : "No había entrenos futuros con ritmos que recalcular.",
+        );
+      } else {
+        const extra = out.without_origin ? ` · ${out.without_origin} sin VDOT de origen, sin tocar` : "";
+        const reloj = out.pushed ? ` · ${out.pushed} reenviados al reloj` : "";
+        notify?.(
+          `Ritmos actualizados a VDOT ${out.target}: ${out.recalculated} sesiones hasta el ${out.until}${extra}${reloj}`,
+        );
+        // Aviso al atleta (best effort: el recalculo ya ocurrio).
+        sendPaceUpdatePushToAthlete({
+          athleteUserId: selectedAthlete?.user_id,
+          testLabel: testLabelFor(results),
+          prevVdot: Number.isFinite(prevVdot) ? prevVdot : null,
+          measuredVdot: payload.vdot,
+          targetVdot: out.target,
+          count: out.recalculated,
+        }).catch((e) => console.warn("push vdot-resync:", e.message));
+      }
+    }
+
+    setSaving(false);
     loadHistory();
   };
 

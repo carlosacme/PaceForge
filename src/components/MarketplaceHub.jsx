@@ -7,6 +7,7 @@ import {
   getPlanPeakWeeklyKm,
   formatLocalYMD,
   addDays,
+  insertAssignedWorkouts,
 } from "./shared/appShared";
 import { readStructure } from "../lib/workoutStructure";
 import { enrichStructureWithPaces } from "../lib/enrichPace";
@@ -312,9 +313,12 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
           title: w.title || `Sesión ${idx + 1}`, type: w.type || "easy",
           total_km: Number(w.distance_km || w.total_km || 0), duration_min: Number(w.duration_min || 0),
           description: w.description || "", structure, done: false,
+          // Con que VDOT quedaron escritos estos ritmos, para poder recalcularlos
+          // cuando el atleta vuelva a evaluarse.
+          generated_with_vdot: Number(athleteVdot) || null,
         };
       });
-      const { error: insertErr } = await supabase.from("workouts").insert(rows);
+      const { error: insertErr } = await insertAssignedWorkouts(rows);
       if (insertErr) { console.error("loadPlanToCalendar insert:", insertErr); notify?.(insertErr.message || "Error al cargar el plan al calendario."); return; }
       setCalendarSyncDone((prev) => ({ ...prev, [String(startDatePlan.id)]: true }));
       setShowStartDateModal(false);

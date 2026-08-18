@@ -17,6 +17,7 @@ import {
   formatDurationClock,
   buildAthleteHrZonesPromptText,
   sendWorkoutAssignmentPushToAthlete,
+  insertAssignedWorkouts,
   normalizeAthlete,
   libraryRowToBuilderWorkout,
   normalizeLibraryRow,
@@ -219,9 +220,12 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
         athlete_id: selectedAthlete.id,
         coach_id: userData.user.id,
         scheduled_date: assignDate,
+        // Con que VDOT quedaron escritos estos ritmos, para poder recalcularlos
+        // cuando el atleta vuelva a evaluarse.
+        generated_with_vdot: Number(vdotByAthlete[selectedAthlete.id]) || null,
         done: false,
       }));
-      const { error } = await supabase.from("workouts").insert(payload);
+      const { error } = await insertAssignedWorkouts(payload);
       if (error) {
         console.error("Error guardando workout asignado:", error);
         alert(`Error: ${error.message}\n${error.details || ""}\n${error.hint || ""}`);

@@ -16,8 +16,10 @@
  * Fuente unica de ritmos: vdot.js (misma que qualitativeToPace).
  * -----------------------------------------------------------
  */
-import { pacesForVdot, fmtPace, paceToZone, PLAN_CALIBRATION_VDOT } from "./vdot";
-import { EFFORT_TO_ZONE } from "./intervals";
+// Con extension: este modulo tambien se importa desde api/ (serverless), y ahi
+// manda la resolucion de Node, que no adivina la extension como Vite.
+import { pacesForVdot, fmtPace, paceToZone, PLAN_CALIBRATION_VDOT } from "./vdot.js";
+import { EFFORT_TO_ZONE } from "./intervals.js";
 
 // Zona FC (Z1-Z5) -> zona Daniels de ritmo (E/M/T/I).
 // Z3="Aerobico tempo" mapea a M (maraton/steady), NO a T: a 70-80% FCmax
