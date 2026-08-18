@@ -16,7 +16,7 @@
  * Fuente unica de ritmos: vdot.js (misma que qualitativeToPace).
  * -----------------------------------------------------------
  */
-import { pacesForVdot, fmtPace } from "./vdot";
+import { pacesForVdot, fmtPace, paceToZone, PLAN_CALIBRATION_VDOT } from "./vdot";
 import { EFFORT_TO_ZONE } from "./intervals";
 
 // Zona FC (Z1-Z5) -> zona Daniels de ritmo (E/M/T/I).
@@ -101,5 +101,42 @@ export function enrichStructureWithPaces(structure, vdot, fcMax) {
       [paceField]: paceStr,
       description: b?.description?.trim() ? b.description : rawPace,
     };
+  });
+}
+
+/**
+ * Reescala los ritmos ABSOLUTOS de una estructura al VDOT objetivo del atleta.
+ *
+ * Los workouts importados a la biblioteca traen ritmos fijos, escritos a un VDOT
+ * concreto (PLAN_CALIBRATION_VDOT). Asignados tal cual, un atleta mas rapido
+ * entrena por debajo de lo que le toca y uno mas lento por encima, porque nadie
+ * los recalcula: enrichStructureWithPaces se salta los bloques que ya traen un
+ * ritmo numerico (es un relleno, no un recalculador) y normalizeBlock prioriza
+ * el ritmo guardado sobre el VDOT al enviar al reloj.
+ *
+ * Va en dos pasos: del ritmo se deduce la zona con el VDOT de calibracion, y la
+ * zona se vuelve a escribir con el VDOT objetivo. Un bloque cuyo ritmo no
+ * corresponda a ninguna zona se deja INTACTO: es el caso de los trotes de
+ * recuperacion, deliberadamente mas lentos que E, y de cualquier ritmo escrito a
+ * mano que no encaje. Preferimos dejarlo como estaba a inventar una zona.
+ *
+ * La zona deducida se guarda en target_zone para poder auditar la conversion.
+ * NO se toca la description: ademas de los ritmos, ahi hay tiempos objetivo y
+ * splits ("MARATON 3:15", "4:40→4:37") que un reemplazo a ciegas destrozaria.
+ */
+export function rescaleStructureToVdot(structure, targetVdot, calibrationVdot = PLAN_CALIBRATION_VDOT) {
+  const arr = Array.isArray(structure) ? structure : [];
+  if (!pacesForVdot(targetVdot)) return arr; // sin VDOT objetivo no se toca nada
+  return arr.map((b) => {
+    const bPace = String(b?.target_pace ?? "").trim();
+    const aPace = String(b?.pace ?? "").trim();
+    const rawPace = bPace || aPace;
+    if (!rawPace) return b;
+    const zone = paceToZone(rawPace, calibrationVdot);
+    if (!zone) return b;
+    const paceStr = zoneToPaceStr(zone, targetVdot);
+    if (!paceStr) return b;
+    // Se reescribe en el campo que ya traia el ritmo, para no dejar dos.
+    return { ...b, [bPace ? "target_pace" : "pace"]: paceStr, target_zone: zone };
   });
 }

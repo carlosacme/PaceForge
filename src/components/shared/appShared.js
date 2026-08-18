@@ -220,6 +220,9 @@ export const emptyFitImportStructureRow = () => ({
   distance_km: "",
   target_pace: "",
   target_hr: "",
+  // Zona Daniels (E/M/T/I/R) cuando se deduce del ritmo al reescalar el workout
+  // al VDOT del atleta. Viaja por aqui para poder auditar de donde sale el ritmo.
+  target_zone: "",
   description: "",
   __key: newFitImportStepKey(),
 });
@@ -252,12 +255,15 @@ export const normalizeStructureForFitImportModal = (structure) => {
       distance_km,
       target_pace,
       target_hr,
+      target_zone: String(s?.target_zone ?? "").trim(),
       description,
       __key: s?.__key || newFitImportStepKey(),
     };
   });
 };
 
+// Whitelist de lo que se guarda de cada paso: cualquier campo que no este aqui
+// se descarta al insertar en la biblioteca.
 export const structureRowsForFitImportInsert = (rows) =>
   (Array.isArray(rows) ? rows : []).map((s) => ({
     block_type: String(s.block_type || "Rodaje").trim(),
@@ -265,6 +271,7 @@ export const structureRowsForFitImportInsert = (rows) =>
     distance_km: String(s.distance_km ?? "").trim(),
     target_pace: String(s.target_pace ?? "").trim(),
     target_hr: String(s.target_hr ?? "").trim(),
+    target_zone: String(s.target_zone ?? "").trim(),
     description: String(s.description ?? "").trim(),
   }));
 

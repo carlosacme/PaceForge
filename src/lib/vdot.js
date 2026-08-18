@@ -94,6 +94,107 @@ export function fmtPace(secs) {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
+/**
+ * VDOT al que estan escritos los ritmos de los workouts importados a la
+ * biblioteca (los JSON del plan de 24 semanas).
+ *
+ * No es un dato que traigan los archivos: se midio por minimos cuadrados
+ * comparando los ritmos que sus propios stepName declaran por zona
+ * (E 5:53, M 4:39, T 4:23, I 4:03, R 3:43) contra pacesForVdot. El ajuste global
+ * da 47.2 y zona a zona cae entre 45.5 y 48.8. Cuadra con el objetivo declarado
+ * del plan (maraton 3:15, y sus tests dicen "VDOT 46-47"): son ritmos OBJETIVO,
+ * no del estado actual de nadie.
+ *
+ * Si algun dia se importa un plan calibrado a otro VDOT, esto tiene que pasar a
+ * ser un dato por workout en vez de una constante.
+ */
+export const PLAN_CALIBRATION_VDOT = 47.2;
+
+/**
+ * Zonas que se consideran al deducir la zona de un ritmo absoluto.
+ *
+ * A proposito NO estan HM ni T10: son mezclas de M/T/I (ver pacesForVdot), caen
+ * a pocos segundos de sus vecinas y le robarian el match a la zona real.
+ */
+const REVERSE_MAP_ZONES = ["E", "M", "T", "I", "R"];
+
+/** Centro de una zona en seg/km. E es rango, el resto valor unico. */
+function zoneCenterSecs(paces, zone) {
+  const v = paces?.[zone];
+  if (v == null) return null;
+  return Array.isArray(v) ? (v[0] + v[1]) / 2 : v;
+}
+
+/**
+ * Ritmo escrito -> seg/km. Acepta valor unico ("4:23"), rango ("3:39-3:47", del
+ * que devuelve el punto medio) y sufijos ("4:23 min/km", "3:39-3:47/km").
+ * null si no hay ningun m:ss dentro.
+ */
+export function paceTextToSecs(text) {
+  const s = String(text ?? "").trim();
+  if (!s) return null;
+  const range = s.match(/(\d{1,2}):([0-5]\d)\s*[-–]\s*(\d{1,2}):([0-5]\d)/);
+  if (range) {
+    const a = +range[1] * 60 + +range[2];
+    const b = +range[3] * 60 + +range[4];
+    return (a + b) / 2;
+  }
+  const one = s.match(/(\d{1,2}):([0-5]\d)/);
+  return one ? +one[1] * 60 + +one[2] : null;
+}
+
+/** Margen para aceptar que un ritmo pertenece a una zona (seg/km). */
+export const PACE_ZONE_TOLERANCE_SECS = 15;
+
+/**
+ * Operacion inversa de pacesForVdot: de un ritmo ABSOLUTO a su zona Daniels,
+ * sabiendo a que VDOT se escribio.
+ *
+ * Hace falta para reescalar un workout de ritmos fijos al VDOT de otro atleta:
+ * sin la zona, un "4:23/km" es un numero opaco. El VDOT de calibracion es
+ * imprescindible y no se puede adivinar; con el equivocado el mapeo se desplaza
+ * de zona (a VDOT 42.5 la R son 4:03, que en este plan es la I).
+ *
+ * Devuelve null si el ritmo no se parece a ninguna zona (mas de `tolerance`
+ * segundos de la mas cercana), para no forzar una zona incorrecta: los trotes de
+ * recuperacion, mas lentos que E a proposito, caen aqui y se quedan como estan.
+ */
+export function paceToZone(paceStr, calibrationVdot, tolerance = PACE_ZONE_TOLERANCE_SECS) {
+  const secs = paceTextToSecs(paceStr);
+  if (secs == null) return null;
+  const paces = pacesForVdot(calibrationVdot);
+  if (!paces) return null;
+
+  let best = null;
+  let bestDiff = Infinity;
+  for (const zone of REVERSE_MAP_ZONES) {
+    const center = zoneCenterSecs(paces, zone);
+    if (center == null) continue;
+    const diff = Math.abs(center - secs);
+    if (diff < bestDiff) {
+      bestDiff = diff;
+      best = zone;
+    }
+  }
+  return bestDiff <= tolerance ? best : null;
+}
+
+/**
+ * Cuanto VDOT se le suma al atleta para fijar los ritmos del entreno.
+ *
+ * Se entrena apuntando algo por encima del estado actual, y el margen es mayor
+ * cuanto mas abajo esta el atleta: a VDOT 30 los saltos son grandes y baratos, a
+ * VDOT 60 arañar un punto cuesta meses. null si no hay VDOT con el que calcular.
+ */
+export function progressionDelta(vdot) {
+  const v = Number(vdot);
+  if (!Number.isFinite(v) || v <= 0) return null;
+  if (v < 35) return 4;
+  if (v < 45) return 3;
+  if (v < 55) return 2;
+  return 1;
+}
+
 /** "7:14" -> 434 segundos. null si no es un ritmo. */
 export function parsePaceToSeconds(text) {
   const m = String(text || "").trim().match(/^(\d{1,2}):([0-5]\d)$/);

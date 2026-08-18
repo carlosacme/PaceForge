@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { supabase } from "../lib/supabase";
-import { enrichStructureWithPaces } from "../lib/enrichPace";
+import { enrichStructureWithPaces, rescaleStructureToVdot } from "../lib/enrichPace";
+import { PLAN_CALIBRATION_VDOT, progressionDelta } from "../lib/vdot";
 import {
   TAB_KEY_LIBRARY,
   formatLocalYMD,
@@ -52,6 +53,12 @@ function WorkoutLibrary({
   const [assignSelectedAthleteIds, setAssignSelectedAthleteIds] = useState([]);
   const [assignDate, setAssignDate] = useState(() => formatLocalYMD(new Date()));
   const [assignSaving, setAssignSaving] = useState(false);
+  // VDOT de cada atleta y delta de progresion, para recalcular los ritmos del
+  // workout al asignarlo. Se cargan al abrir el modal en UNA consulta para poder
+  // mostrar el objetivo antes de asignar.
+  const [assignVdotByAthlete, setAssignVdotByAthlete] = useState({});
+  const [assignDeltaByAthlete, setAssignDeltaByAthlete] = useState({});
+  const [assignVdotLoading, setAssignVdotLoading] = useState(false);
   const [globalCopyingId, setGlobalCopyingId] = useState(null);
   const [marketplacePlansForAdmin, setMarketplacePlansForAdmin] = useState([]);
   const [marketplacePlansAdminLoading, setMarketplacePlansAdminLoading] = useState(false);
@@ -383,8 +390,79 @@ function WorkoutLibrary({
     }
   };
 
+  // Clave estable de ids: `athletes` llega como prop nueva en cada render del
+  // padre, y depender del array dispararia la consulta una y otra vez.
+  const athleteIdsKey = useMemo(
+    () =>
+      (athletes || [])
+        .map((a) => a?.id)
+        .filter((id) => id != null)
+        .sort((x, y) => Number(x) - Number(y))
+        .join(","),
+    [athletes],
+  );
+
+  // Al abrir el modal de asignacion: VDOT de todos los atletas en UNA consulta
+  // (no una por atleta) y delta sugerido prellenado, para poder mostrar el VDOT
+  // objetivo antes de asignar y dejar que el coach lo ajuste.
+  useEffect(() => {
+    if (!assigningWorkoutRow) return undefined;
+    const ids = athleteIdsKey ? athleteIdsKey.split(",") : [];
+    if (!ids.length) return undefined;
+    let cancelado = false;
+    setAssignVdotLoading(true);
+    (async () => {
+      const { data, error } = await supabase
+        .from("athlete_evaluations")
+        .select("athlete_id, vdot, test_date")
+        .in("athlete_id", ids)
+        .order("test_date", { ascending: false });
+      if (cancelado) return;
+      if (error) console.error("assign vdots:", error);
+      // Viene ordenado por fecha desc, asi que la primera fila de cada atleta es
+      // su ultima evaluacion.
+      const porAtleta = {};
+      for (const r of data || []) {
+        const v = Number(r?.vdot);
+        if (porAtleta[r.athlete_id] == null && Number.isFinite(v) && v > 0) porAtleta[r.athlete_id] = v;
+      }
+      setAssignVdotByAthlete(porAtleta);
+      setAssignDeltaByAthlete(
+        Object.fromEntries(Object.entries(porAtleta).map(([id, v]) => [id, String(progressionDelta(v) ?? 0)])),
+      );
+      setAssignVdotLoading(false);
+    })();
+    return () => {
+      cancelado = true;
+    };
+  }, [assigningWorkoutRow, athleteIdsKey]);
+
+  const assignVdotFor = (a) => assignVdotByAthlete[a?.id] ?? null;
+
+  const assignDeltaFor = (a) => {
+    const vdot = assignVdotFor(a);
+    if (!vdot) return null;
+    const raw = assignDeltaByAthlete[a?.id];
+    const n = Number(raw);
+    // Un delta vacio cae al sugerido y no a 0, porque 0 significa "entrenar en su
+    // estado actual", que es una decision distinta y debe teclearse.
+    if (raw != null && String(raw).trim() !== "" && Number.isFinite(n)) return n;
+    return progressionDelta(vdot) ?? 0;
+  };
+
+  const assignTargetVdotFor = (a) => {
+    const vdot = assignVdotFor(a);
+    if (!vdot) return null;
+    const objetivo = vdot + (assignDeltaFor(a) ?? 0);
+    return objetivo > 0 ? objetivo : vdot;
+  };
+
   const assignDirectly = async (row) => {
     if (!coachUserId) return;
+    if (assignVdotLoading) {
+      notify("Espera, estamos leyendo el VDOT de los atletas");
+      return;
+    }
     if (!Array.isArray(assignSelectedAthleteIds) || assignSelectedAthleteIds.length === 0) {
       notify("Selecciona al menos un atleta");
       return;
@@ -399,35 +477,32 @@ function WorkoutLibrary({
       return;
     }
     setAssignSaving(true);
-    // Resolver VDOT por atleta ANTES del map (multi-atleta, y el map no puede ser
-    // async). Con el VDOT + fc_max enriquecemos target_pace desde target_hr para
-    // que el workout no llegue "sin ritmos" al reloj.
-    const vdotByAthlete = {};
-    await Promise.all(athleteRows.map(async (a) => {
-      const { data } = await supabase
-        .from("athlete_evaluations")
-        .select("vdot, test_date")
-        .eq("athlete_id", a.id)
-        .order("test_date", { ascending: false })
-        .limit(1);
-      vdotByAthlete[a.id] = Number(data?.[0]?.vdot) || null;
-    }));
-    const payload = athleteRows.map((a) => ({
-      athlete_id: a.id,
-      coach_id: coachUserId,
-      title: row.title,
-      type: row.type,
-      total_km: Number(row.total_km) || 0,
-      duration_min: Number(row.duration_min) || 0,
-      description: row.description || "",
-      structure: enrichStructureWithPaces(
-        Array.isArray(row.structure) ? row.structure : [],
-        vdotByAthlete[a.id],
-        a.fc_max
-      ),
-      done: false,
-      scheduled_date: assignDate,
-    }));
+    const payload = athleteRows.map((a) => {
+      // El VDOT ya esta en estado desde que se abrio el modal, con el delta que el
+      // coach haya podido ajustar.
+      const targetVdot = assignTargetVdotFor(a);
+      // Dos pasos, en este orden: primero se reescalan al VDOT objetivo los ritmos
+      // fijos que trae el plan, y despues el enriquecido rellena los bloques que
+      // siguen sin ritmo (los que solo traen señal de FC), al MISMO VDOT para que
+      // toda la sesion hable del mismo atleta.
+      const structure = enrichStructureWithPaces(
+        rescaleStructureToVdot(Array.isArray(row.structure) ? row.structure : [], targetVdot),
+        targetVdot,
+        a.fc_max,
+      );
+      return {
+        athlete_id: a.id,
+        coach_id: coachUserId,
+        title: row.title,
+        type: row.type,
+        total_km: Number(row.total_km) || 0,
+        duration_min: Number(row.duration_min) || 0,
+        description: row.description || "",
+        structure,
+        done: false,
+        scheduled_date: assignDate,
+      };
+    });
     const { error } = await supabase.from("workouts").insert(payload);
     setAssignSaving(false);
     if (error) {
@@ -905,22 +980,55 @@ function WorkoutLibrary({
                 Deseleccionar todos
               </button>
             </div>
+            <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6, lineHeight: 1.45 }}>
+              Los ritmos de la biblioteca están escritos a VDOT {PLAN_CALIBRATION_VDOT}. Al asignar se recalculan al
+              VDOT de cada atleta más un delta de progresión, que puedes ajustar.
+            </div>
             <div style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: 10, maxHeight: 220, overflowY: "auto", marginBottom: 12 }}>
               {(athletes || []).map((a) => {
                 const checked = assignSelectedAthleteIds.includes(String(a.id));
+                const vdot = assignVdotFor(a);
+                const targetVdot = assignTargetVdotFor(a);
                 return (
-                  <label key={a.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 2px", cursor: "pointer", fontSize: ".82em", color: "#0f172a" }}>
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() =>
-                        setAssignSelectedAthleteIds((prev) =>
-                          prev.includes(String(a.id)) ? prev.filter((x) => x !== String(a.id)) : [...prev, String(a.id)],
-                        )
-                      }
-                    />
-                    <span>{a.name}</span>
-                  </label>
+                  <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 2px", fontSize: ".82em", color: "#0f172a" }}>
+                    {/* El label envuelve solo el check y el nombre: si envolviera el
+                        input del delta, teclear en el alternaria la seleccion. */}
+                    <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", flex: 1, minWidth: 0 }}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() =>
+                          setAssignSelectedAthleteIds((prev) =>
+                            prev.includes(String(a.id)) ? prev.filter((x) => x !== String(a.id)) : [...prev, String(a.id)],
+                          )
+                        }
+                      />
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name}</span>
+                    </label>
+                    {checked && assignVdotLoading ? (
+                      <span style={{ fontSize: ".9em", color: "#94a3b8" }}>leyendo VDOT…</span>
+                    ) : null}
+                    {checked && !assignVdotLoading && vdot ? (
+                      <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: ".9em", color: "#64748b", flexShrink: 0 }}>
+                        <span>VDOT {vdot.toFixed(1)}</span>
+                        <span>+</span>
+                        <input
+                          type="number"
+                          step="0.5"
+                          value={assignDeltaByAthlete[a.id] ?? String(progressionDelta(vdot) ?? 0)}
+                          onChange={(e) => setAssignDeltaByAthlete((prev) => ({ ...prev, [a.id]: e.target.value }))}
+                          title="Delta de progresión sobre su VDOT actual"
+                          style={{ width: 52, border: "1px solid #e2e8f0", borderRadius: 6, padding: "3px 5px", fontFamily: "inherit", fontSize: "1em", textAlign: "center" }}
+                        />
+                        <span>
+                          → <b style={{ color: "#b45309" }}>{targetVdot != null ? targetVdot.toFixed(1) : "—"}</b>
+                        </span>
+                      </span>
+                    ) : null}
+                    {checked && !assignVdotLoading && !vdot ? (
+                      <span style={{ fontSize: ".9em", color: "#b45309", flexShrink: 0 }}>sin VDOT · ritmos del plan</span>
+                    ) : null}
+                  </div>
                 );
               })}
             </div>
@@ -932,8 +1040,8 @@ function WorkoutLibrary({
               <button type="button" onClick={() => setAssigningWorkoutRow(null)} disabled={assignSaving} style={{ border: "1px solid #e2e8f0", background: "#fff", borderRadius: 8, padding: "8px 12px", color: "#475569", cursor: assignSaving ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 700 }}>
                 Cancelar
               </button>
-              <button type="button" onClick={() => assignDirectly(assigningWorkoutRow)} disabled={assignSaving} style={{ border: "none", background: assignSaving ? "#cbd5e1" : "linear-gradient(135deg,#b45309,#f59e0b)", borderRadius: 8, padding: "8px 12px", color: "#fff", cursor: assignSaving ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 800 }}>
-                {assignSaving ? "Asignando…" : "Asignar a seleccionados"}
+              <button type="button" onClick={() => assignDirectly(assigningWorkoutRow)} disabled={assignSaving || assignVdotLoading} style={{ border: "none", background: assignSaving || assignVdotLoading ? "#cbd5e1" : "linear-gradient(135deg,#b45309,#f59e0b)", borderRadius: 8, padding: "8px 12px", color: "#fff", cursor: assignSaving || assignVdotLoading ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 800 }}>
+                {assignSaving ? "Asignando…" : assignVdotLoading ? "Leyendo VDOT…" : "Asignar a seleccionados"}
               </button>
             </div>
           </div>
