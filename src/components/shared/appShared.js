@@ -1089,12 +1089,40 @@ export const mapJsonWorkoutToLibraryDraft = (row, fileName, idx) => {
   });
   const hasIntervalStep = garminSteps.some((step) => stepTypeKeyOf(step) === "interval");
 
-  const hasTempoWord = /\b(tempo|cruise)\b/i.test(String(titleValue || ""));
-  const hasLongWord = /\b(long|largo)\b/i.test(String(titleValue || ""));
-  let inferredType = sport === "running" ? "easy" : "easy";
-  if (hasIntervalStep || hasRepeatGroup) inferredType = "interval";
-  else if (hasTempoWord) inferredType = "tempo";
-  else if (hasLongWord) inferredType = "long";
+  /**
+   * Tipo de sesion segun el titulo. Solo si el titulo no dice nada se mira la
+   * estructura.
+   *
+   * Antes era al reves y cualquier paso "interval" ganaba; como los archivos de
+   * Garmin usan un paso interval para el bloque principal de casi cualquier
+   * sesion, un plan entero entraba clasificado como series, largos incluidos.
+   *
+   * El ORDEN de las reglas es la regla: en un titulo mixto gana lo que define la
+   * sesion. "Long Bloques T" es un largo con tramos en umbral, no un tempo, y
+   * "Rodaje E Strides" es un rodaje con progresivos, no series.
+   */
+  const TYPE_BY_TITLE = [
+    // Competicion y tests a tope. No vale la distancia sola ("Long 21K Pace" es
+    // un largo a ritmo de media, no una media).
+    ["race", /\b(maratón|maraton|test)\b/i],
+    ["long", /\b(long|largo)\b/i],
+    ["recovery", /\b(shakeout|recuperación|recuperacion|recuperar|regenerativo|regeneración|regeneracion|recovery)\b/i],
+    // Progresivos y tecnica: no convierten el rodaje que los lleva en series.
+    ["easy", /\b(strides|drills)\b/i],
+    // Umbral y ritmo de maraton. Incluye la notacion Daniels de token suelto
+    // ("3x2km T", "14km M", "5x2km 95M", "4x4km M+") y los simulacros y ensayos,
+    // que son trabajo continuo a ritmo objetivo aunque vengan troceados en
+    // repeticiones ("Canova SIM 18K" son 6x3km a ritmo de media).
+    ["tempo", /\b(tempo|umbral|threshold|cruise|sustained|sim|simulacro|rehearsal)\b|\britmo\s*\d+\s*k\b|(?:^|[\s-])(?:T|M\+|M|\d+M)(?=$|[\s\-/])/i],
+    ["interval", /\d+\s*[x×]|\b(I|series|intervalos|fartlek|cuestas|hill|circuit|sharpening)\b/i],
+    ["easy", /\b(rodaje|trote|easy|E)\b/i],
+  ];
+
+  const tituloTipo = String(titleValue || "");
+  const porTitulo = TYPE_BY_TITLE.find(([, re]) => re.test(tituloTipo));
+  let inferredType = "easy";
+  if (porTitulo) inferredType = porTitulo[0];
+  else if (hasIntervalStep || hasRepeatGroup) inferredType = "interval";
   const safeMappedType = WORKOUT_TYPES.some((t) => t.id === rawType) ? rawType : inferredType;
 
   const durationRaw = Number(
