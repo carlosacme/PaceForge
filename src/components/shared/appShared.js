@@ -1107,17 +1107,20 @@ export const mapJsonWorkoutToLibraryDraft = (row, fileName, idx) => {
       row.distance_km ??
       (isGarminLike && row.estimatedDistanceInMeters != null ? Number(row.estimatedDistanceInMeters) / 1000 : NaN),
   );
-  const durationMin = Number.isFinite(durationRaw) ? Math.max(0, Math.round(durationRaw)) : 0;
-  const distanceKm = Number.isFinite(distanceRaw) ? Math.max(0, Number(distanceRaw)) : 0;
+  // La cabecera es solo la primera opcion: los exports de Garmin dejan
+  // estimatedDistanceInMeters en null muy a menudo, y de ahi venia el 0 km.
+  const headerDurationMin = Number.isFinite(durationRaw) ? Math.max(0, Math.round(durationRaw)) : 0;
+  const headerDistanceKm = Number.isFinite(distanceRaw) ? Math.max(0, Number(distanceRaw)) : 0;
+
+  const round2 = (n) => Number(Number(n).toFixed(2));
 
   const speedToPace = (mps) => {
     const speed = Number(mps);
     if (!Number.isFinite(speed) || speed <= 0) return null;
-    const totalMinPerKm = 1000 / speed / 60;
-    const paceMin = Math.floor(totalMinPerKm);
-    const paceSec = Math.round((totalMinPerKm - paceMin) * 60);
-    const safeSec = paceSec >= 60 ? 59 : Math.max(0, paceSec);
-    return `${paceMin}:${String(safeSec).padStart(2, "0")}`;
+    // Se redondea a segundos ENTEROS antes de partir en min:seg. Redondear los
+    // segundos por separado daba 4:60 y habia que aplastarlo a 4:59.
+    const secPerKm = Math.round(1000 / speed);
+    return `${Math.floor(secPerKm / 60)}:${String(secPerKm % 60).padStart(2, "0")}`;
   };
   const secToMinInt = (sec) => {
     const n = Number(sec);
@@ -1126,126 +1129,195 @@ export const mapJsonWorkoutToLibraryDraft = (row, fileName, idx) => {
   };
   const numericTarget = (step, key) => Number(step?.[key] ?? step?.targetType?.[key]);
 
-  const endConditionLooksLikeMeters = (st) => {
-    const ect = String(st?.endConditionType ?? st?.endConditionTypeKey ?? "").toLowerCase();
-    if (ect.includes("distance")) return true;
+  /**
+   * Ritmo objetivo del paso. Garmin da la velocidad en m/s y casi siempre como
+   * RANGO (targetValueOne y targetValueTwo), de donde sale "5:38-6:08".
+   *
+   * Al pasar de velocidad a ritmo el orden se INVIERTE (mas m/s es menos
+   * min/km), asi que el extremo rapido se calcula con la velocidad mayor. Se
+   * ordena por valor en vez de fiarse de cual campo trae cual extremo.
+   */
+  const targetPaceOf = (step) => {
+    const speeds = [numericTarget(step, "targetValueOne"), numericTarget(step, "targetValueTwo")]
+      .filter((v) => Number.isFinite(v) && v > 0);
+    if (!speeds.length) return { label: null, secPerKm: null };
+    const fast = speedToPace(Math.max(...speeds));
+    const slow = speedToPace(Math.min(...speeds));
+    if (!fast || !slow) return { label: null, secPerKm: null };
+    const segsPorKm = speeds.map((v) => Math.round(1000 / v));
+    return {
+      label: fast === slow ? fast : `${fast}-${slow}`,
+      // Punto medio del rango, para estimar la distancia de los pasos por tiempo.
+      secPerKm: segsPorKm.reduce((a, b) => a + b, 0) / segsPorKm.length,
+    };
+  };
+  const paceLabel = (pace) => (pace ? `${pace}/km` : "");
+
+  /**
+   * Como termina el paso. En el formato nativo de Garmin esto vive en
+   * endCondition.conditionTypeKey ("time" | "distance" | "iterations" |
+   * "lap.button"); los nombres planos son de otros exportadores.
+   */
+  const endConditionKeyOf = (st) =>
+    String(st?.endCondition?.conditionTypeKey ?? st?.endConditionType ?? st?.endConditionTypeKey ?? "")
+      .trim()
+      .toLowerCase();
+
+  /**
+   * Antes esto se decidia SOLO con un heuristico (valor >= 400 = metros) porque
+   * no se leia endCondition.conditionTypeKey. Con datos reales eso es fatal: un
+   * rodaje de 45' (endConditionValue 2700) se tomaria por 2,7 km. Manda el tipo
+   * declarado, y el heuristico queda para los archivos que no lo traen.
+   */
+  const stepEndsByDistance = (st) => {
+    const key = endConditionKeyOf(st);
+    if (key) return key.includes("distance");
     const v = Number(st?.endConditionValue);
     return Number.isFinite(v) && v >= 400;
   };
 
-  const intervalDistanceKmFromStep = (st) => {
+  // Metros del paso, o null si no va por distancia.
+  const stepMeters = (st) => {
     if (!st) return null;
-    const ev = Number(st?.endConditionValue);
-    if (endConditionLooksLikeMeters(st) && Number.isFinite(ev) && ev > 0) {
-      return Number((ev / 1000).toFixed(2));
+    if (stepEndsByDistance(st)) {
+      const ev = Number(st?.endConditionValue);
+      if (Number.isFinite(ev) && ev > 0) return ev;
     }
+    // Exportadores que traen la distancia aparte del endCondition.
     const dm = Number(st?.distance ?? st?.totalDistance);
-    if (Number.isFinite(dm) && dm > 400) return Number((dm / 1000).toFixed(2));
-    return null;
+    return Number.isFinite(dm) && dm > 400 ? dm : null;
   };
 
-  const stepDurationMinFromNestedStep = (st) => {
-    if (!st) return null;
+  // Segundos del paso, o null si no va por tiempo (distancia, lap.button...).
+  const stepSeconds = (st) => {
+    if (!st || stepEndsByDistance(st)) return null;
+    const key = endConditionKeyOf(st);
+    if (key && !key.includes("time")) return null;
     const ev = Number(st?.endConditionValue);
-    if (!Number.isFinite(ev) || ev <= 0) return null;
-    if (endConditionLooksLikeMeters(st)) return null;
-    return secToMinInt(ev);
+    return Number.isFinite(ev) && ev > 0 ? ev : null;
+  };
+
+  const BLOCK_TYPE_BY_STEP_KEY = {
+    warmup: "Calentamiento",
+    cooldown: "Enfriamiento",
+    recovery: "Recuperación",
+    rest: "Recuperación",
+    interval: "Intervalo",
+  };
+
+  const isRepeatStep = (st) => {
+    const raw = String(st?.type || "").toLowerCase();
+    return (
+      raw.includes("repeatgroupdto") ||
+      raw.includes("repeat_group") ||
+      raw.includes("repeatgroup") ||
+      stepTypeKeyOf(st) === "repeat"
+    );
+  };
+
+  /**
+   * Convierte UN paso ejecutable en su fila de estructura, sea de primer nivel o
+   * de dentro de un grupo de repeticiones.
+   *
+   * Antes cada tipo de paso tenia su propia rama y solo la de intervalo leia el
+   * target: por eso calentamientos, enfriamientos y recuperaciones llegaban sin
+   * ritmo aunque el archivo lo trajera. Con una sola funcion, lo que se lea vale
+   * para todos por construccion.
+   *
+   * Devuelve tambien los metros y segundos CRUDOS del paso, que es con lo que se
+   * calculan los totales cuando la cabecera no los da (redondear ahi y sumar
+   * despues arrastraria el error de cada paso).
+   */
+  const stepToStructureRow = (st) => {
+    const blockType = BLOCK_TYPE_BY_STEP_KEY[stepTypeKeyOf(st)] || "Rodaje";
+    const { label: pace, secPerKm } = targetPaceOf(st);
+    const meters = stepMeters(st);
+    const seconds = meters == null ? stepSeconds(st) : null;
+    const km = meters != null ? round2(meters / 1000) : null;
+    const mins = seconds != null ? secToMinInt(seconds) : null;
+
+    const parts = [];
+    if (km != null) parts.push(`${km}km`);
+    else if (mins != null) parts.push(`${mins}min`);
+    if (pace) parts.push(paceLabel(pace));
+    const armado = parts.length ? `${blockType} · ${parts.join(" · ")}` : blockType;
+    // La etiqueta del propio archivo ("WU @ 5:38-6:08/km - 10' calentamiento")
+    // describe el paso mejor que cualquier texto que armemos aqui.
+    const delArchivo = String(st?.description || st?.stepName || "").trim();
+
+    return {
+      row: {
+        block_type: blockType,
+        ...(km != null ? { distance_km: String(km) } : {}),
+        ...(mins != null ? { duration_min: String(mins) } : {}),
+        target_pace: paceLabel(pace),
+        description: delArchivo || `Paso: ${armado}`,
+      },
+      seconds,
+      // Metros que aporta el paso al total. Los que van por tiempo aportan los
+      // suyos derivados del ritmo objetivo (tiempo / ritmo = distancia): es una
+      // estimacion, pero es la unica forma de que una sesion entera por tiempo
+      // no quede en 0 km.
+      metersForTotal:
+        meters != null ? meters : seconds != null && secPerKm > 0 ? (seconds / secPerKm) * 1000 : 0,
+      line: delArchivo || armado,
+      // Resumen corto para la linea "4x(...)" del grupo de repeticiones.
+      brief: [km != null ? `${km}km` : mins != null ? `${mins}'` : "", paceLabel(pace)]
+        .filter(Boolean)
+        .join(" @ "),
+    };
   };
 
   const descriptionLines = [];
   const structureRows = [];
-  for (const step of garminSteps) {
-    const rawType = String(step?.type || "").toLowerCase();
-    const stepTypeKey = stepTypeKeyOf(step);
+  // Metros y segundos crudos de los pasos, para los totales cuando la cabecera
+  // no los trae. Se acumula el dato sin redondear en vez de releer las columnas
+  // ya redondeadas de cada fila, para no arrastrar el error paso a paso.
+  // Los pasos por tiempo aportan su distancia derivada del ritmo objetivo: sin
+  // eso, una sesion entera por tiempo (la mitad de un plan tipico) seguiria
+  // quedando en 0 km, que es justo lo que se venia a arreglar.
+  let metersFromSteps = 0;
+  let secondsFromSteps = 0;
 
-    if (stepTypeKey === "warmup") {
-      const mins = secToMinInt(step?.endConditionValue);
-      descriptionLines.push(`${mins}' E calentamiento`);
-      structureRows.push({ block_type: "Calentamiento", duration_min: String(mins) });
-      continue;
-    }
-    if (stepTypeKey === "cooldown") {
-      const mins = secToMinInt(step?.endConditionValue);
-      descriptionLines.push(`${mins}' E enfriamiento`);
-      structureRows.push({ block_type: "Enfriamiento", duration_min: String(mins) });
-      continue;
-    }
-    if (rawType.includes("repeatgroupdto") || rawType.includes("repeat_group") || rawType.includes("repeatgroup")) {
+  const acumular = (built) => {
+    structureRows.push({ ...built.row });
+    metersFromSteps += built.metersForTotal;
+    if (built.seconds != null) secondsFromSteps += built.seconds;
+  };
+
+  for (const step of garminSteps) {
+    if (isRepeatStep(step)) {
       const reps = Math.max(1, Math.floor(Number(step?.numberOfIterations)) || 1);
       const nested = Array.isArray(step?.workoutSteps) ? step.workoutSteps : [];
-      const intervalStep = nested.find((s) => stepTypeKeyOf(s) === "interval") || nested[0];
-      const recoveryStep = nested.find((s) => stepTypeKeyOf(s) === "recovery") || nested[1];
+      const built = nested.map((ns) => stepToStructureRow(ns));
 
-      const summaryParts = [];
-      if (intervalStep) {
-        const kmI = intervalDistanceKmFromStep(intervalStep);
-        const paceI = speedToPace(numericTarget(intervalStep, "targetValueOne"));
-        const minI = stepDurationMinFromNestedStep(intervalStep);
-        if (kmI != null) summaryParts.push(`${kmI}km @ ${paceI || "?"}/km`);
-        else if (minI != null) summaryParts.push(`${minI}' @ ${paceI || "?"} min/km`);
-        else if (paceI) summaryParts.push(`@ ${paceI}/km`);
-      }
-      if (recoveryStep) {
-        const recMin = stepDurationMinFromNestedStep(recoveryStep) ?? secToMinInt(Number(recoveryStep?.endConditionValue));
-        if (recMin) summaryParts.push(`${recMin}' jog E`);
-      }
-      if (summaryParts.length) {
-        descriptionLines.push(`${reps}x(${summaryParts.join(" + ")})`);
-      } else {
-        descriptionLines.push(`${reps}x(bloque)`);
-      }
+      const resumen = built.map((b) => b.brief).filter(Boolean);
+      descriptionLines.push(resumen.length ? `${reps}x(${resumen.join(" + ")})` : `${reps}x(bloque)`);
 
-      for (let r = 0; r < reps; r += 1) {
-        for (const ns of nested) {
-          const nk = stepTypeKeyOf(ns);
-          if (nk === "interval") {
-            const km = intervalDistanceKmFromStep(ns);
-            const pace = speedToPace(numericTarget(ns, "targetValueOne"));
-            const dm = stepDurationMinFromNestedStep(ns);
-            const paceKm = pace ? `${pace}/km` : "";
-            let desc = "Paso: Intervalo";
-            if (km != null && pace) desc = `Paso: Intervalo · ${km}km · ${paceKm}`;
-            else if (km != null) desc = `Paso: Intervalo · ${km}km`;
-            else if (pace) desc = `Paso: Intervalo · ${paceKm}`;
-            else if (dm != null) desc = `Paso: Intervalo · ${dm}min`;
-            structureRows.push({
-              block_type: "Intervalo",
-              ...(km != null ? { distance_km: String(km) } : {}),
-              ...(dm != null ? { duration_min: String(dm) } : {}),
-              target_pace: paceKm,
-              description: desc,
-            });
-          } else if (nk === "recovery") {
-            const rm = stepDurationMinFromNestedStep(ns) ?? secToMinInt(Number(ns?.endConditionValue));
-            const recDesc = rm ? `Paso: Recuperación · ${rm}min · ritmo E` : `Paso: Recuperación · ritmo E`;
-            structureRows.push({
-              block_type: "Recuperación",
-              duration_min: rm ? String(rm) : "",
-              description: recDesc,
-            });
-          }
-        }
-      }
+      // El grupo se expande: una fila por repeticion y paso, que es lo que espera
+      // el editor de estructura y lo que hace directa la suma de los totales.
+      for (let r = 0; r < reps; r += 1) built.forEach(acumular);
       continue;
     }
-    if (stepTypeKey === "interval") {
-      const mins = secToMinInt(step?.endConditionValue);
-      const pace = speedToPace(numericTarget(step, "targetValueOne"));
-      descriptionLines.push(`${mins}' @ ${pace || "?"} min/km`);
-      structureRows.push({
-        block_type: "Intervalo",
-        duration_min: String(mins),
-        target_pace: pace ? `${pace} min/km` : "",
-      });
-      continue;
-    }
-    if (stepTypeKey === "recovery") {
-      const mins = secToMinInt(step?.endConditionValue);
-      descriptionLines.push(`${mins}' jog E`);
-      structureRows.push({ block_type: "Recuperación", duration_min: String(mins) });
-    }
+    const built = stepToStructureRow(step);
+    acumular(built);
+    descriptionLines.push(built.line);
   }
-  const garminDescription = descriptionLines.join("\n");
+
+  const durationMin = headerDurationMin > 0
+    ? headerDurationMin
+    : secondsFromSteps > 0 ? Math.max(1, Math.round(secondsFromSteps / 60)) : 0;
+  const distanceKm = headerDistanceKm > 0
+    ? headerDistanceKm
+    : metersFromSteps > 0 ? round2(metersFromSteps / 1000) : 0;
+
+  // La nota de cabecera da el contexto ("Test 3K - all-out") y las lineas de los
+  // pasos la estructura: se quedan las dos.
+  const notaCabecera = row.description != null ? String(row.description).trim() : "";
+  const garminDescription = [
+    ...(notaCabecera && !descriptionLines.includes(notaCabecera) ? [notaCabecera] : []),
+    ...descriptionLines,
+  ].join("\n");
 
   return {
     id: `json_${Date.now()}_${idx}_${Math.random().toString(36).slice(2, 8)}`,
@@ -1259,8 +1331,10 @@ export const mapJsonWorkoutToLibraryDraft = (row, fileName, idx) => {
     avg_hr: null,
     structure: structureRows,
     speedChanges: 0,
-    // Garmin: la nota en row.description no sustituye la estructura desde workoutSteps
-    description: isGarminLike ? garminDescription : row.description != null ? String(row.description) : garminDescription,
+    // garminDescription ya lleva la nota de cabecera delante de las lineas de los
+    // pasos, asi que sirve igual para un JSON con workoutSteps y para uno que
+    // solo trae description.
+    description: garminDescription,
   };
 };
 
@@ -1268,20 +1342,12 @@ export const INVALID_JSON_WORKOUT_FORMAT_MSG = "Formato JSON inválido. Debe ser
 
 export const parseJsonFileToLibraryDrafts = async (file) => {
   const jsonContent = await file.text();
-  console.log("JSON raw content:", jsonContent);
   let parsed;
   try {
     parsed = JSON.parse(jsonContent);
   } catch {
     throw new Error(INVALID_JSON_WORKOUT_FORMAT_MSG);
   }
-  console.log("Parsed JSON:", parsed);
-  console.log(
-    "estimatedDurationInSecs:",
-    parsed.estimatedDurationInSecs,
-    "estimatedDistanceInMeters:",
-    parsed.estimatedDistanceInMeters,
-  );
   const payload = parsed;
   const list = Array.isArray(payload) ? payload : payload && typeof payload === "object" ? [payload] : null;
   if (!list) {
