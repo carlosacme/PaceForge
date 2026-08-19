@@ -1072,6 +1072,15 @@ export default function App() {
   const [authError, setAuthError] = useState("");
   const [authInfo, setAuthInfo] = useState("");
   const [authSubmitting, setAuthSubmitting] = useState(false);
+  /**
+   * Ofrecer el reenvio del correo de confirmacion junto al error del login.
+   * Se enciende tanto cuando GoTrue confirma que el correo esta sin verificar
+   * como cuando responde el genérico "Invalid login credentials", porque ahi las
+   * dos causas (sin confirmar / contraseña mala) son indistinguibles y el propio
+   * reenvio es lo que las separa.
+   */
+  const [authCanResend, setAuthCanResend] = useState(false);
+  const [authResending, setAuthResending] = useState(false);
   const [landingAuthOpen, setLandingAuthOpen] = useState(false);
   /** Pantalla dentro del flujo de auth: elección inicial, login o registro. */
   const [authLandingStep, setAuthLandingStep] = useState("choice");
@@ -1839,11 +1848,57 @@ export default function App() {
     });
   }, [athletes]);
 
+  /**
+   * Reenvia el correo de confirmacion, y de paso DESAMBIGUA por qué falló el
+   * login: si GoTrue responde que el usuario ya está confirmado, el problema era
+   * la contraseña. Es la unica forma de distinguirlo sin montar un endpoint que
+   * conteste "este correo existe" a cualquiera que pregunte.
+   */
+  const handleResendConfirmation = async () => {
+    const email = authEmail.trim().toLowerCase();
+    if (!email) {
+      setAuthError("Escribe tu correo para poder reenviarte la confirmación.");
+      return;
+    }
+    setAuthResending(true);
+    setAuthInfo("");
+    try {
+      const { error } = await supabase.auth.resend({ type: "signup", email });
+      if (error) {
+        const code = String(error.code || "").toLowerCase();
+        const msg = String(error.message || "").toLowerCase();
+        if (code === "user_already_confirmed" || msg.includes("already confirmed")) {
+          setAuthCanResend(false);
+          setAuthError(
+            "Tu correo ya está confirmado, así que lo que no coincide es la contraseña. " +
+            "Usa «¿Olvidaste tu contraseña?» para cambiarla.",
+          );
+          return;
+        }
+        if (code.includes("rate_limit") || msg.includes("rate limit")) {
+          setAuthError("Ya te enviamos un correo hace poco. Espera unos minutos y revisa la bandeja y el spam.");
+          return;
+        }
+        setAuthError(error.message || "No se pudo reenviar el correo de confirmación.");
+        return;
+      }
+      setAuthError("");
+      setAuthInfo(`Te reenviamos el correo de confirmación a ${email}. Revisa también la carpeta de spam.`);
+    } catch (err) {
+      console.error("Error reenviando confirmación:", err);
+      setAuthError("No se pudo reenviar el correo de confirmación. Inténtalo de nuevo.");
+    } finally {
+      setAuthResending(false);
+    }
+  };
+
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
     setAuthError("");
+    setAuthInfo("");
+    setAuthCanResend(false);
     if (!authEmail.trim() || !authPassword.trim()) {
-      alert("Completa email y contraseña.");
+      setAuthError("Completa email y contraseña.");
       return;
     }
     if (authMode === "register") {
@@ -1864,16 +1919,40 @@ export default function App() {
       }
     }
 
+    // Un correo con mayusculas o un espacio pegado al copiar no deben ser una
+    // cuenta distinta: se normaliza igual en login y en registro.
+    const emailNorm = authEmail.trim().toLowerCase();
+    const passwordNorm = authPassword.trim();
+
     setAuthSubmitting(true);
     try {
       if (authMode === "login") {
         const { error } = await supabase.auth.signInWithPassword({
-          email: authEmail.trim(),
-          password: authPassword,
+          email: emailNorm,
+          password: passwordNorm,
         });
         if (error) {
           console.error("Error en login:", error);
-          alert(`Error en login: ${error.message}`);
+          const code = String(error.code || "").toLowerCase();
+          const msg = String(error.message || "").toLowerCase();
+          // GoTrue solo dice "Email not confirmed" cuando la contraseña ES la
+          // correcta. Si tambien falla la contraseña responde el genérico
+          // invalid_credentials, y ahi las dos causas son indistinguibles: por
+          // eso el segundo caso ofrece las dos salidas en vez de acusar a la
+          // contraseña, que es lo que dejaba al tester dando vueltas.
+          if (code === "email_not_confirmed" || msg.includes("not confirmed")) {
+            setAuthCanResend(true);
+            setAuthError("Tu correo aún no está confirmado. Revisa tu bandeja de entrada y la carpeta de spam.");
+          } else if (code === "invalid_credentials" || msg.includes("invalid login credentials")) {
+            setAuthCanResend(true);
+            setAuthError(
+              "No pudimos iniciar sesión. Si acabas de registrarte, puede que tu correo siga sin confirmar: " +
+              "revisa tu bandeja de entrada y la carpeta de spam. Si ya lo confirmaste, la contraseña no coincide " +
+              "(volver a registrarte NO la cambia; usa «¿Olvidaste tu contraseña?»).",
+            );
+          } else {
+            setAuthError(error.message || "No se pudo iniciar sesión.");
+          }
           return;
         }
         await syncFcmTokenToProfile();
@@ -1892,8 +1971,7 @@ export default function App() {
           const inv = Array.isArray(invRows) ? invRows[0] : invRows;
           if (inv) {
             const inviteEmail = String(inv.email || "").trim().toLowerCase();
-            const regEmail = authEmail.trim().toLowerCase();
-            if (inviteEmail && inviteEmail !== regEmail) {
+            if (inviteEmail && inviteEmail !== emailNorm) {
               alert("Este link de invitación fue emitido para otro email.");
               setAuthSubmitting(false);
               return;
@@ -1932,8 +2010,8 @@ export default function App() {
             : null;
 
         const { data, error } = await supabase.auth.signUp({
-          email: authEmail.trim(),
-          password: authPassword,
+          email: emailNorm,
+          password: passwordNorm,
           options: {
             data: {
               full_name: authName.trim(),
@@ -1944,7 +2022,24 @@ export default function App() {
         });
         if (error) {
           console.error("Error en registro:", error);
-          alert(`Error en registro: ${error.message}`);
+          setAuthError(error.message || "No se pudo crear la cuenta.");
+          return;
+        }
+
+        // Correo YA registrado: con la confirmacion activada, Supabase no da un
+        // error (para no revelar quien esta registrado) y devuelve un usuario
+        // falso con identities vacio. Sin este aviso el tester cree que acaba de
+        // crear la cuenta con la contraseña que escribió, cuando en realidad la
+        // contraseña sigue siendo la de su registro original: de ahi el bucle de
+        // "me registro otra vez y tampoco entro".
+        if (Array.isArray(data?.user?.identities) && data.user.identities.length === 0) {
+          setAuthMode("login");
+          setAuthLandingStep("login");
+          setAuthCanResend(true);
+          setAuthError(
+            "Ese correo ya tiene una cuenta. Si nunca confirmaste el correo, reenvíate la confirmación aquí abajo. " +
+            "Y ojo: registrarte de nuevo NO cambia la contraseña; si no la recuerdas, usa «¿Olvidaste tu contraseña?».",
+          );
           return;
         }
 
@@ -1960,7 +2055,11 @@ export default function App() {
             localStorage.removeItem("raf_athlete_progress_tab");
             localStorage.removeItem("raf_lastView");
           }
-          alert("Registro exitoso. Revisa tu correo si la verificación está habilitada.");
+          setAuthInfo(
+            `Cuenta creada. Te enviamos un correo de confirmación a ${emailNorm}: ábrelo antes de iniciar sesión ` +
+            "(mira también la carpeta de spam).",
+          );
+          setAuthCanResend(true);
           setAuthMode("login");
           setAuthLandingStep("login");
           return;
@@ -1980,7 +2079,7 @@ export default function App() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               user_id: newUserId,
-              email: authEmail.trim(),
+              email: emailNorm,
               name: authName.trim(),
               role: roleForProfile,
               coach_id: athleteCoachIdNeverSelf,
@@ -2002,7 +2101,7 @@ export default function App() {
           const cpPayload = {
             user_id: newUserId,
             full_name: authName.trim(),
-            email: authEmail.trim().toLowerCase(),
+            email: emailNorm,
             trial_start: new Date().toISOString(),
             trial_days: 10,
             subscription_status: "trial",
@@ -2057,7 +2156,11 @@ export default function App() {
           localStorage.removeItem("raf_athlete_progress_tab");
           localStorage.removeItem("raf_lastView");
         }
-        alert("Registro exitoso. Revisa tu correo si la verificación está habilitada.");
+        setAuthInfo(
+          `Cuenta creada. Te enviamos un correo de confirmación a ${emailNorm}: ábrelo antes de iniciar sesión ` +
+          "(mira también la carpeta de spam).",
+        );
+        setAuthCanResend(true);
         setAuthMode("login");
         setAuthLandingStep("login");
         setAuthRole("");
@@ -2115,9 +2218,9 @@ const handleSignOut = async () => {
   };
 
   const handleForgotPasswordClick = async () => {
-    let email = authEmail.trim();
+    let email = authEmail.trim().toLowerCase();
     if (!email && typeof window !== "undefined") {
-      email = (window.prompt("Ingresa el correo de tu cuenta:") || "").trim();
+      email = (window.prompt("Ingresa el correo de tu cuenta:") || "").trim().toLowerCase();
     }
     if (!email) {
       alert("Indica un correo válido.");
@@ -2324,6 +2427,33 @@ const handleSignOut = async () => {
                     {authInfo}
                   </div>
                 ) : null}
+                {authError ? (
+                  <div style={{ marginBottom: 12, background: "rgba(220,38,38,.08)", border: "1px solid rgba(220,38,38,.35)", color: "#991b1b", borderRadius: 8, padding: "10px 12px", fontSize: ".78em", fontWeight: 600, lineHeight: 1.5 }}>
+                    {authError}
+                  </div>
+                ) : null}
+                {authCanResend ? (
+                  <button
+                    type="button"
+                    onClick={handleResendConfirmation}
+                    disabled={authResending}
+                    style={{
+                      width: "100%",
+                      marginBottom: 14,
+                      padding: "10px 12px",
+                      borderRadius: 10,
+                      border: "1px solid rgba(148,163,184,.5)",
+                      background: authResending ? "#f1f5f9" : "#fff",
+                      color: "#0f172a",
+                      cursor: authResending ? "not-allowed" : "pointer",
+                      fontFamily: "inherit",
+                      fontWeight: 800,
+                      fontSize: ".8em",
+                    }}
+                  >
+                    {authResending ? "Enviando…" : "Reenviar correo de confirmación"}
+                  </button>
+                ) : null}
                 <form onSubmit={handleAuthSubmit}>
                   <div style={{ marginBottom: 12 }}>
                     <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6, fontWeight: 600 }}>Email</div>
@@ -2334,6 +2464,7 @@ const handleSignOut = async () => {
                         setAuthEmail(e.target.value);
                         if (authError) setAuthError("");
                         if (authInfo) setAuthInfo("");
+                        if (authCanResend) setAuthCanResend(false);
                       }}
                       placeholder="correo@ejemplo.com"
                       autoComplete="email"
@@ -2345,7 +2476,10 @@ const handleSignOut = async () => {
                     <input
                       type="password"
                       value={authPassword}
-                      onChange={(e) => setAuthPassword(e.target.value)}
+                      onChange={(e) => {
+                        setAuthPassword(e.target.value);
+                        if (authError) setAuthError("");
+                      }}
                       placeholder="••••••••"
                       autoComplete="current-password"
                       style={inputBase}
