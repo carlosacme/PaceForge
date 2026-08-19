@@ -1759,6 +1759,49 @@ export const deleteIntervalsEvents = async (athleteId, workoutIds) => {
   }
 };
 
+/** Minimo propio, por encima del 6 que trae Supabase de fabrica. */
+export const PASSWORD_MIN_LENGTH = 8;
+
+/**
+ * Valida una contraseña nueva y su confirmacion.
+ * Devuelve el mensaje de error para la UI, o cadena vacia si sirve.
+ *
+ * No se recorta con trim: un espacio en medio es parte legitima de la
+ * contraseña. Solo se rechaza la que es SOLO espacios.
+ */
+export const validateNewPassword = (password, confirm) => {
+  const pw = String(password ?? "");
+  const pw2 = String(confirm ?? "");
+  if (!pw) return "Escribe la contraseña nueva.";
+  if (!pw.trim()) return "La contraseña no puede ser solo espacios.";
+  if (pw.length < PASSWORD_MIN_LENGTH) return `La contraseña debe tener al menos ${PASSWORD_MIN_LENGTH} caracteres.`;
+  if (!pw2) return "Repite la contraseña nueva para confirmarla.";
+  if (pw !== pw2) return "Las dos contraseñas no coinciden.";
+  return "";
+};
+
+/**
+ * Traduce a lenguaje claro los errores de updateUser al cambiar la contraseña.
+ * Los de Supabase llegan en ingles y algunos son crípticos para el usuario.
+ */
+export const passwordUpdateErrorText = (error) => {
+  const code = String(error?.code || "").toLowerCase();
+  const msg = String(error?.message || "").toLowerCase();
+  if (code === "same_password" || msg.includes("should be different")) {
+    return "Esa es la contraseña que ya tenías. Elige una distinta.";
+  }
+  if (code === "weak_password" || msg.includes("password should be")) {
+    return `La contraseña es demasiado débil o corta (mínimo ${PASSWORD_MIN_LENGTH} caracteres).`;
+  }
+  if (code === "session_not_found" || msg.includes("session missing") || msg.includes("session not found")) {
+    return "El enlace ya se usó o caducó. Pide otro correo de restablecimiento.";
+  }
+  if (msg.includes("expired")) {
+    return "El enlace de restablecimiento caducó. Pide uno nuevo desde «¿Olvidaste tu contraseña?».";
+  }
+  return error?.message || "No se pudo cambiar la contraseña. Inténtalo de nuevo.";
+};
+
 /**
  * Inserta workouts asignados tolerando que 0062 aun no este aplicada.
  *

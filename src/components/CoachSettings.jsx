@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { supabase } from "../lib/supabase";
 import { BRAND_NAME } from "./shared/appShared";
 import DeleteAccountSection from "./DeleteAccountSection";
+import ChangePasswordSection from "./ChangePasswordSection";
 
 function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAthletes, notify, onSignOut, styles, isStaff = false }) {
   const S = styles;
@@ -782,6 +783,8 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
           </div>
         </div>
       )}
+
+      <ChangePasswordSection notify={notify} cardStyle={S.card} />
 
       <DeleteAccountSection notify={notify} cardStyle={S.card} />
 

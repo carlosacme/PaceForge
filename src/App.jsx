@@ -118,6 +118,7 @@ import {
   subscribeDeepLink,
 } from "./lib/nativePush";
 import InstallAppButton from "./components/InstallAppButton";
+import ResetPasswordScreen from "./components/ResetPasswordScreen";
 const CoachSettings = React.lazy(() => import("./components/CoachSettings"));
 const WorkoutLibrary = React.lazy(() => import("./components/WorkoutLibrary"));
 const MarketplaceHub = React.lazy(() => import("./components/MarketplaceHub"));
@@ -133,6 +134,42 @@ const EvaluationView = React.lazy(() => import("./components/EvaluationView"));
 
 /** Persistencia del atleta seleccionado en la vista Atletas del coach. */
 const RAF_SELECTED_ATHLETE_STORAGE_KEY = "raf_selected_athlete";
+
+/** Marca de "estamos restableciendo la contraseña", para sobrevivir a un refresco. */
+const RAF_PASSWORD_RECOVERY_KEY = "raf_password_recovery";
+
+/**
+ * ¿La URL viene del enlace de "restablecer contraseña"?
+ *
+ * Se lee en el cuerpo del modulo, ANTES de que supabase-js procese la URL:
+ * detectSessionInUrl le quita el hash con replaceState y dispara
+ * PASSWORD_RECOVERY en cuanto puede, que puede ser antes de que este componente
+ * monte su listener. Leerlo aqui es la red que no depende de ese orden.
+ *
+ * El hash es el sitio habitual (flujo implicito: #access_token=...&type=recovery);
+ * el query se mira tambien por si el enlace llega reescrito.
+ */
+function detectPasswordRecoveryFromUrl() {
+  if (typeof window === "undefined") return false;
+  try {
+    const rawHash = window.location.hash?.startsWith("#") ? window.location.hash.slice(1) : "";
+    if (new URLSearchParams(rawHash).get("type") === "recovery") return true;
+    return new URLSearchParams(window.location.search).get("type") === "recovery";
+  } catch {
+    return false;
+  }
+}
+
+const PASSWORD_RECOVERY_IN_URL = detectPasswordRecoveryFromUrl();
+if (PASSWORD_RECOVERY_IN_URL && typeof sessionStorage !== "undefined") {
+  // Si el usuario refresca en medio del cambio, el hash ya no esta: sin esta
+  // marca caeria dentro de la app con la contraseña vieja.
+  try {
+    sessionStorage.setItem(RAF_PASSWORD_RECOVERY_KEY, "1");
+  } catch {
+    /* ignore */
+  }
+}
 
 
 /** Días completos para planes marketplace (admin) y formulario de sesión. */
@@ -1081,6 +1118,19 @@ export default function App() {
    */
   const [authCanResend, setAuthCanResend] = useState(false);
   const [authResending, setAuthResending] = useState(false);
+  /**
+   * Estamos en el flujo de restablecer contraseña. Gana a TODAS las pantallas,
+   * incluida la app ya logueada: el enlace del correo trae sesion propia, y
+   * dejarlo pasar es justamente lo que hacia que nadie viera el formulario.
+   */
+  const [passwordRecovery, setPasswordRecovery] = useState(() => {
+    if (PASSWORD_RECOVERY_IN_URL) return true;
+    try {
+      return sessionStorage.getItem(RAF_PASSWORD_RECOVERY_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
   const [landingAuthOpen, setLandingAuthOpen] = useState(false);
   /** Pantalla dentro del flujo de auth: elección inicial, login o registro. */
   const [authLandingStep, setAuthLandingStep] = useState("choice");
@@ -1385,8 +1435,18 @@ export default function App() {
 
     bootstrapAuth();
 
-    const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    const { data } = supabase.auth.onAuthStateChange((event, nextSession) => {
       if (!mounted) return;
+      // Supabase avisa del enlace de recuperacion con este evento. Se atiende
+      // aunque ya hubiera sesion en el navegador, que es el caso que fallaba.
+      if (event === "PASSWORD_RECOVERY") {
+        try {
+          sessionStorage.setItem(RAF_PASSWORD_RECOVERY_KEY, "1");
+        } catch {
+          /* ignore */
+        }
+        setPasswordRecovery(true);
+      }
       setSession(nextSession ?? null);
       if (nextSession?.user && typeof window !== "undefined" && window.posthog) {
   window.posthog.identify(nextSession.user.id, {
@@ -2217,24 +2277,63 @@ const handleSignOut = async () => {
     setAuthLandingStep("choice");
   };
 
-  const handleForgotPasswordClick = async () => {
-    let email = authEmail.trim().toLowerCase();
-    if (!email && typeof window !== "undefined") {
-      email = (window.prompt("Ingresa el correo de tu cuenta:") || "").trim().toLowerCase();
+  /**
+   * Cierra el flujo de restablecimiento.
+   *
+   * Limpia la marca y los parametros del enlace: sin eso, un refresco volveria
+   * a plantar el formulario delante de alguien que ya cambio la contraseña.
+   */
+  const closePasswordRecovery = (successMsg) => {
+    try {
+      sessionStorage.removeItem(RAF_PASSWORD_RECOVERY_KEY);
+    } catch {
+      /* ignore */
     }
+    if (typeof window !== "undefined") {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        params.delete("type");
+        const qs = params.toString();
+        window.history.replaceState({}, "", window.location.pathname + (qs ? `?${qs}` : ""));
+      } catch {
+        /* ignore */
+      }
+    }
+    setPasswordRecovery(false);
+    if (successMsg) {
+      // Con sesion aterriza en la app (toast); sin sesion, en el login (aviso verde).
+      notify(successMsg);
+      setAuthError("");
+      setAuthInfo(successMsg);
+      setAuthMode("login");
+      setAuthLandingStep("login");
+      setLandingAuthOpen(true);
+    }
+  };
+
+  const handleForgotPasswordClick = async () => {
+    const email = authEmail.trim().toLowerCase();
+    setAuthInfo("");
+    setAuthCanResend(false);
     if (!email) {
-      alert("Indica un correo válido.");
+      setAuthError("Escribe el correo de tu cuenta y vuelve a pulsar «¿Olvidaste tu contraseña?».");
       return;
     }
     const origin = typeof window !== "undefined" ? window.location.origin : "";
+    // El ?type=recovery viaja de vuelta en el enlace y hace que la pantalla de
+    // nueva contraseña se muestre aunque el hash con los tokens ya se haya
+    // consumido (o el navegador lo pierda).
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: origin ? `${origin}/` : undefined,
+      redirectTo: origin ? `${origin}/?type=recovery` : undefined,
     });
     if (error) {
-      alert(error.message || "No se pudo enviar el correo de recuperación.");
+      setAuthError(error.message || "No se pudo enviar el correo de recuperación. Inténtalo de nuevo.");
       return;
     }
-    alert("Si el correo existe en el sistema, recibirás un enlace para restablecer tu contraseña.");
+    setAuthError("");
+    setAuthInfo(
+      `Si ${email} está registrado, te llegará un enlace para elegir una contraseña nueva. Ábrelo y escribe la contraseña ahí mismo.`
+    );
   };
 
   const saveNewAthlete = async () => {
@@ -2323,6 +2422,17 @@ const handleSignOut = async () => {
     setWorkoutsRefresh((r) => r + 1);
     notify("Atleta eliminado");
   };
+
+  // Antes que nada, incluso antes de resolver la sesion: quien viene del enlace
+  // de restablecimiento tiene que ver el formulario y no la app.
+  if (passwordRecovery) {
+    return (
+      <ResetPasswordScreen
+        onDone={(msg) => closePasswordRecovery(msg)}
+        onCancel={() => closePasswordRecovery("")}
+      />
+    );
+  }
 
   if (authLoading) {
     return (

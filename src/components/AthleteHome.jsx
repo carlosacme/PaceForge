@@ -4,6 +4,7 @@ import WeatherWidget, { useWeather } from "./WeatherWidget";
 import IntervalsConnect from "./IntervalsConnect";
 import InstallAppButton from "./InstallAppButton";
 import DeleteAccountSection from "./DeleteAccountSection";
+import ChangePasswordSection from "./ChangePasswordSection";
 import {
   formatLocalYMD,
   calendarCellToIsoYmd,
@@ -1991,6 +1992,8 @@ export default function AthleteHome({ profile }) {
                     </div>
                   </>
                 ) : null}
+
+                <ChangePasswordSection notify={notifyCallback} cardStyle={S.card} />
 
                 <DeleteAccountSection notify={notifyCallback} cardStyle={S.card} />
 
