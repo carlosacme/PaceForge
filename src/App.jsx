@@ -100,6 +100,7 @@ import {
   MIN_HR_RESERVE,
   formatMessageTimestamp,
   unregisterOwnDeviceToken,
+  resendSignupConfirmation,
 } from "./components/shared/appShared";
 import {
   initMessaging,
@@ -119,6 +120,8 @@ import {
 } from "./lib/nativePush";
 import InstallAppButton from "./components/InstallAppButton";
 import ResetPasswordScreen from "./components/ResetPasswordScreen";
+import ConfirmEmailScreen from "./components/ConfirmEmailScreen";
+import { isConfirmEmailRoute } from "./lib/authRoutes";
 const CoachSettings = React.lazy(() => import("./components/CoachSettings"));
 const WorkoutLibrary = React.lazy(() => import("./components/WorkoutLibrary"));
 const MarketplaceHub = React.lazy(() => import("./components/MarketplaceHub"));
@@ -138,6 +141,9 @@ const RAF_SELECTED_ATHLETE_STORAGE_KEY = "raf_selected_athlete";
 /** Marca de "estamos restableciendo la contraseña", para sobrevivir a un refresco. */
 const RAF_PASSWORD_RECOVERY_KEY = "raf_password_recovery";
 
+/** La ruta no cambia sin recargar, asi que se resuelve una sola vez. */
+const CONFIRM_EMAIL_ROUTE = isConfirmEmailRoute();
+
 /**
  * ¿La URL viene del enlace de "restablecer contraseña"?
  *
@@ -151,6 +157,9 @@ const RAF_PASSWORD_RECOVERY_KEY = "raf_password_recovery";
  */
 function detectPasswordRecoveryFromUrl() {
   if (typeof window === "undefined") return false;
+  // En /auth/confirm el type=recovery lo atiende la pantalla de confirmacion:
+  // primero hay que canjear el token_hash, y solo despues redirige aqui.
+  if (CONFIRM_EMAIL_ROUTE) return false;
   try {
     const rawHash = window.location.hash?.startsWith("#") ? window.location.hash.slice(1) : "";
     if (new URLSearchParams(rawHash).get("type") === "recovery") return true;
@@ -1923,30 +1932,23 @@ export default function App() {
     setAuthResending(true);
     setAuthInfo("");
     try {
-      const { error } = await supabase.auth.resend({ type: "signup", email });
-      if (error) {
-        const code = String(error.code || "").toLowerCase();
-        const msg = String(error.message || "").toLowerCase();
-        if (code === "user_already_confirmed" || msg.includes("already confirmed")) {
-          setAuthCanResend(false);
-          setAuthError(
-            "Tu correo ya está confirmado, así que lo que no coincide es la contraseña. " +
-            "Usa «¿Olvidaste tu contraseña?» para cambiarla.",
-          );
-          return;
-        }
-        if (code.includes("rate_limit") || msg.includes("rate limit")) {
-          setAuthError("Ya te enviamos un correo hace poco. Espera unos minutos y revisa la bandeja y el spam.");
-          return;
-        }
-        setAuthError(error.message || "No se pudo reenviar el correo de confirmación.");
+      const res = await resendSignupConfirmation(email);
+      if (res.alreadyConfirmed) {
+        // Aqui el reenvio se ofrecio porque el error de Supabase era ambiguo:
+        // si el correo ya estaba confirmado, el problema era la contraseña.
+        setAuthCanResend(false);
+        setAuthError(
+          "Tu correo ya está confirmado, así que lo que no coincide es la contraseña. " +
+          "Usa «¿Olvidaste tu contraseña?» para cambiarla.",
+        );
+        return;
+      }
+      if (!res.ok) {
+        setAuthError(res.message);
         return;
       }
       setAuthError("");
-      setAuthInfo(`Te reenviamos el correo de confirmación a ${email}. Revisa también la carpeta de spam.`);
-    } catch (err) {
-      console.error("Error reenviando confirmación:", err);
-      setAuthError("No se pudo reenviar el correo de confirmación. Inténtalo de nuevo.");
+      setAuthInfo(res.message);
     } finally {
       setAuthResending(false);
     }
@@ -2423,8 +2425,13 @@ const handleSignOut = async () => {
     notify("Atleta eliminado");
   };
 
-  // Antes que nada, incluso antes de resolver la sesion: quien viene del enlace
-  // de restablecimiento tiene que ver el formulario y no la app.
+  // El enlace del correo aterriza en /auth/confirm: canjear el token antes de
+  // cualquier otra pantalla, tambien con sesion previa en el navegador.
+  if (CONFIRM_EMAIL_ROUTE) {
+    return <ConfirmEmailScreen />;
+  }
+
+  // Igual con el enlace de restablecimiento: el formulario va delante de la app.
   if (passwordRecovery) {
     return (
       <ResetPasswordScreen

@@ -1759,6 +1759,62 @@ export const deleteIntervalsEvents = async (athleteId, workoutIds) => {
   }
 };
 
+/** Package del APK, para intentar abrirla desde el navegador con un intent:// */
+export const ANDROID_PACKAGE_ID = "com.runningapexflow.app";
+
+/**
+ * Reenvia el correo de confirmacion de registro.
+ *
+ * Vive aqui porque lo piden dos pantallas (el login y /auth/confirm) y la
+ * traduccion de los errores de Supabase no merece estar duplicada.
+ *
+ * @returns {Promise<{ok: boolean, alreadyConfirmed: boolean, message: string}>}
+ */
+export const resendSignupConfirmation = async (rawEmail) => {
+  const email = String(rawEmail || "").trim().toLowerCase();
+  if (!email) {
+    return { ok: false, alreadyConfirmed: false, message: "Escribe tu correo para poder reenviarte la confirmación." };
+  }
+  try {
+    const { error } = await supabase.auth.resend({ type: "signup", email });
+    if (error) {
+      const code = String(error.code || "").toLowerCase();
+      const msg = String(error.message || "").toLowerCase();
+      if (code === "user_already_confirmed" || msg.includes("already confirmed")) {
+        return {
+          ok: false,
+          alreadyConfirmed: true,
+          message: "Tu correo ya está confirmado. Inicia sesión con tu contraseña.",
+        };
+      }
+      if (code.includes("rate_limit") || msg.includes("rate limit")) {
+        return {
+          ok: false,
+          alreadyConfirmed: false,
+          message: "Ya te enviamos un correo hace poco. Espera unos minutos y revisa la bandeja y el spam.",
+        };
+      }
+      return {
+        ok: false,
+        alreadyConfirmed: false,
+        message: error.message || "No se pudo reenviar el correo de confirmación.",
+      };
+    }
+    return {
+      ok: true,
+      alreadyConfirmed: false,
+      message: `Te reenviamos el correo de confirmación a ${email}. Revisa también la carpeta de spam.`,
+    };
+  } catch (err) {
+    console.error("[auth] resend signup:", err);
+    return {
+      ok: false,
+      alreadyConfirmed: false,
+      message: "No se pudo reenviar el correo de confirmación. Inténtalo de nuevo.",
+    };
+  }
+};
+
 /** Minimo propio, por encima del 6 que trae Supabase de fabrica. */
 export const PASSWORD_MIN_LENGTH = 8;
 
