@@ -18,6 +18,29 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
+            <!-- App Links: los enlaces de correo (confirmar cuenta, restablecer
+                 contraseña) abren la app en vez del navegador.
+
+                 autoVerify hace que Android compruebe al instalar
+                 https://www.runningapexflow.com/.well-known/assetlinks.json; si
+                 la comprobacion falla, el enlace sigue abriendo el navegador,
+                 que es tambien lo que pasa si la app no esta instalada.
+
+                 pathPrefix acota a /auth/ A PROPOSITO. Con el host a secas, la
+                 app se tragaria CUALQUIER enlace al sitio: campañas, precios,
+                 politica de privacidad... todo saldria de la web y aterrizaria
+                 en el WebView. Aqui solo interesan las rutas de autenticacion.
+                 Ojo con la barra final: sin ella "/authors" tambien encajaria. -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="https"
+                    android:host="www.runningapexflow.com"
+                    android:pathPrefix="/auth/" />
+            </intent-filter>
         </activity>
 
         <provider

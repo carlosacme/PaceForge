@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.runningapexflow.app",
+      "sha256_cert_fingerprints": [
+        "63:9F:3A:6E:96:CF:10:EF:B0:8C:AB:5D:2B:50:A9:C4:51:87:68:1C:31:8F:6C:CD:2A:79:D3:2B:C7:96:14:D8"
+      ]
+    }
+  }
+]

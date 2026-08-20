@@ -122,6 +122,7 @@ import InstallAppButton from "./components/InstallAppButton";
 import ResetPasswordScreen from "./components/ResetPasswordScreen";
 import ConfirmEmailScreen from "./components/ConfirmEmailScreen";
 import { isConfirmEmailRoute } from "./lib/authRoutes";
+import { initNativeAppLinks, consumePendingAppLink, subscribeAppLink, applyAppLink } from "./lib/nativeAppLinks";
 const CoachSettings = React.lazy(() => import("./components/CoachSettings"));
 const WorkoutLibrary = React.lazy(() => import("./components/WorkoutLibrary"));
 const MarketplaceHub = React.lazy(() => import("./components/MarketplaceHub"));
@@ -1428,6 +1429,24 @@ export default function App() {
       setInviteSending(false);
     }
   }, [inviteEmail, inviteCoachPublicCode, notify, session?.user?.id, createInviteLink]);
+
+  // App Links de la APK: el enlace del correo llega por intent y el WebView
+  // arranca en la raiz, asi que hay que llevar la vista a la ruta a mano. Fuera
+  // de la APK el modulo no hace nada: en el navegador la URL ya es la correcta.
+  useEffect(() => {
+    let cancelled = false;
+    const applyPending = () => {
+      if (cancelled) return;
+      const target = consumePendingAppLink();
+      if (target) applyAppLink(target);
+    };
+    const unsubscribe = subscribeAppLink(applyPending);
+    initNativeAppLinks().then(applyPending);
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, []);
 
   useEffect(() => {
     let mounted = true;
