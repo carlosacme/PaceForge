@@ -5,38 +5,113 @@ const MODELS = [
   "claude-sonnet-5",
 ];
 
-async function callClaude(apiKey, prompt, maxTokens = 800) {
+/**
+ * Techos de salida por accion.
+ *
+ * Antes analyze usaba el default 800. Con claude-sonnet-5 el thinking extendido
+ * consume ese presupuesto y el texto se corta a mitad de frase ("lo c"). Para
+ * el analisis de coach (4 secciones) bastan ~1200-1500 tokens de texto; 2500 da
+ * margen sin derroche. Briefing y adjust tienen sus propios techos.
+ */
+const MAX_TOKENS = {
+  briefing: 400,
+  analyze: 2500,
+  adjust: 2500,
+};
+
+/** Temperature baja: el analisis debe ser estable entre reintentos. */
+const ANALYSIS_TEMPERATURE = 0.3;
+
+/**
+ * Llama a Anthropic y devuelve texto + diagnostico.
+ *
+ * Desactiva el thinking extendido: en analisis de un workout no aporta y se
+ * come el max_tokens (mismo patron que api/generate-workout.js).
+ */
+async function callClaude(apiKey, prompt, maxTokens = MAX_TOKENS.analyze) {
   for (const model of MODELS) {
     try {
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
+      let payload = {
+        model,
+        max_tokens: maxTokens,
+        temperature: ANALYSIS_TEMPERATURE,
+        thinking: { type: "disabled" },
+        messages: [{ role: "user", content: prompt }],
+      };
+
+      let response = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "x-api-key": apiKey,
           "anthropic-version": "2023-06-01",
         },
-        body: JSON.stringify({
-          model,
-          max_tokens: maxTokens,
-          messages: [{ role: "user", content: prompt }],
-        }),
+        body: JSON.stringify(payload),
       });
-      const data = await response.json();
+      let data = await response.json();
+
+      // Compatibilidad: si "disabled" no es aceptado, reintenta con budget bajo.
+      const errMsg = String(data?.error?.message || data?.error?.type || "");
+      if (
+        response.status === 400 &&
+        payload.thinking?.type === "disabled" &&
+        /thinking|disabled/i.test(errMsg)
+      ) {
+        console.log(
+          "[analyze-workout] thinking.disabled rechazado -> reintento con budget 1024",
+        );
+        payload = {
+          ...payload,
+          thinking: { type: "enabled", budget_tokens: 1024 },
+          max_tokens: Math.max(maxTokens, 3500),
+        };
+        response = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": apiKey,
+            "anthropic-version": "2023-06-01",
+          },
+          body: JSON.stringify(payload),
+        });
+        data = await response.json();
+      }
+
       // No usar content[0]: claude-sonnet-5 puede devolver "thinking" primero.
       const text = (Array.isArray(data.content) ? data.content : [])
         .filter((b) => b && b.type === "text")
         .map((b) => String(b.text || ""))
         .join("\n")
         .trim();
+
+      const stopReason = data?.stop_reason || null;
+      console.log(
+        "[analyze-workout] model:",
+        model,
+        "| status:",
+        response.status,
+        "| stop_reason:",
+        stopReason,
+        "| text_chars:",
+        text.length,
+        "| usage:",
+        data?.usage,
+      );
+
       if (response.ok && text) {
-        return { text, model };
+        return {
+          text,
+          model,
+          stopReason,
+          truncated: stopReason === "max_tokens",
+        };
       }
       console.warn(
         `callClaude: model ${model} failed:`,
         "types:",
         (data.content || []).map((b) => b?.type),
         "stop_reason:",
-        data?.stop_reason,
+        stopReason,
         JSON.stringify(data).slice(0, 300),
       );
     } catch (err) {
@@ -44,6 +119,29 @@ async function callClaude(apiKey, prompt, maxTokens = 800) {
     }
   }
   return null;
+}
+
+/**
+ * Si Anthropic corto por max_tokens, no enseñas una frase a medias como si
+ * estuviera completa: quitas el trozo final truncado y avisas.
+ */
+function withTruncationGuard(result) {
+  if (!result?.truncated) return result;
+  console.error(
+    "[analyze-workout] RESPUESTA TRUNCADA (stop_reason=max_tokens). chars:",
+    result.text.length,
+    "| preview:",
+    result.text.slice(-80),
+  );
+  // Quitar la ultima linea/fragmento incompleto (suele acabar a mitad de palabra).
+  let cleaned = result.text.replace(/\s+\S*$/, "").trim();
+  if (cleaned.length < 40) cleaned = result.text.trim();
+  return {
+    ...result,
+    text:
+      `${cleaned}\n\n` +
+      `[Análisis incompleto: la respuesta se cortó por límite de tokens. Vuelve a pulsar Analizar.]`,
+  };
 }
 
 /** Intenta extraer el JSON del texto de Claude de múltiples formas */
@@ -86,9 +184,14 @@ export default async function handler(req, res) {
   // ── BRIEFING MODE ──────────────────────────────────────────
   const { prompt: briefingPrompt, mode } = req.body || {};
   if (mode === "briefing" && briefingPrompt) {
-    const result = await callClaude(apiKey, briefingPrompt, 300);
+    const result = withTruncationGuard(
+      await callClaude(apiKey, briefingPrompt, MAX_TOKENS.briefing),
+    );
     if (!result) return res.status(500).json({ error: "No se pudo generar el briefing" });
-    return res.status(200).json({ analysis: result.text });
+    return res.status(200).json({
+      analysis: result.text,
+      truncated: !!result.truncated,
+    });
   }
 
   const {
@@ -126,6 +229,8 @@ export default async function handler(req, res) {
             .join("\n")}`
         : "";
 
+    // 4 secciones (coach) o 3 párrafos (atleta): ~800-1200 tokens de salida.
+    // El techo 2500 cubre el peor caso sin pedir menos secciones.
     const prompt = isCoach
       ? `Eres un coach de running experto analizando el entrenamiento de ${athleteName || "tu atleta"} (VDOT ${vdot || "N/A"}).
 
@@ -145,7 +250,7 @@ EJECUTADO (${fuente}):
 - Sensación: ${workout.feeling ?? workout.athlete_notes ?? "N/R"}
 ${recentContext}
 
-Responde en español con 4 secciones cortas (sin markdown, sin asteriscos, sin tablas):
+Responde en español con 4 secciones cortas (sin markdown, sin asteriscos, sin tablas). Cada sección: 3-5 frases, no más de ~80 palabras:
 1. Rendimiento — Compara lo EJECUTADO contra lo PLANIFICADO (distancia completada, ritmo real vs objetivo, duración). ¿Cumplió el objetivo del workout?
 2. Señales fisiológicas — ¿Qué indican RPE, FC y ritmo sobre su estado?
 3. Tendencia — Basado en los entrenamientos recientes, ¿está progresando, estancado o acumulando fatiga?
@@ -157,14 +262,20 @@ EJECUTADO (${fuente}): ${realDist ?? "N/R"} km, ${realDur ?? "N/R"} min, ritmo $
 RPE: ${workout.rpe ?? "N/R"} | Sensación: ${workout.feeling ?? workout.athlete_notes ?? "N/R"}
 ${recentContext}
 
-Responde en 3 párrafos cortos (sin markdown, sin asteriscos):
+Responde en 3 párrafos cortos (sin markdown, sin asteriscos), cada uno de 2-4 frases:
 1. Qué hiciste bien hoy (compara lo que hiciste con lo planificado)
 2. Cómo estás progresando
 3. Consejo para el próximo entrenamiento`;
 
-    const result = await callClaude(apiKey, prompt);
+    const result = withTruncationGuard(
+      await callClaude(apiKey, prompt, MAX_TOKENS.analyze),
+    );
     if (!result) return res.status(500).json({ error: "Todos los modelos fallaron." });
-    return res.status(200).json({ analysis: result.text, model: result.model });
+    return res.status(200).json({
+      analysis: result.text,
+      model: result.model,
+      truncated: !!result.truncated,
+    });
   }
 
   // ── ACTION: adjust ───────────────────────────────────────────
@@ -239,7 +350,9 @@ Si no hay cambios necesarios: {"signal":"bien","summary":"El atleta está en bue
 
 Los valores de signal válidos son exactamente: fatiga_alta, fatiga_media, bien, descarga_necesaria, puede_progresar`;
 
-    const result = await callClaude(apiKey, prompt, 1500);
+    const result = withTruncationGuard(
+      await callClaude(apiKey, prompt, MAX_TOKENS.adjust),
+    );
     if (!result) return res.status(500).json({ error: "Todos los modelos fallaron." });
 
     console.log("adjust raw response:", result.text.slice(0, 500));
@@ -251,10 +364,13 @@ Los valores de signal válidos son exactamente: fatiga_alta, fatiga_media, bien,
       // Fallback: retornar respuesta segura en lugar de 500
       return res.status(200).json({
         signal: "bien",
-        summary: "No se pudo procesar la respuesta de IA. Intenta de nuevo.",
+        summary: result.truncated
+          ? "El ajuste de IA se cortó por límite de tokens. Intenta de nuevo."
+          : "No se pudo procesar la respuesta de IA. Intenta de nuevo.",
         adjustments: [],
         model: result.model,
         parse_error: true,
+        truncated: !!result.truncated,
       });
     }
 
@@ -264,6 +380,7 @@ Los valores de signal válidos son exactamente: fatiga_alta, fatiga_media, bien,
       summary: parsed.summary || "Análisis completado.",
       adjustments: Array.isArray(parsed.adjustments) ? parsed.adjustments : [],
       model: result.model,
+      truncated: !!result.truncated,
     };
 
     return res.status(200).json(safe);
