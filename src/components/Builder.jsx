@@ -18,6 +18,7 @@ import {
   buildAthleteHrZonesPromptText,
   sendWorkoutAssignmentPushToAthlete,
   insertAssignedWorkouts,
+  sendAppEmail,
   normalizeAthlete,
   libraryRowToBuilderWorkout,
   normalizeLibraryRow,
@@ -235,17 +236,13 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
       await Promise.all(
         selectedAthletes.map(async (selectedAthlete) => {
           if (selectedAthlete.email) {
-            try {
-              const structureRows = Array.isArray(w?.structure)
-                ? w.structure.map((s) => `<p>• <strong>${s.phase || ""}</strong>: ${s.duration || ""} · ${s.pace || ""}</p>`).join("")
-                : "";
-              await fetch("/api/send-email", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  to: selectedAthlete.email,
-                  subject: `Nuevo entrenamiento: ${w.title}`,
-                  html: `
+            const structureRows = Array.isArray(w?.structure)
+              ? w.structure.map((s) => `<p>• <strong>${s.phase || ""}</strong>: ${s.duration || ""} · ${s.pace || ""}</p>`).join("")
+              : "";
+            await sendAppEmail({
+              to: selectedAthlete.email,
+              subject: `Nuevo entrenamiento: ${w.title}`,
+              html: `
       <h2>Hola ${selectedAthlete.name} 👋</h2>
       <p>Tu coach te ha asignado un nuevo entrenamiento:</p>
       <h3>${w.title}</h3>
@@ -258,11 +255,7 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
       <br/><p>¡Mucho éxito! 💪</p>
       <p>— Tu coach en ${BRAND_NAME}</p>
     `,
-                }),
-              });
-            } catch (e) {
-              console.error("Error llamando /api/send-email:", e);
-            }
+            });
           }
           await sendWorkoutAssignmentPushToAthlete({
             athleteUserId: selectedAthlete?.user_id,

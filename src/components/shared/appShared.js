@@ -1759,6 +1759,49 @@ export const deleteIntervalsEvents = async (athleteId, workoutIds) => {
   }
 };
 
+/**
+ * Envia un correo transaccional por /api/send-email.
+ *
+ * Centralizado por dos razones: el endpoint exige sesion (sin la cabecera
+ * responde 401 y el correo no sale), y asi los cinco flujos que mandan correo
+ * no repiten la misma fontaneria de token.
+ *
+ * Nunca lanza: un correo que no sale no puede tumbar la accion que lo motivo
+ * (asignar un plan, confirmar un pago). Quien llama decide si avisar.
+ *
+ * @returns {Promise<{ok: boolean, reason?: string}>}
+ */
+export const sendAppEmail = async ({ to, subject, html }) => {
+  if (!to) return { ok: false, reason: "sin destinatario" };
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) return { ok: false, reason: "sin sesión" };
+    const res = await fetch("/api/send-email", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({ to, subject, html }),
+    });
+    if (!res.ok) {
+      let detail = "";
+      try {
+        const body = await res.json();
+        detail = body?.error || "";
+      } catch {
+        /* respuesta sin JSON */
+      }
+      console.error("[send-email]", res.status, detail);
+      return { ok: false, reason: detail || `HTTP ${res.status}` };
+    }
+    return { ok: true };
+  } catch (e) {
+    console.error("[send-email]", e);
+    return { ok: false, reason: e?.message || "error de red" };
+  }
+};
+
 /** Package del APK, para intentar abrirla desde el navegador con un intent:// */
 export const ANDROID_PACKAGE_ID = "com.runningapexflow.app";
 

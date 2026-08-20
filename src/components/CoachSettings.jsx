@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { supabase } from "../lib/supabase";
-import { BRAND_NAME } from "./shared/appShared";
+import { BRAND_NAME, sendAppEmail } from "./shared/appShared";
 import DeleteAccountSection from "./DeleteAccountSection";
 import ChangePasswordSection from "./ChangePasswordSection";
 
@@ -222,18 +222,13 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
       const code = (typeof crypto !== "undefined" && crypto.randomUUID && crypto.randomUUID()) || Date.now().toString();
       const inviteLink = `https://www.runningapexflow.com?invite=${encodeURIComponent(code)}&type=staff&coach=${coachUserId}`;
       await supabase.from("invitations").insert({ coach_id: coachUserId, email, code, status: "pending", type: "staff" });
-      const emailRes = await fetch("/api/send-email", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          to: email,
-          subject: "Invitacion para unirte como sub-coach en RunningApexFlow",
-          html: `<div style="font-family:Arial,sans-serif"><h2>Te invitaron como sub-coach en RunningApexFlow</h2><p>Haz clic para registrarte y unirte al equipo:</p><p><a href="${inviteLink}">${inviteLink}</a></p><p style="font-size:14px;color:#64748b">Una vez registrado, el coach principal podra asignarte atletas para gestionar.</p></div>`,
-        }),
+      const mail = await sendAppEmail({
+        to: email,
+        subject: "Invitacion para unirte como sub-coach en RunningApexFlow",
+        html: `<div style="font-family:Arial,sans-serif"><h2>Te invitaron como sub-coach en RunningApexFlow</h2><p>Haz clic para registrarte y unirte al equipo:</p><p><a href="${inviteLink}">${inviteLink}</a></p><p style="font-size:14px;color:#64748b">Una vez registrado, el coach principal podra asignarte atletas para gestionar.</p></div>`,
       });
-      if (!emailRes.ok) {
-        let detail = "";
-        try { const ed = await emailRes.json(); detail = ed?.error || ""; } catch (_) {}
-        notify("Invitacion registrada, pero el email no se pudo enviar. " + detail);
+      if (!mail.ok) {
+        notify("Invitacion registrada, pero el email no se pudo enviar. " + (mail.reason || ""));
         setStaffEmail("");
         loadStaff();
         return;

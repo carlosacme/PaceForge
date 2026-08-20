@@ -101,6 +101,7 @@ import {
   formatMessageTimestamp,
   unregisterOwnDeviceToken,
   resendSignupConfirmation,
+  sendAppEmail,
 } from "./components/shared/appShared";
 import {
   initMessaging,
@@ -1412,16 +1413,12 @@ export default function App() {
       const inviteLink = await createInviteLink();
       if (!inviteLink) return;
       const codeHtml = `<p style="margin:12px 0"><strong>Tu código de coach</strong> (si te registras sin abrir el enlace): <code style="background:#f1f5f9;padding:4px 8px;border-radius:6px">${inviteCoachPublicCode}</code></p><p style="font-size:14px;color:#64748b">El atleta usará este código al registrarse.</p>`;
-      await fetch("/api/send-email", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          to: email,
-          subject: "Invitación para entrenar en RunningApexFlow",
-          html: `<div style="font-family:Arial,sans-serif"><h2>¡Tu coach te invitó! 🏃</h2><p>Haz clic aquí para registrarte y vincularte automáticamente:</p><p><a href="${inviteLink}">${inviteLink}</a></p>${codeHtml}</div>`,
-        }),
+      const mail = await sendAppEmail({
+        to: email,
+        subject: "Invitación para entrenar en RunningApexFlow",
+        html: `<div style="font-family:Arial,sans-serif"><h2>¡Tu coach te invitó! 🏃</h2><p>Haz clic aquí para registrarte y vincularte automáticamente:</p><p><a href="${inviteLink}">${inviteLink}</a></p>${codeHtml}</div>`,
       });
-      notify("Invitación enviada ✓");
+      notify(mail.ok ? "Invitación enviada ✓" : `No se pudo enviar el correo (${mail.reason}). Comparte el enlace a mano.`);
     } catch (e) {
       console.error("sendAthleteInvitation:", e);
       notify("No se pudo enviar la invitación.");
@@ -5774,19 +5771,11 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
       return;
     }
     if (status === "confirmed" && athlete?.email) {
-      try {
-        await fetch("/api/send-email", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            to: athlete.email,
-            subject: "Pago confirmado",
-            html: `<div style="font-family:Arial,sans-serif"><h2>Pago recibido ✅</h2><p>Hola ${athlete.name || "atleta"}, tu pago del plan <b>${row.plan}</b> por <b>$${Number(row.amount || 0).toLocaleString("es-CO")} ${row.currency || "COP"}</b> fue confirmado.</p><p>Gracias por entrenar con RunningApexFlow.</p></div>`,
-          }),
-        });
-      } catch (e) {
-        console.error("Error enviando email de confirmación de pago:", e);
-      }
+      await sendAppEmail({
+        to: athlete.email,
+        subject: "Pago confirmado",
+        html: `<div style="font-family:Arial,sans-serif"><h2>Pago recibido ✅</h2><p>Hola ${athlete.name || "atleta"}, tu pago del plan <b>${row.plan}</b> por <b>$${Number(row.amount || 0).toLocaleString("es-CO")} ${row.currency || "COP"}</b> fue confirmado.</p><p>Gracias por entrenar con RunningApexFlow.</p></div>`,
+      });
     }
     notify?.(status === "confirmed" ? "Pago confirmado" : "Pago rechazado");
     loadAthletePayments();

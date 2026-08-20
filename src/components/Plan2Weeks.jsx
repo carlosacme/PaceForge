@@ -42,6 +42,7 @@ import {
   formatDurationClock,
   formatCopInt,
   insertAssignedWorkouts,
+  sendAppEmail,
   styles,
 } from "./shared/appShared";
 import WorkoutStructureEditor from "./shared/WorkoutStructureEditor";
@@ -1144,21 +1145,17 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
       await loadBlockHistory();
 
       if (selectedAthlete.email) {
-        try {
-          const weekSummary = (generatedPlan.weeks || [])
-            .map((w) => {
-              const n = Number(w.week_number) || 0;
-              const c = Array.isArray(w.workouts) ? w.workouts.length : 0;
-              return `<li>Semana ${n}: ${c} sesiones</li>`;
-            })
-            .join("");
-          await fetch("/api/send-email", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              to: selectedAthlete.email,
-              subject: `Tu plan de 2 semanas: ${generatedPlan.plan_title || BRAND_NAME}`,
-              html: `
+        const weekSummary = (generatedPlan.weeks || [])
+          .map((w) => {
+            const n = Number(w.week_number) || 0;
+            const c = Array.isArray(w.workouts) ? w.workouts.length : 0;
+            return `<li>Semana ${n}: ${c} sesiones</li>`;
+          })
+          .join("");
+        await sendAppEmail({
+          to: selectedAthlete.email,
+          subject: `Tu plan de 2 semanas: ${generatedPlan.plan_title || BRAND_NAME}`,
+          html: `
                 <h2>Hola ${selectedAthlete.name} 👋</h2>
                 <p>Tu coach te ha asignado un <strong>plan de 2 semanas</strong> en ${BRAND_NAME}.</p>
                 <p><strong>Objetivo:</strong> ${competition} en ${targetTime}<br/>
@@ -1169,11 +1166,7 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
                 <p>¡Mucho éxito! 💪</p>
                 <p>— ${BRAND_NAME}</p>
               `,
-            }),
-          });
-        } catch (e) {
-          console.error("send-email plan12:", e);
-        }
+        });
       }
       notify(`Plan asignado: ${rows.length} workouts guardados.`);
       // Un solo push agrupado en vez de uno por workout (fire-and-forget).
