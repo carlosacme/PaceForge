@@ -8,38 +8,33 @@ const MODELS = [
 /**
  * Techos de salida por accion.
  *
- * Antes analyze usaba el default 800. Con claude-sonnet-5 el thinking extendido
- * consume ese presupuesto y el texto se corta a mitad de frase ("lo c"). Para
- * el analisis de coach (4 secciones) bastan ~1200-1500 tokens de texto; 2500 da
- * margen sin derroche. Briefing y adjust tienen sus propios techos.
+ * Antes analyze usaba el default 800 y el texto se cortaba a mitad de frase.
+ * claude-sonnet-5 puede gastar parte del presupuesto en thinking (comportamiento
+ * por defecto): 4000 deja sitio para razonamiento + las 4 secciones. No pasamos
+ * temperature (deprecated en este modelo) ni forzamos thinking disabled.
  */
 const MAX_TOKENS = {
   briefing: 400,
-  analyze: 2500,
-  adjust: 2500,
+  analyze: 4000,
+  adjust: 4000,
 };
-
-/** Temperature baja: el analisis debe ser estable entre reintentos. */
-const ANALYSIS_TEMPERATURE = 0.3;
 
 /**
  * Llama a Anthropic y devuelve texto + diagnostico.
  *
- * Desactiva el thinking extendido: en analisis de un workout no aporta y se
- * come el max_tokens (mismo patron que api/generate-workout.js).
+ * Payload minimo: model + max_tokens + messages. Sin temperature (invalid_request
+ * en claude-sonnet-5) y sin tocar thinking (dejar el default del modelo).
  */
 async function callClaude(apiKey, prompt, maxTokens = MAX_TOKENS.analyze) {
   for (const model of MODELS) {
     try {
-      let payload = {
+      const payload = {
         model,
         max_tokens: maxTokens,
-        temperature: ANALYSIS_TEMPERATURE,
-        thinking: { type: "disabled" },
         messages: [{ role: "user", content: prompt }],
       };
 
-      let response = await fetch("https://api.anthropic.com/v1/messages", {
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -48,34 +43,7 @@ async function callClaude(apiKey, prompt, maxTokens = MAX_TOKENS.analyze) {
         },
         body: JSON.stringify(payload),
       });
-      let data = await response.json();
-
-      // Compatibilidad: si "disabled" no es aceptado, reintenta con budget bajo.
-      const errMsg = String(data?.error?.message || data?.error?.type || "");
-      if (
-        response.status === 400 &&
-        payload.thinking?.type === "disabled" &&
-        /thinking|disabled/i.test(errMsg)
-      ) {
-        console.log(
-          "[analyze-workout] thinking.disabled rechazado -> reintento con budget 1024",
-        );
-        payload = {
-          ...payload,
-          thinking: { type: "enabled", budget_tokens: 1024 },
-          max_tokens: Math.max(maxTokens, 3500),
-        };
-        response = await fetch("https://api.anthropic.com/v1/messages", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-api-key": apiKey,
-            "anthropic-version": "2023-06-01",
-          },
-          body: JSON.stringify(payload),
-        });
-        data = await response.json();
-      }
+      const data = await response.json();
 
       // No usar content[0]: claude-sonnet-5 puede devolver "thinking" primero.
       const text = (Array.isArray(data.content) ? data.content : [])
@@ -106,13 +74,15 @@ async function callClaude(apiKey, prompt, maxTokens = MAX_TOKENS.analyze) {
           truncated: stopReason === "max_tokens",
         };
       }
+      // Log completo del error de Anthropic (fue lo que diagnostico temperature).
       console.warn(
         `callClaude: model ${model} failed:`,
         "types:",
         (data.content || []).map((b) => b?.type),
         "stop_reason:",
         stopReason,
-        JSON.stringify(data).slice(0, 300),
+        "error:",
+        JSON.stringify(data?.error || data).slice(0, 800),
       );
     } catch (err) {
       console.warn(`callClaude: model ${model} exception:`, err?.message);
@@ -229,8 +199,7 @@ export default async function handler(req, res) {
             .join("\n")}`
         : "";
 
-    // 4 secciones (coach) o 3 párrafos (atleta): ~800-1200 tokens de salida.
-    // El techo 2500 cubre el peor caso sin pedir menos secciones.
+    // 4 secciones (coach) o 3 párrafos (atleta). Techo 4000: thinking + texto.
     const prompt = isCoach
       ? `Eres un coach de running experto analizando el entrenamiento de ${athleteName || "tu atleta"} (VDOT ${vdot || "N/A"}).
 
