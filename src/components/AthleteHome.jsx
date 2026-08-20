@@ -143,6 +143,7 @@ import { refreshFcmTokenIfGranted, clearFcmToken } from "../firebase.js";
 import { Capacitor } from "@capacitor/core";
 import { registerNativePush, clearNativePush, consumePendingDeepLink, subscribeDeepLink } from "../lib/nativePush";
 import { useAppResumeRefresh } from "../hooks/useAppResumeRefresh";
+import { setResumeUiBusy } from "../lib/resumeGuard";
 
 function MarketplacePlanWorkoutsAccordion({ previewWorkouts, resetKey, lockAfterWeek1 = false }) {
   const list = Array.isArray(previewWorkouts) ? previewWorkouts : [];
@@ -403,6 +404,7 @@ export default function AthleteHome({ profile }) {
   const { weather, getWorkoutWeatherNote } = useWeather();
   const [athleteChatClearing, setAthleteChatClearing] = useState(false);
   const [intervalsConnected, setIntervalsConnected] = useState(false);
+  const [intervalsRefreshNonce, setIntervalsRefreshNonce] = useState(0);
   const [forceManualFields, setForceManualFields] = useState(false);
   const [findCoachCodeInput, setFindCoachCodeInput] = useState("");
   const [findCoachCodeBusy, setFindCoachCodeBusy] = useState(false);
@@ -595,16 +597,6 @@ export default function AthleteHome({ profile }) {
     load();
     return () => { cancelled = true; };
   }, [profileUserId, notifyPush, refreshWorkouts]);
-
-  // Esta pantalla solo cargaba una vez por sesion, asi que un entreno que el
-  // coach añadiera o borrara despues no aparecia hasta reiniciar la app. Volver
-  // a ella es el momento natural para ponerla al dia.
-  useAppResumeRefresh(() => {
-    // Hasta que la carga inicial no termina no se refresca: seria repetir la
-    // consulta que 'load' ya tiene en vuelo.
-    if (prevProfileUserIdRef.current !== profileUserId) return;
-    refreshWorkouts(athleteInfo?.id);
-  }, Boolean(athleteInfo?.id));
 
   const athleteCoachIdPrimitive = athleteInfo?.coach_id ?? null;
   const achievementDisplayProgress = useMemo(() => computeAthleteAchievementVisualProgress(workouts, athleteEvaluations), [workouts, athleteEvaluations]);
@@ -1062,6 +1054,38 @@ export default function AthleteHome({ profile }) {
       setIntervalsConnected(Boolean(res.ok && d?.connected));
     } catch { setIntervalsConnected(false); }
   }, [athleteInfo?.id]);
+
+  // Al volver: workouts + ficha (nombre/avatar/coach/plan) + intervals.
+  // El perfil (profiles) lo refresca App.jsx en el mismo resume.
+  useAppResumeRefresh(() => {
+    if (prevProfileUserIdRef.current !== profileUserId) return;
+    const athleteId = athleteInfo?.id;
+    if (!athleteId) return;
+    void (async () => {
+      await Promise.all([
+        refreshWorkouts(athleteId),
+        loadIntervalsConnected(),
+        (async () => {
+          const { data, error } = await supabase
+            .from("athletes")
+            .select("*")
+            .eq("id", athleteId)
+            .maybeSingle();
+          if (error) {
+            console.warn("[AthleteHome] resume athlete:", error);
+            return;
+          }
+          if (data) setAthleteInfo(data);
+        })(),
+      ]);
+      setIntervalsRefreshNonce((n) => n + 1);
+    })();
+  }, Boolean(athleteInfo?.id));
+
+  useEffect(() => {
+    setResumeUiBusy(Boolean(athleteChatOpen) || Boolean(String(athleteChatDraft || "").trim()));
+    return () => setResumeUiBusy(false);
+  }, [athleteChatOpen, athleteChatDraft]);
 
   useEffect(() => { loadAthleteChat(); }, [loadAthleteChat]);
 
@@ -1887,7 +1911,7 @@ export default function AthleteHome({ profile }) {
                     </div>
                     ) : null}
                     <div style={{ marginTop: 20, paddingTop: 20, borderTop: "1px solid #e2e8f0" }}>
-                      <IntervalsConnect athleteId={athleteInfo?.id} onNotify={setMessage} />
+                      <IntervalsConnect athleteId={athleteInfo?.id} onNotify={setMessage} refreshNonce={intervalsRefreshNonce} />
                     </div>
                   </div>
                 ) : null}

@@ -26,7 +26,7 @@ const CALLBACK_MSG = {
   error:         { ok: false, text: "Algo salió mal al conectar. Inténtalo de nuevo." },
 };
 
-export default function IntervalsConnect({ athleteId, onNotify }) {
+export default function IntervalsConnect({ athleteId, onNotify, refreshNonce = 0 }) {
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const [apiKey, setApiKey] = useState("");
@@ -53,9 +53,9 @@ export default function IntervalsConnect({ athleteId, onNotify }) {
     return data;
   }, [athleteId]);
 
-  const loadStatus = useCallback(async () => {
+  const loadStatus = useCallback(async ({ silent = false } = {}) => {
     if (!athleteId) return;
-    setLoading(true);
+    if (!silent) setLoading(true);
     try {
       const d = await call({ action: "status" });
       setStatus(d);
@@ -63,11 +63,17 @@ export default function IntervalsConnect({ athleteId, onNotify }) {
     } catch (e) {
       setError(e.message);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [athleteId, call]);
 
   useEffect(() => { loadStatus(); }, [loadStatus]);
+
+  // Al volver a la app el padre sube refreshNonce: reconsulta sin spinner.
+  useEffect(() => {
+    if (!refreshNonce || !athleteId) return;
+    void loadStatus({ silent: true });
+  }, [refreshNonce, athleteId, loadStatus]);
 
   // Feedback al volver del OAuth: ?intervals=connected|cancelled|...
   useEffect(() => {

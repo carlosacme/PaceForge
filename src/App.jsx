@@ -9,6 +9,7 @@ import { compareBlocks } from "./lib/blockComparison";
 import { fmtPace } from "./lib/vdot";
 import { usePersistedState } from "./hooks/usePersistedState";
 import { useAppResumeRefresh } from "./hooks/useAppResumeRefresh";
+import { setResumeUiBusy } from "./lib/resumeGuard";
 import {
   BRAND_NAME,
   WORKOUT_TYPES,
@@ -1693,6 +1694,104 @@ export default function App() {
     loadProfile();
   }, [session]);
 
+  // Al volver a la app: invalidar raf_cached_profile releiendo profiles.
+  // Silencioso (sin profileLoading) para no parpadear la UI.
+  const refreshProfileSilent = useCallback(async () => {
+    const uid = session?.user?.id;
+    if (!uid) return;
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("user_id", uid)
+      .maybeSingle();
+    if (error) {
+      console.warn("[resume] profiles:", error);
+      return;
+    }
+    if (!data) return;
+    setProfile(data);
+    try {
+      localStorage.setItem("raf_cached_profile", JSON.stringify(data));
+    } catch {
+      /* ignore */
+    }
+  }, [session?.user?.id]);
+
+  const loadAthletes = useCallback(async ({ silent = false } = {}) => {
+    if (authLoading || !session) {
+      setAthletes([]);
+      setLoadingAthletes(false);
+      return;
+    }
+    if (!silent) setLoadingAthletes(true);
+    try {
+      const { data: userData, error: userError } = await supabase.auth.getUser();
+      if (userError || !userData?.user) {
+        console.error("Error obteniendo usuario para filtrar atletas:", userError);
+        if (!silent) notify("Error cargando atletas");
+        setAthletes([]);
+        throw new Error("No user");
+      }
+      const coachId = userData.user.id;
+
+      const { data: staffRow } = await supabase
+        .from("coach_staff")
+        .select("coach_id")
+        .eq("staff_id", coachId)
+        .maybeSingle();
+      if (staffRow?.coach_id) setStaffParentCoachId(staffRow.coach_id);
+
+      let data;
+      let error;
+      if (staffRow) {
+        const { data: assignedRows } = await supabase
+          .from("staff_athletes")
+          .select("athlete_id")
+          .eq("staff_id", coachId)
+          .eq("coach_id", staffRow.coach_id);
+        const assignedIds = [...new Set((assignedRows || []).map((r) => r.athlete_id))];
+        if (assignedIds.length === 0) {
+          setAthletes([]);
+        } else {
+          const res = await supabase.from("athletes").select("*").in("id", assignedIds).order("id", { ascending: true });
+          data = res.data;
+          error = res.error;
+        }
+      } else {
+        const res = await supabase.from("athletes").select("*").eq("coach_id", coachId).order("id", { ascending: true });
+        data = res.data;
+        error = res.error;
+      }
+
+      if (error) {
+        if (!silent) notify("Error cargando atletas");
+        setAthletes([]);
+      } else if (data !== undefined) {
+        setAthletes((data || []).map(normalizeAthlete));
+      }
+    } catch (error) {
+      console.error("Error inesperado cargando atletas:", error);
+      if (!silent) notify("Error cargando atletas");
+      setAthletes([]);
+    } finally {
+      if (!silent) setLoadingAthletes(false);
+    }
+  }, [authLoading, session, notify]);
+
+  useEffect(() => {
+    loadAthletes({ silent: false });
+  }, [loadAthletes]);
+
+  // Perfil siempre; coaches tambien lista + km/badges via workoutsRefresh.
+  // AthleteHome hace su propio resume (ficha/workouts/intervals) sin duplicar profiles.
+  useAppResumeRefresh(() => {
+    void refreshProfileSilent();
+    if (profile && profile.role !== "athlete") {
+      void loadAthletes({ silent: true });
+      setWorkoutsRefresh((r) => r + 1);
+    }
+  }, Boolean(session?.user?.id));
+
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (!session?.user?.id || !profile || profile.role === "athlete" || viewRestored) return;
@@ -1843,73 +1942,6 @@ export default function App() {
       writeStoredTab(TAB_KEY_TRAINING, getTrainingTabFromView(view));
     }
   }, [view, writeStoredTab, getAthletesTabFromView, getTrainingTabFromView]);
-
-  useEffect(() => {
-    const loadAthletes = async () => {
-      if (authLoading || !session) {
-        setAthletes([]);
-        setLoadingAthletes(false);
-        return;
-      }
-      setLoadingAthletes(true);
-      try {
-        const { data: userData, error: userError } = await supabase.auth.getUser();
-        if (userError || !userData?.user) {
-          console.error("Error obteniendo usuario para filtrar atletas:", userError);
-          notify("Error cargando atletas");
-          setAthletes([]);
-          throw new Error("No user");
-        }
-        const coachId = userData.user.id;
-
-        // Verificar si es staff (sub-coach)
-        const { data: staffRow } = await supabase
-          .from("coach_staff")
-          .select("coach_id")
-          .eq("staff_id", coachId)
-          .maybeSingle();
-        if (staffRow?.coach_id) setStaffParentCoachId(staffRow.coach_id);
-
-        let data, error;
-        if (staffRow) {
-          // Es staff (sub-coach): carga UNICAMENTE los atletas que el coach principal le asigno
-          const { data: assignedRows } = await supabase
-            .from("staff_athletes")
-            .select("athlete_id")
-            .eq("staff_id", coachId)
-            .eq("coach_id", staffRow.coach_id);
-          const assignedIds = [...new Set((assignedRows || []).map((r) => r.athlete_id))];
-          if (assignedIds.length === 0) {
-            setAthletes([]);
-          } else {
-            const res = await supabase.from("athletes").select("*").in("id", assignedIds).order("id", { ascending: true });
-            data = res.data;
-            error = res.error;
-          }
-        } else {
-          // Es coach principal: cargar todos sus atletas
-          const res = await supabase.from("athletes").select("*").eq("coach_id", coachId).order("id", { ascending: true });
-          data = res.data;
-          error = res.error;
-        }
-
-        if (error) {
-          notify("Error cargando atletas");
-          setAthletes([]);
-        } else {
-          setAthletes((data || []).map(normalizeAthlete));
-        }
-      } catch (error) {
-        console.error("Error inesperado cargando atletas:", error);
-        notify("Error cargando atletas");
-        setAthletes([]);
-      } finally {
-        setLoadingAthletes(false);
-      }
-    };
-
-    loadAthletes();
-  }, [authLoading, session]);
 
   useEffect(() => {
     if (typeof localStorage === "undefined") return;
@@ -4550,7 +4582,7 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
     return () => {
       cancelled = true;
     };
-  }, [athleteIdsKey]);
+  }, [athleteIdsKey, workoutsRefresh]);
 
   // Carga de la semana (programado vs corrido) de toda la lista, en una sola
   // consulta. Se recalcula al cambiar la lista y cuando se tocan los workouts.
@@ -4657,20 +4689,24 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWork
     return true;
   }, []);
 
+  const calendarLoadedAthleteRef = useRef(null);
   useEffect(() => {
     if (!athlete?.id) {
       setWorkouts([]);
       setCoachWorkoutAnalysis({});
+      calendarLoadedAthleteRef.current = null;
       return;
     }
-    refreshWorkouts(athlete.id);
+    // Primera carga del atleta: con spinner. Resume / workoutsRefresh: silencioso.
+    const sameAthlete = String(calendarLoadedAthleteRef.current ?? "") === String(athlete.id);
+    calendarLoadedAthleteRef.current = athlete.id;
+    refreshWorkouts(athlete.id, { silent: sameAthlete });
   }, [athlete?.id, workoutsRefresh, refreshWorkouts]);
 
-  // El coach vuelve a la app despues de que sus atletas hayan entrenado: al
-  // volver ve los entrenos marcados como hechos sin tener que recargar.
-  useAppResumeRefresh(() => {
-    refreshWorkouts(athlete?.id, { silent: true });
-  }, Boolean(athlete?.id));
+  useEffect(() => {
+    setResumeUiBusy(Boolean(String(chatDraft || "").trim()) || Boolean(workoutPanel));
+    return () => setResumeUiBusy(false);
+  }, [chatDraft, workoutPanel]);
 
   useEffect(() => {
     if (!athlete?.id) {
