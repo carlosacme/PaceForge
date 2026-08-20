@@ -105,10 +105,14 @@ export default function ResetPasswordScreen({ onDone, onCancel }) {
           boxShadow: "0 12px 34px rgba(15,23,42,.12)",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
-          <span style={{ fontSize: "1.6em", color: "#f59e0b", lineHeight: 1 }} aria-hidden>
-            ▲
-          </span>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+          <img
+            src="/pwa-192.png"
+            alt=""
+            width={36}
+            height={36}
+            style={{ width: 36, height: 36, borderRadius: 10, objectFit: "cover", flexShrink: 0 }}
+          />
           <div style={{ fontSize: ".9em", fontWeight: 900, letterSpacing: ".04em", color: "#0f172a" }}>{BRAND_NAME}</div>
         </div>
 
@@ -179,7 +183,7 @@ export default function ResetPasswordScreen({ onDone, onCancel }) {
               padding: "13px 18px",
               borderRadius: 12,
               border: "none",
-              background: busy ? "#e2e8f0" : "linear-gradient(135deg,#b45309,#f59e0b)",
+              background: busy ? "#e2e8f0" : "linear-gradient(135deg,#e86f28,#ff8a3d)",
               color: busy ? "#334155" : "#fff",
               fontFamily: "inherit",
               fontWeight: 800,

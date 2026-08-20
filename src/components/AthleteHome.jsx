@@ -352,6 +352,7 @@ export default function AthleteHome({ profile }) {
   }, []);
   const normalizeWorkoutRowStable = useCallback(normalizeWorkoutRow, []);
   const [athleteInfo, setAthleteInfo] = useState(null);
+  const [authFullName, setAuthFullName] = useState("");
   const [coachName, setCoachName] = useState(null);
   const [coachAvatarUrl, setCoachAvatarUrl] = useState("");
   // Se guarda la URL que fallo, no un booleano, para que una foto nueva vuelva
@@ -519,6 +520,11 @@ export default function AthleteHome({ profile }) {
       setAthleteNotRegistered(false);
       const { data: authData, error: authErr } = await supabase.auth.getUser();
       if (cancelled) return;
+      const metaName =
+        (typeof authData?.user?.user_metadata?.full_name === "string" &&
+          authData.user.user_metadata.full_name.trim()) ||
+        "";
+      if (!cancelled) setAuthFullName(metaName);
       const userEmail = authData?.user?.email?.trim();
       if (authErr || !userEmail) {
         console.error("Error obteniendo sesión:", authErr);
@@ -951,7 +957,20 @@ export default function AthleteHome({ profile }) {
     } catch (e) { console.error("trySoloIndependentCheckout exception:", e); setMessage("Error al iniciar el pago."); }
   };
 
-  const athleteName = profile?.name || athleteInfo?.name || "Atleta";
+  const athleteName = useMemo(() => {
+    const looksLikeEmail = (s) => /@/.test(String(s || ""));
+    const pick = (s) => {
+      const t = String(s || "").trim();
+      if (!t || looksLikeEmail(t)) return "";
+      return t;
+    };
+    return (
+      pick(profile?.name) ||
+      pick(athleteInfo?.name) ||
+      pick(authFullName) ||
+      "Atleta"
+    );
+  }, [profile?.name, athleteInfo?.name, authFullName]);
   const handleAthleteNavTabChange = useCallback((tabId) => {
     setAthleteChatOpen(false);
     setAthleteActiveTab(tabId);

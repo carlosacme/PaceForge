@@ -134,10 +134,29 @@ function InstallPwaBanner() {
 }
 
 if ("serviceWorker" in navigator) {
+  // Cuando un deploy nuevo activa otro SW, recargar para no quedarse con el
+  // index/assets de la build anterior (sintoma: logo viejo, pantallas antiguas).
+  let refreshing = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (refreshing) return;
+    refreshing = true;
+    window.location.reload();
+  });
+
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch((err) => {
-      console.warn("Service worker registration failed:", err);
-    });
+    navigator.serviceWorker
+      .register("/sw.js", { scope: "/" })
+      .then((reg) => {
+        // Pedir update en cada carga: si hay build nueva, install → skipWaiting → activate.
+        try {
+          reg.update();
+        } catch {
+          /* ignore */
+        }
+      })
+      .catch((err) => {
+        console.warn("Service worker registration failed:", err);
+      });
   });
 }
 

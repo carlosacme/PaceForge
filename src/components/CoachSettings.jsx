@@ -163,7 +163,32 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
       setCoachRequests([]);
       return;
     }
-    setCoachRequests(data || []);
+    const rows = data || [];
+    // El solicitante aun no esta en el roster (coach_id null): hay que leer
+    // athletes por id, no buscar en la lista `athletes` del coach.
+    const ids = [...new Set(rows.map((r) => r.athlete_id).filter(Boolean))];
+    let byId = {};
+    if (ids.length > 0) {
+      const { data: athRows, error: athErr } = await supabase
+        .from("athletes")
+        .select("id, name, email")
+        .in("id", ids);
+      if (athErr) {
+        console.error("Error cargando atletas de solicitudes:", athErr);
+      } else {
+        byId = Object.fromEntries((athRows || []).map((a) => [String(a.id), a]));
+      }
+    }
+    setCoachRequests(
+      rows.map((r) => {
+        const a = byId[String(r.athlete_id)];
+        return {
+          ...r,
+          athlete_name: a?.name || "",
+          athlete_email: a?.email || "",
+        };
+      }),
+    );
   }, [coachUserId]);
 
   useEffect(() => {
@@ -567,12 +592,13 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
                 {coachRequests
                   .filter((r) => r.status === "pending")
                   .map((r) => {
-                    const athlete = (athletes || []).find((a) => String(a.id) === String(r.athlete_id));
+                    const displayName = (r.athlete_name || "").trim() || "Atleta";
+                    const displayEmail = (r.athlete_email || "").trim();
                     return (
                       <div key={r.id} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: "10px 12px", background: "#f8fafc", display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
                         <div>
-                          <div style={{ color: "#0f172a", fontWeight: 700, fontSize: ".82em" }}>{athlete?.name || "Atleta"}</div>
-                          <div style={{ color: "#64748b", fontSize: ".72em" }}>{athlete?.email || r.athlete_id}</div>
+                          <div style={{ color: "#0f172a", fontWeight: 700, fontSize: ".82em" }}>{displayName}</div>
+                          <div style={{ color: "#64748b", fontSize: ".72em" }}>{displayEmail || "Sin correo"}</div>
                         </div>
                         <div style={{ display: "flex", gap: 8 }}>
                           <button type="button" disabled={requestsBusyId === r.id} onClick={() => updateCoachRequestStatus(r, "accepted")} style={{ background: "rgba(34,197,94,.14)", border: "1px solid rgba(34,197,94,.35)", borderRadius: 8, padding: "6px 10px", color: "#15803d", fontSize: ".72em", fontWeight: 700, cursor: requestsBusyId === r.id ? "not-allowed" : "pointer", fontFamily: "inherit" }}>Aceptar</button>

@@ -2165,7 +2165,12 @@ export default function App() {
           });
           if (!apiRes.ok) {
             const j = await apiRes.json().catch(() => ({}));
-            console.warn("create-profile API:", apiRes.status, j);
+            console.error("create-profile API:", apiRes.status, j);
+            setAuthError(
+              j?.error
+                ? `Cuenta creada, pero no se guardó tu nombre: ${j.error}. Completa tu perfil al entrar.`
+                : "Cuenta creada, pero no se pudo guardar el perfil. Completa tu nombre al entrar.",
+            );
           }
         } catch (e) {
           console.warn("create-profile fetch failed:", e);
@@ -2498,11 +2503,15 @@ const handleSignOut = async () => {
             {authLandingStep === "choice" ? (
               <div style={{ ...S.card, width: "100%", maxWidth: 440, padding: "32px 28px 36px" }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 12, marginBottom: 22 }}>
-                  <span style={{ fontSize: "2.4em", color: "#f59e0b", lineHeight: 1 }} aria-hidden>
-                    ▲
-                  </span>
+                  <img
+                    src="/pwa-192.png"
+                    alt=""
+                    width={48}
+                    height={48}
+                    style={{ width: 48, height: 48, borderRadius: 12, objectFit: "cover", flexShrink: 0 }}
+                  />
                   <div style={{ fontSize: "1.35em", fontWeight: 900, letterSpacing: ".04em", color: "#0f172a" }}>
-                    RUNNING<span style={{ color: "#f59e0b" }}>APEX</span>FLOW
+                    RUNNING<span style={{ color: "#ff8a3d" }}>APEX</span>FLOW
                   </div>
                 </div>
                 <h1 style={{ ...S.pageTitle, fontSize: "1.45em", textAlign: "center", marginBottom: 10, lineHeight: 1.25 }}>
@@ -2810,8 +2819,8 @@ const handleSignOut = async () => {
     }
 
     return (
-      <div style={S.root}>
-        <main style={{ ...S.page, width: "100%", display: "flex", flexDirection: "column", minHeight: "100vh" }}>
+      <div style={{ ...S.root, background: "linear-gradient(165deg,#0d1f38 0%,#12294a 45%,#0d1f38 100%)", minHeight: "100vh" }}>
+        <main style={{ ...S.page, width: "100%", display: "flex", flexDirection: "column", minHeight: "100vh", background: "transparent" }}>
           <header
             style={{
               display: "flex",
@@ -2821,15 +2830,19 @@ const handleSignOut = async () => {
               flexWrap: "wrap",
               marginBottom: 8,
               paddingBottom: 16,
-              borderBottom: "1px solid #e2e8f0",
+              borderBottom: "1px solid rgba(23,198,163,.22)",
             }}
           >
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <span style={{ fontSize: "2em", color: "#f59e0b", lineHeight: 1 }} aria-hidden>
-                ▲
-              </span>
-              <div style={{ fontSize: "1.2em", fontWeight: 900, letterSpacing: ".04em", color: "#0f172a" }}>
-                RUNNING<span style={{ color: "#f59e0b" }}>APEX</span>FLOW
+              <img
+                src="/pwa-192.png"
+                alt=""
+                width={40}
+                height={40}
+                style={{ width: 40, height: 40, borderRadius: 10, objectFit: "cover", flexShrink: 0 }}
+              />
+              <div style={{ fontSize: "1.2em", fontWeight: 900, letterSpacing: ".04em", color: "#f8fafc" }}>
+                RUNNING<span style={{ color: "#ff8a3d" }}>APEX</span>FLOW
               </div>
             </div>
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
@@ -2844,9 +2857,9 @@ const handleSignOut = async () => {
               style={{
                 padding: "10px 18px",
                 borderRadius: 10,
-                border: "1px solid #e2e8f0",
-                background: "#fff",
-                color: "#0f172a",
+                border: "1px solid rgba(255,255,255,.18)",
+                background: "rgba(255,255,255,.06)",
+                color: "#f8fafc",
                 fontWeight: 800,
                 fontSize: ".85em",
                 cursor: "pointer",
@@ -2868,12 +2881,13 @@ const handleSignOut = async () => {
                 padding: "10px 18px",
                 borderRadius: 10,
                 border: "none",
-                background: "linear-gradient(135deg,#b45309,#f59e0b)",
+                background: "linear-gradient(135deg,#e86f28,#ff8a3d)",
                 color: "#fff",
                 fontWeight: 800,
                 fontSize: ".85em",
                 cursor: "pointer",
                 fontFamily: "inherit",
+                boxShadow: "0 8px 22px rgba(255,138,61,.35)",
               }}
             >
               Crear cuenta gratis
@@ -2892,13 +2906,13 @@ const handleSignOut = async () => {
               marginRight: "auto",
             }}
           >
-            <div style={{ fontSize: "0.78em", color: "#f59e0b", letterSpacing: ".12em", textTransform: "uppercase", fontWeight: 800, marginBottom: 10 }}>
+            <div style={{ fontSize: "0.78em", color: "#17c6a3", letterSpacing: ".12em", textTransform: "uppercase", fontWeight: 800, marginBottom: 10 }}>
               Plataforma de coaching para runners
             </div>
-            <h1 style={{ fontSize: "clamp(1.75rem, 4vw, 2.45rem)", fontWeight: 900, color: "#0f172a", margin: "0 0 14px", lineHeight: 1.15 }}>
+            <h1 style={{ fontSize: "clamp(1.75rem, 4vw, 2.45rem)", fontWeight: 900, color: "#f8fafc", margin: "0 0 14px", lineHeight: 1.15 }}>
               Entrena con datos. Mejora con inteligencia.
             </h1>
-            <p style={{ color: "#64748b", fontSize: "1.05em", margin: "0 0 26px", lineHeight: 1.6 }}>
+            <p style={{ color: "rgba(248,250,252,.72)", fontSize: "1.05em", margin: "0 0 26px", lineHeight: 1.6 }}>
               {BRAND_NAME} conecta coaches y atletas con IA, evaluaciones VDOT, zonas de FC y sincronización con tu reloj para llevar el rendimiento al siguiente nivel.
             </p>
             <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
@@ -2912,7 +2926,7 @@ const handleSignOut = async () => {
                   setLandingAuthOpen(true);
                 }}
                 style={{
-                  background: "linear-gradient(135deg,#b45309,#f59e0b)",
+                  background: "linear-gradient(135deg,#e86f28,#ff8a3d)",
                   border: "none",
                   borderRadius: 12,
                   padding: "14px 28px",
@@ -2921,7 +2935,7 @@ const handleSignOut = async () => {
                   fontFamily: "inherit",
                   fontWeight: 800,
                   fontSize: "1em",
-                  boxShadow: "0 8px 24px rgba(245,158,11,.3)",
+                  boxShadow: "0 8px 24px rgba(255,138,61,.35)",
                 }}
               >
                 Crear cuenta gratis
@@ -2935,11 +2949,11 @@ const handleSignOut = async () => {
                   setLandingAuthOpen(true);
                 }}
                 style={{
-                  background: "#fff",
-                  border: "1px solid #e2e8f0",
+                  background: "rgba(255,255,255,.06)",
+                  border: "1px solid rgba(23,198,163,.45)",
                   borderRadius: 12,
                   padding: "14px 28px",
-                  color: "#0f172a",
+                  color: "#f8fafc",
                   cursor: "pointer",
                   fontFamily: "inherit",
                   fontWeight: 800,
@@ -2952,7 +2966,7 @@ const handleSignOut = async () => {
           </div>
 
           <section style={{ marginBottom: 44, maxWidth: 1100, marginLeft: "auto", marginRight: "auto", width: "100%", padding: "0 4px" }}>
-            <div style={{ fontSize: ".72em", letterSpacing: ".14em", color: "#475569", textTransform: "uppercase", marginBottom: 16, fontWeight: 800 }}>
+            <div style={{ fontSize: ".72em", letterSpacing: ".14em", color: "#17c6a3", textTransform: "uppercase", marginBottom: 16, fontWeight: 800 }}>
               Características
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 16 }}>
@@ -2985,38 +2999,38 @@ const handleSignOut = async () => {
                 <div
                   key={f.title}
                   style={{
-                    border: "1px solid #e2e8f0",
+                    border: "1px solid rgba(23,198,163,.22)",
                     borderRadius: 14,
                     padding: "18px 16px",
-                    background: "#fff",
-                    boxShadow: "0 1px 3px rgba(15,23,42,.06)",
+                    background: "rgba(255,255,255,.05)",
+                    boxShadow: "0 8px 24px rgba(0,0,0,.18)",
                     textAlign: "left",
                   }}
                 >
-                  <div style={{ fontWeight: 800, color: "#0f172a", fontSize: ".98em", marginBottom: 8 }}>{f.title}</div>
-                  <div style={{ color: "#64748b", fontSize: ".88em", lineHeight: 1.5 }}>{f.body}</div>
+                  <div style={{ fontWeight: 800, color: "#f8fafc", fontSize: ".98em", marginBottom: 8 }}>{f.title}</div>
+                  <div style={{ color: "rgba(248,250,252,.68)", fontSize: ".88em", lineHeight: 1.5 }}>{f.body}</div>
                 </div>
               ))}
             </div>
           </section>
 
           <section style={{ marginBottom: 48, maxWidth: 1100, marginLeft: "auto", marginRight: "auto", width: "100%", padding: "0 4px" }}>
-            <div style={{ fontSize: ".72em", letterSpacing: ".14em", color: "#475569", textTransform: "uppercase", marginBottom: 16, fontWeight: 800 }}>
+            <div style={{ fontSize: ".72em", letterSpacing: ".14em", color: "#17c6a3", textTransform: "uppercase", marginBottom: 16, fontWeight: 800 }}>
               Coaches y atletas
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16 }}>
               <div
                 style={{
-                  border: "1px solid #e2e8f0",
+                  border: "1px solid rgba(255,138,61,.35)",
                   borderRadius: 14,
                   padding: "20px 18px",
-                  background: "linear-gradient(145deg,#fffbeb,#fff7ed)",
+                  background: "linear-gradient(145deg,rgba(255,138,61,.14),rgba(18,41,74,.9))",
                   textAlign: "left",
                 }}
               >
-                <div style={{ fontWeight: 900, color: "#b45309", fontSize: "1.1em", marginBottom: 8 }}>Coach</div>
-                <div style={{ fontSize: ".82em", fontWeight: 700, color: "#0f172a", marginBottom: 12 }}>7 días de prueba gratis</div>
-                <ul style={{ margin: 0, paddingLeft: 18, color: "#475569", fontSize: ".88em", lineHeight: 1.55 }}>
+                <div style={{ fontWeight: 900, color: "#ff8a3d", fontSize: "1.1em", marginBottom: 8 }}>Coach</div>
+                <div style={{ fontSize: ".82em", fontWeight: 700, color: "#f8fafc", marginBottom: 12 }}>7 días de prueba gratis</div>
+                <ul style={{ margin: 0, paddingLeft: 18, color: "rgba(248,250,252,.7)", fontSize: ".88em", lineHeight: 1.55 }}>
                   <li>Dashboard en vivo</li>
                   <li>Biblioteca de workouts</li>
                   <li>Evaluación VDOT</li>
@@ -3026,16 +3040,16 @@ const handleSignOut = async () => {
               </div>
               <div
                 style={{
-                  border: "1px solid #e2e8f0",
+                  border: "1px solid rgba(23,198,163,.35)",
                   borderRadius: 14,
                   padding: "20px 18px",
-                  background: "#f8fafc",
+                  background: "linear-gradient(145deg,rgba(23,198,163,.12),rgba(18,41,74,.9))",
                   textAlign: "left",
                 }}
               >
-                <div style={{ fontWeight: 900, color: "#0ea5e9", fontSize: "1.1em", marginBottom: 8 }}>Atleta</div>
-                <div style={{ fontSize: ".82em", fontWeight: 700, color: "#0f172a", marginBottom: 12 }}>Plan Premium disponible</div>
-                <ul style={{ margin: 0, paddingLeft: 18, color: "#475569", fontSize: ".88em", lineHeight: 1.55 }}>
+                <div style={{ fontWeight: 900, color: "#17c6a3", fontSize: "1.1em", marginBottom: 8 }}>Atleta</div>
+                <div style={{ fontSize: ".82em", fontWeight: 700, color: "#f8fafc", marginBottom: 12 }}>Plan Premium disponible</div>
+                <ul style={{ margin: 0, paddingLeft: 18, color: "rgba(248,250,252,.7)", fontSize: ".88em", lineHeight: 1.55 }}>
                   <li>Calendario personalizado</li>
                   <li>Evaluación VDOT propia</li>
                   <li>Análisis IA de rendimiento</li>
@@ -3046,10 +3060,10 @@ const handleSignOut = async () => {
             </div>
           </section>
 
-          <footer style={{ marginTop: "auto", paddingTop: 22, borderTop: "1px solid #e2e8f0", color: "#64748b", fontSize: ".85em" }}>
+          <footer style={{ marginTop: "auto", paddingTop: 22, borderTop: "1px solid rgba(23,198,163,.22)", color: "rgba(248,250,252,.55)", fontSize: ".85em" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#0f172a", fontWeight: 900 }}>
-                <span style={{ color: "#f59e0b" }} aria-hidden>▲</span>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#f8fafc", fontWeight: 900 }}>
+                <img src="/pwa-192.png" alt="" width={22} height={22} style={{ width: 22, height: 22, borderRadius: 6, objectFit: "cover" }} />
                 {BRAND_NAME}
               </div>
               <div>© 2026</div>
