@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { Capacitor } from "@capacitor/core";
 import { supabase } from "../lib/supabase";
 
 /**
@@ -14,6 +13,10 @@ import { supabase } from "../lib/supabase";
  *
  * Tras conectar, se insiste en el segundo paso: enlazar el reloj DENTRO
  * de intervals.icu (Settings → Connections) y activar planned workouts.
+ *
+ * Enlaces externos: <a target="_blank"> a un host distinto de server.url.
+ * Capacitor los abre con Intent.ACTION_VIEW (navegador del sistema).
+ * No hace falta @capacitor/browser ni App Launcher.
  * -----------------------------------------------------------
  */
 
@@ -30,35 +33,6 @@ const CALLBACK_MSG = {
 
 function watchHintStorageKey(athleteId) {
   return `raf_intervals_watch_hint_dismissed_${athleteId}`;
-}
-
-/**
- * Abre https en el navegador del sistema.
- * No usa @capacitor/browser (eso es in-app) ni App Launcher (plugin extra).
- * En nativo, target=_blank / window.open lo enruta el WebView de Capacitor
- * fuera de la app cuando el dominio no es el de server.url.
- */
-function openExternalUrl(url) {
-  if (typeof window === "undefined") return;
-  try {
-    const opened = window.open(url, "_blank", "noopener,noreferrer");
-    if (opened) return;
-  } catch {
-    /* fall through */
-  }
-  const a = document.createElement("a");
-  a.href = url;
-  a.target = "_blank";
-  a.rel = "noopener noreferrer";
-  a.style.display = "none";
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  // Ultimo recurso en WebView raro: no navegar con location.href (sacaria
-  // al atleta de RunningApexFlow). Solo log.
-  if (Capacitor.isNativePlatform()) {
-    console.info("[IntervalsConnect] openExternalUrl:", url);
-  }
 }
 
 export default function IntervalsConnect({ athleteId, onNotify, refreshNonce = 0 }) {
@@ -126,7 +100,6 @@ export default function IntervalsConnect({ athleteId, onNotify, refreshNonce = 0
     const st = params.get("intervals");
     if (!st) return;
     setCallbackMsg(CALLBACK_MSG[st] || CALLBACK_MSG.error);
-    // Si acaba de conectar, volver a mostrar el aviso del reloj.
     if (st === "connected" && athleteId && typeof localStorage !== "undefined") {
       localStorage.removeItem(watchHintStorageKey(athleteId));
       setWatchHintDismissed(false);
@@ -262,15 +235,11 @@ export default function IntervalsConnect({ athleteId, onNotify, refreshNonce = 0
       display: "inline-block",
       marginTop: 2,
       marginBottom: 12,
-      background: "none",
-      border: "none",
       color: "#64748b",
       fontWeight: 600,
       fontFamily: "inherit",
-      cursor: "pointer",
       fontSize: ".76em",
       textDecoration: "underline",
-      padding: 0,
     },
     input: {
       padding: "9px 12px",
@@ -344,13 +313,14 @@ export default function IntervalsConnect({ athleteId, onNotify, refreshNonce = 0
             {status.auth_type === "api_key" ? " (con API key)" : ""}
           </div>
 
-          <button
-            type="button"
-            onClick={() => openExternalUrl(INTERVALS_SETTINGS_URL)}
+          <a
+            href={INTERVALS_SETTINGS_URL}
+            target="_blank"
+            rel="noopener noreferrer"
             style={S.manageLink}
           >
             Gestionar conexión de mi reloj
-          </button>
+          </a>
 
           {showWatchHint ? (
             <div style={S.nextStepCard} role="status">
@@ -361,13 +331,20 @@ export default function IntervalsConnect({ athleteId, onNotify, refreshNonce = 0
                 Ahora tienes que conectar tu reloj DENTRO de intervals.icu. Sin esto, los
                 entrenamientos no llegarán a tu Garmin o COROS.
               </div>
-              <button
-                type="button"
-                onClick={() => openExternalUrl(INTERVALS_SETTINGS_URL)}
-                style={S.btnPrimary}
+              <a
+                href={INTERVALS_SETTINGS_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  ...S.btnPrimary,
+                  display: "block",
+                  textAlign: "center",
+                  textDecoration: "none",
+                  boxSizing: "border-box",
+                }}
               >
                 Conectar mi reloj
-              </button>
+              </a>
               <div style={{ fontSize: ".78em", color: "#57534e", lineHeight: 1.5, marginTop: 12 }}>
                 Marca la casilla <strong>&quot;Carga entrenamientos planificados&quot;</strong> — es la
                 que hace que los entrenos bajen a tu reloj.
@@ -394,7 +371,12 @@ export default function IntervalsConnect({ athleteId, onNotify, refreshNonce = 0
         </>
       ) : (
         <>
-          <button type="button" onClick={handleOAuthConnect} disabled={busy} style={S.btnPrimary}>
+          <button
+            type="button"
+            onClick={handleOAuthConnect}
+            disabled={busy}
+            style={{ ...S.btnPrimary, width: "auto" }}
+          >
             {busy ? "Conectando…" : "Conectar con intervals.icu"}
           </button>
           <div style={{ fontSize: ".74em", color: "#94a3b8", marginTop: 8 }}>
