@@ -260,8 +260,9 @@ const stepLine = (s) => {
 /**
  * Agrupa pares (trabajo + recuperacion) repetidos en "Main Set Nx".
  * Mejora la lectura y hace que el reloj muestre "Main Set 3/5".
+ * Tambien se usa en la vista "Ver detalle" del calendario del atleta.
  */
-function groupRepeats(steps) {
+export function groupRepeats(steps) {
   const out = [];
   const sigOf = (x) => `${x.secs}|${x.distKm}|${x.pace}`;
   const pairSig = (x, y) => `${sigOf(x)}|${sigOf(y)}`;
@@ -455,4 +456,53 @@ export function isRunWorkout(workout, vdot = 42.5) {
     .filter((s) => s && s.pace);
 
   return withPace.length > 0;
+}
+
+/**
+ * Cantidad legible de un paso normalizado (distancia o tiempo).
+ */
+export function formatDetailStepAmount(step) {
+  if (!step) return "";
+  if (step.distKm != null && Number.isFinite(Number(step.distKm))) {
+    const km = Number(step.distKm);
+    if (km > 0 && km < 1) return `${Math.round(km * 1000)} m`;
+    if (km > 0) {
+      const rounded = Math.round(km * 100) / 100;
+      return `${rounded} km`;
+    }
+  }
+  const secs = Number(step.secs);
+  if (!Number.isFinite(secs) || secs <= 0) return "";
+  if (secs < 60) return `${Math.round(secs)} s`;
+  const wholeMin = Math.round(secs / 60);
+  if (Math.abs(secs - wholeMin * 60) < 1) return `${wholeMin} min`;
+  const mm = Math.floor(secs / 60);
+  const ss = Math.round(secs % 60);
+  return `${mm}:${String(ss).padStart(2, "0")}`;
+}
+
+/**
+ * Desglose del workout para la UI del calendario (atleta).
+ * Misma pipeline que toIntervalsText: expandRepeatBlocks → normalize → groupRepeats.
+ *
+ * @returns {{ hasStructure: boolean, groups: Array }}
+ */
+export function getWorkoutDetailGroups(workout, vdot = 42.5) {
+  const structure = expandRepeatBlocks(readStructure(workout));
+  if (!Array.isArray(structure) || structure.length === 0) {
+    return { hasStructure: false, groups: [] };
+  }
+
+  const steps = [];
+  for (const b of structure) {
+    const n = normalizeBlock(b, vdot);
+    if (!n) continue;
+    steps.push({
+      ...n,
+      targetHr: String(b?.target_hr ?? "").trim(),
+      description: String(b?.description ?? "").trim(),
+    });
+  }
+  if (!steps.length) return { hasStructure: false, groups: [] };
+  return { hasStructure: true, groups: groupRepeats(steps) };
 }
