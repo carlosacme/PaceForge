@@ -1,3 +1,5 @@
+import { requireUser, jsonError } from "../lib/apiAuth.js";
+
 // Distancia entre dos coordenadas en km (Haversine)
 function distanceKm(lat1, lon1, lat2, lon2) {
   const R = 6371;
@@ -10,8 +12,15 @@ function distanceKm(lat1, lon1, lat2, lon2) {
   return 2 * R * Math.asin(Math.sqrt(a));
 }
 
+/**
+ * Clima por coordenadas. Exige sesion para no quemar OPENWEATHER_API_KEY
+ * desde fuera de la app.
+ */
 export default async function handler(req, res) {
   if (req.method !== "GET") return res.status(405).end();
+
+  const user = await requireUser(req);
+  if (!user) return jsonError(res, 401, "No autenticado");
 
   const { lat, lon } = req.query;
   const apiKey = process.env.OPENWEATHER_API_KEY;
@@ -111,8 +120,8 @@ export default async function handler(req, res) {
       // (en zonas como Bahía Málaga/Pacífico devuelve una localidad lejana).
       lat: latNum,
       lon: lonNum,
-      placeName,          // <-- nuevo
-      placeDistanceKm,    // <-- nuevo
+      placeName,
+      placeDistanceKm,
       temp,
       feelsLike,
       humidity,

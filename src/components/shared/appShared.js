@@ -1759,29 +1759,57 @@ export const deleteIntervalsEvents = async (athleteId, workoutIds) => {
 };
 
 /**
+ * Bearer de la sesion actual para endpoints /api/* que exigen requireUser.
+ * @returns {Promise<string|null>}
+ */
+export const getAccessToken = async () => {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    return session?.access_token || null;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * fetch a /api/* con Authorization: Bearer <sesion>.
+ * @returns {Promise<Response>}
+ */
+export const authApiFetch = async (url, options = {}) => {
+  const token = await getAccessToken();
+  if (!token) {
+    const err = new Error("sin sesión");
+    err.code = "NO_SESSION";
+    throw err;
+  }
+  const headers = {
+    ...(options.headers || {}),
+    Authorization: `Bearer ${token}`,
+  };
+  if (options.body != null && !headers["Content-Type"] && !headers["content-type"]) {
+    headers["Content-Type"] = "application/json";
+  }
+  return fetch(url, { ...options, headers });
+};
+
+/**
  * Envia un correo transaccional por /api/send-email.
  *
- * Centralizado por dos razones: el endpoint exige sesion (sin la cabecera
- * responde 401 y el correo no sale), y asi los cinco flujos que mandan correo
- * no repiten la misma fontaneria de token.
+ * Contrato: { template, to, vars }. El servidor monta subject/html desde
+ * plantillas fijas; HTML libre del cliente ya no se acepta.
  *
  * Nunca lanza: un correo que no sale no puede tumbar la accion que lo motivo
  * (asignar un plan, confirmar un pago). Quien llama decide si avisar.
  *
  * @returns {Promise<{ok: boolean, reason?: string}>}
  */
-export const sendAppEmail = async ({ to, subject, html }) => {
+export const sendAppEmail = async ({ template, to, vars }) => {
   if (!to) return { ok: false, reason: "sin destinatario" };
+  if (!template) return { ok: false, reason: "sin plantilla" };
   try {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session?.access_token) return { ok: false, reason: "sin sesión" };
-    const res = await fetch("/api/send-email", {
+    const res = await authApiFetch("/api/send-email", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${session.access_token}`,
-      },
-      body: JSON.stringify({ to, subject, html }),
+      body: JSON.stringify({ template, to, vars: vars || {} }),
     });
     if (!res.ok) {
       let detail = "";
@@ -1797,6 +1825,30 @@ export const sendAppEmail = async ({ to, subject, html }) => {
     return { ok: true };
   } catch (e) {
     console.error("[send-email]", e);
+    return { ok: false, reason: e?.message || "error de red" };
+  }
+};
+
+/**
+ * Crea/actualiza el perfil del usuario autenticado via /api/create-profile.
+ * El user_id lo fija el servidor desde el JWT.
+ */
+export const ensureOwnProfile = async ({ name, role, coach_id = null, accessToken = null }) => {
+  const token = accessToken || (await getAccessToken());
+  if (!token) return { ok: false, reason: "sin sesión" };
+  try {
+    const res = await fetch("/api/create-profile", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ name, role, coach_id }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) return { ok: false, reason: body?.error || `HTTP ${res.status}` };
+    return { ok: true, name: body?.name };
+  } catch (e) {
     return { ok: false, reason: e?.message || "error de red" };
   }
 };
@@ -2412,7 +2464,7 @@ export const computeAthleteAchievementVisualProgress = (allWorkouts, evaluations
 export async function loadAthleteAchievementSnapshot(athleteId) {
   if (!athleteId) return { achievements: [], earned: [] };
   try {
-    const res = await fetch(`/api/achievements?athlete_id=${encodeURIComponent(String(athleteId))}`);
+    const res = await authApiFetch(`/api/achievements?athlete_id=${encodeURIComponent(String(athleteId))}`);
     const json = await res.json();
     if (!res.ok) return { achievements: [], earned: [] };
     const achievements = Array.isArray(json.all) ? json.all.filter((row) => row && typeof row.code === "string") : [];
@@ -2427,7 +2479,7 @@ export async function evaluateAndAwardAthleteAchievements(athleteId) {
   if (!athleteId) return { newAwards: [], snapshot: { achievements: [], earned: [] }, progress: null };
   try {
     const [achRes, workRes] = await Promise.all([
-      fetch(`/api/achievements?athlete_id=${encodeURIComponent(athleteId)}`),
+      authApiFetch(`/api/achievements?athlete_id=${encodeURIComponent(athleteId)}`),
       supabase.from("workouts").select("*").eq("athlete_id", athleteId).eq("done", true),
     ]);
     if (!achRes.ok) return { newAwards: [], snapshot: { achievements: [], earned: [] }, progress: null };
@@ -2444,7 +2496,10 @@ export async function evaluateAndAwardAthleteAchievements(athleteId) {
       if (ach.condition_type === "single_km" && doneWorkouts.some((w) => (Number(w.total_km) || 0) >= Number(ach.condition_value))) earned = true;
       if (ach.condition_type === "interval" && doneWorkouts.some((w) => w.type === "interval")) earned = true;
       if (earned) {
-        await fetch("/api/achievements", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ athlete_id: athleteId, achievement_code: ach.code, value: totalKm }) });
+        await authApiFetch("/api/achievements", {
+          method: "POST",
+          body: JSON.stringify({ athlete_id: athleteId, achievement_code: ach.code, value: totalKm }),
+        });
         newAchievements.push(ach);
       }
     }

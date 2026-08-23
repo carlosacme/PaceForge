@@ -16,6 +16,7 @@ import {
   challengeProgressLabel,
   extractJsonFromAnthropicText,
   extractAnthropicTextContent,
+  authApiFetch,
 } from "./shared/appShared";
 
 function ChallengesHub({
@@ -412,9 +413,8 @@ Responde SOLO con un JSON con esta estructura exacta, sin texto adicional:
 }
 Reglas adicionales:
 - Si el reto es de distancia (type "distance") SIN meta fija (el usuario pide competir por km acumulados, ranking, "quien más corre", sin número objetivo), entonces usa goal_value: 0, goal_unit: "km", y en description aclara que gana quien acumule más kilómetros en el periodo del reto (ranking por km).`;
-      const res = await fetch("/api/generate-workout", {
+      const res = await authApiFetch("/api/generate-workout", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           model: "claude-sonnet-5",
           max_tokens: 8000,

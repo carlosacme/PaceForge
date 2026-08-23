@@ -77,6 +77,9 @@ import {
   unregisterOwnDeviceToken,
   resendSignupConfirmation,
   sendAppEmail,
+  ensureOwnProfile,
+  loadAthleteAchievementSnapshot,
+  evaluateAndAwardAthleteAchievements,
 } from "./components/shared/appShared";
 import {
   initMessaging,
@@ -240,75 +243,6 @@ const getCurrentMonthKey = () => {
   const m = String(d.getMonth() + 1).padStart(2, "0");
   return `${d.getFullYear()}-${m}`;
 };
-
-async function loadAthleteAchievementSnapshot(athleteId) {
-  if (!athleteId) return { achievements: [], earned: [] };
-  try {
-    const res = await fetch(`/api/achievements?athlete_id=${encodeURIComponent(String(athleteId))}`);
-    const json = await res.json();
-    if (!res.ok) {
-      console.warn("loadAthleteAchievementSnapshot", json);
-      return { achievements: [], earned: [] };
-    }
-    const catalogRaw = json.all;
-    const earnedRaw = json.earned;
-    const achievements = Array.isArray(catalogRaw) ? catalogRaw.filter((row) => row && typeof row.code === "string") : [];
-    const earned = Array.isArray(earnedRaw) ? earnedRaw.filter((row) => row && typeof row.achievement_code === "string") : [];
-    return { achievements, earned };
-  } catch (e) {
-    console.warn("loadAthleteAchievementSnapshot", e);
-    return { achievements: [], earned: [] };
-  }
-}
-
-async function evaluateAndAwardAthleteAchievements(athleteId) {
-  if (!athleteId) return { newAwards: [], snapshot: { achievements: [], earned: [] }, progress: null };
-  try {
-    const [achRes, workRes] = await Promise.all([
-      fetch(`/api/achievements?athlete_id=${encodeURIComponent(athleteId)}`),
-      supabase.from("workouts").select("*").eq("athlete_id", athleteId).eq("done", true),
-    ]);
-    if (!achRes.ok) {
-      const err = await achRes.json().catch(() => ({}));
-      console.warn("evaluateAndAwardAthleteAchievements achievements API", err);
-      return { newAwards: [], snapshot: { achievements: [], earned: [] }, progress: null };
-    }
-    const { all: allAchievements, earned: earnedList } = await achRes.json();
-    const { data: doneWorkouts, error: doneErr } = workRes;
-    if (doneErr) console.warn("evaluateAndAwardAthleteAchievements workouts", doneErr);
-    const dw = doneWorkouts || [];
-    const totalKm = dw.reduce((s, w) => s + (Number(w.total_km) || 0), 0);
-    const earnedCodes = new Set((earnedList || []).map((e) => e.achievement_code));
-    const newAchievements = [];
-    for (const ach of allAchievements || []) {
-      if (earnedCodes.has(ach.code)) continue;
-      let earned = false;
-      if (ach.condition_type === "total_km" && totalKm >= Number(ach.condition_value)) earned = true;
-      if (ach.condition_type === "workout_count" && dw.length >= Number(ach.condition_value)) earned = true;
-      if (ach.condition_type === "single_km" && dw.some((w) => (Number(w.total_km) || 0) >= Number(ach.condition_value))) earned = true;
-      if (ach.condition_type === "interval" && dw.some((w) => w.type === "interval")) earned = true;
-      if (earned) {
-        await fetch("/api/achievements", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ athlete_id: athleteId, achievement_code: ach.code, value: totalKm }),
-        });
-        newAchievements.push(ach);
-      }
-    }
-    const snapshot = await loadAthleteAchievementSnapshot(athleteId);
-    const progress = computeAchievementProgress(dw);
-    const newAwards = newAchievements.map((ach) => ({
-      achievement_code: ach.code,
-      awarded_at: new Date().toISOString(),
-      achievements: ach,
-    }));
-    return { newAwards, snapshot, progress };
-  } catch (e) {
-    console.error("achievements error:", e);
-    return { newAwards: [], snapshot: { achievements: [], earned: [] }, progress: null };
-  }
-}
 
 /** YYYY-MM-DD desde componentes locales (celdas del calendario); evita desfaces vs strings ISO del workout. */
 
@@ -1378,11 +1312,13 @@ export default function App() {
     try {
       const inviteLink = await createInviteLink();
       if (!inviteLink) return;
-      const codeHtml = `<p style="margin:12px 0"><strong>Tu código de coach</strong> (si te registras sin abrir el enlace): <code style="background:#f1f5f9;padding:4px 8px;border-radius:6px">${inviteCoachPublicCode}</code></p><p style="font-size:14px;color:#64748b">El atleta usará este código al registrarse.</p>`;
       const mail = await sendAppEmail({
+        template: "athlete_invite",
         to: email,
-        subject: "Invitación para entrenar en RunningApexFlow",
-        html: `<div style="font-family:Arial,sans-serif"><h2>¡Tu coach te invitó! 🏃</h2><p>Haz clic aquí para registrarte y vincularte automáticamente:</p><p><a href="${inviteLink}">${inviteLink}</a></p>${codeHtml}</div>`,
+        vars: {
+          inviteLink,
+          coachCode: inviteCoachPublicCode || undefined,
+        },
       });
       notify(mail.ok ? "Invitación enviada ✓" : `No se pudo enviar el correo (${mail.reason}). Comparte el enlace a mano.`);
     } catch (e) {
@@ -1610,6 +1546,51 @@ export default function App() {
       };
 
       if (data == null) {
+        // Perfil huérfano: auth existe pero create-profile no corrió (p.ej.
+        // registro sin sesion hasta confirmar correo). Reintentar desde
+        // metadata / pending local.
+        let pending = null;
+        try {
+          const raw = localStorage.getItem("raf_pending_profile");
+          if (raw) pending = JSON.parse(raw);
+        } catch {
+          pending = null;
+        }
+        const u = session.user;
+        const metaRole = u.user_metadata?.role === "coach" ? "coach" : u.user_metadata?.role === "athlete" ? "athlete" : null;
+        const role = pending?.role === "coach" || pending?.role === "athlete"
+          ? pending.role
+          : metaRole || "athlete";
+        const displayName =
+          (typeof pending?.name === "string" && pending.name.trim()) ||
+          (typeof u.user_metadata?.full_name === "string" && u.user_metadata.full_name.trim()) ||
+          (u.email ? u.email.split("@")[0] : "") ||
+          "Usuario";
+        const coachId =
+          role === "athlete"
+            ? (pending?.coach_id ?? u.user_metadata?.coach_id ?? null)
+            : null;
+        const healed = await ensureOwnProfile({
+          name: displayName,
+          role,
+          coach_id: coachId,
+        });
+        if (healed.ok) {
+          try { localStorage.removeItem("raf_pending_profile"); } catch { /* ignore */ }
+          const { data: again } = await supabase
+            .from("profiles")
+            .select("*")
+            .eq("user_id", u.id)
+            .maybeSingle();
+          if (again) {
+            await processPendingStaffInvite(again);
+            cacheAndSetProfile(await syncCoachPlanIfNeeded(again));
+            setProfileLoading(false);
+            return;
+          }
+        } else {
+          console.warn("ensureOwnProfile (perfil ausente):", healed.reason);
+        }
         setProfile(null);
         setProfileLoading(false);
         return;
@@ -2152,29 +2133,38 @@ export default function App() {
           selectedRole !== "athlete" || !resolvedCoachId || String(resolvedCoachId) === String(newUserId) ? null : resolvedCoachId;
 
         const roleForProfile = authRole === "coach" ? "coach" : "athlete";
-        try {
-          const apiRes = await fetch("/api/create-profile", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              user_id: newUserId,
-              email: emailNorm,
-              name: authName.trim(),
-              role: roleForProfile,
-              coach_id: athleteCoachIdNeverSelf,
-            }),
+        // Con confirmacion de correo activa, signUp a menudo NO deja sesion.
+        // Si hay access_token, creamos el perfil ya; si no, lo deja pending
+        // para ConfirmEmailScreen / primer login (ensureOwnProfile).
+        const signupToken = data?.session?.access_token || null;
+        if (signupToken) {
+          const created = await ensureOwnProfile({
+            name: authName.trim(),
+            role: roleForProfile,
+            coach_id: athleteCoachIdNeverSelf,
+            accessToken: signupToken,
           });
-          if (!apiRes.ok) {
-            const j = await apiRes.json().catch(() => ({}));
-            console.error("create-profile API:", apiRes.status, j);
+          if (!created.ok) {
+            console.error("create-profile API:", created.reason);
             setAuthError(
-              j?.error
-                ? `Cuenta creada, pero no se guardó tu nombre: ${j.error}. Completa tu perfil al entrar.`
+              created.reason
+                ? `Cuenta creada, pero no se guardó tu nombre: ${created.reason}. Completa tu perfil al entrar.`
                 : "Cuenta creada, pero no se pudo guardar el perfil. Completa tu nombre al entrar.",
             );
           }
-        } catch (e) {
-          console.warn("create-profile fetch failed:", e);
+        } else {
+          try {
+            localStorage.setItem(
+              "raf_pending_profile",
+              JSON.stringify({
+                name: authName.trim(),
+                role: roleForProfile,
+                coach_id: athleteCoachIdNeverSelf,
+              }),
+            );
+          } catch {
+            /* ignore */
+          }
         }
         if (roleForProfile === "athlete") {
           setProfile({ user_id: newUserId, role: "athlete", name: authName.trim(), coach_id: athleteCoachIdNeverSelf });
@@ -5787,9 +5777,14 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
     }
     if (status === "confirmed" && athlete?.email) {
       await sendAppEmail({
+        template: "payment_confirmed",
         to: athlete.email,
-        subject: "Pago confirmado",
-        html: `<div style="font-family:Arial,sans-serif"><h2>Pago recibido ✅</h2><p>Hola ${athlete.name || "atleta"}, tu pago del plan <b>${row.plan}</b> por <b>$${Number(row.amount || 0).toLocaleString("es-CO")} ${row.currency || "COP"}</b> fue confirmado.</p><p>Gracias por entrenar con RunningApexFlow.</p></div>`,
+        vars: {
+          athleteName: athlete.name || "atleta",
+          plan: row.plan,
+          amount: row.amount || 0,
+          currency: row.currency || "COP",
+        },
       });
     }
     notify?.(status === "confirmed" ? "Pago confirmado" : "Pago rechazado");

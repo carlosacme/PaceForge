@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { getCurrentCoords, geoNoticeText, geoCanRetry } from "../lib/geo";
+import { authApiFetch } from "./shared/appShared";
 
 const INTENSITY_STYLES = {
  normal: { bg: "rgba(34,197,94,.1)", border: "rgba(34,197,94,.4)", color: "#166534", icon: "" },
@@ -64,7 +65,7 @@ function useWeatherData() {
       if (cancelled) return;
       setGeo({ approximate: coords.approximate, reason: coords.reason });
       try {
-        const res = await fetch("/api/weather?lat=" + coords.lat + "&lon=" + coords.lon);
+        const res = await authApiFetch("/api/weather?lat=" + coords.lat + "&lon=" + coords.lon);
         const data = await res.json();
         if (cancelled) return;
         if (!res.ok) { setError("No se pudo obtener el clima"); return; }

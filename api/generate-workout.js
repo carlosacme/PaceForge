@@ -1,5 +1,15 @@
+import { requireUser, jsonError } from "../lib/apiAuth.js";
+
+/**
+ * Proxy autenticado a Anthropic Messages API.
+ * Sin sesion esto era un relay abierto que quemaba ANTHROPIC_API_KEY.
+ */
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
+
+  const user = await requireUser(req);
+  if (!user) return jsonError(res, 401, "No autenticado");
+
   const body = req.body || {};
   const requested = Number(body.max_tokens);
   const max_tokens = Number.isFinite(requested) && requested > 0
@@ -59,7 +69,9 @@ export default async function handler(req, res) {
         .reduce((n, b) => n + String(b.text || "").length, 0)
     : 0;
   console.log(
-    "[generate-workout] anthropic status:",
+    "[generate-workout]",
+    user.id,
+    "anthropic status:",
     response.status,
     "| stop_reason:",
     data?.stop_reason,
@@ -75,5 +87,5 @@ export default async function handler(req, res) {
   if (data?.error) {
     console.log("[generate-workout] anthropic error:", JSON.stringify(data.error).slice(0, 500));
   }
-  res.status(200).json(data);
+  res.status(response.status || 200).json(data);
 }

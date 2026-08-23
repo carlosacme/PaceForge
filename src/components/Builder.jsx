@@ -25,6 +25,7 @@ import {
   styles,
   WORKOUT_BLOCK_COLORS,
   reconcileWorkoutKmDuration,
+  authApiFetch,
 } from "./shared/appShared";
 import { fmtPace } from "../lib/vdot";
 import WorkoutStructureEditor from "./shared/WorkoutStructureEditor";
@@ -240,21 +241,17 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
               ? w.structure.map((s) => `<p>• <strong>${s.phase || ""}</strong>: ${s.duration || ""} · ${s.pace || ""}</p>`).join("")
               : "";
             await sendAppEmail({
+              template: "workout_assigned",
               to: selectedAthlete.email,
-              subject: `Nuevo entrenamiento: ${w.title}`,
-              html: `
-      <h2>Hola ${selectedAthlete.name} 👋</h2>
-      <p>Tu coach te ha asignado un nuevo entrenamiento:</p>
-      <h3>${w.title}</h3>
-      <p><strong>Fecha:</strong> ${assignDate}</p>
-      <p><strong>Descripción:</strong> ${w.description}</p>
-      <p><strong>Distancia:</strong> ${w.total_km} km</p>
-      <p><strong>Duración:</strong> ${w.duration_min} minutos</p>
-      <h4>Estructura:</h4>
-      ${structureRows}
-      <br/><p>¡Mucho éxito! 💪</p>
-      <p>— Tu coach en ${BRAND_NAME}</p>
-    `,
+              vars: {
+                athleteName: selectedAthlete.name,
+                title: w.title,
+                date: assignDate,
+                description: w.description,
+                totalKm: w.total_km,
+                durationMin: w.duration_min,
+                structureHtml: structureRows,
+              },
             });
           }
           await sendWorkoutAssignmentPushToAthlete({
@@ -295,9 +292,8 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
       const system = zonesBlock
         ? `${baseSystem}\n\n${zonesBlock}\nWhen setting structure, align intensity with these HR zones where it fits (reference bpm or zone Z1-Z5 in the intensity field when useful).`
         : baseSystem;
-      const res = await fetch("/api/generate-workout", {
+      const res = await authApiFetch("/api/generate-workout", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           model: "claude-sonnet-5",
           max_tokens: 8000,

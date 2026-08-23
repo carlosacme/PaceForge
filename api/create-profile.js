@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { requireUser, jsonError } from "../lib/apiAuth.js";
 
 function normalizeOptionalCoachId(val) {
   if (val == null) return null;
@@ -10,17 +11,29 @@ function normalizeOptionalCoachId(val) {
 /**
  * Crea o actualiza profiles (+ athletes si aplica).
  *
+ * El user_id NUNCA viene del body: se toma del JWT verificado. Asi nadie
+ * puede crear/alterar el perfil de otro usuario pasando un UUID ajeno.
+ *
  * El nombre es obligatorio: sin el, la home acaba mostrando el correo o
- * "Usuario"/"Atleta" genericos. Antes se silenciaba con un fallback; ahora
- * devolvemos 400 para que el cliente lo note.
+ * "Usuario"/"Atleta" genericos.
  */
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
 
-  const { user_id, email, name, role, coach_id } = req.body || {};
+  const user = await requireUser(req);
+  if (!user) return jsonError(res, 401, "No autenticado");
 
-  if (!user_id || !email || !role) {
-    return res.status(400).json({ error: "Missing required fields: user_id, email, role" });
+  const { name, role, coach_id } = req.body || {};
+  // Ignorar cualquier user_id/email del body: la identidad sale de la sesion.
+  const uid = String(user.id);
+  const emailNorm = typeof user.email === "string" ? user.email.trim().toLowerCase() : "";
+  if (!emailNorm) {
+    return res.status(400).json({ error: "La sesion no tiene email" });
+  }
+
+  const roleNorm = role === "coach" ? "coach" : role === "athlete" ? "athlete" : null;
+  if (!roleNorm) {
+    return res.status(400).json({ error: "role debe ser coach o athlete" });
   }
 
   const nameTrim = typeof name === "string" ? name.trim() : "";
@@ -42,23 +55,20 @@ export default async function handler(req, res) {
 
   const supabase = createClient(supabaseUrl, serviceKey);
 
-  const uid = String(user_id).trim();
   /** Atleta: solo UUID de coach válido; nunca el propio user_id. Coach: coach_id = su user_id. */
   let profileCoachId;
-  if (role === "coach") {
+  if (roleNorm === "coach") {
     profileCoachId = uid;
   } else {
     const fromBody = normalizeOptionalCoachId(coach_id);
     profileCoachId = fromBody && String(fromBody) === uid ? null : fromBody;
   }
 
-  const emailNorm = typeof email === "string" ? email.trim().toLowerCase() : "";
-
   const { error } = await supabase.rpc("upsert_profile", {
     p_user_id: uid,
     p_email: emailNorm,
     p_name: nameTrim,
-    p_role: role || "coach",
+    p_role: roleNorm,
     p_coach_id: profileCoachId ?? null,
   });
 
@@ -67,7 +77,7 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: error.message });
   }
 
-  if (role === "athlete") {
+  if (roleNorm === "athlete") {
     const athleteRow = {
       user_id: uid,
       name: nameTrim,
@@ -86,5 +96,5 @@ export default async function handler(req, res) {
     }
   }
 
-  return res.status(200).json({ success: true, name: nameTrim });
+  return res.status(200).json({ success: true, name: nameTrim, user_id: uid });
 }

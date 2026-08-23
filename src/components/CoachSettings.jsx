@@ -248,9 +248,9 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
       const inviteLink = `https://www.runningapexflow.com?invite=${encodeURIComponent(code)}&type=staff&coach=${coachUserId}`;
       await supabase.from("invitations").insert({ coach_id: coachUserId, email, code, status: "pending", type: "staff" });
       const mail = await sendAppEmail({
+        template: "staff_invite",
         to: email,
-        subject: "Invitacion para unirte como sub-coach en RunningApexFlow",
-        html: `<div style="font-family:Arial,sans-serif"><h2>Te invitaron como sub-coach en RunningApexFlow</h2><p>Haz clic para registrarte y unirte al equipo:</p><p><a href="${inviteLink}">${inviteLink}</a></p><p style="font-size:14px;color:#64748b">Una vez registrado, el coach principal podra asignarte atletas para gestionar.</p></div>`,
+        vars: { inviteLink },
       });
       if (!mail.ok) {
         notify("Invitacion registrada, pero el email no se pudo enviar. " + (mail.reason || ""));

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Capacitor } from "@capacitor/core";
 import { supabase } from "../lib/supabase";
-import { BRAND_NAME, ANDROID_PACKAGE_ID, resendSignupConfirmation } from "./shared/appShared";
+import { BRAND_NAME, ANDROID_PACKAGE_ID, resendSignupConfirmation, ensureOwnProfile } from "./shared/appShared";
 
 /** Tipos de OTP por correo que acepta verifyOtp; cualquier otro cae a "email". */
 const EMAIL_OTP_TYPES = new Set(["signup", "invite", "magiclink", "recovery", "email_change", "email"]);
@@ -88,6 +88,40 @@ export default function ConfirmEmailScreen() {
         );
         setStatus("error");
         return;
+      }
+
+      // Tras confirmar, ya hay sesion: completar perfil si el registro no pudo
+      // (signUp sin access_token cuando la confirmacion esta activa).
+      try {
+        const { data: userData } = await supabase.auth.getUser();
+        const u = userData?.user;
+        let pending = null;
+        try {
+          const raw = localStorage.getItem("raf_pending_profile");
+          if (raw) pending = JSON.parse(raw);
+        } catch {
+          pending = null;
+        }
+        if (u) {
+          const role =
+            pending?.role === "coach" || pending?.role === "athlete"
+              ? pending.role
+              : u.user_metadata?.role === "coach"
+                ? "coach"
+                : "athlete";
+          const name =
+            (typeof pending?.name === "string" && pending.name.trim()) ||
+            (typeof u.user_metadata?.full_name === "string" && u.user_metadata.full_name.trim()) ||
+            (u.email ? u.email.split("@")[0] : "Usuario");
+          const coach_id =
+            role === "athlete"
+              ? (pending?.coach_id ?? u.user_metadata?.coach_id ?? null)
+              : null;
+          await ensureOwnProfile({ name, role, coach_id });
+          try { localStorage.removeItem("raf_pending_profile"); } catch { /* ignore */ }
+        }
+      } catch (e) {
+        console.warn("[confirm] ensureOwnProfile:", e);
       }
 
       // Recuperar contraseña también llega por token_hash: la sesion ya existe,

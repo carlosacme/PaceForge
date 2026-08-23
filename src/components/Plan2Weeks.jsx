@@ -44,6 +44,7 @@ import {
   insertAssignedWorkouts,
   sendAppEmail,
   styles,
+  authApiFetch,
 } from "./shared/appShared";
 import WorkoutStructureEditor from "./shared/WorkoutStructureEditor";
 import { enrichStructureWithPaces } from "../lib/enrichPace";
@@ -935,9 +936,8 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
     setPlanEditModal(null);
     setPlanLoading(true);
     try {
-      const res = await fetch("/api/generate-workout", {
+      const res = await authApiFetch("/api/generate-workout", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           model: "claude-sonnet-5",
           // Margen para JSON de 2 semanas con structure por bloque: cada sesion
@@ -1153,19 +1153,17 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
           })
           .join("");
         await sendAppEmail({
+          template: "plan2_assigned",
           to: selectedAthlete.email,
-          subject: `Tu plan de 2 semanas: ${generatedPlan.plan_title || BRAND_NAME}`,
-          html: `
-                <h2>Hola ${selectedAthlete.name} 👋</h2>
-                <p>Tu coach te ha asignado un <strong>plan de 2 semanas</strong> en ${BRAND_NAME}.</p>
-                <p><strong>Objetivo:</strong> ${competition} en ${targetTime}<br/>
-                <strong>Inicio de bloque:</strong> ${startDate}</p>
-                <p><strong>${generatedPlan.plan_title || "Plan personalizado"}</strong></p>
-                <ul>${weekSummary}</ul>
-                <p>Total: <strong>${rows.length}</strong> entrenamientos cargados en tu calendario.</p>
-                <p>¡Mucho éxito! 💪</p>
-                <p>— ${BRAND_NAME}</p>
-              `,
+          vars: {
+            athleteName: selectedAthlete.name,
+            competition,
+            targetTime,
+            startDate,
+            planTitle: generatedPlan.plan_title || BRAND_NAME,
+            weekSummaryHtml: weekSummary,
+            workoutCount: rows.length,
+          },
         });
       }
       notify(`Plan asignado: ${rows.length} workouts guardados.`);

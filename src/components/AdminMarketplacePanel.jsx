@@ -16,6 +16,7 @@ import {
   formatCopInt,
   getMarketplacePlanWorkoutRows,
   reconcileWorkoutList,
+  authApiFetch,
 } from "./shared/appShared";
 import WorkoutStructureEditor from "./shared/WorkoutStructureEditor";
 
@@ -572,9 +573,8 @@ DESCANSO Y DISTRIBUCIÓN
     ].join("\n");
     setAiGenerating(true);
     try {
-      const res = await fetch("/api/generate-workout", {
+      const res = await authApiFetch("/api/generate-workout", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           model: "claude-sonnet-5",
           max_tokens: 32000,
