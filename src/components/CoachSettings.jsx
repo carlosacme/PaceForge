@@ -198,26 +198,62 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
   const updateCoachRequestStatus = async (row, status) => {
     if (!row?.id || !coachUserId) return;
     setRequestsBusyId(row.id);
-    const { error } = await supabase
+    const { data: reqRows, error } = await supabase
       .from("coach_requests")
       .update({ status })
       .eq("id", row.id)
-      .eq("coach_id", coachUserId);
+      .eq("coach_id", coachUserId)
+      .select("id");
     if (error) {
       console.error("Error actualizando solicitud:", error);
       notify(error.message || "No se pudo actualizar la solicitud");
       setRequestsBusyId("");
       return;
     }
+    if (!(reqRows || []).length) {
+      notify("No se actualizó la solicitud (sin permiso o ya no existe)");
+      setRequestsBusyId("");
+      return;
+    }
     if (status === "accepted") {
       const { data: athleteRow } = await supabase.from("athletes").select("id, user_id").eq("id", row.athlete_id).maybeSingle();
-      await supabase.from("athletes").update({ coach_id: coachUserId }).eq("id", row.athlete_id);
+      const { data: athleteUpdated, error: athleteErr } = await supabase
+        .from("athletes")
+        .update({ coach_id: coachUserId })
+        .eq("id", row.athlete_id)
+        .select("id");
+      if (athleteErr) {
+        console.error("Error vinculando atleta:", athleteErr);
+        notify(athleteErr.message || "Solicitud aceptada, pero no se pudo vincular el atleta");
+        setRequestsBusyId("");
+        await loadCoachRequests();
+        return;
+      }
+      if (!(athleteUpdated || []).length) {
+        notify("Solicitud aceptada, pero no se vinculó el atleta (sin permiso sobre esa fila)");
+        setRequestsBusyId("");
+        await loadCoachRequests();
+        return;
+      }
       if (athleteRow?.user_id) {
-        await supabase.from("profiles").update({ coach_id: coachUserId }).eq("user_id", athleteRow.user_id);
+        const { data: profileUpdated, error: profileErr } = await supabase
+          .from("profiles")
+          .update({ coach_id: coachUserId })
+          .eq("user_id", athleteRow.user_id)
+          .select("user_id");
+        if (profileErr) {
+          console.error("Error sincronizando profiles.coach_id:", profileErr);
+          notify(`Atleta vinculado, pero el perfil no se sincronizó: ${profileErr.message}`);
+        } else if (!(profileUpdated || []).length) {
+          notify("Atleta vinculado, pero el perfil no se actualizó (sin permiso o sin fila)");
+        }
       }
       if (typeof setAthletes === "function") {
         setAthletes((prev) => prev.map((a) => (String(a.id) === String(row.athlete_id) ? { ...a, coach_id: coachUserId } : a)));
       }
+      notify("Solicitud aceptada");
+    } else {
+      notify(status === "rejected" ? "Solicitud rechazada" : "Solicitud actualizada");
     }
     await loadCoachRequests();
     setRequestsBusyId("");
@@ -246,7 +282,19 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
     try {
       const code = (typeof crypto !== "undefined" && crypto.randomUUID && crypto.randomUUID()) || Date.now().toString();
       const inviteLink = `https://www.runningapexflow.com?invite=${encodeURIComponent(code)}&type=staff&coach=${coachUserId}`;
-      await supabase.from("invitations").insert({ coach_id: coachUserId, email, code, status: "pending", type: "staff" });
+      const { data: invRows, error: invErr } = await supabase
+        .from("invitations")
+        .insert({ coach_id: coachUserId, email, code, status: "pending", type: "staff" })
+        .select("code");
+      if (invErr) {
+        console.error("Error creando invitacion staff:", invErr);
+        notify(invErr.message || "No se pudo registrar la invitacion");
+        return;
+      }
+      if (!(invRows || []).length) {
+        notify("No se registró la invitacion (sin permiso)");
+        return;
+      }
       const mail = await sendAppEmail({
         template: "staff_invite",
         to: email,
@@ -270,8 +318,33 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
 
   const removeStaff = async (staffId) => {
     if (!window.confirm("Revocar acceso de este sub-coach? Se eliminaran sus asignaciones de atletas.")) return;
-    await supabase.from("staff_athletes").delete().eq("staff_id", staffId).eq("coach_id", coachUserId);
-    await supabase.from("coach_staff").delete().eq("staff_id", staffId).eq("coach_id", coachUserId);
+    const { error: saErr } = await supabase
+      .from("staff_athletes")
+      .delete()
+      .eq("staff_id", staffId)
+      .eq("coach_id", coachUserId)
+      .select("athlete_id");
+    // Las asignaciones pueden ser 0; lo critico es borrar la membresia.
+    if (saErr) {
+      console.error("Error quitando asignaciones de staff:", saErr);
+      notify(saErr.message || "No se pudieron quitar las asignaciones");
+      return;
+    }
+    const { data: removed, error: csErr } = await supabase
+      .from("coach_staff")
+      .delete()
+      .eq("staff_id", staffId)
+      .eq("coach_id", coachUserId)
+      .select("id");
+    if (csErr) {
+      console.error("Error removiendo sub-coach:", csErr);
+      notify(csErr.message || "No se pudo remover al sub-coach");
+      return;
+    }
+    if (!(removed || []).length) {
+      notify("No se removió al sub-coach (sin permiso o ya no estaba en el equipo)");
+      return;
+    }
     notify("Sub-coach removido");
     loadStaff();
   };
@@ -296,11 +369,38 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
   const toggleAthleteAssignment = async (athleteId, isAssigned) => {
     if (!assignModal) return;
     if (isAssigned) {
-      await supabase.from("staff_athletes").delete().eq("staff_id", assignModal.staff_id).eq("athlete_id", athleteId).eq("coach_id", coachUserId);
+      const { data: deleted, error } = await supabase
+        .from("staff_athletes")
+        .delete()
+        .eq("staff_id", assignModal.staff_id)
+        .eq("athlete_id", athleteId)
+        .eq("coach_id", coachUserId)
+        .select("athlete_id");
+      if (error) {
+        console.error("Error desasignando atleta:", error);
+        notify(error.message || "No se pudo desasignar el atleta");
+        return;
+      }
+      if (!(deleted || []).length) {
+        notify("No se desasignó el atleta (sin permiso o ya no estaba asignado)");
+        return;
+      }
       setAssignedAthleteIds((prev) => { const next = new Set(prev); next.delete(String(athleteId)); return next; });
       setAthleteAssignmentMap((prev) => { const next = { ...prev }; delete next[String(athleteId)]; return next; });
     } else {
-      await supabase.from("staff_athletes").insert({ staff_id: assignModal.staff_id, athlete_id: athleteId, coach_id: coachUserId });
+      const { data: inserted, error } = await supabase
+        .from("staff_athletes")
+        .insert({ staff_id: assignModal.staff_id, athlete_id: athleteId, coach_id: coachUserId })
+        .select("athlete_id");
+      if (error) {
+        console.error("Error asignando atleta:", error);
+        notify(error.message || "No se pudo asignar el atleta");
+        return;
+      }
+      if (!(inserted || []).length) {
+        notify("No se asignó el atleta (sin permiso)");
+        return;
+      }
       setAssignedAthleteIds((prev) => new Set([...prev, String(athleteId)]));
       setAthleteAssignmentMap((prev) => ({ ...prev, [String(athleteId)]: assignModal.staff_id }));
     }
@@ -786,7 +886,22 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
                   <select
                     value={s.billingType || "included"}
                     onChange={async (e) => {
-                      await supabase.from("coach_staff").update({ billing_type: e.target.value }).eq("id", s.id);
+                      const nextBilling = e.target.value;
+                      const { data: updated, error } = await supabase
+                        .from("coach_staff")
+                        .update({ billing_type: nextBilling })
+                        .eq("id", s.id)
+                        .eq("coach_id", coachUserId)
+                        .select("id");
+                      if (error) {
+                        console.error("Error actualizando billing:", error);
+                        notify(error.message || "No se pudo actualizar el billing");
+                        return;
+                      }
+                      if (!(updated || []).length) {
+                        notify("No se actualizó el billing (sin permiso sobre esa fila)");
+                        return;
+                      }
                       loadStaff();
                       notify("Billing actualizado");
                     }}

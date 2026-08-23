@@ -2255,7 +2255,18 @@ const handleSignOut = async () => {
     try {
       await unregisterOwnDeviceToken();
       const uid = session?.user?.id;
-      if (uid) await supabase.from("profiles").update({ fcm_token: null }).eq("user_id", uid);
+      if (uid) {
+        const { data: cleared, error: fcmErr } = await supabase
+          .from("profiles")
+          .update({ fcm_token: null })
+          .eq("user_id", uid)
+          .select("user_id");
+        if (fcmErr) {
+          console.warn("[FCM] no se pudo limpiar fcm_token en logout:", fcmErr.message);
+        } else if (!(cleared || []).length) {
+          console.warn("[FCM] fcm_token no se actualizó (0 filas) en logout");
+        }
+      }
       if (Capacitor.isNativePlatform()) await clearNativePush();
       else await clearFcmToken();
       setNativePushPermission(null);

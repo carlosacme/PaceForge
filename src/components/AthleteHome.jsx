@@ -1401,7 +1401,19 @@ export default function AthleteHome({ profile }) {
       const { error: upErr } = await supabase.storage.from("athlete-avatars").upload(filePath, file, { upsert: true, cacheControl: "3600" });
       if (upErr) { setMessage("Error subiendo foto: " + upErr.message); return; }
       const { data: { publicUrl } } = supabase.storage.from("athlete-avatars").getPublicUrl(filePath);
-      await supabase.from("athletes").update({ avatar_url: publicUrl }).eq("id", athleteInfo.id);
+      const { data: updated, error: avErr } = await supabase
+        .from("athletes")
+        .update({ avatar_url: publicUrl })
+        .eq("id", athleteInfo.id)
+        .select("id");
+      if (avErr) {
+        setMessage("Error guardando foto: " + avErr.message);
+        return;
+      }
+      if (!(updated || []).length) {
+        setMessage("No se guardó la foto en tu ficha (sin permiso o fila no encontrada)");
+        return;
+      }
       setAthleteInfo((prev) => prev ? { ...prev, avatar_url: publicUrl } : prev);
       setMessage("✅ Foto actualizada");
     } catch (e) {
@@ -1440,7 +1452,20 @@ export default function AthleteHome({ profile }) {
     setNot100Sending(true);
     try {
       const note = `[No estoy al 100% · Nivel: ${not100Form.level}] ${not100Form.reason || "Sin detalle adicional"}`;
-      await supabase.from("workouts").update({ athlete_notes: note }).eq("id", not100Modal.id);
+      const { data: updated, error } = await supabase
+        .from("workouts")
+        .update({ athlete_notes: note })
+        .eq("id", not100Modal.id)
+        .select("id");
+      if (error) {
+        console.error("not100:", error);
+        setMessage(error.message || "No se pudo guardar el aviso");
+        return;
+      }
+      if (!(updated || []).length) {
+        setMessage("No se guardó el aviso en el entreno (sin permiso sobre esa fila)");
+        return;
+      }
       await sendChatPushNotification({
         toUserId: athleteInfo.coach_id,
         title: `😣 ${athleteInfo.name || "Tu atleta"} no esta al 100%`,
@@ -1452,6 +1477,7 @@ export default function AthleteHome({ profile }) {
       setMessage("✅ Tu coach fue notificado");
     } catch (e) {
       console.error("not100:", e);
+      setMessage("No se pudo notificar al coach");
     } finally {
       setNot100Sending(false);
     }
@@ -2196,7 +2222,18 @@ export default function AthleteHome({ profile }) {
                   try {
                     await unregisterOwnDeviceToken();
                     const { data: { user } } = await supabase.auth.getUser();
-                    if (user?.id) await supabase.from("profiles").update({ fcm_token: null }).eq("user_id", user.id);
+                    if (user?.id) {
+                      const { data: cleared, error: fcmErr } = await supabase
+                        .from("profiles")
+                        .update({ fcm_token: null })
+                        .eq("user_id", user.id)
+                        .select("user_id");
+                      if (fcmErr) {
+                        console.warn("[FCM] no se pudo limpiar fcm_token en logout:", fcmErr.message);
+                      } else if (!(cleared || []).length) {
+                        console.warn("[FCM] fcm_token no se actualizó (0 filas) en logout");
+                      }
+                    }
                     if (Capacitor.isNativePlatform()) await clearNativePush();
                     else await clearFcmToken();
                   } catch (e) {
