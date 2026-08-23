@@ -1000,9 +1000,13 @@ async function actionOauthStart(res, athleteId, userId) {
 }
 
 // Callback: SIN JWT, verificado por 'state' anti-CSRF.
+// Siempre aterriza en Perfil → Config del atleta para que IntervalsConnect
+// (aviso de conexion + "falta conectar el reloj") quede a la vista.
 function redirectToApp(res, params) {
   const url = new URL(`${APP_URL}/`);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
+  url.searchParams.set("tab", "profile");
+  url.searchParams.set("profile_tab", "config");
   res.writeHead(302, { Location: url.toString() });
   return res.end();
 }

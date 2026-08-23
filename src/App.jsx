@@ -10,6 +10,7 @@ import { fmtPace } from "./lib/vdot";
 import { usePersistedState } from "./hooks/usePersistedState";
 import { useAppResumeRefresh } from "./hooks/useAppResumeRefresh";
 import { setResumeUiBusy } from "./lib/resumeGuard";
+import WorkoutDetailBreakdown from "./components/WorkoutDetailBreakdown";
 import {
   BRAND_NAME,
   WORKOUT_TYPES,
@@ -5287,7 +5288,23 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
     const vh = typeof window !== "undefined" ? window.innerHeight : 600;
     const x = Math.min(e.clientX, vw - mw - pad);
     const y = Math.min(e.clientY, vh - mh - pad);
-    setCalendarCtxMenu({ x, y, workoutId: w.id });
+    setCalendarCtxMenu({ x, y, workoutId: w.id, view: "actions" });
+  };
+
+  const openCalendarWorkoutDetail = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setCalendarCtxMenu((prev) => {
+      if (!prev) return prev;
+      const pad = 8;
+      const mw = Math.min(typeof window !== "undefined" ? window.innerWidth * 0.92 : 320, 340);
+      const mh = Math.min(typeof window !== "undefined" ? window.innerHeight * 0.7 : 400, 420);
+      const vw = typeof window !== "undefined" ? window.innerWidth : 800;
+      const vh = typeof window !== "undefined" ? window.innerHeight : 600;
+      const x = Math.max(pad, Math.min(prev.x, vw - mw - pad));
+      const y = Math.max(pad, Math.min(prev.y, vh - mh - pad));
+      return { ...prev, view: "detail", x, y };
+    });
   };
 
   const openWorkoutEditPanel = (w) => {
@@ -6545,7 +6562,8 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
                             style={{
                               border: `1px solid ${w.done ? "rgba(34,197,94,.55)" : `${wt.color}55`}`,
                               borderRadius: 5,
-                              padding: "4px 3px",
+                              padding: "5px 4px",
+                              minHeight: 32,
                               background: w.done ? "rgba(34,197,94,.16)" : `${wt.color}12`,
                               cursor: "pointer",
                               fontFamily: "inherit",
@@ -6556,11 +6574,11 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
                             }}
                           >
                             <div style={{ width: 5, height: 5, borderRadius: "50%", background: wt.color, margin: "0 auto 2px" }} />
-                            <div style={{ fontSize: ".52em", color: wt.color, fontWeight: 600, lineHeight: 1.15 }}>{w.title}</div>
-                            <div style={{ fontSize: ".5em", color: "#475569" }}>{w.total_km} km</div>
-                            {w.done && <div style={{ fontSize: ".52em", color: "#22c55e", marginTop: 1 }}>✓ Hecho</div>}
+                            <div style={{ fontSize: ".68em", color: wt.color, fontWeight: 700, lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{w.title}</div>
+                            <div style={{ fontSize: ".62em", color: "#475569" }}>{w.total_km} km</div>
+                            {w.done && <div style={{ fontSize: ".62em", color: "#22c55e", marginTop: 1 }}>✓ Hecho</div>}
                             {w.done && w.rpe != null && (
-                              <div style={{ fontSize: ".52em", color: "#94a3b8", marginTop: 2, lineHeight: 1.2 }}>
+                              <div style={{ fontSize: ".62em", color: "#94a3b8", marginTop: 2, lineHeight: 1.2 }}>
                                 {rpeBandMeta(w.rpe).emoji} RPE {w.rpe}
                               </div>
                             )}
@@ -6726,63 +6744,103 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
             left: calendarCtxMenu.x,
             top: calendarCtxMenu.y,
             zIndex: 300,
-            minWidth: 260,
-            maxWidth: "min(92vw, 320px)",
+            minWidth: (calendarCtxMenu.view || "actions") === "detail" ? 260 : 240,
+            width: (calendarCtxMenu.view || "actions") === "detail" ? "min(92vw, 340px)" : undefined,
+            maxWidth: "min(92vw, 340px)",
+            maxHeight: (calendarCtxMenu.view || "actions") === "detail" ? "min(70vh, 420px)" : undefined,
+            overflowY: (calendarCtxMenu.view || "actions") === "detail" ? "auto" : "visible",
             background: "#ffffff",
             borderRadius: 10,
             boxShadow: "0 10px 40px rgba(15,23,42,.2)",
             border: "1px solid #e2e8f0",
-            padding: 6,
+            padding: (calendarCtxMenu.view || "actions") === "detail" ? 12 : 6,
           }}
         >
-          {[
-            {
-              label: ctxMenuWorkout.done ? "✓ Marcar pendiente" : "✓ Marcar hecho",
-              onClick: () => {
-                toggleWorkoutDone(ctxMenuWorkout);
-                closeCalendarCtxMenu();
-              },
-            },
-            {
-              label: "✏️ Editar",
-              onClick: () => openWorkoutEditPanel(ctxMenuWorkout),
-            },
-            {
-              label: "📅 Mover a otra fecha",
-              onClick: () => openWorkoutMovePanel(ctxMenuWorkout),
-            },
-            {
-              label: "🗑 Eliminar",
-              danger: true,
-              onClick: () => deleteCalendarWorkout(ctxMenuWorkout),
-            },
-          ].map((item, i) => (
-            <button
-              key={i}
-              type="button"
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={(e) => {
-                e.stopPropagation();
-                item.onClick();
-              }}
-              style={{
-                display: "block",
-                width: "100%",
-                textAlign: "left",
-                background: item.danger ? "transparent" : "transparent",
-                border: "none",
-                borderRadius: 8,
-                padding: "10px 12px",
-                color: item.danger ? "#b91c1c" : "#0f172a",
-                fontWeight: 600,
-                cursor: "pointer",
-                fontFamily: "inherit",
-                fontSize: ".82em",
-              }}
-            >
-              {item.label}
-            </button>
-          ))}
+          {(calendarCtxMenu.view || "actions") === "detail" ? (
+            <>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 8 }}>
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setCalendarCtxMenu((prev) => (prev ? { ...prev, view: "actions" } : prev));
+                  }}
+                  style={{ background: "transparent", border: "none", color: "#64748b", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".78em", padding: "4px 0" }}
+                >
+                  ← Menú
+                </button>
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={(e) => { e.stopPropagation(); closeCalendarCtxMenu(); }}
+                  style={{ background: "transparent", border: "none", color: "#94a3b8", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".78em", padding: "4px 0" }}
+                >
+                  Cerrar
+                </button>
+              </div>
+              <WorkoutDetailBreakdown workout={ctxMenuWorkout} vdot={athleteVdot || 42.5} />
+            </>
+          ) : (
+            <>
+              {[
+                {
+                  label: ctxMenuWorkout.done ? "✓ Marcar pendiente" : "✓ Marcar hecho",
+                  onClick: () => {
+                    toggleWorkoutDone(ctxMenuWorkout);
+                    closeCalendarCtxMenu();
+                  },
+                },
+                {
+                  label: "📋 Ver detalle",
+                  onClick: null,
+                },
+                {
+                  label: "✏️ Editar",
+                  onClick: () => openWorkoutEditPanel(ctxMenuWorkout),
+                },
+                {
+                  label: "📅 Mover a otra fecha",
+                  onClick: () => openWorkoutMovePanel(ctxMenuWorkout),
+                },
+                {
+                  label: "🗑 Eliminar",
+                  danger: true,
+                  onClick: () => deleteCalendarWorkout(ctxMenuWorkout),
+                },
+              ].map((item, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (item.label === "📋 Ver detalle") {
+                      openCalendarWorkoutDetail(e);
+                      return;
+                    }
+                    item.onClick?.();
+                  }}
+                  style={{
+                    display: "block",
+                    width: "100%",
+                    textAlign: "left",
+                    background: "transparent",
+                    border: "none",
+                    borderRadius: 8,
+                    padding: "10px 12px",
+                    color: item.danger ? "#b91c1c" : "#0f172a",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                    fontSize: ".82em",
+                  }}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </>
+          )}
         </div>
       ) : null}
 

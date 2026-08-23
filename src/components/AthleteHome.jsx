@@ -475,6 +475,25 @@ export default function AthleteHome({ profile }) {
     localStorage.setItem(RAF_ATHLETE_PROGRESS_TAB_KEY, athleteProgressTab);
   }, [athleteProgressTab]);
 
+  // Tras OAuth de intervals.icu el callback vuelve con ?tab=profile&profile_tab=config
+  // (y ?intervals=...) para mostrar IntervalsConnect y el aviso del reloj.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get("tab");
+    if (tab !== "profile") return;
+    setAthleteActiveTab("profile");
+    const profileTab = params.get("profile_tab");
+    if (profileTab && ATHLETE_PROFILE_TAB_IDS.includes(profileTab)) {
+      setAthleteProfileTab(profileTab);
+    }
+    params.delete("tab");
+    params.delete("profile_tab");
+    // Dejar ?intervals=... para que IntervalsConnect muestre el banner.
+    const qs = params.toString();
+    window.history.replaceState({}, "", window.location.pathname + (qs ? `?${qs}` : ""));
+  }, []);
+
   const prevProfileUserIdRef = useRef(null);
 
   /**
@@ -1582,10 +1601,34 @@ export default function AthleteHome({ profile }) {
               const inViewMonth = cellIsInViewMonth(cellDate, calendarViewMonth.y, calendarViewMonth.m);
               const hasDoneWorkout = dayWorkouts.some((w) => w.done);
               return (
-                <div key={i} style={{ minHeight: 68, border: "1px solid #e2e8f0", borderRadius: 6, padding: "4px 3px", opacity: inViewMonth ? 1 : 0.42, background: hasDoneWorkout ? "rgba(34,197,94,.08)" : "#fff" }}>
-                  <div style={{ fontSize: ".58em", color: inViewMonth ? "#475569" : "#94a3b8", textAlign: "center", fontWeight: 600 }}>{cellDate.getDate()}</div>
+                <div key={i} style={{ minHeight: 76, border: "1px solid #e2e8f0", borderRadius: 6, padding: "4px 3px", opacity: inViewMonth ? 1 : 0.42, background: hasDoneWorkout ? "rgba(34,197,94,.08)" : "#fff" }}>
+                  <div style={{ fontSize: ".62em", color: inViewMonth ? "#475569" : "#94a3b8", textAlign: "center", fontWeight: 600 }}>{cellDate.getDate()}</div>
                   {dayWorkouts.slice(0, 2).map((w) => (
-                    <button key={w.id} type="button" onClick={(e) => openAthleteWorkoutMenu(e, w)} style={{ width: "100%", border: "1px solid #e2e8f0", borderRadius: 4, padding: "2px 3px", marginTop: 3, background: w.done ? "rgba(34,197,94,.15)" : "#f8fafc", fontSize: ".5em", color: "#334155", cursor: "pointer", fontFamily: "inherit", textAlign: "center", position: "relative", zIndex: 1 }}>
+                    <button
+                      key={w.id}
+                      type="button"
+                      onClick={(e) => openAthleteWorkoutMenu(e, w)}
+                      style={{
+                        width: "100%",
+                        minHeight: 28,
+                        border: "1px solid #e2e8f0",
+                        borderRadius: 5,
+                        padding: "5px 4px",
+                        marginTop: 3,
+                        background: w.done ? "rgba(34,197,94,.15)" : "#f8fafc",
+                        fontSize: ".68em",
+                        lineHeight: 1.2,
+                        color: "#334155",
+                        cursor: "pointer",
+                        fontFamily: "inherit",
+                        textAlign: "center",
+                        position: "relative",
+                        zIndex: 1,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
                       {w.title}
                     </button>
                   ))}
