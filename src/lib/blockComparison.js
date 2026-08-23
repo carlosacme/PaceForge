@@ -19,7 +19,9 @@ import { pacesForVdot } from "./vdot.js";
 /**
  * Mapeo de esfuerzo cualitativo -> zona Daniels (E/M/T/I/R).
  * Nota: aqui HM y 10K se colapsan a T a proposito (comparacion
- * gruesa por bloque); vdot.js si distingue HM/T10 para el push.
+ * gruesa por bloque); intervals.js SI distingue HM/T10 para el push
+ * al reloj. No unificar: mismos textos de esfuerzo, zonas distintas
+ * segun el consumidor (reloj vs score de ejecucion).
  */
 export const EFFORT_TO_ZONE = {
   // Facil

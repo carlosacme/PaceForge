@@ -1,6 +1,5 @@
 import React, { Fragment, useState, useEffect, useMemo, useCallback, useRef, Suspense } from "react";
 import { jsPDF } from "jspdf";
-import FitParser from "fit-file-parser";
 import { supabase } from "./lib/supabase";
 import WeatherWidget from "./components/WeatherWidget";
 import PushToWatchButton from "./components/PushToWatchButton";
@@ -17,12 +16,6 @@ import {
   EVAL_DISTANCES,
   PLAN_PREVIEW_FULL_DAYS,
   PLAN_SESSION_TYPE_OPTIONS,
-  MARKETPLACE_AI_PACE_RANGES_BY_LEVEL,
-  marketplacePreviewSessionType,
-  marketplaceAiPaceBandKey,
-  buildMarketplaceAiPacePromptSection,
-  applyMarketplaceAiPaceDefaultsToPreviewRows,
-  getMarketplacePlanWorkoutRows,
   normalizeAthlete,
   fetchActiveDeviceConnections,
   deleteIntervalsEvents,
@@ -37,11 +30,6 @@ import {
   defaultPaymentAmountStringForPlan,
   WORKOUT_BLOCK_TYPES,
   WORKOUT_BLOCK_COLORS,
-  FIT_IMPORT_STEP_TYPES,
-  newFitImportStepKey,
-  emptyFitImportStructureRow,
-  normalizeStructureForFitImportModal,
-  structureRowsForFitImportInsert,
   paymentStatusLabel,
   formatLocalYMD,
   calendarCellToIsoYmd,
@@ -70,27 +58,12 @@ import {
   editableRowsToWorkoutStructure,
   normalizeLibraryRow,
   libraryRowToBuilderWorkout,
-  parseFitFileToLibraryDraft,
-  INVALID_JSON_WORKOUT_FORMAT_MSG,
-  parseJsonFileToLibraryDrafts,
   ADMIN_EMAIL,
   PLATFORM_ADMIN_USER_ID,
-  TAB_KEY_LIBRARY,
   formatCopInt,
-  CHALLENGE_TYPE_OPTIONS,
-  normalizeChallengeType,
-  challengeUnitByType,
-  formatChallengeMetricValue,
-  challengeValueLabel,
-  challengeProgressLabel,
-  challengeProgressOpenText,
-  challengeHasOpenTarget,
-  computeWorkoutDayStreak,
-  computeChallengeProgressForAthlete,
   computeGarminLoadMetricsFromWorkouts,
   achievementJoinMeta,
   computeAchievementProgress,
-  ATHLETE_ACHIEVEMENT_DISPLAY_LIST,
   computeAthleteAchievementVisualProgress,
   sendChatPushNotification,
   PUSH_INACTIVE_REASONS,
@@ -368,15 +341,6 @@ const PLAN_12_LEVELS = [
   { id: "intermedio", label: "Intermedio" },
   { id: "avanzado", label: "Avanzado" },
 ];
-const PLAN2_NEXT_BLOCK_FOCUSES = ["Base", "Construcción", "Desarrollo", "Pico", "Descarga"];
-const PLAN2_TRAINING_DAY_OPTIONS = [
-  { weekday: 2, label: "Mar" },
-  { weekday: 3, label: "Mié" },
-  { weekday: 4, label: "Jue" },
-  { weekday: 6, label: "Sáb" },
-  { weekday: 7, label: "Dom" },
-];
-const PLAN2_ATHLETE_STORAGE_KEY = "raf_plan2_athlete";
 
 const clampWorkoutRpe = (n) => {
   const v = Number(n);
@@ -4391,7 +4355,7 @@ const AthleteListAvatar = ({ url, fallback = "🏃", size = 32 }) => {
 
 /**
  * Estado de sincronizacion del atleta en la lista del coach: un badge verde
- * por cada plataforma conectada (intervals.icu hoy, garmin/coros/strava
+ * por cada plataforma conectada (intervals.icu hoy, garmin/coros
  * despues) o uno gris si no tiene ninguna. Las conexiones llegan ya cargadas
  * en una sola consulta para toda la lista, no una por atleta.
  */
@@ -8557,7 +8521,7 @@ function Plans({ athletes, notify }) {
 
   const WOMPI_PUBLIC_KEY = "pub_test_9yDINqJhS2WxJYpYtgzXkP5TKND5WQyf";
   const WompiCheckoutBase = "https://checkout.wompi.co/p/";
-  const redirectUrl = "https://pace-forge-eta.vercel.app";
+  const redirectUrl = "https://www.runningapexflow.com";
 
   const [promoInput, setPromoInput] = useState("");
   const [appliedPromo, setAppliedPromo] = useState(null);

@@ -22,7 +22,7 @@ export default async function handler(req, res) {
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const publicKey = process.env.WOMPI_PUBLIC_KEY;
   const integritySecret = process.env.WOMPI_INTEGRITY_SECRET;
-  const appUrl = process.env.APP_URL || "https://pace-forge-eta.vercel.app";
+  const appUrl = process.env.APP_URL || "https://www.runningapexflow.com";
 
   if (!supabaseUrl || !serviceKey || !publicKey || !integritySecret) {
     console.error("[wompi-create-checkout] Missing env vars");

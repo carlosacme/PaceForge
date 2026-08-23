@@ -1661,7 +1661,6 @@ export const DEVICE_PROVIDER_LABELS = {
   intervals_icu: "intervals.icu",
   garmin: "Garmin",
   coros: "COROS",
-  strava: "Strava",
 };
 
 /** "intervals_icu" -> "intervals.icu"; lo desconocido se capitaliza tal cual. */
@@ -2385,7 +2384,7 @@ export const computeAthleteAchievementVisualProgress = (allWorkouts, evaluations
   const doneCount = done.length;
   const longestConsecutiveDays = getLongestConsecutiveDays(done.map((w) => normalizeScheduledDateYmd(w.scheduled_date || w.completed_at)).filter(Boolean));
   const intervalCount = done.filter((w) => String(w.type || "").toLowerCase() === "interval").length;
-  const hrLoggedCount = done.filter((w) => [w.manual_avg_hr, w.manual_max_hr, w.avg_hr, w.average_heartrate, w.strava_avg_hr].some((v) => Number(v) > 0)).length;
+  const hrLoggedCount = done.filter((w) => [w.manual_avg_hr, w.manual_max_hr, w.avg_hr, w.average_heartrate].some((v) => Number(v) > 0)).length;
   const earlyMorningDoneCount = done.filter((w) => { const d = getWorkoutReferenceDate(w); return d && d.getHours() < 8; }).length;
   const sortedScheduled = [...all].filter((w) => normalizeScheduledDateYmd(w.scheduled_date || w.completed_at) && normalizeScheduledDateYmd(w.scheduled_date || w.completed_at) <= todayYmd).sort((a, b) => (getWorkoutReferenceDate(a)?.getTime() || 0) - (getWorkoutReferenceDate(b)?.getTime() || 0));
   let streak = 0;

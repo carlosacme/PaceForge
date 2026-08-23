@@ -134,7 +134,6 @@ const emptyDiag = () => ({
 
 let diag = emptyDiag();
 let diagLoaded = false;
-const diagSubscribers = new Set();
 
 const loadDiag = () => {
   if (diagLoaded) return diag;
@@ -148,6 +147,7 @@ const loadDiag = () => {
   return diag;
 };
 
+/** Persistencia interna del ultimo registro push (consola / debug), sin UI. */
 const patchDiag = (patch) => {
   loadDiag();
   diag = { ...diag, ...patch, updatedAt: new Date().toISOString() };
@@ -156,37 +156,7 @@ const patchDiag = (patch) => {
   } catch {
     // Sin localStorage el diagnostico vive solo en memoria; no es critico.
   }
-  for (const cb of diagSubscribers) {
-    try { cb(diag); } catch { /* un suscriptor roto no puede tumbar el registro */ }
-  }
   return diag;
-};
-
-/** Estado del ultimo intento de registro, para pintarlo en la app. */
-export const readPushDiagnostics = () => ({ ...loadDiag() });
-
-/** Avisa cuando cambia el diagnostico. Devuelve la funcion para desuscribirse. */
-export const subscribePushDiagnostics = (cb) => {
-  if (typeof cb !== "function") return () => {};
-  diagSubscribers.add(cb);
-  return () => diagSubscribers.delete(cb);
-};
-
-/** Texto plano del diagnostico, para que el tester pueda copiarlo y mandarlo. */
-export const formatPushDiagnostics = () => {
-  const d = loadDiag();
-  const when = (iso) => (iso ? new Date(iso).toLocaleString("es-CO") : "nunca");
-  return [
-    `plataforma: ${d.platform || "?"}`,
-    `canales creados: ${d.channelsAt ? when(d.channelsAt) : "no"}`,
-    `permiso: ${d.permission || "?"}`,
-    `register(): ${when(d.registerAt)}`,
-    `token recibido: ${d.tokenAt ? `${when(d.tokenAt)} (${d.tokenTail})` : "nunca"}`,
-    `respuesta del servidor: ${d.serverStatus || "?"}`,
-    `guardado: ${d.savedAt ? when(d.savedAt) : "no"}`,
-    `verificado en la BD: ${d.verified === true ? "si" : d.verified === false ? "no" : "?"}`,
-    `ultimo error: ${d.lastError || "ninguno"}`,
-  ].join("\n");
 };
 
 const notify = (msg) => {
