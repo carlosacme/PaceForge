@@ -78,6 +78,8 @@ import {
   resendSignupConfirmation,
   sendAppEmail,
   ensureOwnProfile,
+  stashPendingInviteCode,
+  acceptPendingInvitationIfAny,
   loadAthleteAchievementSnapshot,
   evaluateAndAwardAthleteAchievements,
 } from "./components/shared/appShared";
@@ -1584,6 +1586,7 @@ export default function App() {
             .maybeSingle();
           if (again) {
             await processPendingStaffInvite(again);
+            await acceptPendingInvitationIfAny();
             cacheAndSetProfile(await syncCoachPlanIfNeeded(again));
             setProfileLoading(false);
             return;
@@ -1596,6 +1599,7 @@ export default function App() {
         return;
       }
       await processPendingStaffInvite(data);
+      await acceptPendingInvitationIfAny();
 
       const roleMissing = data.role == null || String(data.role).trim() === "";
       if (roleMissing) {
@@ -2210,10 +2214,15 @@ export default function App() {
         }
 
         if (inviteRow) {
-          // Tambien por RPC: sin sesion (verificacion de email activada) el
-          // update directo lo bloquearia RLS.
-          const { error: accErr } = await supabase.rpc("accept_invitation_by_code", { p_code: inviteCodeFromUrl });
-          if (accErr) console.warn("No se pudo marcar la invitación como aceptada:", accErr);
+          // accept_invitation_by_code exige sesion + email (0064). Sin JWT en
+          // el registro se guarda el codigo y se acepta al confirmar / entrar.
+          stashPendingInviteCode(inviteCodeFromUrl);
+          if (signupToken) {
+            const acc = await acceptPendingInvitationIfAny();
+            if (!acc.ok && !acc.keep) {
+              console.warn("No se pudo marcar la invitación como aceptada:", acc.reason);
+            }
+          }
           setInviteCodeFromUrl("");
           if (typeof window !== "undefined") {
             window.history.replaceState({}, "", "/");

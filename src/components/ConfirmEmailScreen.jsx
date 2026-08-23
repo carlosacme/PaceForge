@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Capacitor } from "@capacitor/core";
 import { supabase } from "../lib/supabase";
-import { BRAND_NAME, ANDROID_PACKAGE_ID, resendSignupConfirmation, ensureOwnProfile } from "./shared/appShared";
+import { BRAND_NAME, ANDROID_PACKAGE_ID, resendSignupConfirmation, ensureOwnProfile, acceptPendingInvitationIfAny } from "./shared/appShared";
 
 /** Tipos de OTP por correo que acepta verifyOtp; cualquier otro cae a "email". */
 const EMAIL_OTP_TYPES = new Set(["signup", "invite", "magiclink", "recovery", "email_change", "email"]);
@@ -119,9 +119,11 @@ export default function ConfirmEmailScreen() {
               : null;
           await ensureOwnProfile({ name, role, coach_id });
           try { localStorage.removeItem("raf_pending_profile"); } catch { /* ignore */ }
+          // Misma sesion recien creada: aceptar invitacion atleta si quedo pendiente.
+          await acceptPendingInvitationIfAny();
         }
       } catch (e) {
-        console.warn("[confirm] ensureOwnProfile:", e);
+        console.warn("[confirm] ensureOwnProfile / invite:", e);
       }
 
       // Recuperar contraseña también llega por token_hash: la sesion ya existe,

@@ -1853,6 +1853,62 @@ export const ensureOwnProfile = async ({ name, role, coach_id = null, accessToke
   }
 };
 
+/**
+ * Codigo de invitacion atleta pendiente de aceptar tras confirmar correo.
+ *
+ * accept_invitation_by_code exige sesion + email match (migracion 0064).
+ * En el registro casi nunca hay JWT todavía, asi que se guarda aqui y se
+ * consume en ConfirmEmailScreen / primer loadProfile.
+ */
+export const RAF_PENDING_INVITE_CODE_KEY = "raf_pending_invite_code";
+
+export const stashPendingInviteCode = (code) => {
+  const c = String(code || "").trim();
+  if (!c || typeof localStorage === "undefined") return;
+  try {
+    localStorage.setItem(RAF_PENDING_INVITE_CODE_KEY, c);
+  } catch {
+    /* ignore */
+  }
+};
+
+/**
+ * Si hay un codigo pendiente, llama a accept_invitation_by_code con la sesion
+ * actual. Limpia el storage cuando se acepta, cuando ya no estaba pending, o
+ * cuando el error no es recuperable. Si aun no hay sesion, deja el codigo.
+ *
+ * @returns {Promise<{ok: boolean, accepted?: boolean, skipped?: boolean, reason?: string}>}
+ */
+export const acceptPendingInvitationIfAny = async () => {
+  if (typeof localStorage === "undefined") return { ok: true, skipped: true };
+  let code = "";
+  try {
+    code = String(localStorage.getItem(RAF_PENDING_INVITE_CODE_KEY) || "").trim();
+  } catch {
+    return { ok: true, skipped: true };
+  }
+  if (!code) return { ok: true, skipped: true };
+
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) {
+    return { ok: false, reason: "sin sesión", keep: true };
+  }
+
+  const { data, error } = await supabase.rpc("accept_invitation_by_code", { p_code: code });
+  if (error) {
+    const msg = String(error.message || "");
+    const notAuth = error.code === "28000" || /not_authenticated/i.test(msg);
+    console.warn("[invite] accept_invitation_by_code:", error);
+    if (notAuth) return { ok: false, reason: msg, keep: true };
+    // Codigo invalido / email no coincide: no reintentar en bucle.
+    try { localStorage.removeItem(RAF_PENDING_INVITE_CODE_KEY); } catch { /* ignore */ }
+    return { ok: false, reason: msg };
+  }
+
+  try { localStorage.removeItem(RAF_PENDING_INVITE_CODE_KEY); } catch { /* ignore */ }
+  return { ok: true, accepted: Boolean(data) };
+};
+
 /** Package del APK, para intentar abrirla desde el navegador con un intent:// */
 export const ANDROID_PACKAGE_ID = "com.runningapexflow.app";
 
