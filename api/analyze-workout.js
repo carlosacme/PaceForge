@@ -366,7 +366,8 @@ Los valores de signal válidos son exactamente: fatiga_alta, fatiga_media, bien,
     const h = { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}`, "Content-Type": "application/json", "Prefer": "return=minimal" };
 
     // Obtener structure actual
-    const getRes = await fetch(`${supabaseUrl}/rest/v1/workouts?id=eq.${workout_id}&select=structure,workout_structure,duration_min,total_km`, { headers: h });
+    // Solo `structure`: workout_structure se elimino en la migracion 0044.
+    const getRes = await fetch(`${supabaseUrl}/rest/v1/workouts?id=eq.${workout_id}&select=structure,duration_min,total_km`, { headers: h });
     const rows = await getRes.json();
     const currentStructure = readStructure(rows?.[0]);
     const origDuration = originalDuration || rows?.[0]?.duration_min || 30;

@@ -88,7 +88,8 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
   const loadCoachLibrary = useCallback(async () => {
     if (!coachUserId) return;
     setLoadingLibrary(true);
-    const { data, error } = await supabase.from("workout_library").select("id,title,type,total_km,duration_min,description,structure,workout_structure").eq("coach_id", coachUserId).order("created_at", { ascending: false });
+    // Solo `structure`: la columna workout_structure se elimino en 0044.
+    const { data, error } = await supabase.from("workout_library").select("id,title,type,total_km,duration_min,description,structure").eq("coach_id", coachUserId).order("created_at", { ascending: false });
     setLoadingLibrary(false);
     if (error) { console.error("workout_library for marketplace:", error); setCoachLibraryRows([]); return; }
     setCoachLibraryRows(data || []);
@@ -392,7 +393,7 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
     const sessionsPerWeek = Math.max(1, Math.round(Number(planForm.sessions_per_week) || 0));
     const priceCop = Math.max(0, Math.round(Number(String(planForm.price_cop).replace(/[^\d]/g, "")) || 0));
     const selectedPreview = (coachLibraryRows || []).filter((w) => planForm.preview_workouts.includes(String(w.id)));
-    const previewWorkouts = selectedPreview.map((w) => ({ id: w.id, title: w.title, type: w.type, total_km: Number(w.total_km || 0), duration_min: Number(w.duration_min || 0), description: w.description || "", structure: Array.isArray(w.structure) ? w.structure : Array.isArray(w.workout_structure) ? w.workout_structure : [] }));
+    const previewWorkouts = selectedPreview.map((w) => ({ id: w.id, title: w.title, type: w.type, total_km: Number(w.total_km || 0), duration_min: Number(w.duration_min || 0), description: w.description || "", structure: Array.isArray(w.structure) ? w.structure : [] }));
     const fallbackPreview = editingPlanSnapshot && Array.isArray(editingPlanSnapshot.preview_workouts) ? editingPlanSnapshot.preview_workouts : [];
     const fallbackSessions = editingPlanSnapshot ? getMarketplacePlanWorkoutRows(editingPlanSnapshot) : [];
     const outPreview = previewWorkouts.length > 0 ? previewWorkouts : fallbackPreview;

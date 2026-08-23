@@ -123,7 +123,7 @@ import {
 import InstallAppButton from "./components/InstallAppButton";
 import ResetPasswordScreen from "./components/ResetPasswordScreen";
 import ConfirmEmailScreen from "./components/ConfirmEmailScreen";
-import { isConfirmEmailRoute } from "./lib/authRoutes";
+import { isConfirmEmailRoute, CONFIRM_EMAIL_PATH } from "./lib/authRoutes";
 import { initNativeAppLinks, consumePendingAppLink, subscribeAppLink, applyAppLink } from "./lib/nativeAppLinks";
 const CoachSettings = React.lazy(() => import("./components/CoachSettings"));
 const WorkoutLibrary = React.lazy(() => import("./components/WorkoutLibrary"));
@@ -2119,10 +2119,14 @@ export default function App() {
               })()
             : null;
 
+        // Forzar aterrizaje en /auth/confirm (token_hash), no depender solo
+        // de Site URL / plantilla de Supabase.
+        const origin = typeof window !== "undefined" ? window.location.origin : "";
         const { data, error } = await supabase.auth.signUp({
           email: emailNorm,
           password: passwordNorm,
           options: {
+            emailRedirectTo: origin ? `${origin}${CONFIRM_EMAIL_PATH}` : undefined,
             data: {
               full_name: authName.trim(),
               role: selectedRole,
@@ -3947,32 +3951,12 @@ function Dashboard({
     loadDashboardData(false);
   }, [loadDashboardData]);
 
-  // El refresco por Realtime de mas abajo no llega a dispararse: las tablas
-  // athletes y workouts no estan publicadas en supabase_realtime, solo messages.
-  // Volver a la app es hoy la unica forma de que el dashboard se actualice.
+  // athletes/workouts NO estan en supabase_realtime (solo messages). Una
+  // suscripcion aqui era ruido: el canal "ok" no traia eventos. El dashboard
+  // se actualiza al volver a la app (resume) y al montar/cambiar de semana.
   useAppResumeRefresh(() => {
     loadDashboardData(true);
   }, Boolean(coachUserId));
-
-  useEffect(() => {
-    if (!coachUserId) return undefined;
-    const channel = supabase
-      .channel(`dashboard-coach-${coachUserId}`)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "athletes", filter: `coach_id=eq.${coachUserId}` },
-        () => loadDashboardData(true),
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "workouts", filter: `coach_id=eq.${coachUserId}` },
-        () => loadDashboardData(true),
-      )
-      .subscribe();
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [coachUserId, loadDashboardData]);
 
   // Km de la semana a partir de los workouts que ya estan cargados (misma
   // consulta de siempre), no del weekly_km declarado en la ficha del atleta.
