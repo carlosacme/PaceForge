@@ -10,6 +10,7 @@ import { usePersistedState } from "./hooks/usePersistedState";
 import { useAppResumeRefresh } from "./hooks/useAppResumeRefresh";
 import { setResumeUiBusy } from "./lib/resumeGuard";
 import WorkoutDetailBreakdown from "./components/WorkoutDetailBreakdown";
+import WorkoutRouteMap from "./components/WorkoutRouteMap";
 import {
   BRAND_NAME,
   WORKOUT_TYPES,
@@ -7587,6 +7588,7 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
                     <div><strong>FC prom/máx real:</strong> {w.actual_avg_hr ?? "—"} / {w.actual_max_hr ?? "—"} lpm</div>
                     <div><strong>Desnivel:</strong> {w.actual_elevation_m != null ? `${w.actual_elevation_m} m` : "—"}</div>
                     <div style={{ color: "#94a3b8", marginTop: 4 }}>Sincronizado del reloj: {new Date(w.actual_synced_at).toLocaleString("es-CO")}</div>
+                    <WorkoutRouteMap workout={w} />
                     {w.intervals_activity_id ? (
                       <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px dashed #e2e8f0" }}>
                         <div style={{ fontWeight: 800, color: "#0f172a", marginBottom: 6 }}>📊 Comparación por bloque</div>

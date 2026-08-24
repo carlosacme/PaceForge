@@ -19,6 +19,7 @@
  *                  borra en intervals.icu los eventos de esos workouts
  *   pull-activity  { athlete_id, workout_id } trae lo ejecutado del reloj
  *   activity-intervals { athlete_id, activity_id } laps crudos (comparacion por bloque)
+ *   activity-map { athlete_id, workout_id } coords GPS bajo demanda (no se guardan)
  *   vdot-resync    { athlete_id }            reescribe los ritmos de los workouts
  *                  futuros al VDOT de la ultima evaluacion y los reenvia al reloj
  *   oauth-start    { athlete_id }            inicia OAuth (JWT); devuelve authorize_url
@@ -974,6 +975,94 @@ async function actionActivityIntervals(res, athleteId, activityId) {
   return res.status(200).json({ ok: true, count: laps.length, icu_intervals: laps });
 }
 
+/**
+ * Coordenadas GPS de una actividad (bajo demanda, no se guardan en workouts).
+ * streams?types=latlng → data = latitudes, data2 = longitudes.
+ */
+async function actionActivityMap(res, athleteId, workoutId) {
+  if (!workoutId) return jsonError(res, 400, "Falta 'workout_id'");
+
+  const rows = await sb(
+    `workouts?id=eq.${encodeURIComponent(workoutId)}&select=id,athlete_id,intervals_activity_id`
+  );
+  const w = rows?.[0];
+  if (!w) return jsonError(res, 404, "Workout no encontrado");
+  if (String(w.athlete_id) !== String(athleteId)) {
+    return jsonError(res, 403, "Ese workout no pertenece al atleta");
+  }
+  if (!w.intervals_activity_id) {
+    return res.status(200).json({
+      ok: true,
+      coords: [],
+      reason: "no_activity",
+      message: "Esta actividad no tiene datos de ruta",
+    });
+  }
+
+  const conn = await getConnection(athleteId);
+  if (!conn) return jsonError(res, 400, "El atleta no tiene intervals.icu conectado");
+
+  const r = await icuFetch(
+    conn,
+    `/activity/${encodeURIComponent(w.intervals_activity_id)}/streams?types=latlng`
+  );
+  if (!r.ok) {
+    return jsonError(res, 502, `intervals.icu no respondio (${r.status})`);
+  }
+
+  // La API puede devolver un array de streams o un objeto mapa por tipo.
+  let stream = null;
+  if (Array.isArray(r.data)) {
+    stream = r.data.find((s) => String(s?.type || "").toLowerCase() === "latlng") || r.data[0];
+  } else if (r.data && typeof r.data === "object") {
+    stream = r.data.latlng || r.data;
+  }
+
+  const lats = Array.isArray(stream?.data) ? stream.data : null;
+  const lngs = Array.isArray(stream?.data2) ? stream.data2 : null;
+
+  // Fallback: data ya viene como [[lat,lng], ...]
+  let coords = [];
+  if (lats && lngs && lats.length && lngs.length) {
+    const n = Math.min(lats.length, lngs.length);
+    for (let i = 0; i < n; i += 1) {
+      const lat = Number(lats[i]);
+      const lng = Number(lngs[i]);
+      if (Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180) {
+        // Filtrar (0,0) típico de indoor / GPS perdido
+        if (lat === 0 && lng === 0) continue;
+        coords.push([lat, lng]);
+      }
+    }
+  } else if (Array.isArray(lats) && lats.length && Array.isArray(lats[0])) {
+    for (const pt of lats) {
+      if (!Array.isArray(pt) || pt.length < 2) continue;
+      const lat = Number(pt[0]);
+      const lng = Number(pt[1]);
+      if (Number.isFinite(lat) && Number.isFinite(lng) && !(lat === 0 && lng === 0)) {
+        coords.push([lat, lng]);
+      }
+    }
+  }
+
+  if (!coords.length) {
+    return res.status(200).json({
+      ok: true,
+      coords: [],
+      reason: "no_gps",
+      message: "Esta actividad no tiene datos de ruta",
+      activity_id: w.intervals_activity_id,
+    });
+  }
+
+  return res.status(200).json({
+    ok: true,
+    coords,
+    count: coords.length,
+    activity_id: w.intervals_activity_id,
+  });
+}
+
 /* ---------- OAuth: autorizacion + callback ---------- */
 
 // El frontend llama a esto con JWT; devolvemos la URL a la que
@@ -1235,6 +1324,7 @@ export default async function handler(req, res) {
       case "delete-workout": return await actionDeleteWorkoutEvents(res, athlete_id, body.workout_ids ?? body.workout_id);
       case "pull-activity": return await actionPullActivity(res, athlete_id, body.workout_id);
       case "activity-intervals": return await actionActivityIntervals(res, athlete_id, body.activity_id);
+      case "activity-map":  return await actionActivityMap(res, athlete_id, body.workout_id);
       case "vdot-resync":   return await actionVdotResync(res, athlete_id);
       case "oauth-start":   return await actionOauthStart(res, athlete_id, user.id);
       default:              return jsonError(res, 400, `Acción no soportada: ${action}`);
