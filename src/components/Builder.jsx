@@ -195,22 +195,30 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
     }
     setAssignSaving(true);
     try {
-      // Resolver VDOT por atleta ANTES del map (multi-atleta, y el map no puede
-      // ser async). Con el VDOT + fc_max enriquecemos target_pace desde target_hr
-      // para que el workout no llegue "sin ritmos" al reloj.
+      // Una sola consulta IN (ids) — mismo criterio que Plan2Weeks/fetchWeeklyKmByAthlete.
+      // El order es global: la primera fila de cada athlete_id es su eval más reciente.
       const vdotByAthlete = {};
-      await Promise.all(selectedAthletes.map(async (a) => {
-        // Orden unificado con Plan2Weeks: manda la fecha real del test y
-        // created_at solo desempata entre tests del mismo dia.
-        const { data } = await supabase
+      const athleteIds = selectedAthletes.map((a) => a.id).filter((id) => id != null);
+      if (athleteIds.length) {
+        const { data: evalRows, error: evalErr } = await supabase
           .from("athlete_evaluations")
-          .select("vdot, test_date")
-          .eq("athlete_id", a.id)
+          .select("athlete_id, vdot, test_date, created_at")
+          .in("athlete_id", athleteIds)
           .order("test_date", { ascending: false })
-          .order("created_at", { ascending: false })
-          .limit(1);
-        vdotByAthlete[a.id] = Number(data?.[0]?.vdot) || null;
-      }));
+          .order("created_at", { ascending: false });
+        if (evalErr) {
+          console.error("athlete_evaluations batch vdot:", evalErr);
+        }
+        for (const row of evalRows || []) {
+          const id = row.athlete_id;
+          if (id == null || Object.prototype.hasOwnProperty.call(vdotByAthlete, id)) continue;
+          const v = Number(row.vdot);
+          vdotByAthlete[id] = Number.isFinite(v) && v > 0 ? v : null;
+        }
+      }
+      for (const a of selectedAthletes) {
+        if (!Object.prototype.hasOwnProperty.call(vdotByAthlete, a.id)) vdotByAthlete[a.id] = null;
+      }
 
       const payload = selectedAthletes.map((selectedAthlete) => ({
         ...w,
