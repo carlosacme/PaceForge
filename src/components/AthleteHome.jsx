@@ -14,6 +14,7 @@ import {
   cellIsInViewMonth,
   normalizeAthlete,
   DAYS,
+  WORKOUT_TYPES,
   getRaceCountdownText,
   achievementJoinMeta,
   computeAchievementProgress,
@@ -1629,37 +1630,61 @@ export default function AthleteHome({ profile }) {
               const inViewMonth = cellIsInViewMonth(cellDate, calendarViewMonth.y, calendarViewMonth.m);
               const hasDoneWorkout = dayWorkouts.some((w) => w.done);
               return (
-                <div key={i} style={{ minHeight: 76, minWidth: 0, maxWidth: "100%", boxSizing: "border-box", overflow: "hidden", border: "1px solid #e2e8f0", borderRadius: 6, padding: "4px 3px", opacity: inViewMonth ? 1 : 0.42, background: hasDoneWorkout ? "rgba(34,197,94,.08)" : "#fff" }}>
+                <div key={i} style={{ minHeight: 72, minWidth: 0, maxWidth: "100%", boxSizing: "border-box", overflow: "hidden", border: "1px solid #e2e8f0", borderRadius: 6, padding: "3px 2px", opacity: inViewMonth ? 1 : 0.42, background: hasDoneWorkout ? "rgba(34,197,94,.08)" : "#fff", display: "flex", flexDirection: "column", gap: 2 }}>
                   <div style={{ fontSize: ".62em", color: inViewMonth ? "#475569" : "#94a3b8", textAlign: "center", fontWeight: 600 }}>{cellDate.getDate()}</div>
-                  {dayWorkouts.slice(0, 2).map((w) => (
-                    <button
-                      key={w.id}
-                      type="button"
-                      onClick={(e) => openAthleteWorkoutMenu(e, w)}
-                      style={{
-                        width: "100%",
-                        minHeight: 28,
-                        border: "1px solid #e2e8f0",
-                        borderRadius: 5,
-                        padding: "5px 4px",
-                        marginTop: 3,
-                        background: w.done ? "rgba(34,197,94,.15)" : "#f8fafc",
-                        fontSize: ".68em",
-                        lineHeight: 1.2,
-                        color: "#334155",
-                        cursor: "pointer",
-                        fontFamily: "inherit",
-                        textAlign: "center",
-                        position: "relative",
-                        zIndex: 1,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {w.title}
-                    </button>
-                  ))}
+                  {dayWorkouts.slice(0, 2).map((w) => {
+                    const wt = WORKOUT_TYPES.find((t) => t.id === w.type) || WORKOUT_TYPES[0];
+                    const kmNum = Number(w.total_km);
+                    const kmLabel = Number.isFinite(kmNum) && kmNum > 0
+                      ? `${Number.isInteger(kmNum) ? kmNum : kmNum.toFixed(1)} km`
+                      : "";
+                    return (
+                      <button
+                        key={w.id}
+                        type="button"
+                        onClick={(e) => openAthleteWorkoutMenu(e, w)}
+                        title={`${w.title || "Entreno"}${kmLabel ? ` · ${kmLabel}` : ""}${w.done ? " · Hecho" : " · Pendiente"}`}
+                        style={{
+                          width: "100%",
+                          minWidth: 0,
+                          maxWidth: "100%",
+                          boxSizing: "border-box",
+                          border: `1px solid ${w.done ? "rgba(34,197,94,.4)" : "#e2e8f0"}`,
+                          borderRadius: 5,
+                          padding: "3px 4px",
+                          background: w.done ? "rgba(34,197,94,.14)" : "#f8fafc",
+                          cursor: "pointer",
+                          fontFamily: "inherit",
+                          textAlign: "left",
+                          position: "relative",
+                          zIndex: 1,
+                          overflow: "hidden",
+                        }}
+                      >
+                        <div style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0 }}>
+                          <span
+                            aria-hidden="true"
+                            style={{
+                              flexShrink: 0,
+                              width: 7,
+                              height: 7,
+                              borderRadius: "50%",
+                              background: w.done ? "#22c55e" : (wt?.color || "#94a3b8"),
+                            }}
+                          />
+                          <span style={{ flex: "1 1 auto", minWidth: 0, fontSize: ".62em", lineHeight: 1.15, color: "#334155", fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {w.title}
+                          </span>
+                          {w.done ? <span style={{ flexShrink: 0, fontSize: ".55em", color: "#16a34a", fontWeight: 800 }}>✓</span> : null}
+                        </div>
+                        {kmLabel ? (
+                          <div style={{ fontSize: ".5em", color: "#64748b", fontWeight: 600, marginTop: 1, paddingLeft: 11, lineHeight: 1.1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {kmLabel}
+                          </div>
+                        ) : null}
+                      </button>
+                    );
+                  })}
                 </div>
               );
             })}

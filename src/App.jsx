@@ -5258,7 +5258,7 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
     if (calendarDragRef.current) return;
     const pad = 8;
     const mw = 280;
-    const mh = 200;
+    const mh = 320;
     const vw = typeof window !== "undefined" ? window.innerWidth : 800;
     const vh = typeof window !== "undefined" ? window.innerHeight : 600;
     const x = Math.min(e.clientX, vw - mw - pad);
@@ -6444,7 +6444,7 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
           {loadingWorkouts ? (
             <div style={{ color: "#64748b", fontSize: ".85em", padding: "20px 0" }}>Cargando...</div>
           ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 4 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(0, 1fr))", gap: 4, width: "100%", minWidth: 0 }}>
               {DAYS.map(d => <div key={d} style={{ fontSize: ".65em", textAlign: "center", color: "#334155", padding: "4px 0" }}>{d}</div>)}
               {calendarCells.map((cellDate, i) => {
                 const ymd = formatLocalYMD(cellDate);
@@ -6475,14 +6475,18 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
                       setDragWorkoutId(null);
                     }}
                     style={{
-                      minHeight: 72,
+                      minHeight: 64,
+                      minWidth: 0,
+                      maxWidth: "100%",
+                      boxSizing: "border-box",
+                      overflow: "hidden",
                       border: `1px solid ${borderColor}`,
                       borderRadius: 6,
-                      padding: "4px 3px",
+                      padding: "3px 2px",
                       display: "flex",
                       flexDirection: "column",
                       alignItems: "stretch",
-                      gap: 3,
+                      gap: 2,
                       background: cellBackground,
                       opacity: inViewMonth ? 1 : 0.42,
                     }}
@@ -6501,7 +6505,7 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
                             fontWeight: 800,
                             color: pri.color,
                             textAlign: "center",
-                            lineHeight: 1.2,
+                            lineHeight: 1.15,
                             padding: "2px 2px",
                             borderRadius: 4,
                             background: "rgba(255,255,255,.65)",
@@ -6510,90 +6514,86 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
                             fontFamily: "inherit",
                             width: "100%",
                             boxSizing: "border-box",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
                           }}
                         >
                           🏁 {pri.id} · {race.name}
                         </button>
                       );
                     })}
-                    {dayWorkouts.map(w => {
-                      const wt = WORKOUT_TYPES.find(t => t.id === w.type) || WORKOUT_TYPES[0];
+                    {dayWorkouts.slice(0, 3).map((w) => {
+                      const wt = WORKOUT_TYPES.find((t) => t.id === w.type) || WORKOUT_TYPES[0];
+                      const kmNum = Number(w.total_km);
+                      const kmLabel = Number.isFinite(kmNum) && kmNum > 0
+                        ? `${Number.isInteger(kmNum) ? kmNum : kmNum.toFixed(1)} km`
+                        : "";
                       return (
-                        <div key={w.id} style={{ display: "flex", flexDirection: "column", gap: 4, width: "100%" }}>
-                          <button
-                            type="button"
-                            draggable
-                            onDragStart={(e) => {
-                              calendarDragRef.current = true;
-                              setDragWorkoutId(w.id);
-                              try {
-                                e.dataTransfer.setData("text/plain", String(w.id));
-                                e.dataTransfer.effectAllowed = "move";
-                              } catch (_) {}
-                            }}
-                            onDragEnd={() => {
-                              setDragWorkoutId(null);
-                              setTimeout(() => {
-                                calendarDragRef.current = false;
-                              }, 0);
-                            }}
-                            onClick={(e) => openCalendarWorkoutMenu(e, w)}
-                            title="Opciones del workout"
-                            style={{
-                              border: `1px solid ${w.done ? "rgba(34,197,94,.55)" : `${wt.color}55`}`,
-                              borderRadius: 5,
-                              padding: "5px 4px",
-                              minHeight: 32,
-                              background: w.done ? "rgba(34,197,94,.16)" : `${wt.color}12`,
-                              cursor: "pointer",
-                              fontFamily: "inherit",
-                              textAlign: "center",
-                              width: "100%",
-                              boxSizing: "border-box",
-                              position: "relative",
-                            }}
-                          >
-                            <div style={{ width: 5, height: 5, borderRadius: "50%", background: wt.color, margin: "0 auto 2px" }} />
-                            <div style={{ fontSize: ".68em", color: wt.color, fontWeight: 700, lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{w.title}</div>
-                            <div style={{ fontSize: ".62em", color: "#475569" }}>{w.total_km} km</div>
-                            {w.done && <div style={{ fontSize: ".62em", color: "#22c55e", marginTop: 1 }}>✓ Hecho</div>}
-                            {w.done && w.rpe != null && (
-                              <div style={{ fontSize: ".62em", color: "#94a3b8", marginTop: 2, lineHeight: 1.2 }}>
-                                {rpeBandMeta(w.rpe).emoji} RPE {w.rpe}
-                              </div>
-                            )}
-                          </button>
-                          {w.done ? (
-                            <>
-                              <button
-                                type="button"
-                                onClick={() => setRegistroModal(w)}
-                                style={{ border: "1px solid #cbd5e1", borderRadius: 6, background: "#fff", color: "#334155", padding: "3px 6px", fontSize: ".56em", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}
-                              >
-                                Ver registro
-</button>
-<button
-  type="button"
-  onClick={() => analyzeWorkoutAsCoach(w, athlete?.name)}
-  disabled={coachWorkoutAnalysisLoading[w.id]}
-  style={{ border: "1px solid rgba(255,138,61,.5)", borderRadius: 6, background: coachWorkoutAnalysisLoading[w.id] ? "#fef3c7" : "rgba(255,138,61,.12)", color: "#b45309", padding: "3px 6px", fontSize: ".56em", fontWeight: 700, cursor: coachWorkoutAnalysisLoading[w.id] ? "not-allowed" : "pointer", fontFamily: "inherit" }}
->
-  {coachWorkoutAnalysisLoading[w.id] ? "Analizando…" : "🤖 Analizar IA"}
-</button>
-{coachWorkoutAnalysis[w.id] ? (
-  <button
-    type="button"
-    onClick={() => setCoachAnalysisModal({ text: coachWorkoutAnalysis[w.id], title: w.title, workout: w })}
-    style={{ border: "1px solid rgba(255,138,61,.5)", borderRadius: 6, background: "rgba(255,138,61,.12)", color: "#b45309", padding: "3px 6px", fontSize: ".56em", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", width: "100%" }}
-  >
-    📋 Ver análisis
-  </button>
-) : null}
-                            </>
+                        <button
+                          key={w.id}
+                          type="button"
+                          draggable
+                          onDragStart={(e) => {
+                            calendarDragRef.current = true;
+                            setDragWorkoutId(w.id);
+                            try {
+                              e.dataTransfer.setData("text/plain", String(w.id));
+                              e.dataTransfer.effectAllowed = "move";
+                            } catch (_) {}
+                          }}
+                          onDragEnd={() => {
+                            setDragWorkoutId(null);
+                            setTimeout(() => {
+                              calendarDragRef.current = false;
+                            }, 0);
+                          }}
+                          onClick={(e) => openCalendarWorkoutMenu(e, w)}
+                          title={`${w.title || "Entreno"}${kmLabel ? ` · ${kmLabel}` : ""}${w.done ? " · Hecho" : " · Pendiente"}`}
+                          style={{
+                            border: `1px solid ${w.done ? "rgba(34,197,94,.45)" : `${wt.color}44`}`,
+                            borderRadius: 5,
+                            padding: "3px 4px",
+                            background: w.done ? "rgba(34,197,94,.14)" : `${wt.color}10`,
+                            cursor: "pointer",
+                            fontFamily: "inherit",
+                            textAlign: "left",
+                            width: "100%",
+                            minWidth: 0,
+                            maxWidth: "100%",
+                            boxSizing: "border-box",
+                            overflow: "hidden",
+                          }}
+                        >
+                          <div style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0 }}>
+                            <span
+                              aria-hidden="true"
+                              title={w.done ? "Hecho" : "Pendiente"}
+                              style={{
+                                flexShrink: 0,
+                                width: 7,
+                                height: 7,
+                                borderRadius: "50%",
+                                background: w.done ? "#22c55e" : wt.color,
+                                boxShadow: w.done ? "0 0 0 1px rgba(34,197,94,.35)" : "none",
+                              }}
+                            />
+                            <span style={{ flex: "1 1 auto", minWidth: 0, fontSize: ".62em", color: wt.color, fontWeight: 700, lineHeight: 1.15, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {w.title}
+                            </span>
+                            {w.done ? <span style={{ flexShrink: 0, fontSize: ".55em", color: "#16a34a", fontWeight: 800 }}>✓</span> : null}
+                          </div>
+                          {kmLabel ? (
+                            <div style={{ fontSize: ".52em", color: "#64748b", fontWeight: 600, marginTop: 1, paddingLeft: 11, lineHeight: 1.1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {kmLabel}
+                            </div>
                           ) : null}
-                        </div>
+                        </button>
                       );
                     })}
+                    {dayWorkouts.length > 3 ? (
+                      <div style={{ fontSize: ".5em", color: "#94a3b8", textAlign: "center", fontWeight: 700 }}>+{dayWorkouts.length - 3}</div>
+                    ) : null}
                   </div>
                 );
               })}
@@ -6775,6 +6775,41 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
                   label: "📋 Ver detalle",
                   onClick: null,
                 },
+                ...(ctxMenuWorkout.done
+                  ? [
+                      {
+                        label: "📊 Ver registro",
+                        onClick: () => {
+                          setRegistroModal(ctxMenuWorkout);
+                          closeCalendarCtxMenu();
+                        },
+                      },
+                      {
+                        label: coachWorkoutAnalysisLoading[ctxMenuWorkout.id]
+                          ? "🤖 Analizando…"
+                          : "🤖 Analizar IA",
+                        disabled: Boolean(coachWorkoutAnalysisLoading[ctxMenuWorkout.id]),
+                        onClick: () => {
+                          void analyzeWorkoutAsCoach(ctxMenuWorkout, athlete?.name);
+                        },
+                      },
+                      ...(coachWorkoutAnalysis[ctxMenuWorkout.id]
+                        ? [
+                            {
+                              label: "📄 Ver análisis",
+                              onClick: () => {
+                                setCoachAnalysisModal({
+                                  text: coachWorkoutAnalysis[ctxMenuWorkout.id],
+                                  title: ctxMenuWorkout.title,
+                                  workout: ctxMenuWorkout,
+                                });
+                                closeCalendarCtxMenu();
+                              },
+                            },
+                          ]
+                        : []),
+                    ]
+                  : []),
                 {
                   label: "✏️ Editar",
                   onClick: () => openWorkoutEditPanel(ctxMenuWorkout),
@@ -6792,9 +6827,11 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
                 <button
                   key={i}
                   type="button"
+                  disabled={item.disabled}
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={(e) => {
                     e.stopPropagation();
+                    if (item.disabled) return;
                     if (item.label === "📋 Ver detalle") {
                       openCalendarWorkoutDetail(e);
                       return;
@@ -6809,9 +6846,9 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
                     border: "none",
                     borderRadius: 8,
                     padding: "10px 12px",
-                    color: item.danger ? "#b91c1c" : "#0f172a",
+                    color: item.disabled ? "#94a3b8" : item.danger ? "#b91c1c" : "#0f172a",
                     fontWeight: 600,
-                    cursor: "pointer",
+                    cursor: item.disabled ? "not-allowed" : "pointer",
                     fontFamily: "inherit",
                     fontSize: ".82em",
                   }}
