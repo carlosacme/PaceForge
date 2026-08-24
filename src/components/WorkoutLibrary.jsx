@@ -53,6 +53,8 @@ function WorkoutLibrary({
   const [assigningWorkoutRow, setAssigningWorkoutRow] = useState(null);
   const [assignSelectedAthleteIds, setAssignSelectedAthleteIds] = useState([]);
   const [assignDate, setAssignDate] = useState(() => formatLocalYMD(new Date()));
+  // Nombre editable solo para esta tanda de asignación (no muta workout_library).
+  const [assignTitle, setAssignTitle] = useState("");
   const [assignSaving, setAssignSaving] = useState(false);
   // VDOT de cada atleta y delta de progresion, para recalcular los ritmos del
   // workout al asignarlo. Se cargan al abrir el modal en UNA consulta para poder
@@ -477,6 +479,10 @@ function WorkoutLibrary({
       notify("No se encontraron atletas seleccionados.");
       return;
     }
+    const assignedTitle =
+      (assignTitle || "").trim() ||
+      (row.title && String(row.title).trim()) ||
+      "Entreno";
     setAssignSaving(true);
     const payload = athleteRows.map((a) => {
       // El VDOT ya esta en estado desde que se abrio el modal, con el delta que el
@@ -494,7 +500,7 @@ function WorkoutLibrary({
       return {
         athlete_id: a.id,
         coach_id: coachUserId,
-        title: row.title,
+        title: assignedTitle,
         type: row.type,
         total_km: Number(row.total_km) || 0,
         duration_min: Number(row.duration_min) || 0,
@@ -518,7 +524,7 @@ function WorkoutLibrary({
       athleteRows.map((a) =>
         sendWorkoutAssignmentPushToAthlete({
           athleteUserId: a?.user_id,
-          workoutTitle: row.title,
+          workoutTitle: assignedTitle,
           scheduledDate: assignDate,
         }),
       ),
@@ -526,6 +532,7 @@ function WorkoutLibrary({
     notify(`Workout asignado a ${athleteRows.length} atletas`);
     setAssigningWorkoutRow(null);
     setAssignSelectedAthleteIds([]);
+    setAssignTitle("");
   };
 
   const globalGrouped = useMemo(() => {
@@ -905,6 +912,7 @@ function WorkoutLibrary({
                     type="button"
                     onClick={() => {
                       setAssigningWorkoutRow(row);
+                      setAssignTitle(row.title || "");
                       setAssignDate(formatLocalYMD(new Date()));
                       setAssignSelectedAthleteIds([]);
                     }}
@@ -971,10 +979,24 @@ function WorkoutLibrary({
           <div style={{ ...S.card, width: "100%", maxWidth: 540, margin: 0 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
               <div style={{ fontSize: ".95em", fontWeight: 900, color: "#0f172a" }}>📋 Asignar workout</div>
-              <button type="button" onClick={() => setAssigningWorkoutRow(null)} disabled={assignSaving} style={{ border: "1px solid #e2e8f0", background: "#fff", borderRadius: 8, padding: "6px 10px", cursor: assignSaving ? "not-allowed" : "pointer", fontFamily: "inherit" }}>✕</button>
+              <button type="button" onClick={() => { setAssigningWorkoutRow(null); setAssignTitle(""); }} disabled={assignSaving} style={{ border: "1px solid #e2e8f0", background: "#fff", borderRadius: 8, padding: "6px 10px", cursor: assignSaving ? "not-allowed" : "pointer", fontFamily: "inherit" }}>✕</button>
             </div>
-            <div style={{ fontSize: ".78em", color: "#64748b", marginBottom: 10 }}>
+            <div style={{ fontSize: ".78em", color: "#64748b", marginBottom: 8 }}>
               {assigningWorkoutRow.title}
+            </div>
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Nombre del workout</div>
+              <input
+                type="text"
+                value={assignTitle}
+                onChange={(e) => setAssignTitle(e.target.value)}
+                placeholder={assigningWorkoutRow.title || "Entreno"}
+                disabled={assignSaving}
+                style={{ width: "100%", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit", boxSizing: "border-box", fontSize: ".88em", color: "#0f172a" }}
+              />
+              <div style={{ fontSize: ".68em", color: "#94a3b8", marginTop: 4, lineHeight: 1.4 }}>
+                Este nombre es el que verán los atletas seleccionados (y en el reloj). La biblioteca no cambia.
+              </div>
             </div>
             <div style={{ marginBottom: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
               <button type="button" onClick={() => setAssignSelectedAthleteIds((athletes || []).map((a) => String(a.id)))} style={{ border: "1px solid #bfdbfe", background: "#eff6ff", color: "#1d4ed8", borderRadius: 8, padding: "6px 10px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".76em" }}>
@@ -1041,7 +1063,7 @@ function WorkoutLibrary({
               <input type="date" value={assignDate} onChange={(e) => setAssignDate(e.target.value)} style={{ width: "100%", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit", boxSizing: "border-box" }} />
             </div>
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-              <button type="button" onClick={() => setAssigningWorkoutRow(null)} disabled={assignSaving} style={{ border: "1px solid #e2e8f0", background: "#fff", borderRadius: 8, padding: "8px 12px", color: "#475569", cursor: assignSaving ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 700 }}>
+              <button type="button" onClick={() => { setAssigningWorkoutRow(null); setAssignTitle(""); }} disabled={assignSaving} style={{ border: "1px solid #e2e8f0", background: "#fff", borderRadius: 8, padding: "8px 12px", color: "#475569", cursor: assignSaving ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 700 }}>
                 Cancelar
               </button>
               <button type="button" onClick={() => assignDirectly(assigningWorkoutRow)} disabled={assignSaving || assignVdotLoading} style={{ border: "none", background: assignSaving || assignVdotLoading ? "#cbd5e1" : "linear-gradient(135deg,#e86f28,#ff8a3d)", borderRadius: 8, padding: "8px 12px", color: "#fff", cursor: assignSaving || assignVdotLoading ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 800 }}>
