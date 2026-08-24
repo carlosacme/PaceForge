@@ -331,7 +331,9 @@ function FormaFatigaLineChart({ chronological }) {
 }
 
 const styles = {
-  page: { padding: "28px 32px", maxWidth: 1120, width: "100%" },
+  // maxWidth 100% + overflowX hidden: el coach contiene el overflow en <main overflowY:auto>;
+  // el atleta no tiene ese main, y sin esto el grid 7-col (chips nowrap) ensancha el documento y desplaza Lun fuera de vista.
+  page: { padding: "28px 32px", maxWidth: 1120, width: "100%", margin: "0 auto", boxSizing: "border-box", overflowX: "hidden", minWidth: 0 },
   pageTitle: { fontSize: "1.65em", fontWeight: 800, color: "#0f172a", margin: 0, letterSpacing: "-0.02em" },
   card: {
     background: "#ffffff",
@@ -1484,7 +1486,7 @@ export default function AthleteHome({ profile }) {
   };
 
   return (
-    <div style={{ ...S.page, paddingBottom: 96, overflow: "visible", position: "relative" }}>
+    <div style={{ ...S.page, paddingBottom: 96, overflowX: "hidden", overflowY: "visible", position: "relative" }}>
       {message ? (
         <div style={{ ...S.card, border: `1px solid ${message.startsWith("✅") ? "rgba(34,197,94,.45)" : "rgba(239,68,68,.35)"}`, background: message.startsWith("✅") ? "rgba(34,197,94,.1)" : "rgba(239,68,68,.08)", color: message.startsWith("✅") ? "#166534" : "#fecaca", marginBottom: 14 }}>
           {message}
@@ -1608,7 +1610,7 @@ export default function AthleteHome({ profile }) {
 
       {renderAthleteProgressCard(14)}
 
-      <div style={{ ...S.card, marginBottom: 14 }}>
+      <div style={{ ...S.card, marginBottom: 14, maxWidth: "100%", minWidth: 0, overflow: "hidden" }}>
         <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 10 }}>
           <div style={{ fontSize: ".65em", letterSpacing: ".15em", color: "#334155", textTransform: "uppercase" }}>CALENDARIO · {calendarMonthLabel}</div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -1619,7 +1621,7 @@ export default function AthleteHome({ profile }) {
         {loading ? (
           <div style={{ color: "#64748b", fontSize: ".85em", padding: "20px 0" }}>Cargando...</div>
         ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 4, overflow: "visible" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(0, 1fr))", gap: 4, width: "100%", minWidth: 0, maxWidth: "100%", boxSizing: "border-box" }}>
             {DAYS.map((d) => <div key={d} style={{ fontSize: ".65em", textAlign: "center", color: "#334155", padding: "4px 0" }}>{d}</div>)}
             {calendarCells.map((cellDate, i) => {
               const ymd = calendarCellToIsoYmd(cellDate);
@@ -1627,7 +1629,7 @@ export default function AthleteHome({ profile }) {
               const inViewMonth = cellIsInViewMonth(cellDate, calendarViewMonth.y, calendarViewMonth.m);
               const hasDoneWorkout = dayWorkouts.some((w) => w.done);
               return (
-                <div key={i} style={{ minHeight: 76, border: "1px solid #e2e8f0", borderRadius: 6, padding: "4px 3px", opacity: inViewMonth ? 1 : 0.42, background: hasDoneWorkout ? "rgba(34,197,94,.08)" : "#fff" }}>
+                <div key={i} style={{ minHeight: 76, minWidth: 0, maxWidth: "100%", boxSizing: "border-box", overflow: "hidden", border: "1px solid #e2e8f0", borderRadius: 6, padding: "4px 3px", opacity: inViewMonth ? 1 : 0.42, background: hasDoneWorkout ? "rgba(34,197,94,.08)" : "#fff" }}>
                   <div style={{ fontSize: ".62em", color: inViewMonth ? "#475569" : "#94a3b8", textAlign: "center", fontWeight: 600 }}>{cellDate.getDate()}</div>
                   {dayWorkouts.slice(0, 2).map((w) => (
                     <button
@@ -1756,9 +1758,9 @@ export default function AthleteHome({ profile }) {
         </div>
       ) : null}
 
-      <div style={{ ...S.card, marginBottom: 14 }}>
+      <div style={{ ...S.card, marginBottom: 14, maxWidth: "100%", minWidth: 0, overflow: "hidden" }}>
         <div style={{ fontSize: ".72em", letterSpacing: ".13em", color: "#475569", textTransform: "uppercase", marginBottom: 12 }}>Progreso semanal</div>
-        <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 4 }}>
+        <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 4, maxWidth: "100%", minWidth: 0, WebkitOverflowScrolling: "touch" }}>
           {last4WeeksSummary.map((week, idx) => {
             const isCurrentWeek = idx === 0;
             const adherencePct = week.adherence;
