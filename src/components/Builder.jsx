@@ -153,7 +153,7 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
       if (!(manualForm.title || "").trim()) return null;
       const type = WORKOUT_TYPES.some((t) => t.id === manualForm.type) ? manualForm.type : "easy";
       return {
-        title: manualForm.title.trim() || "Workout",
+        title: manualForm.title.trim() || "Entreno",
         type,
         total_km: Number(manualForm.total_km) || 0,
         duration_min: Math.round(Number(manualForm.duration_min)) || 0,
@@ -352,7 +352,7 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
     const type = WORKOUT_TYPES.some((t) => t.id === w.type) ? w.type : "easy";
     const row = {
       coach_id: userData.user.id,
-      title: (w.title && String(w.title).trim()) || "Workout",
+      title: (w.title && String(w.title).trim()) || "Entreno",
       type,
       total_km: Number.isFinite(Number(w.total_km)) ? Number(w.total_km) : 0,
       duration_min: Number.isFinite(Number(w.duration_min)) ? Math.round(Number(w.duration_min)) : 0,

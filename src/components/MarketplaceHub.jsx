@@ -710,7 +710,7 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
               <input type="number" value={planForm.sessions_per_week} onChange={(e) => setPlanForm((f) => ({ ...f, sessions_per_week: e.target.value }))} placeholder="Sesiones/semana" style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit" }} />
               <input type="number" value={planForm.price_cop} onChange={(e) => setPlanForm((f) => ({ ...f, price_cop: e.target.value }))} placeholder="Precio COP" style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit" }} />
               <div style={{ gridColumn: "1 / -1", border: "1px solid #e2e8f0", borderRadius: 10, padding: 10 }}>
-                <div style={{ fontSize: ".78em", fontWeight: 800, marginBottom: 8 }}>Workouts de muestra (biblioteca)</div>
+                <div style={{ fontSize: ".78em", fontWeight: 800, marginBottom: 8 }}>Entrenos de muestra (biblioteca)</div>
                 {loadingLibrary ? <div style={{ color: "#64748b", fontSize: ".82em" }}>Cargando biblioteca…</div> : coachLibraryRows.length === 0 ? <div style={{ color: "#94a3b8", fontSize: ".82em" }}>No tienes workouts en tu biblioteca.</div> : (
                   <div style={{ display: "grid", gap: 6, maxHeight: 220, overflowY: "auto" }}>
                     {coachLibraryRows.map((w) => {

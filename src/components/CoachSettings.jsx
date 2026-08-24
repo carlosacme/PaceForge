@@ -582,7 +582,7 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
                   <input value={form.full_name} onChange={(e) => setForm((f) => ({ ...f, full_name: e.target.value }))} style={inputStyle} />,
                 )}
                 {field(
-                  "Email",
+                  "Correo",
                   <input type="email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} style={inputStyle} />,
                 )}
                 {field(
@@ -673,7 +673,7 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
                 checked={form.notify_new_workouts}
                 onChange={(e) => setForm((f) => ({ ...f, notify_new_workouts: e.target.checked }))}
               />
-              Emails de nuevos workouts
+              Correos de nuevos entrenos
             </label>
             <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", fontSize: ".9em", color: "#0f172a" }}>
               <input type="checkbox" checked={form.notify_reminders} onChange={(e) => setForm((f) => ({ ...f, notify_reminders: e.target.checked }))} />
@@ -760,7 +760,7 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
       {!isStaff && (
       <div style={{ ...S.card, marginTop: 8 }}>
         <div style={{ fontSize: ".72em", letterSpacing: ".13em", color: "#475569", textTransform: "uppercase", marginBottom: 14 }}>
-          Equipo de coaches (Staff)
+          Equipo de coaches
         </div>
         <div style={{ fontSize: ".82em", color: "#64748b", marginBottom: 14, lineHeight: 1.5 }}>
           Agrega hasta 5 sub-coaches. Podran ver y gestionar solo los atletas que les asignes.
@@ -800,11 +800,11 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
         {staffList.length < 5 && (
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <input type="email" value={staffEmail} onChange={(e) => setStaffEmail(e.target.value)}
-              placeholder="Email del sub-coach"
+              placeholder="Correo del sub-coach"
               style={{ flex: "1 1 200px", padding: "9px 12px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#0f172a", fontFamily: "inherit", fontSize: ".84em", boxSizing: "border-box" }} />
             <button type="button" onClick={sendStaffInvitation} disabled={staffInviteSending || !staffEmail.trim()}
               style={{ padding: "9px 16px", borderRadius: 8, border: "none", background: staffInviteSending || !staffEmail.trim() ? "#e2e8f0" : "linear-gradient(135deg,#0d9488,#14b8a6)", color: staffInviteSending || !staffEmail.trim() ? "#94a3b8" : "#fff", fontWeight: 800, cursor: staffInviteSending || !staffEmail.trim() ? "not-allowed" : "pointer", fontFamily: "inherit", fontSize: ".82em", whiteSpace: "nowrap" }}>
-              {staffInviteSending ? "Enviando..." : "Invitar Staff"}
+{staffInviteSending ? "Enviando..." : "Invitar al equipo"}
             </button>
           </div>
         )}
@@ -867,7 +867,7 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
       {staffList.length > 0 && (
         <div style={{ ...S.card, marginTop: 8 }}>
           <div style={{ fontSize: ".72em", letterSpacing: ".13em", color: "#475569", textTransform: "uppercase", marginBottom: 14 }}>
-            Billing del equipo
+            Facturación del equipo
           </div>
           <div style={{ fontSize: ".82em", color: "#64748b", marginBottom: 14, lineHeight: 1.5 }}>
             Tienes <strong style={{ color: "#0f172a" }}>{staffList.length} de 5</strong> sub-coaches activos. Su acceso va incluido en tu plan.
@@ -895,15 +895,15 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
                         .select("id");
                       if (error) {
                         console.error("Error actualizando billing:", error);
-                        notify(error.message || "No se pudo actualizar el billing");
+                        notify(error.message || "No se pudo actualizar la facturación");
                         return;
                       }
                       if (!(updated || []).length) {
-                        notify("No se actualizó el billing (sin permiso sobre esa fila)");
+                        notify("No se actualizó la facturación (sin permiso sobre esa fila)");
                         return;
                       }
                       loadStaff();
-                      notify("Billing actualizado");
+                      notify("Facturación actualizada");
                     }}
                     style={{ padding: "5px 8px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontFamily: "inherit", fontSize: ".72em", color: "#334155", cursor: "pointer" }}
                   >

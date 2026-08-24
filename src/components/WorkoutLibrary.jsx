@@ -568,7 +568,7 @@ function WorkoutLibrary({
         : 0;
     const ins = {
       coach_id: adminLibraryOwnerId,
-      title: (row.title && String(row.title).trim()) || "Workout",
+      title: (row.title && String(row.title).trim()) || "Entreno",
       type: typeId,
       workout_type: String(wtype || typeId),
       total_km: dist,
@@ -956,7 +956,7 @@ function WorkoutLibrary({
               </button>
             </div>
             <div style={{ color: "#475569", fontSize: ".86em", marginBottom: 10 }}>{libraryMarketplacePlanDetail.description || "Sin descripción."}</div>
-            <div style={{ fontSize: ".78em", fontWeight: 800, color: "#334155", marginBottom: 8 }}>Workouts de muestra</div>
+            <div style={{ fontSize: ".78em", fontWeight: 800, color: "#334155", marginBottom: 8 }}>Entrenos de muestra</div>
             <MarketplacePlanWorkoutsAccordion previewWorkouts={getMarketplacePlanWorkoutRows(libraryMarketplacePlanDetail)} resetKey={libraryMarketplacePlanDetail.id} />
             <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
               <button type="button" onClick={() => setLibraryMarketplacePlanDetail(null)} style={{ border: "1px solid #e2e8f0", background: "#fff", borderRadius: 8, padding: "8px 12px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>

@@ -961,7 +961,7 @@ function coachDirectorySpecialtyLabel(row) {
 }
 
 const COACH_NAV_BASE_ITEMS = [
-  { id: "dashboard", icon: "▤", label: "Dashboard", shortLabel: "Inicio", color: "#f59e0b" },
+  { id: "dashboard", icon: "▤", label: "Panel", shortLabel: "Inicio", color: "#f59e0b" },
   { id: "athletes", icon: "◉", label: "Atletas", shortLabel: "Atletas", color: "#3b82f6" },
   { id: "training", icon: "💪", label: "Entrenamientos", shortLabel: "Entreno", color: "#ea580c" },
   { id: "library", icon: "◈", label: "Biblioteca", shortLabel: "Biblio", color: "#6366f1" },
@@ -2032,7 +2032,7 @@ export default function App() {
           if (inv) {
             const inviteEmail = String(inv.email || "").trim().toLowerCase();
             if (inviteEmail && inviteEmail !== emailNorm) {
-              alert("Este link de invitación fue emitido para otro email.");
+              alert("Este link de invitación fue emitido para otro correo.");
               setAuthSubmitting(false);
               return;
             }
@@ -2609,7 +2609,7 @@ const handleSignOut = async () => {
                 ) : null}
                 <form onSubmit={handleAuthSubmit}>
                   <div style={{ marginBottom: 12 }}>
-                    <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6, fontWeight: 600 }}>Email</div>
+                    <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6, fontWeight: 600 }}>Correo</div>
                     <input
                       type="email"
                       value={authEmail}
@@ -2757,7 +2757,7 @@ const handleSignOut = async () => {
                     </div>
                   )}
                   <div style={{ marginBottom: 12 }}>
-                    <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6, fontWeight: 600 }}>Email</div>
+                    <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6, fontWeight: 600 }}>Correo</div>
                     <input
                       type="email"
                       value={authEmail}
@@ -3042,7 +3042,7 @@ const handleSignOut = async () => {
                 <div style={{ fontWeight: 900, color: "#ff8a3d", fontSize: "1.1em", marginBottom: 8 }}>Coach</div>
                 <div style={{ fontSize: ".82em", fontWeight: 700, color: "#f8fafc", marginBottom: 12 }}>7 días de prueba gratis</div>
                 <ul style={{ margin: 0, paddingLeft: 18, color: "rgba(248,250,252,.7)", fontSize: ".88em", lineHeight: 1.55 }}>
-                  <li>Dashboard en vivo</li>
+                  <li>Panel en vivo</li>
                   <li>Biblioteca de workouts</li>
                   <li>Evaluación VDOT</li>
                   <li>Generación IA</li>
@@ -3244,7 +3244,7 @@ const handleSignOut = async () => {
             <div style={S.logoTitle}>
               RUNNING<span style={{ color: "#f59e0b" }}>APEX</span>FLOW
             </div>
-            <div style={S.logoSub}>Coach Platform</div>
+            <div style={S.logoSub}>Plataforma de Coach</div>
           </div>
         </div>
         <nav style={{ flex: 1, paddingTop: 8 }}>
@@ -3972,7 +3972,7 @@ function Dashboard({
       <div style={{ marginBottom: 28 }}>
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16 }}>
           <div>
-            <h1 style={S.pageTitle}>Dashboard</h1>
+            <h1 style={S.pageTitle}>Panel</h1>
             <p style={{ color: "#475569", fontSize: ".82em", marginTop: 4 }}>{weekRangeLabel} · datos en vivo</p>
           </div>
           <button
@@ -4068,7 +4068,7 @@ function Dashboard({
               />
             </div>
             <div>
-              <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Email</div>
+              <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Correo</div>
               <input
                 type="email"
                 value={newAthlete.email}
@@ -7925,7 +7925,7 @@ function AdminCoachesProfilesPanel({ notify, adminUserId }) {
             <thead>
               <tr>
                 <th style={th}>Nombre</th>
-                <th style={th}>Email</th>
+                <th style={th}>Correo</th>
                 <th style={th}>Estado</th>
                 <th style={th}>Plan elegido</th>
                 <th style={th}>Período</th>

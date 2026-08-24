@@ -839,7 +839,7 @@ export default function AthleteHome({ profile }) {
     if (next && athleteInfo?.id) {
       try {
         if (athleteInfo?.coach_id) {
-          await sendChatPushNotification({ toUserId: athleteInfo.coach_id, title: "✅ Workout completado", body: `${athleteInfo.name || "Atleta"} completó: ${w.title || "Workout"}`, data: { type: "coach_athlete", athlete_id: athleteInfo.id }, logLabel: "workout done athlete→coach" });
+          await sendChatPushNotification({ toUserId: athleteInfo.coach_id, title: "✅ Entreno completado", body: `${athleteInfo.name || "Atleta"} completó: ${w.title || "Entreno"}`, data: { type: "coach_athlete", athlete_id: athleteInfo.id }, logLabel: "workout done athlete→coach" });
         }
       } catch (_) {}
       // Fire and forget: intenta traer lo ejecutado del reloj (intervals.icu).
@@ -880,7 +880,7 @@ export default function AthleteHome({ profile }) {
         await sendChatPushNotification({
           toUserId: athleteInfo.coach_id,
           title: "⚠️ Sesion no completada",
-          body: `${athleteInfo.name || "Atleta"} no completo: ${w.title || "Workout"} (${w.total_km || 0} km). Puede requerir ajuste de plan.`,
+          body: `${athleteInfo.name || "Atleta"} no completo: ${w.title || "Entreno"} (${w.total_km || 0} km). Puede requerir ajuste de plan.`,
           data: { type: "coach_athlete", athlete_id: athleteInfo.id },
           logLabel: "workout missed athlete→coach",
         });
@@ -2285,7 +2285,7 @@ export default function AthleteHome({ profile }) {
           <div style={{ ...S.card, width: "100%", maxWidth: 520, margin: 0, maxHeight: "90vh", overflowY: "auto" }}>
             <div style={{ fontSize: "1.1em", fontWeight: 900, color: "#0f172a", marginBottom: 6 }}>Resumen del entrenamiento</div>
             <div style={{ color: "#64748b", fontSize: ".84em", marginBottom: 12 }}>
-              {(workoutSummaryModal.workout?.title || "Workout")} · {workoutSummaryModal.workout?.scheduled_date || "—"}
+              {(workoutSummaryModal.workout?.title || "Entreno")} · {workoutSummaryModal.workout?.scheduled_date || "—"}
             </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14, padding: 12, background: "#f8fafc", borderRadius: 10 }}>
