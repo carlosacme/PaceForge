@@ -2,7 +2,7 @@
   "name": "RunningApexFlow",
   "short_name": "RunningApexFlow",
   "description": "Plataforma de coaching y entrenamiento para runners",
-  "theme_color": "#f59e0b",
+  "theme_color": "#ff8a3d",
   "background_color": "#080f18",
   "display": "standalone",
   "start_url": "/",

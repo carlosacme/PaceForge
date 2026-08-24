@@ -69,7 +69,7 @@ export const userFacingError = (err, fallback = "Algo salió mal. Inténtalo de 
 
 export const WORKOUT_TYPES = [
   { id: "easy", label: "Rodaje Suave", color: "#22c55e" },
-  { id: "tempo", label: "Tempo", color: "#f59e0b" },
+  { id: "tempo", label: "Tempo", color: "#ff8a3d" },
   { id: "interval", label: "Intervalos", color: "#ef4444" },
   { id: "long", label: "Largo", color: "#3b82f6" },
   { id: "recovery", label: "Recuperación", color: "#8b5cf6" },
@@ -257,7 +257,7 @@ export const ATHLETE_SUBSCRIPTION_PLAN_CATALOG = [
 export const WORKOUT_BLOCK_TYPES = ["Calentamiento", "Intervalo", "Recuperación", "Enfriamiento", "Rodaje"];
 
 export const WORKOUT_BLOCK_COLORS = {
-  Calentamiento: { bg: "rgba(245,158,11,.14)", border: "rgba(245,158,11,.45)", text: "#b45309" },
+  Calentamiento: { bg: "rgba(255,138,61,.14)", border: "rgba(255,138,61,.45)", text: "#b45309" },
   Intervalo: { bg: "rgba(239,68,68,.12)", border: "rgba(239,68,68,.4)", text: "#b91c1c" },
   Recuperación: { bg: "rgba(34,197,94,.12)", border: "rgba(34,197,94,.38)", text: "#166534" },
   Enfriamiento: { bg: "rgba(59,130,246,.12)", border: "rgba(59,130,246,.38)", text: "#1d4ed8" },
@@ -1493,8 +1493,8 @@ export const styles = {
   },
   navBtnActive: {
     color: "#c2410c",
-    background: "rgba(245, 158, 11, 0.14)",
-    borderRight: "3px solid #f59e0b",
+    background: "rgba(255,138,61, 0.14)",
+    borderRight: "3px solid #ff8a3d",
   },
   sidebarFooter: { padding: "16px", borderTop: "1px solid #e2e8f0", marginTop: "auto", background: "#fafafa" },
   page: { padding: "28px 32px", maxWidth: 1120, width: "100%" },
@@ -1510,8 +1510,8 @@ export const styles = {
     width: 36,
     height: 36,
     borderRadius: "50%",
-    background: "rgba(245, 158, 11, 0.12)",
-    border: "1px solid rgba(245, 158, 11, 0.35)",
+    background: "rgba(255,138,61, 0.12)",
+    border: "1px solid rgba(255,138,61, 0.35)",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",

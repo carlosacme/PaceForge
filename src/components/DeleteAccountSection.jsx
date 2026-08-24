@@ -87,7 +87,7 @@ export default function DeleteAccountSection({ notify, cardStyle }) {
         </button>
         <p style={{ margin: "10px 0 0", fontSize: ".72em", color: "#94a3b8" }}>
           Más info:{" "}
-          <a href="/eliminar-cuenta" target="_blank" rel="noopener noreferrer" style={{ color: "#f59e0b", fontWeight: 700 }}>
+          <a href="/eliminar-cuenta" target="_blank" rel="noopener noreferrer" style={{ color: "#ff8a3d", fontWeight: 700 }}>
             runningapexflow.com/eliminar-cuenta
           </a>
         </p>

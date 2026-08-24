@@ -1393,7 +1393,7 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
         {draftLoading ? <div style={{ marginTop: 4, color: "#94a3b8", fontSize: ".76em" }}>Cargando draft guardado…</div> : null}
       </div>
       {generationLimitMsg ? (
-        <div style={{ ...S.card, marginBottom: 14, border: "1px solid rgba(245,158,11,.4)", background: "#fffbeb" }}>
+        <div style={{ ...S.card, marginBottom: 14, border: "1px solid rgba(255,138,61,.4)", background: "#fffbeb" }}>
           <div style={{ color: "#92400e", fontSize: ".84em", fontWeight: 700, marginBottom: 10 }}>{generationLimitMsg}</div>
           <div style={{ display: "flex", justifyContent: "flex-end" }}>
             <button
@@ -1434,7 +1434,7 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
               style={{
                 borderRadius: 10,
                 padding: "10px 12px",
-                border: `1px solid ${effectiveVdot.source === "estimated" ? "rgba(245,158,11,.45)" : "rgba(14,116,144,.35)"}`,
+                border: `1px solid ${effectiveVdot.source === "estimated" ? "rgba(255,138,61,.45)" : "rgba(14,116,144,.35)"}`,
                 background: effectiveVdot.source === "estimated" ? "#fffbeb" : "rgba(14,116,144,.08)",
               }}
             >
@@ -1479,7 +1479,7 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
               style={{
                 borderRadius: 10,
                 padding: "10px 12px",
-                border: `1px solid ${declaredWeeklyKm == null ? "rgba(245,158,11,.45)" : "rgba(14,116,144,.35)"}`,
+                border: `1px solid ${declaredWeeklyKm == null ? "rgba(255,138,61,.45)" : "rgba(14,116,144,.35)"}`,
                 background: declaredWeeklyKm == null ? "#fffbeb" : "rgba(14,116,144,.08)",
               }}
             >
@@ -1524,7 +1524,7 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
                 style={inputStyle}
               />
               {targetTimeWarning ? (
-                <div style={{ marginTop: 6, padding: "8px 10px", borderRadius: 8, border: "1px solid rgba(245,158,11,.45)", background: "#fffbeb", color: "#92400e", fontSize: ".72em", fontWeight: 600, lineHeight: 1.45 }}>
+                <div style={{ marginTop: 6, padding: "8px 10px", borderRadius: 8, border: "1px solid rgba(255,138,61,.45)", background: "#fffbeb", color: "#92400e", fontSize: ".72em", fontWeight: 600, lineHeight: 1.45 }}>
                   ⚠️ {targetTimeWarning}
                 </div>
               ) : null}
@@ -1556,7 +1556,7 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
               <div style={{ marginTop: 6, color: "#64748b", fontSize: ".72em" }}>Los bloques inician siempre el lunes.</div>
             </div>
             {raceInBlockWarning ? (
-              <div style={{ padding: "10px 12px", borderRadius: 8, border: "1px solid rgba(245,158,11,.45)", background: "#fffbeb", color: "#92400e", fontSize: ".76em", fontWeight: 600, lineHeight: 1.45 }}>
+              <div style={{ padding: "10px 12px", borderRadius: 8, border: "1px solid rgba(255,138,61,.45)", background: "#fffbeb", color: "#92400e", fontSize: ".76em", fontWeight: 600, lineHeight: 1.45 }}>
                 ⚠️ {raceInBlockWarning}
               </div>
             ) : null}
@@ -1593,7 +1593,7 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
               style={{
                 marginTop: 6,
                 width: "100%",
-                background: planLoading || !athletes?.length ? "#e2e8f0" : "linear-gradient(135deg,#b45309,#f59e0b)",
+                background: planLoading || !athletes?.length ? "#e2e8f0" : "linear-gradient(135deg,#e86f28,#ff8a3d)",
                 border: "none",
                 borderRadius: 8,
                 padding: "12px 16px",
@@ -1772,7 +1772,7 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
                           alignItems: "center",
                           justifyContent: "space-between",
                           padding: "12px 14px",
-                          background: open ? "rgba(245,158,11,.1)" : "#f8fafc",
+                          background: open ? "rgba(255,138,61,.1)" : "#f8fafc",
                           border: "none",
                           color: "#0f172a",
                           fontFamily: "inherit",
@@ -1796,8 +1796,8 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
                             style={{
                               width: "100%",
                               marginBottom: 12,
-                              background: "rgba(245,158,11,.1)",
-                              border: "1px dashed rgba(245,158,11,.35)",
+                              background: "rgba(255,138,61,.1)",
+                              border: "1px dashed rgba(255,138,61,.35)",
                               borderRadius: 8,
                               padding: "8px 12px",
                               color: "#fbbf24",
@@ -1849,8 +1849,8 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
                                         setPlanEditModal({ weekNumber: n, workoutIdx: idx });
                                       }}
                                       style={{
-                                        background: "rgba(245,158,11,.14)",
-                                        border: "1px solid rgba(245,158,11,.35)",
+                                        background: "rgba(255,138,61,.14)",
+                                        border: "1px solid rgba(255,138,61,.35)",
                                         borderRadius: 6,
                                         padding: "6px 10px",
                                         cursor: "pointer",
@@ -2108,7 +2108,7 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
                 type="button"
                 onClick={savePlanEditModal}
                 style={{
-                  background: "linear-gradient(135deg,#b45309,#f59e0b)",
+                  background: "linear-gradient(135deg,#e86f28,#ff8a3d)",
                   border: "none",
                   borderRadius: 8,
                   padding: "8px 14px",

@@ -414,7 +414,7 @@ export default function EvaluationView({ athletes, currentUserId, notify, athlet
                   : pid === "10k"
                     ? { border: "#3b82f655", bg: "#eff6ff", accent: "#1d4ed8" }
                     : pid === "21k"
-                      ? { border: "#f59e0b55", bg: "#fffbeb", accent: "#b45309" }
+                      ? { border: "#ff8a3d55", bg: "#fffbeb", accent: "#b45309" }
                       : { border: "#ef444455", bg: "#fef2f2", accent: "#b91c1c" };
               const level = (() => {
                 if (pid === "5k") {
@@ -553,7 +553,7 @@ export default function EvaluationView({ athletes, currentUserId, notify, athlet
                 border: "1px solid #e2e8f0",
                 borderRadius: 8,
                 padding: "8px 12px",
-                background: tab === x.id ? "rgba(245,158,11,.14)" : "#fff",
+                background: tab === x.id ? "rgba(255,138,61,.14)" : "#fff",
                 color: tab === x.id ? "#b45309" : "#475569",
                 fontWeight: 700,
                 fontFamily: "inherit",
@@ -612,7 +612,7 @@ export default function EvaluationView({ athletes, currentUserId, notify, athlet
         )}
 
         <div style={{ display: "flex", gap: 10, marginTop: 16, flexWrap: "wrap" }}>
-          <button type="button" onClick={calculate} style={{ background: "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 10, padding: "10px 16px", color: "#fff", fontFamily: "inherit", fontWeight: 800, cursor: "pointer" }}>
+          <button type="button" onClick={calculate} style={{ background: "linear-gradient(135deg,#e86f28,#ff8a3d)", border: "none", borderRadius: 10, padding: "10px 16px", color: "#fff", fontFamily: "inherit", fontWeight: 800, cursor: "pointer" }}>
             Calcular
           </button>
           <button
@@ -665,10 +665,10 @@ export default function EvaluationView({ athletes, currentUserId, notify, athlet
                     </g>
                   );
                 })}
-                <polyline fill="none" stroke="#f59e0b" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" points={points} />
+                <polyline fill="none" stroke="#ff8a3d" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" points={points} />
                 {vdots.map((v, i) => (
                   <g key={i}>
-                    <circle cx={toX(i)} cy={toY(v)} r={4} fill="#f59e0b" stroke="#fff" strokeWidth={1.5} />
+                    <circle cx={toX(i)} cy={toY(v)} r={4} fill="#ff8a3d" stroke="#fff" strokeWidth={1.5} />
                     <text x={toX(i)} y={toY(v) - 7} textAnchor="middle" fontSize={7} fontWeight="700" fill="#b45309">{v.toFixed(1)}</text>
                     <text x={toX(i)} y={H - 6} textAnchor="middle" fontSize={6.5} fill="#94a3b8">{dates[i]}</text>
                   </g>

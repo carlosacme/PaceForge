@@ -742,7 +742,7 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
               padding: "12px 24px",
               borderRadius: 10,
               border: "none",
-              background: saving ? "#e2e8f0" : "linear-gradient(135deg,#b45309,#f59e0b)",
+              background: saving ? "#e2e8f0" : "linear-gradient(135deg,#e86f28,#ff8a3d)",
               color: saving ? "#64748b" : "#fff",
               fontWeight: 800,
               cursor: saving ? "not-allowed" : "pointer",
@@ -778,7 +778,7 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
                   </div>
                   <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                     <button type="button" onClick={() => openAssignAthletesModal(s)}
-                      style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid rgba(245,158,11,.4)", background: "rgba(245,158,11,.1)", color: "#b45309", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".72em" }}>
+                      style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid rgba(255,138,61,.4)", background: "rgba(255,138,61,.1)", color: "#b45309", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".72em" }}>
                       Atletas asignados ({s.assignedCount || 0})
                     </button>
                     <button type="button" onClick={() => removeStaff(s.staff_id)}
@@ -809,7 +809,7 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
           </div>
         )}
         {staffList.length >= 5 && (
-          <div style={{ fontSize: ".78em", color: "#f59e0b", fontWeight: 700 }}>Limite de 5 sub-coaches alcanzado.</div>
+          <div style={{ fontSize: ".78em", color: "#ff8a3d", fontWeight: 700 }}>Limite de 5 sub-coaches alcanzado.</div>
         )}
       </div>
       )}
@@ -914,7 +914,7 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
               </div>
             ))}
           </div>
-          <div style={{ marginTop: 12, padding: "10px 14px", borderRadius: 10, background: "rgba(245,158,11,.06)", border: "1px solid rgba(245,158,11,.2)", fontSize: ".78em", color: "#92400e", lineHeight: 1.5 }}>
+          <div style={{ marginTop: 12, padding: "10px 14px", borderRadius: 10, background: "rgba(255,138,61,.06)", border: "1px solid rgba(255,138,61,.2)", fontSize: ".78em", color: "#92400e", lineHeight: 1.5 }}>
             💡 <strong>Pago separado:</strong> El sub-coach debe adquirir su propio plan. <strong>Incluido:</strong> Su acceso va cubierto por tu suscripcion actual sin costo adicional.
           </div>
         </div>

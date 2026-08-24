@@ -888,7 +888,7 @@ function WorkoutLibrary({
                     type="button"
                     onClick={() => onUseWorkout(row)}
                     style={{
-                      background: "linear-gradient(135deg,#b45309,#f59e0b)",
+                      background: "linear-gradient(135deg,#e86f28,#ff8a3d)",
                       border: "none",
                       borderRadius: 8,
                       padding: "8px 14px",
@@ -1044,7 +1044,7 @@ function WorkoutLibrary({
               <button type="button" onClick={() => setAssigningWorkoutRow(null)} disabled={assignSaving} style={{ border: "1px solid #e2e8f0", background: "#fff", borderRadius: 8, padding: "8px 12px", color: "#475569", cursor: assignSaving ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 700 }}>
                 Cancelar
               </button>
-              <button type="button" onClick={() => assignDirectly(assigningWorkoutRow)} disabled={assignSaving || assignVdotLoading} style={{ border: "none", background: assignSaving || assignVdotLoading ? "#cbd5e1" : "linear-gradient(135deg,#b45309,#f59e0b)", borderRadius: 8, padding: "8px 12px", color: "#fff", cursor: assignSaving || assignVdotLoading ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 800 }}>
+              <button type="button" onClick={() => assignDirectly(assigningWorkoutRow)} disabled={assignSaving || assignVdotLoading} style={{ border: "none", background: assignSaving || assignVdotLoading ? "#cbd5e1" : "linear-gradient(135deg,#e86f28,#ff8a3d)", borderRadius: 8, padding: "8px 12px", color: "#fff", cursor: assignSaving || assignVdotLoading ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 800 }}>
                 {assignSaving ? "Asignando…" : assignVdotLoading ? "Leyendo VDOT…" : "Asignar a seleccionados"}
               </button>
             </div>

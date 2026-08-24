@@ -110,7 +110,7 @@ const CoachLinkActions = ({
           type="button"
           onClick={onConnect}
           disabled={connectDisabled}
-          style={{ padding: "9px 16px", borderRadius: 8, border: "none", background: connectDisabled ? "#e2e8f0" : "linear-gradient(135deg,#b45309,#f59e0b)", color: connectDisabled ? "#94a3b8" : "#fff", fontWeight: 800, cursor: connectDisabled ? "not-allowed" : "pointer", fontFamily: "inherit", fontSize: ".82em", whiteSpace: "nowrap" }}
+          style={{ padding: "9px 16px", borderRadius: 8, border: "none", background: connectDisabled ? "#e2e8f0" : "linear-gradient(135deg,#e86f28,#ff8a3d)", color: connectDisabled ? "#94a3b8" : "#fff", fontWeight: 800, cursor: connectDisabled ? "not-allowed" : "pointer", fontFamily: "inherit", fontSize: ".82em", whiteSpace: "nowrap" }}
         >
           {connecting ? "Conectando..." : "Conectar"}
         </button>
@@ -124,7 +124,7 @@ const CoachLinkActions = ({
         type="button"
         onClick={onRequest}
         disabled={requesting || requestPending}
-        style={{ padding: "9px 16px", borderRadius: 8, border: "1px solid rgba(245,158,11,.45)", background: requesting || requestPending ? "#f1f5f9" : "rgba(245,158,11,.12)", color: requesting || requestPending ? "#94a3b8" : "#b45309", fontWeight: 800, cursor: requesting || requestPending ? "not-allowed" : "pointer", fontFamily: "inherit", fontSize: ".82em" }}
+        style={{ padding: "9px 16px", borderRadius: 8, border: "1px solid rgba(255,138,61,.45)", background: requesting || requestPending ? "#f1f5f9" : "rgba(255,138,61,.12)", color: requesting || requestPending ? "#94a3b8" : "#b45309", fontWeight: 800, cursor: requesting || requestPending ? "not-allowed" : "pointer", fontFamily: "inherit", fontSize: ".82em" }}
       >
         {requesting ? "Enviando..." : requestPending ? "Solicitud enviada" : "Solicitar entrenador"}
       </button>
@@ -1368,7 +1368,7 @@ export default function AthleteHome({ profile }) {
     <div style={{ ...S.card, marginBottom, overflow: "visible" }}>
       <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
         {[{ id: "week", label: "Semana" }, { id: "month", label: "Mes" }, { id: "year", label: "Año" }].map((t) => (
-          <button key={t.id} type="button" onClick={() => setAthleteProgressTab(t.id)} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 12px", background: athleteProgressTab === t.id ? "rgba(245,158,11,.14)" : "#fff", fontWeight: athleteProgressTab === t.id ? 800 : 600, cursor: "pointer", fontFamily: "inherit", fontSize: ".78em", color: athleteProgressTab === t.id ? "#c2410c" : "#64748b" }}>{t.label}</button>
+          <button key={t.id} type="button" onClick={() => setAthleteProgressTab(t.id)} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 12px", background: athleteProgressTab === t.id ? "rgba(255,138,61,.14)" : "#fff", fontWeight: athleteProgressTab === t.id ? 800 : 600, cursor: "pointer", fontFamily: "inherit", fontSize: ".78em", color: athleteProgressTab === t.id ? "#c2410c" : "#64748b" }}>{t.label}</button>
         ))}
       </div>
       <div style={{ color: "#64748b", fontSize: ".8em", marginBottom: 12 }}>{athleteProgressStats.rangeLabel}</div>
@@ -1508,8 +1508,8 @@ export default function AthleteHome({ profile }) {
             gap: 10,
             padding: "10px 14px",
             borderRadius: 12,
-            background: "linear-gradient(135deg, rgba(245,158,11,.1), rgba(251,191,36,.08))",
-            border: "1px solid rgba(245,158,11,.3)",
+            background: "linear-gradient(135deg, rgba(255,138,61,.1), rgba(251,191,36,.08))",
+            border: "1px solid rgba(255,138,61,.3)",
             marginBottom: 12,
           }}
         >
@@ -1519,7 +1519,7 @@ export default function AthleteHome({ profile }) {
               alt=""
               loading="lazy"
               onError={() => setCoachAvatarFailedUrl(coachAvatarUrl)}
-              style={{ width: 34, height: 34, flexShrink: 0, borderRadius: "50%", objectFit: "cover", border: "1px solid rgba(245,158,11,.45)", display: "block" }}
+              style={{ width: 34, height: 34, flexShrink: 0, borderRadius: "50%", objectFit: "cover", border: "1px solid rgba(255,138,61,.45)", display: "block" }}
             />
           ) : (
             <span style={{ fontSize: "1.2em", flexShrink: 0 }}>🏃</span>
@@ -1539,7 +1539,7 @@ export default function AthleteHome({ profile }) {
               display: "inline-flex",
               alignItems: "center",
               gap: 6,
-              background: "linear-gradient(135deg,#f59e0b,#ea580c)",
+              background: "linear-gradient(135deg,#ff8a3d,#ea580c)",
               border: "none",
               borderRadius: 999,
               padding: "7px 14px",
@@ -1560,8 +1560,8 @@ export default function AthleteHome({ profile }) {
           style={{
             padding: "14px 16px",
             borderRadius: 12,
-            background: "linear-gradient(135deg, rgba(245,158,11,.1), rgba(251,191,36,.08))",
-            border: "1px solid rgba(245,158,11,.3)",
+            background: "linear-gradient(135deg, rgba(255,138,61,.1), rgba(251,191,36,.08))",
+            border: "1px solid rgba(255,138,61,.3)",
             marginBottom: 12,
           }}
         >
@@ -1737,7 +1737,7 @@ export default function AthleteHome({ profile }) {
               </button>
               {!ctxMenuAthleteWorkout.done && (
                 <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={(e) => { e.stopPropagation(); setNot100Modal(ctxMenuAthleteWorkout); setNot100Form({ reason: "", level: "medio" }); closeAthleteCalendarCtxMenu(); }}
-                  style={{ display: "block", width: "100%", textAlign: "left", background: "transparent", border: "none", borderRadius: 8, padding: "10px 12px", color: "#f59e0b", fontWeight: 600, cursor: "pointer", fontFamily: "inherit", fontSize: ".82em" }}>
+                  style={{ display: "block", width: "100%", textAlign: "left", background: "transparent", border: "none", borderRadius: 8, padding: "10px 12px", color: "#ff8a3d", fontWeight: 600, cursor: "pointer", fontFamily: "inherit", fontSize: ".82em" }}>
                   😓 No estoy al 100%
                 </button>
               )}
@@ -1768,7 +1768,7 @@ export default function AthleteHome({ profile }) {
             const maxKm = Math.max(...last4WeeksSummary.map(w => w.kmTotal), 1);
             const kmPct = Math.round((week.kmTotal / maxKm) * 100);
             return (
-              <div key={week.key} style={{ flex: "0 0 auto", width: 140, border: isCurrentWeek ? "2px solid rgba(245,158,11,.5)" : "1px solid #e2e8f0", borderRadius: 12, padding: "12px 10px", background: isCurrentWeek ? "rgba(245,158,11,.04)" : "#fafafa" }}>
+              <div key={week.key} style={{ flex: "0 0 auto", width: 140, border: isCurrentWeek ? "2px solid rgba(255,138,61,.5)" : "1px solid #e2e8f0", borderRadius: 12, padding: "12px 10px", background: isCurrentWeek ? "rgba(255,138,61,.04)" : "#fafafa" }}>
                 <div style={{ fontWeight: 800, fontSize: ".78em", color: isCurrentWeek ? "#b45309" : "#475569" }}>{week.label}</div>
                 <div style={{ fontSize: ".6em", color: "#94a3b8", marginBottom: 10 }}>{week.range}</div>
                 <div style={{ marginBottom: 8 }}>
@@ -1776,7 +1776,7 @@ export default function AthleteHome({ profile }) {
                     <span>Km</span><span style={{ fontWeight: 800, color: "#0f172a" }}>{week.kmTotal.toFixed(1)}</span>
                   </div>
                   <div style={{ height: 5, background: "#e2e8f0", borderRadius: 999 }}>
-                    <div style={{ height: "100%", width: kmPct + "%", background: "linear-gradient(90deg,#f59e0b,#f97316)", borderRadius: 999, transition: "width .3s" }} />
+                    <div style={{ height: "100%", width: kmPct + "%", background: "linear-gradient(90deg,#ff8a3d,#f97316)", borderRadius: 999, transition: "width .3s" }} />
                   </div>
                 </div>
                 <div style={{ marginBottom: 8 }}>
@@ -1835,7 +1835,7 @@ export default function AthleteHome({ profile }) {
               <div style={{ display: "flex", gap: 8 }}>
                 {[["leve","😕 Leve"],["medio","😓 Regular"],["grave","🤒 Mal"]].map(([val, label]) => (
                   <button key={val} type="button" onClick={() => setNot100Form(f => ({ ...f, level: val }))}
-                    style={{ flex: 1, padding: "8px 6px", borderRadius: 8, border: not100Form.level === val ? "2px solid #f59e0b" : "1px solid #e2e8f0", background: not100Form.level === val ? "rgba(245,158,11,.1)" : "#f8fafc", color: not100Form.level === val ? "#b45309" : "#475569", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".75em" }}>
+                    style={{ flex: 1, padding: "8px 6px", borderRadius: 8, border: not100Form.level === val ? "2px solid #ff8a3d" : "1px solid #e2e8f0", background: not100Form.level === val ? "rgba(255,138,61,.1)" : "#f8fafc", color: not100Form.level === val ? "#b45309" : "#475569", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".75em" }}>
                     {label}
                   </button>
                 ))}
@@ -1853,7 +1853,7 @@ export default function AthleteHome({ profile }) {
                 Cancelar
               </button>
               <button type="button" onClick={sendNot100Report} disabled={not100Sending}
-                style={{ padding: "8px 14px", borderRadius: 8, border: "none", background: not100Sending ? "#e2e8f0" : "linear-gradient(135deg,#f59e0b,#d97706)", color: not100Sending ? "#94a3b8" : "#fff", fontWeight: 800, cursor: not100Sending ? "not-allowed" : "pointer", fontFamily: "inherit", fontSize: ".82em" }}>
+                style={{ padding: "8px 14px", borderRadius: 8, border: "none", background: not100Sending ? "#e2e8f0" : "linear-gradient(135deg,#ff8a3d,#d97706)", color: not100Sending ? "#94a3b8" : "#fff", fontWeight: 800, cursor: not100Sending ? "not-allowed" : "pointer", fontFamily: "inherit", fontSize: ".82em" }}>
                 {not100Sending ? "Enviando..." : "Notificar coach"}
               </button>
             </div>
@@ -1862,11 +1862,11 @@ export default function AthleteHome({ profile }) {
       )}
 
       <nav aria-label="Navegación atleta" style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 9999, display: "flex", flexDirection: "row", justifyContent: "space-around", alignItems: "center", background: "white", borderTop: "1px solid #e2e8f0", padding: "8px 0 12px 0", height: "60px" }}>
-        <button type="button" style={{ minWidth: 60, color: athleteActiveTab === "home" ? "#c2410c" : "#64748b", background: athleteActiveTab === "home" ? "rgba(245,158,11,.14)" : "transparent", fontWeight: athleteActiveTab === "home" ? 800 : 600 }} onClick={() => handleAthleteNavTabChange("home")}><span className="pf-bnav-icon">🏠</span><span style={{ fontSize: "10px" }}>Inicio</span></button>
-        <button type="button" style={{ minWidth: 60, color: athleteActiveTab === "marketplace" ? "#c2410c" : "#64748b", background: athleteActiveTab === "marketplace" ? "rgba(245,158,11,.14)" : "transparent", fontWeight: athleteActiveTab === "marketplace" ? 800 : 600 }} onClick={() => handleAthleteNavTabChange("marketplace")}><span className="pf-bnav-icon">🛒</span><span style={{ fontSize: "10px" }}>Market</span></button>
-        <button type="button" style={{ minWidth: 60, color: athleteActiveTab === "challenges" ? "#c2410c" : "#64748b", background: athleteActiveTab === "challenges" ? "rgba(245,158,11,.14)" : "transparent", fontWeight: athleteActiveTab === "challenges" ? 800 : 600 }} onClick={() => handleAthleteNavTabChange("challenges")}><span className="pf-bnav-icon">🏆</span><span style={{ fontSize: "10px" }}>Retos</span></button>
-        <button type="button" style={{ minWidth: 60, color: athleteActiveTab === "eval" ? "#c2410c" : "#64748b", background: athleteActiveTab === "eval" ? "rgba(245,158,11,.14)" : "transparent", fontWeight: athleteActiveTab === "eval" ? 800 : 600 }} onClick={() => handleAthleteNavTabChange("eval")}><span className="pf-bnav-icon">⚡</span><span style={{ fontSize: "10px" }}>Eval</span></button>
-        <button type="button" style={{ minWidth: 60, color: athleteActiveTab === "profile" ? "#c2410c" : "#64748b", background: athleteActiveTab === "profile" ? "rgba(245,158,11,.14)" : "transparent", fontWeight: athleteActiveTab === "profile" ? 800 : 600 }} onClick={() => handleAthleteNavTabChange("profile")}><span className="pf-bnav-icon">👤</span><span style={{ fontSize: "10px" }}>Perfil</span></button>
+        <button type="button" style={{ minWidth: 60, color: athleteActiveTab === "home" ? "#c2410c" : "#64748b", background: athleteActiveTab === "home" ? "rgba(255,138,61,.14)" : "transparent", fontWeight: athleteActiveTab === "home" ? 800 : 600 }} onClick={() => handleAthleteNavTabChange("home")}><span className="pf-bnav-icon">🏠</span><span style={{ fontSize: "10px" }}>Inicio</span></button>
+        <button type="button" style={{ minWidth: 60, color: athleteActiveTab === "marketplace" ? "#c2410c" : "#64748b", background: athleteActiveTab === "marketplace" ? "rgba(255,138,61,.14)" : "transparent", fontWeight: athleteActiveTab === "marketplace" ? 800 : 600 }} onClick={() => handleAthleteNavTabChange("marketplace")}><span className="pf-bnav-icon">🛒</span><span style={{ fontSize: "10px" }}>Market</span></button>
+        <button type="button" style={{ minWidth: 60, color: athleteActiveTab === "challenges" ? "#c2410c" : "#64748b", background: athleteActiveTab === "challenges" ? "rgba(255,138,61,.14)" : "transparent", fontWeight: athleteActiveTab === "challenges" ? 800 : 600 }} onClick={() => handleAthleteNavTabChange("challenges")}><span className="pf-bnav-icon">🏆</span><span style={{ fontSize: "10px" }}>Retos</span></button>
+        <button type="button" style={{ minWidth: 60, color: athleteActiveTab === "eval" ? "#c2410c" : "#64748b", background: athleteActiveTab === "eval" ? "rgba(255,138,61,.14)" : "transparent", fontWeight: athleteActiveTab === "eval" ? 800 : 600 }} onClick={() => handleAthleteNavTabChange("eval")}><span className="pf-bnav-icon">⚡</span><span style={{ fontSize: "10px" }}>Eval</span></button>
+        <button type="button" style={{ minWidth: 60, color: athleteActiveTab === "profile" ? "#c2410c" : "#64748b", background: athleteActiveTab === "profile" ? "rgba(255,138,61,.14)" : "transparent", fontWeight: athleteActiveTab === "profile" ? 800 : 600 }} onClick={() => handleAthleteNavTabChange("profile")}><span className="pf-bnav-icon">👤</span><span style={{ fontSize: "10px" }}>Perfil</span></button>
       </nav>
 
       {athleteActiveTab !== "home" ? (
@@ -1895,7 +1895,7 @@ export default function AthleteHome({ profile }) {
               hasPremiumAccess ? (
                 <Suspense fallback={<div style={{ padding: 20, color: "#64748b" }}>Cargando evaluación…</div>}>
                   {!hasPremiumAccess && athleteEvaluations.length === 0 ? (
-                <div style={{ padding: "10px 14px", borderRadius: 10, background: "rgba(245,158,11,.1)", border: "1px solid rgba(245,158,11,.3)", marginBottom: 14, fontSize: ".82em", color: "#b45309", fontWeight: 600 }}>
+                <div style={{ padding: "10px 14px", borderRadius: 10, background: "rgba(255,138,61,.1)", border: "1px solid rgba(255,138,61,.3)", marginBottom: 14, fontSize: ".82em", color: "#b45309", fontWeight: 600 }}>
                   Tienes 1 evaluacion VDOT gratuita. Para evaluaciones ilimitadas, conecta un coach o activa Premium.
                 </div>
               ) : null}
@@ -1904,7 +1904,7 @@ export default function AthleteHome({ profile }) {
               ) : (
                 <div style={{ ...S.card, textAlign: "center" }}>
                   <p style={{ color: "#64748b" }}>La evaluación VDOT requiere Plan Premium Atleta.</p>
-                  <button type="button" onClick={() => { setAthleteProfileTab("pagos"); handleAthleteNavTabChange("profile"); }} style={{ background: "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 10, padding: "10px 20px", color: "#fff", fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>Ir a Pagos para suscribirme</button>
+                  <button type="button" onClick={() => { setAthleteProfileTab("pagos"); handleAthleteNavTabChange("profile"); }} style={{ background: "linear-gradient(135deg,#e86f28,#ff8a3d)", border: "none", borderRadius: 10, padding: "10px 20px", color: "#fff", fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>Ir a Pagos para suscribirme</button>
                 </div>
               )
             ) : null}
@@ -1912,11 +1912,11 @@ export default function AthleteHome({ profile }) {
             {athleteActiveTab === "profile" ? (
               <div>
                 <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
-                  <button type="button" onClick={() => setAthleteProfileTab("logros")} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", background: athleteProfileTab === "logros" ? "rgba(245,158,11,.14)" : "#fff", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>🏅 Logros</button>
-                  <button type="button" onClick={() => setAthleteProfileTab("forma")} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", background: athleteProfileTab === "forma" ? "rgba(245,158,11,.14)" : "#fff", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>📊 Forma</button>
-                  <button type="button" onClick={() => setAthleteProfileTab("mes")} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", background: athleteProfileTab === "mes" ? "rgba(245,158,11,.14)" : "#fff", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>📅 Mes</button>
-                  <button type="button" onClick={() => setAthleteProfileTab("config")} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", background: athleteProfileTab === "config" ? "rgba(245,158,11,.14)" : "#fff", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>⚙️ Config</button>
-                  <button type="button" onClick={() => setAthleteProfileTab("pagos")} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", background: athleteProfileTab === "pagos" ? "rgba(245,158,11,.14)" : "#fff", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>💳 Pagos</button>
+                  <button type="button" onClick={() => setAthleteProfileTab("logros")} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", background: athleteProfileTab === "logros" ? "rgba(255,138,61,.14)" : "#fff", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>🏅 Logros</button>
+                  <button type="button" onClick={() => setAthleteProfileTab("forma")} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", background: athleteProfileTab === "forma" ? "rgba(255,138,61,.14)" : "#fff", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>📊 Forma</button>
+                  <button type="button" onClick={() => setAthleteProfileTab("mes")} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", background: athleteProfileTab === "mes" ? "rgba(255,138,61,.14)" : "#fff", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>📅 Mes</button>
+                  <button type="button" onClick={() => setAthleteProfileTab("config")} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", background: athleteProfileTab === "config" ? "rgba(255,138,61,.14)" : "#fff", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>⚙️ Config</button>
+                  <button type="button" onClick={() => setAthleteProfileTab("pagos")} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", background: athleteProfileTab === "pagos" ? "rgba(255,138,61,.14)" : "#fff", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>💳 Pagos</button>
                 </div>
 
                 {athleteProfileTab === "logros" ? (
@@ -1946,7 +1946,7 @@ export default function AthleteHome({ profile }) {
                               <div style={{ marginTop: 10 }}>
                                 <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 5 }}>{a.requirement}</div>
                                 <div style={{ height: 8, borderRadius: 999, background: "#e2e8f0", overflow: "hidden" }}>
-                                  <div style={{ width: `${progressPct}%`, height: "100%", background: "linear-gradient(90deg,#f59e0b,#f97316)" }} />
+                                  <div style={{ width: `${progressPct}%`, height: "100%", background: "linear-gradient(90deg,#ff8a3d,#f97316)" }} />
                                 </div>
                                 <div style={{ marginTop: 5, fontSize: ".7em", color: "#64748b", display: "flex", justifyContent: "space-between" }}>
                                   <span>{currentLabel}</span><span>{progressPct}%</span>
@@ -1989,7 +1989,7 @@ export default function AthleteHome({ profile }) {
                   ) : (
                     <div style={{ ...S.card, textAlign: "center" }}>
                       <p style={{ color: "#64748b" }}>Esta sección requiere Plan Premium Atleta.</p>
-                      <button type="button" onClick={() => { setAthleteProfileTab("pagos"); handleAthleteNavTabChange("profile"); }} style={{ background: "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 10, padding: "10px 20px", color: "#fff", fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>Ir a Pagos para suscribirme</button>
+                      <button type="button" onClick={() => { setAthleteProfileTab("pagos"); handleAthleteNavTabChange("profile"); }} style={{ background: "linear-gradient(135deg,#e86f28,#ff8a3d)", border: "none", borderRadius: 10, padding: "10px 20px", color: "#fff", fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>Ir a Pagos para suscribirme</button>
                     </div>
                   )
                 ) : null}
@@ -2010,7 +2010,7 @@ export default function AthleteHome({ profile }) {
                           )}
                         </div>
                         <div>
-                          <label style={{ display: "inline-block", padding: "8px 14px", borderRadius: 8, background: avatarUploading ? "#e2e8f0" : "linear-gradient(135deg,#b45309,#f59e0b)", color: avatarUploading ? "#94a3b8" : "#fff", fontWeight: 800, cursor: avatarUploading ? "not-allowed" : "pointer", fontFamily: "inherit", fontSize: ".82em" }}>
+                          <label style={{ display: "inline-block", padding: "8px 14px", borderRadius: 8, background: avatarUploading ? "#e2e8f0" : "linear-gradient(135deg,#e86f28,#ff8a3d)", color: avatarUploading ? "#94a3b8" : "#fff", fontWeight: 800, cursor: avatarUploading ? "not-allowed" : "pointer", fontFamily: "inherit", fontSize: ".82em" }}>
                             {avatarUploading ? "Subiendo..." : "📷 Subir foto"}
                             <input type="file" accept="image/*" style={{ display: "none" }} disabled={avatarUploading} onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadAthleteAvatar(f); }} />
                           </label>
@@ -2022,7 +2022,7 @@ export default function AthleteHome({ profile }) {
                     <div style={{ marginBottom: 20, paddingBottom: 20, borderBottom: "1px solid #e2e8f0" }}>
                       <div style={{ fontSize: ".72em", fontWeight: 800, color: "#475569", textTransform: "uppercase", letterSpacing: ".1em", marginBottom: 12 }}>MI COACH</div>
                       {coachName ? (
-                        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 10, background: "rgba(245,158,11,.08)", border: "1px solid rgba(245,158,11,.3)", marginBottom: 10 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 10, background: "rgba(255,138,61,.08)", border: "1px solid rgba(255,138,61,.3)", marginBottom: 10 }}>
                           <span style={{ fontSize: "1.3em" }}>&#127939;</span>
                           <div>
                             <div style={{ fontSize: ".72em", color: "#b45309", fontWeight: 700 }}>Coach actual</div>
@@ -2071,7 +2071,7 @@ export default function AthleteHome({ profile }) {
                                 </div>
                               </div>
                             </div>
-                            <button type="button" onClick={() => { setFindCoachCodeInput(c.coach_id || ""); setCoachCodeMsg(""); }} style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid rgba(245,158,11,.4)", background: "rgba(245,158,11,.1)", color: "#b45309", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".75em", whiteSpace: "nowrap" }}>
+                            <button type="button" onClick={() => { setFindCoachCodeInput(c.coach_id || ""); setCoachCodeMsg(""); }} style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid rgba(255,138,61,.4)", background: "rgba(255,138,61,.1)", color: "#b45309", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".75em", whiteSpace: "nowrap" }}>
                               Seleccionar
                             </button>
                           </div>
@@ -2120,13 +2120,13 @@ export default function AthleteHome({ profile }) {
                           <div style={{ background: "#f8fafc", borderRadius: 10, padding: "12px 14px" }}>
                             <div style={{ fontSize: ".68em", color: "#64748b", marginBottom: 4 }}>Sesiones</div>
                             <div style={{ fontSize: "1.6em", fontWeight: 900, color: "#0f172a", fontFamily: "monospace" }}>{doneThis.length}/{thisMonthWorkouts.length}</div>
-                            <div style={{ fontSize: ".7em", color: adherenceThis >= 80 ? "#16a34a" : "#f59e0b", fontWeight: 700, marginTop: 2 }}>
+                            <div style={{ fontSize: ".7em", color: adherenceThis >= 80 ? "#16a34a" : "#ff8a3d", fontWeight: 700, marginTop: 2 }}>
                               {adherenceThis}% adherencia
                             </div>
                           </div>
                         </div>
                         {bestSession && (
-                          <div style={{ background: "rgba(245,158,11,.06)", border: "1px solid rgba(245,158,11,.25)", borderRadius: 10, padding: "10px 14px" }}>
+                          <div style={{ background: "rgba(255,138,61,.06)", border: "1px solid rgba(255,138,61,.25)", borderRadius: 10, padding: "10px 14px" }}>
                             <div style={{ fontSize: ".68em", color: "#b45309", fontWeight: 700, marginBottom: 4 }}>🏆 Mejor sesión</div>
                             <div style={{ fontWeight: 800, fontSize: ".88em", color: "#0f172a" }}>{bestSession.title}</div>
                             <div style={{ fontSize: ".75em", color: "#64748b", marginTop: 2 }}>{Number(bestSession.total_km || 0).toFixed(1)} km · {bestSession.duration_min || 0} min{bestSession.rpe ? " · RPE " + bestSession.rpe : ""}</div>
@@ -2184,7 +2184,7 @@ export default function AthleteHome({ profile }) {
                           <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: "14px 16px", background: "#f8fafc" }}>
                             <div style={{ fontWeight: 800, color: "#0f172a", marginBottom: 8 }}>Plan activo: {soloAthletePlanKey === "monthly" ? "Mensual" : "Anual"}</div>
                             <div style={{ color: "#64748b", fontSize: ".86em", marginBottom: 14 }}>Fecha de vencimiento: <strong style={{ color: "#0f172a" }}>{subscriptionExpiresFormatted || "Sin fecha registrada"}</strong></div>
-                            <button type="button" onClick={() => trySoloIndependentCheckout(soloAthletePlanKey)} style={{ padding: "10px 18px", borderRadius: 10, border: "none", background: "linear-gradient(135deg,#b45309,#f59e0b)", color: "#fff", fontWeight: 800, fontSize: ".84em", cursor: "pointer", fontFamily: "inherit" }}>Renovar</button>
+                            <button type="button" onClick={() => trySoloIndependentCheckout(soloAthletePlanKey)} style={{ padding: "10px 18px", borderRadius: 10, border: "none", background: "linear-gradient(135deg,#e86f28,#ff8a3d)", color: "#fff", fontWeight: 800, fontSize: ".84em", cursor: "pointer", fontFamily: "inherit" }}>Renovar</button>
                           </div>
                         )}
                       </div>
@@ -2266,12 +2266,12 @@ export default function AthleteHome({ profile }) {
                 <div ref={athleteChatScrollRef} style={{ maxHeight: 420, overflowY: "auto", padding: "10px 8px", borderRadius: 10, background: "#f1f5f9", border: "1px solid #e2e8f0", marginBottom: 10, display: "flex", flexDirection: "column", gap: 8 }}>
                   {athleteChatMessages.length === 0 ? <div style={{ color: "#64748b", fontSize: ".8em", textAlign: "center", padding: "12px 0" }}>Sin mensajes aún</div> : athleteChatMessages.map((m) => {
                     const isCoach = m.sender_role === "coach";
-                    return <div key={m.id} style={{ alignSelf: isCoach ? "flex-end" : "flex-start", maxWidth: "88%", padding: "8px 12px", borderRadius: 10, background: isCoach ? "linear-gradient(135deg, rgba(180,83,9,.85), rgba(245,158,11,.75))" : "#eff6ff", border: `1px solid ${isCoach ? "rgba(245,158,11,.5)" : "rgba(59,130,246,.35)"}`, color: isCoach ? "#f8fafc" : "#0f172a", fontSize: ".82em", lineHeight: 1.45 }}><div>{m.body}</div><div style={{ fontSize: ".65em", color: isCoach ? "rgba(255,255,255,.85)" : "#64748b", marginTop: 6 }}>{formatMessageTimestamp(m.created_at)}</div></div>;
+                    return <div key={m.id} style={{ alignSelf: isCoach ? "flex-end" : "flex-start", maxWidth: "88%", padding: "8px 12px", borderRadius: 10, background: isCoach ? "linear-gradient(135deg, rgba(180,83,9,.85), rgba(255,138,61,.75))" : "#eff6ff", border: `1px solid ${isCoach ? "rgba(255,138,61,.5)" : "rgba(59,130,246,.35)"}`, color: isCoach ? "#f8fafc" : "#0f172a", fontSize: ".82em", lineHeight: 1.45 }}><div>{m.body}</div><div style={{ fontSize: ".65em", color: isCoach ? "rgba(255,255,255,.85)" : "#64748b", marginTop: 6 }}>{formatMessageTimestamp(m.created_at)}</div></div>;
                   })}
                 </div>
                 <div style={{ display: "flex", gap: 8 }}>
                   <input type="text" value={athleteChatDraft} onChange={(e) => setAthleteChatDraft(e.target.value)} onKeyDown={(e) => e.key === "Enter" && sendAthleteChat()} placeholder="Escribe un mensaje a tu coach…" style={{ flex: 1, background: "#f1f5f9", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", color: "#0f172a", fontFamily: "inherit", fontSize: ".85em" }} />
-                  <button type="button" onClick={sendAthleteChat} disabled={athleteChatSending || !athleteChatDraft.trim()} style={{ background: athleteChatSending || !athleteChatDraft.trim() ? "#e2e8f0" : "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 8, padding: "10px 16px", color: athleteChatSending || !athleteChatDraft.trim() ? "#64748b" : "#fff", fontWeight: 800, cursor: athleteChatSending || !athleteChatDraft.trim() ? "not-allowed" : "pointer", fontFamily: "inherit", fontSize: ".82em" }}>Enviar</button>
+                  <button type="button" onClick={sendAthleteChat} disabled={athleteChatSending || !athleteChatDraft.trim()} style={{ background: athleteChatSending || !athleteChatDraft.trim() ? "#e2e8f0" : "linear-gradient(135deg,#e86f28,#ff8a3d)", border: "none", borderRadius: 8, padding: "10px 16px", color: athleteChatSending || !athleteChatDraft.trim() ? "#64748b" : "#fff", fontWeight: 800, cursor: athleteChatSending || !athleteChatDraft.trim() ? "not-allowed" : "pointer", fontFamily: "inherit", fontSize: ".82em" }}>Enviar</button>
                 </div>
               </>
             )}

@@ -68,7 +68,7 @@ export default function InstallAppButton() {
   const S = {
     btn: {
       display: "inline-flex", alignItems: "center", gap: 8,
-      background: "linear-gradient(135deg,#b45309,#f59e0b)",
+      background: "linear-gradient(135deg,#e86f28,#ff8a3d)",
       border: "none", borderRadius: 10, padding: "11px 18px",
       color: "#fff", fontWeight: 800, fontFamily: "inherit",
       cursor: "pointer", fontSize: ".9em",

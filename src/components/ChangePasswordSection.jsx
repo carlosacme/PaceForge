@@ -182,7 +182,7 @@ export default function ChangePasswordSection({ notify, cardStyle }) {
                 border: "none",
                 borderRadius: 8,
                 padding: "11px 14px",
-                background: busy ? "#e2e8f0" : "linear-gradient(135deg,#b45309,#f59e0b)",
+                background: busy ? "#e2e8f0" : "linear-gradient(135deg,#e86f28,#ff8a3d)",
                 color: busy ? "#334155" : "#fff",
                 fontWeight: 800,
                 cursor: busy ? "not-allowed" : "pointer",

@@ -392,8 +392,8 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
             style={{
               padding: "10px 16px",
               borderRadius: 10,
-              border: builderTab === "ai" ? "2px solid #f59e0b" : "1px solid #e2e8f0",
-              background: builderTab === "ai" ? "rgba(245,158,11,.12)" : "#ffffff",
+              border: builderTab === "ai" ? "2px solid #ff8a3d" : "1px solid #e2e8f0",
+              background: builderTab === "ai" ? "rgba(255,138,61,.12)" : "#ffffff",
               color: "#0f172a",
               fontWeight: 800,
               cursor: "pointer",
@@ -428,7 +428,7 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
         ) : null}
       </div>
       {builderTab === "ai" && generationLimitMsg ? (
-        <div style={{ ...S.card, marginBottom: 14, border: "1px solid rgba(245,158,11,.4)", background: "#fffbeb" }}>
+        <div style={{ ...S.card, marginBottom: 14, border: "1px solid rgba(255,138,61,.4)", background: "#fffbeb" }}>
           <div style={{ color: "#92400e", fontSize: ".84em", fontWeight: 700, marginBottom: 10 }}>{generationLimitMsg}</div>
           <div style={{ display: "flex", justifyContent: "flex-end" }}>
             <button
@@ -474,7 +474,7 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
                   generateWorkout();
                 }}
                 disabled={aiLoading || !aiPrompt.trim()}
-                style={{ width: "100%", background: !aiPrompt.trim() ? "#e2e8f0" : "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 8, padding: "11px 20px", color: !aiPrompt.trim() ? "#334155" : "white", fontWeight: 700, cursor: !aiPrompt.trim() ? "not-allowed" : "pointer", fontSize: ".85em", fontFamily: "inherit" }}
+                style={{ width: "100%", background: !aiPrompt.trim() ? "#e2e8f0" : "linear-gradient(135deg,#e86f28,#ff8a3d)", border: "none", borderRadius: 8, padding: "11px 20px", color: !aiPrompt.trim() ? "#334155" : "white", fontWeight: 700, cursor: !aiPrompt.trim() ? "not-allowed" : "pointer", fontSize: ".85em", fontFamily: "inherit" }}
               >
                 {aiLoading ? "⏳ Generando..." : "⚡ GENERAR WORKOUT"}
               </button>
@@ -673,7 +673,7 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
                         type="button"
                         onClick={saveAssignedWorkout}
                         disabled={assignSaving}
-                        style={{ background: assignSaving ? "#e2e8f0" : "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 8, padding: "8px 14px", color: assignSaving ? "#334155" : "white", cursor: assignSaving ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 800, fontSize: ".82em" }}
+                        style={{ background: assignSaving ? "#e2e8f0" : "linear-gradient(135deg,#e86f28,#ff8a3d)", border: "none", borderRadius: 8, padding: "8px 14px", color: assignSaving ? "#334155" : "white", cursor: assignSaving ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 800, fontSize: ".82em" }}
                       >
                         {assignSaving ? "Guardando..." : "Asignar a seleccionados"}
                       </button>

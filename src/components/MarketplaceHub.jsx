@@ -551,7 +551,7 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
                   {p.duration_weeks} semanas · {p.sessions_per_week} sesiones/semana{startKm != null ? ` · desde ${startKm} km/sem` : ""}
                 </div>
                 <div style={{ marginTop: 8, fontSize: ".95em", fontWeight: 800, color: "#0f172a" }}>${formatCopInt(p.price_cop)} COP</div>
-                <div style={{ marginTop: 6, fontSize: ".78em", color: "#f59e0b", fontWeight: 700 }}>{ratingStars} {rating > 0 ? rating.toFixed(1) : "0.0"}</div>
+                <div style={{ marginTop: 6, fontSize: ".78em", color: "#ff8a3d", fontWeight: 700 }}>{ratingStars} {rating > 0 ? rating.toFixed(1) : "0.0"}</div>
                 <button type="button" onClick={() => setSelectedPlan(p)} style={{ marginTop: 10, width: "100%", background: "linear-gradient(135deg,#0d9488,#14b8a6)", border: "none", borderRadius: 8, padding: "8px 10px", color: "#fff", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".78em" }}>Ver plan</button>
                 {isAdmin ? (
                   <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>

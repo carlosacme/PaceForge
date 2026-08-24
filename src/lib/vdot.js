@@ -56,7 +56,7 @@ export const ZONE_COLORS = {
   E:  "#22c55e",
   M:  "#3b82f6",
   HM: "#0ea5e9",
-  T:  "#f59e0b",
+  T:  "#ff8a3d",
   T10:"#fb923c",
   I:  "#ef4444",
   R:  "#8b5cf6",

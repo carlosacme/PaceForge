@@ -631,18 +631,18 @@ const exportAthletePlanToPdf = ({ athlete, workouts, coachDisplayName }) => {
     tempo:      [249, 115, 22],
     interval:   [239, 68, 68],
     race:       [168, 85, 247],
-    strength:   [245, 158, 11],
+    strength:   [255, 138, 61],
     rest:       [148, 163, 184],
   };
   const getTypeColor = (type) => TYPE_COLORS[type] || [100, 116, 139];
 
   // ── HEADER ────────────────────────────────────────────────────
   // Barra naranja izquierda
-  doc.setFillColor(245, 158, 11);
+  doc.setFillColor(255, 138, 61);
   doc.rect(0, 0, 4, pageH, "F");
 
   // Logo area
-  doc.setFillColor(245, 158, 11);
+  doc.setFillColor(255, 138, 61);
   doc.roundedRect(L, y - 3, 8, 8, 1.5, 1.5, "F");
   doc.setFont("helvetica", "bold");
   doc.setTextColor(255, 255, 255);
@@ -897,7 +897,7 @@ const exportAthletePlanToPdf = ({ athlete, workouts, coachDisplayName }) => {
   const totalPages = doc.getNumberOfPages();
   for (let i = 1; i <= totalPages; i++) {
     doc.setPage(i);
-    doc.setFillColor(245, 158, 11);
+    doc.setFillColor(255, 138, 61);
     doc.rect(0, pageH - 12, 4, 12, "F");
     doc.setFontSize(7);
     doc.setTextColor(110, 110, 110);
@@ -915,7 +915,7 @@ const StatusBadge = ({ status }) => {
   return <span style={{ fontSize: ".65em", fontWeight: 700, letterSpacing: ".1em", color, border: `1px solid ${color}40`, borderRadius: 4, padding: "2px 7px" }}>{label}</span>;
 };
 
-const ProgressBar = ({ value, total, color = "#f59e0b" }) => (
+const ProgressBar = ({ value, total, color = "#ff8a3d" }) => (
   <div style={{ background: "#f1f5f9", borderRadius: 4, height: 5, overflow: "hidden", marginTop: 6 }}>
     <div style={{ width: `${(value / total) * 100}%`, height: "100%", background: color, borderRadius: 4 }} />
   </div>
@@ -962,7 +962,7 @@ function coachDirectorySpecialtyLabel(row) {
 }
 
 const COACH_NAV_BASE_ITEMS = [
-  { id: "dashboard", icon: "▤", label: "Panel", shortLabel: "Inicio", color: "#f59e0b" },
+  { id: "dashboard", icon: "▤", label: "Panel", shortLabel: "Inicio", color: "#ff8a3d" },
   { id: "athletes", icon: "◉", label: "Atletas", shortLabel: "Atletas", color: "#3b82f6" },
   { id: "training", icon: "💪", label: "Entrenamientos", shortLabel: "Entreno", color: "#ea580c" },
   { id: "library", icon: "◈", label: "Biblioteca", shortLabel: "Biblio", color: "#6366f1" },
@@ -2564,9 +2564,9 @@ const handleSignOut = async () => {
                     }}
                     style={{
                       ...bigBtn,
-                      background: "linear-gradient(135deg,#b45309,#f59e0b)",
+                      background: "linear-gradient(135deg,#e86f28,#ff8a3d)",
                       color: "#fff",
-                      boxShadow: "0 8px 24px rgba(245,158,11,.25)",
+                      boxShadow: "0 8px 24px rgba(255,138,61,.25)",
                     }}
                   >
                     Registrarse
@@ -2646,7 +2646,7 @@ const handleSignOut = async () => {
                       width: "100%",
                       ...bigBtn,
                       marginBottom: 12,
-                      background: authSubmitting ? "#e2e8f0" : "linear-gradient(135deg,#b45309,#f59e0b)",
+                      background: authSubmitting ? "#e2e8f0" : "linear-gradient(135deg,#e86f28,#ff8a3d)",
                       color: authSubmitting ? "#334155" : "white",
                       cursor: authSubmitting ? "not-allowed" : "pointer",
                     }}
@@ -2706,8 +2706,8 @@ const handleSignOut = async () => {
                           flex: 1,
                           padding: "10px 12px",
                           borderRadius: 10,
-                          border: authRole === "coach" ? "2px solid #f59e0b" : "1px solid rgba(148,163,184,.4)",
-                          background: authRole === "coach" ? "rgba(245,158,11,.15)" : "#f1f5f9",
+                          border: authRole === "coach" ? "2px solid #ff8a3d" : "1px solid rgba(148,163,184,.4)",
+                          background: authRole === "coach" ? "rgba(255,138,61,.15)" : "#f1f5f9",
                           color: "#0f172a",
                           cursor: "pointer",
                           fontFamily: "inherit",
@@ -2789,7 +2789,7 @@ const handleSignOut = async () => {
                     style={{
                       width: "100%",
                       ...bigBtn,
-                      background: authSubmitting ? "#e2e8f0" : "linear-gradient(135deg,#b45309,#f59e0b)",
+                      background: authSubmitting ? "#e2e8f0" : "linear-gradient(135deg,#e86f28,#ff8a3d)",
                       color: authSubmitting ? "#334155" : "white",
                       cursor: authSubmitting ? "not-allowed" : "pointer",
                     }}
@@ -3243,7 +3243,7 @@ const handleSignOut = async () => {
           <img src="/pwa-192.png" alt="RunningApexFlow" style={{ width: 36, height: 36, borderRadius: 8, objectFit: "cover", flexShrink: 0 }} />
           <div>
             <div style={S.logoTitle}>
-              RUNNING<span style={{ color: "#f59e0b" }}>APEX</span>FLOW
+              RUNNING<span style={{ color: "#ff8a3d" }}>APEX</span>FLOW
             </div>
             <div style={S.logoSub}>Plataforma de Coach</div>
           </div>
@@ -3333,7 +3333,7 @@ const handleSignOut = async () => {
                     padding: "8px 14px",
                     borderRadius: 8,
                     border: "none",
-                    background: "linear-gradient(135deg,#b45309,#f59e0b)",
+                    background: "linear-gradient(135deg,#e86f28,#ff8a3d)",
                     color: "#fff",
                     fontWeight: 800,
                     fontSize: ".8em",
@@ -3371,8 +3371,8 @@ const handleSignOut = async () => {
               zIndex: 25,
               margin: "0 0 0",
               padding: "12px 16px",
-              background: "linear-gradient(90deg, rgba(245,158,11,.22), rgba(251,191,36,.16))",
-              borderBottom: "1px solid rgba(245,158,11,.45)",
+              background: "linear-gradient(90deg, rgba(255,138,61,.22), rgba(251,191,36,.16))",
+              borderBottom: "1px solid rgba(255,138,61,.45)",
               color: "#92400e",
               fontSize: ".82em",
               fontWeight: 700,
@@ -3599,7 +3599,7 @@ const handleSignOut = async () => {
               onClick={() => goCoachView(item.id)}
               style={{
                 color: active ? "#c2410c" : "#64748b",
-                background: active ? "rgba(245, 158, 11, 0.14)" : "transparent",
+                background: active ? "rgba(255,138,61, 0.14)" : "transparent",
                 fontWeight: active ? 800 : 600,
               }}
             >
@@ -3683,8 +3683,8 @@ const handleSignOut = async () => {
                       background: "#fff",
                       borderRadius: 16,
                       padding: "22px 18px 20px",
-                      border: selectedPlan ? "2px solid #f59e0b" : "1px solid #e2e8f0",
-                      boxShadow: selectedPlan ? "0 12px 40px rgba(245,158,11,.12)" : "0 4px 20px rgba(15,23,42,.06)",
+                      border: selectedPlan ? "2px solid #ff8a3d" : "1px solid #e2e8f0",
+                      boxShadow: selectedPlan ? "0 12px 40px rgba(255,138,61,.12)" : "0 4px 20px rgba(15,23,42,.06)",
                       display: "flex",
                       flexDirection: "column",
                       gap: 14,
@@ -3766,13 +3766,13 @@ const handleSignOut = async () => {
                   borderRadius: 12,
                   border: "none",
                   background:
-                    !coachPickerPlan || !coachPickerPeriod || coachSubscriptionSaving ? "#e2e8f0" : "linear-gradient(135deg,#b45309,#f59e0b)",
+                    !coachPickerPlan || !coachPickerPeriod || coachSubscriptionSaving ? "#e2e8f0" : "linear-gradient(135deg,#e86f28,#ff8a3d)",
                   color: !coachPickerPlan || !coachPickerPeriod || coachSubscriptionSaving ? "#94a3b8" : "#fff",
                   fontWeight: 900,
                   fontSize: ".95em",
                   cursor: !coachPickerPlan || !coachPickerPeriod || coachSubscriptionSaving ? "not-allowed" : "pointer",
                   fontFamily: "inherit",
-                  boxShadow: "0 6px 20px rgba(245,158,11,.25)",
+                  boxShadow: "0 6px 20px rgba(255,138,61,.25)",
                 }}
               >
                 {coachSubscriptionSaving ? "Guardando…" : "Pagar ahora"}
@@ -3997,7 +3997,7 @@ function Dashboard({
       </div>
 
       {planLimitWarning ? (
-        <div style={{ ...S.card, marginBottom: 16, border: "1px solid rgba(245,158,11,.4)", background: "#fffbeb" }}>
+        <div style={{ ...S.card, marginBottom: 16, border: "1px solid rgba(255,138,61,.4)", background: "#fffbeb" }}>
           <div style={{ color: "#92400e", fontSize: ".86em", fontWeight: 700, marginBottom: 10 }}>
             {planLimitWarning}
           </div>
@@ -4034,12 +4034,12 @@ function Dashboard({
               <span style={{ color: "#0d9488", fontWeight: 900 }}>Listo</span>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <div style={{ width: 28, height: 28, borderRadius: 999, background: "#f59e0b", color: "#fff", fontWeight: 900, fontSize: ".8em", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>2</div>
+              <div style={{ width: 28, height: 28, borderRadius: 999, background: "#ff8a3d", color: "#fff", fontWeight: 900, fontSize: ".8em", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>2</div>
               <div style={{ flex: 1 }}>
                 <div style={{ fontWeight: 800, color: "#0f172a", fontSize: ".88em" }}>Agrega tu primer atleta</div>
                 <div style={{ color: "#64748b", fontSize: ".78em" }}>Comparte tu codigo de coach o invitalo por email</div>
               </div>
-              <button type="button" onClick={onRequestAddAthlete} style={{ padding: "6px 14px", borderRadius: 8, border: "none", background: "linear-gradient(135deg,#f59e0b,#d97706)", color: "#fff", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".75em", whiteSpace: "nowrap" }}>Agregar</button>
+              <button type="button" onClick={onRequestAddAthlete} style={{ padding: "6px 14px", borderRadius: 8, border: "none", background: "linear-gradient(135deg,#ff8a3d,#d97706)", color: "#fff", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".75em", whiteSpace: "nowrap" }}>Agregar</button>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 12, opacity: 0.5 }}>
               <div style={{ width: 28, height: 28, borderRadius: 999, background: "#94a3b8", color: "#fff", fontWeight: 900, fontSize: ".8em", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>3</div>
@@ -4135,7 +4135,7 @@ function Dashboard({
             <button
               onClick={onSaveNewAthlete}
               style={{
-                background: "linear-gradient(135deg,#b45309,#f59e0b)",
+                background: "linear-gradient(135deg,#e86f28,#ff8a3d)",
                 border: "none",
                 borderRadius: 10,
                 padding: "10px 14px",
@@ -4158,7 +4158,7 @@ function Dashboard({
         <>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 14, marginBottom: 28 }}>
             {[
-              { label: "Atletas activos", value: dashAthletes.length, sub: "Registrados bajo tu cuenta", icon: "🏃", color: "#f59e0b" },
+              { label: "Atletas activos", value: dashAthletes.length, sub: "Registrados bajo tu cuenta", icon: "🏃", color: "#ff8a3d" },
               { label: "Km programados / semana", value: `${weekKm.planned} km`, sub: "Suma de los workouts de esta semana", icon: "📍", color: "#3b82f6" },
               {
                 label: "Km corridos / semana",
@@ -4238,7 +4238,7 @@ function Dashboard({
                           <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 4 }}>
                             {weekTotal ? `${weekDone}/${weekTotal} · ${adherencePct}%` : "Sin workouts esta semana"}
                           </div>
-                          <ProgressBar value={weekDone} total={weekTotal || 1} color={adherencePct >= 70 ? "#22c55e" : adherencePct >= 40 ? "#f59e0b" : "#ef4444"} />
+                          <ProgressBar value={weekDone} total={weekTotal || 1} color={adherencePct >= 70 ? "#22c55e" : adherencePct >= 40 ? "#ff8a3d" : "#ef4444"} />
                         </td>
                         <td style={{ padding: "12px 14px", color: "#94a3b8", maxWidth: 200 }}>{raceName}</td>
                         <td style={{ padding: "12px 14px", color: "#cbd5e1", fontFamily: "monospace" }}>
@@ -4304,7 +4304,7 @@ function Dashboard({
                             maxHeight: "100%",
                             background: "linear-gradient(180deg,#fbbf24,#b45309)",
                             borderRadius: "6px 6px 2px 2px",
-                            boxShadow: "0 0 12px rgba(245,158,11,.25)",
+                            boxShadow: "0 0 12px rgba(255,138,61,.25)",
                           }}
                         />
                       </div>
@@ -5922,8 +5922,8 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
                   padding: "10px 12px",
                   borderRadius: 10,
                   cursor: "pointer",
-                  border: `1px solid ${athlete.id === a.id ? "rgba(245,158,11,.45)" : "#e2e8f0"}`,
-                  background: athlete.id === a.id ? "rgba(245,158,11,.1)" : "#ffffff",
+                  border: `1px solid ${athlete.id === a.id ? "rgba(255,138,61,.45)" : "#e2e8f0"}`,
+                  background: athlete.id === a.id ? "rgba(255,138,61,.1)" : "#ffffff",
                   marginBottom: 8,
                   boxShadow: athlete.id === a.id ? "0 1px 3px rgba(0,0,0,0.08)" : "0 1px 2px rgba(0,0,0,0.04)",
                 }}
@@ -6020,7 +6020,7 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
             {[{ label: "Ritmo", value: athlete.pace, icon: "⚡" }, { label: "Km/Semana", value: `${athlete.weekly_km}km`, icon: "📍" }, { label: "Adherencia", value: `${Math.round(athlete.workouts_done/athlete.workouts_total*100)}%`, icon: "✅" }].map((m,i) => (
               <div key={i} style={{ background: "#f8fafc", borderRadius: 10, padding: "14px 12px", textAlign: "center", border: "1px solid #e2e8f0" }}>
                 <div style={{ fontSize: "1.3em" }}>{m.icon}</div>
-                <div style={{ fontSize: "1.2em", fontWeight: 700, color: "#f59e0b", fontFamily: "monospace" }}>{m.value}</div>
+                <div style={{ fontSize: "1.2em", fontWeight: 700, color: "#ff8a3d", fontFamily: "monospace" }}>{m.value}</div>
                 <div style={{ fontSize: ".7em", color: "#64748b" }}>{m.label}</div>
               </div>
             ))}
@@ -6063,7 +6063,7 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
                 onClick={saveAthleteFc}
                 disabled={fcSaving}
                 style={{
-                  background: fcSaving ? "#e2e8f0" : "linear-gradient(135deg,#b45309,#f59e0b)",
+                  background: fcSaving ? "#e2e8f0" : "linear-gradient(135deg,#e86f28,#ff8a3d)",
                   border: "none",
                   borderRadius: 8,
                   padding: "10px 16px",
@@ -6118,7 +6118,7 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
                 type="button"
                 onClick={openPaymentModal}
                 style={{
-                  background: "linear-gradient(135deg,#b45309,#f59e0b)",
+                  background: "linear-gradient(135deg,#e86f28,#ff8a3d)",
                   border: "none",
                   borderRadius: 8,
                   padding: "8px 12px",
@@ -6152,7 +6152,7 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
                             borderRadius: 999,
                             fontSize: ".68em",
                             fontWeight: 700,
-                            background: p.status === "confirmed" ? "rgba(34,197,94,.16)" : p.status === "rejected" ? "rgba(239,68,68,.14)" : "rgba(245,158,11,.16)",
+                            background: p.status === "confirmed" ? "rgba(34,197,94,.16)" : p.status === "rejected" ? "rgba(239,68,68,.14)" : "rgba(255,138,61,.16)",
                             color: p.status === "confirmed" ? "#15803d" : p.status === "rejected" ? "#b91c1c" : "#b45309",
                           }}
                         >
@@ -6409,7 +6409,7 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
                 onClick={openRaceModal}
                 style={{
                   background: "linear-gradient(135deg,#fffbeb,#ffedd5)",
-                  border: "1px solid rgba(245,158,11,.45)",
+                  border: "1px solid rgba(255,138,61,.45)",
                   borderRadius: 8,
                   padding: "6px 12px",
                   color: "#b45309",
@@ -6457,7 +6457,7 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
                 const isRaceToday = hasRace && ymd === todayYmd;
                 const inViewMonth = cellIsInViewMonth(cellDate, calendarViewMonth.y, calendarViewMonth.m);
                 let borderColor = "#f1f5f9";
-                if (hasRace) borderColor = "rgba(245,158,11,.55)";
+                if (hasRace) borderColor = "rgba(255,138,61,.55)";
                 else if (hasWorkout) borderColor = `${WORKOUT_TYPES.find(t => t.id === dayWorkouts[0].type)?.color || "#64748b"}40`;
                 let cellBackground = "transparent";
                 if (isRaceToday) cellBackground = "linear-gradient(160deg,#fffbeb 0%,#fde68a 55%,#fff7ed 100%)";
@@ -6576,7 +6576,7 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
   type="button"
   onClick={() => analyzeWorkoutAsCoach(w, athlete?.name)}
   disabled={coachWorkoutAnalysisLoading[w.id]}
-  style={{ border: "1px solid rgba(245,158,11,.5)", borderRadius: 6, background: coachWorkoutAnalysisLoading[w.id] ? "#fef3c7" : "rgba(245,158,11,.12)", color: "#b45309", padding: "3px 6px", fontSize: ".56em", fontWeight: 700, cursor: coachWorkoutAnalysisLoading[w.id] ? "not-allowed" : "pointer", fontFamily: "inherit" }}
+  style={{ border: "1px solid rgba(255,138,61,.5)", borderRadius: 6, background: coachWorkoutAnalysisLoading[w.id] ? "#fef3c7" : "rgba(255,138,61,.12)", color: "#b45309", padding: "3px 6px", fontSize: ".56em", fontWeight: 700, cursor: coachWorkoutAnalysisLoading[w.id] ? "not-allowed" : "pointer", fontFamily: "inherit" }}
 >
   {coachWorkoutAnalysisLoading[w.id] ? "Analizando…" : "🤖 Analizar IA"}
 </button>
@@ -6584,7 +6584,7 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
   <button
     type="button"
     onClick={() => setCoachAnalysisModal({ text: coachWorkoutAnalysis[w.id], title: w.title, workout: w })}
-    style={{ border: "1px solid rgba(245,158,11,.5)", borderRadius: 6, background: "rgba(245,158,11,.12)", color: "#b45309", padding: "3px 6px", fontSize: ".56em", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", width: "100%" }}
+    style={{ border: "1px solid rgba(255,138,61,.5)", borderRadius: 6, background: "rgba(255,138,61,.12)", color: "#b45309", padding: "3px 6px", fontSize: ".56em", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", width: "100%" }}
   >
     📋 Ver análisis
   </button>
@@ -6654,9 +6654,9 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
                         padding: "8px 12px",
                         borderRadius: 10,
                         background: isCoach
-                          ? "linear-gradient(135deg, rgba(180,83,9,.85), rgba(245,158,11,.75))"
+                          ? "linear-gradient(135deg, rgba(180,83,9,.85), rgba(255,138,61,.75))"
                           : "#eff6ff",
-                        border: `1px solid ${isCoach ? "rgba(245,158,11,.5)" : "rgba(59,130,246,.35)"}`,
+                        border: `1px solid ${isCoach ? "rgba(255,138,61,.5)" : "rgba(59,130,246,.35)"}`,
                         color: isCoach ? "#f8fafc" : "#0f172a",
                         fontSize: ".82em",
                         lineHeight: 1.45,
@@ -6696,7 +6696,7 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
                 onClick={sendCoachChat}
                 disabled={chatSending || !chatDraft.trim() || !coachId}
                 style={{
-                  background: chatSending || !chatDraft.trim() ? "#e2e8f0" : "linear-gradient(135deg,#b45309,#f59e0b)",
+                  background: chatSending || !chatDraft.trim() ? "#e2e8f0" : "linear-gradient(135deg,#e86f28,#ff8a3d)",
                   border: "none",
                   borderRadius: 8,
                   padding: "10px 16px",
@@ -6957,7 +6957,7 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
                     type="button"
                     disabled={raceActionBusy}
                     onClick={saveRaceEdits}
-                    style={{ background: raceActionBusy ? "#e2e8f0" : "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 8, padding: "8px 12px", color: raceActionBusy ? "#64748b" : "#fff", cursor: raceActionBusy ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 800, fontSize: ".8em" }}
+                    style={{ background: raceActionBusy ? "#e2e8f0" : "linear-gradient(135deg,#e86f28,#ff8a3d)", border: "none", borderRadius: 8, padding: "8px 12px", color: raceActionBusy ? "#64748b" : "#fff", cursor: raceActionBusy ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 800, fontSize: ".8em" }}
                   >
                     {raceActionBusy ? "Guardando…" : "Guardar"}
                   </button>
@@ -6978,7 +6978,7 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
                     type="button"
                     disabled={raceActionBusy}
                     onClick={applyRaceMoveDate}
-                    style={{ background: raceActionBusy ? "#e2e8f0" : "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 8, padding: "8px 12px", color: raceActionBusy ? "#64748b" : "#fff", cursor: raceActionBusy ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 800, fontSize: ".8em" }}
+                    style={{ background: raceActionBusy ? "#e2e8f0" : "linear-gradient(135deg,#e86f28,#ff8a3d)", border: "none", borderRadius: 8, padding: "8px 12px", color: raceActionBusy ? "#64748b" : "#fff", cursor: raceActionBusy ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 800, fontSize: ".8em" }}
                   >
                     {raceActionBusy ? "Guardando…" : "Guardar fecha"}
                   </button>
@@ -7186,7 +7186,7 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
                 </div>
                 <div style={{ gridColumn: "1 / -1", display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
                   <button type="button" onClick={closeWorkoutPanel} style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 12px", color: "#64748b", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: ".8em" }}>Cancelar</button>
-                  <button type="button" disabled={workoutFormSaving} onClick={saveWorkoutEdits} style={{ background: workoutFormSaving ? "#e2e8f0" : "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 8, padding: "8px 12px", color: workoutFormSaving ? "#64748b" : "#fff", cursor: workoutFormSaving ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 800, fontSize: ".8em" }}>{workoutFormSaving ? "Guardando…" : "Guardar cambios"}</button>
+                  <button type="button" disabled={workoutFormSaving} onClick={saveWorkoutEdits} style={{ background: workoutFormSaving ? "#e2e8f0" : "linear-gradient(135deg,#e86f28,#ff8a3d)", border: "none", borderRadius: 8, padding: "8px 12px", color: workoutFormSaving ? "#64748b" : "#fff", cursor: workoutFormSaving ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 800, fontSize: ".8em" }}>{workoutFormSaving ? "Guardando…" : "Guardar cambios"}</button>
                 </div>
               </div>
             ) : null}
@@ -7206,7 +7206,7 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
                       setWorkoutFormSaving(false);
                       closeWorkoutPanel();
                     }}
-                    style={{ background: workoutFormSaving ? "#e2e8f0" : "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 8, padding: "8px 12px", color: workoutFormSaving ? "#64748b" : "#fff", cursor: workoutFormSaving ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 800, fontSize: ".8em" }}
+                    style={{ background: workoutFormSaving ? "#e2e8f0" : "linear-gradient(135deg,#e86f28,#ff8a3d)", border: "none", borderRadius: 8, padding: "8px 12px", color: workoutFormSaving ? "#64748b" : "#fff", cursor: workoutFormSaving ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 800, fontSize: ".8em" }}
                   >
                     {workoutFormSaving ? "Moviendo…" : "Mover workout"}
                   </button>
@@ -7307,7 +7307,7 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
                 type="button"
                 onClick={saveRace}
                 disabled={raceSaving}
-                style={{ background: raceSaving ? "#e2e8f0" : "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 8, padding: "8px 12px", color: raceSaving ? "#64748b" : "#fff", cursor: raceSaving ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 800, fontSize: ".82em" }}
+                style={{ background: raceSaving ? "#e2e8f0" : "linear-gradient(135deg,#e86f28,#ff8a3d)", border: "none", borderRadius: 8, padding: "8px 12px", color: raceSaving ? "#64748b" : "#fff", cursor: raceSaving ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 800, fontSize: ".82em" }}
               >
                 {raceSaving ? "Guardando…" : "Guardar carrera"}
               </button>
@@ -7445,7 +7445,7 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
                   {adj.changes.total_km != null && <span style={{ fontSize: ".75em", padding: "4px 8px", borderRadius: 6, background: "rgba(99,102,241,.1)", color: "#4338ca", fontWeight: 700 }}>{fw?.total_km}km → {adj.changes.total_km}km</span>}
                   {adj.changes.duration_min != null && <span style={{ fontSize: ".75em", padding: "4px 8px", borderRadius: 6, background: "rgba(99,102,241,.1)", color: "#4338ca", fontWeight: 700 }}>{fw?.duration_min}min → {adj.changes.duration_min}min</span>}
-                  {adj.changes.type != null && <span style={{ fontSize: ".75em", padding: "4px 8px", borderRadius: 6, background: "rgba(245,158,11,.15)", color: "#b45309", fontWeight: 700 }}>Tipo: {fw?.type} → {adj.changes.type}</span>}
+                  {adj.changes.type != null && <span style={{ fontSize: ".75em", padding: "4px 8px", borderRadius: 6, background: "rgba(255,138,61,.15)", color: "#b45309", fontWeight: 700 }}>Tipo: {fw?.type} → {adj.changes.type}</span>}
                 </div>
                 <div style={{ display: "flex", gap: 8 }}>
                   <button type="button"
@@ -7677,7 +7677,7 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
                 type="button"
                 onClick={registerPayment}
                 disabled={paymentSaving}
-                style={{ background: paymentSaving ? "#e2e8f0" : "linear-gradient(135deg,#b45309,#f59e0b)", border: "none", borderRadius: 8, padding: "8px 12px", color: paymentSaving ? "#64748b" : "#fff", cursor: paymentSaving ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 800, fontSize: ".82em" }}
+                style={{ background: paymentSaving ? "#e2e8f0" : "linear-gradient(135deg,#e86f28,#ff8a3d)", border: "none", borderRadius: 8, padding: "8px 12px", color: paymentSaving ? "#64748b" : "#fff", cursor: paymentSaving ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 800, fontSize: ".82em" }}
               >
                 {paymentSaving ? "Guardando…" : "Guardar Pago"}
               </button>
@@ -8503,7 +8503,7 @@ function AdminPromoCodes({ notify }) {
                     </div>
                     <div style={{ fontSize: ".75em", color: statusColor, fontWeight: 700, marginTop: 6 }}>{statusLabel}</div>
                   </div>
-                  <div style={{ fontSize: ".85em", fontWeight: 700, color: "#f59e0b" }}>{row.discount_percent}%</div>
+                  <div style={{ fontSize: ".85em", fontWeight: 700, color: "#ff8a3d" }}>{row.discount_percent}%</div>
                   <button
                     type="button"
                     onClick={() => toggleActive(row)}
@@ -8749,19 +8749,19 @@ function Plans({ athletes, notify }) {
               key={p.plan}
               style={{
                 ...S.card,
-                border: isCurrent ? "2px solid #f59e0b" : "1px solid #e2e8f0",
-                background: isCurrent ? "rgba(245,158,11,.06)" : "#ffffff",
+                border: isCurrent ? "2px solid #ff8a3d" : "1px solid #e2e8f0",
+                background: isCurrent ? "rgba(255,138,61,.06)" : "#ffffff",
                 padding: 18,
                 display: "flex",
                 flexDirection: "column",
                 gap: 10,
               }}
             >
-              <div style={{ fontSize: "1.2em", fontWeight: 800, color: isCurrent ? "#f59e0b" : "#0f172a" }}>
+              <div style={{ fontSize: "1.2em", fontWeight: 800, color: isCurrent ? "#ff8a3d" : "#0f172a" }}>
                 {p.label}
                 <span style={{ fontSize: ".65em", color: "#64748b", fontWeight: 600, marginLeft: 8 }}>(${p.priceUsd} USD)</span>
               </div>
-              <div style={{ fontSize: "2em", fontWeight: 900, color: "#f59e0b", fontFamily: "monospace" }}>
+              <div style={{ fontSize: "2em", fontWeight: 900, color: "#ff8a3d", fontFamily: "monospace" }}>
                 {discountPct > 0 ? (
                   <>
                     <span style={{ textDecoration: "line-through", color: "#94a3b8", fontSize: ".55em", marginRight: 8 }}>${copPretty}</span>
@@ -8791,7 +8791,7 @@ function Plans({ athletes, notify }) {
                   onClick={() => openDirectWompiCheckout(p)}
                   style={{
                     width: "100%",
-                    background: "linear-gradient(135deg,#b45309,#f59e0b)",
+                    background: "linear-gradient(135deg,#e86f28,#ff8a3d)",
                     border: "none",
                     borderRadius: 10,
                     padding: "10px 14px",
@@ -8853,8 +8853,8 @@ const styles = {
   },
   navBtnActive: {
     color: "#c2410c",
-    background: "rgba(245, 158, 11, 0.14)",
-    borderRight: "3px solid #f59e0b",
+    background: "rgba(255,138,61, 0.14)",
+    borderRight: "3px solid #ff8a3d",
   },
   sidebarFooter: { padding: "16px", borderTop: "1px solid #e2e8f0", marginTop: "auto", background: "#fafafa" },
   page: { padding: "28px 32px", maxWidth: 1120, width: "100%" },
@@ -8870,8 +8870,8 @@ const styles = {
     width: 36,
     height: 36,
     borderRadius: "50%",
-    background: "rgba(245, 158, 11, 0.12)",
-    border: "1px solid rgba(245, 158, 11, 0.35)",
+    background: "rgba(255,138,61, 0.12)",
+    border: "1px solid rgba(255,138,61, 0.35)",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",

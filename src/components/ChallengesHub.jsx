@@ -583,8 +583,8 @@ Reglas adicionales:
                   alignSelf: "flex-start",
                   padding: "10px 14px",
                   borderRadius: 10,
-                  border: form.is_recurring ? "2px solid #f59e0b" : "1px solid #e2e8f0",
-                  background: form.is_recurring ? "rgba(245,158,11,.14)" : "#fff",
+                  border: form.is_recurring ? "2px solid #ff8a3d" : "1px solid #e2e8f0",
+                  background: form.is_recurring ? "rgba(255,138,61,.14)" : "#fff",
                   color: "#0f172a",
                   fontWeight: 800,
                   fontFamily: "inherit",
@@ -663,8 +663,8 @@ Reglas adicionales:
                             fontSize: ".68em",
                             fontWeight: 800,
                             color: "#9a3412",
-                            background: "rgba(245,158,11,.16)",
-                            border: "1px solid rgba(245,158,11,.45)",
+                            background: "rgba(255,138,61,.16)",
+                            border: "1px solid rgba(255,138,61,.45)",
                             borderRadius: 999,
                             padding: "3px 9px",
                           }}
@@ -823,7 +823,7 @@ Reglas adicionales:
                         {wouldMeetGoal ? (
                           <div
                             style={{
-                              background: "linear-gradient(135deg, rgba(34,197,94,.16), rgba(245,158,11,.18))",
+                              background: "linear-gradient(135deg, rgba(34,197,94,.16), rgba(255,138,61,.18))",
                               border: "1px solid rgba(180,83,9,.35)",
                               borderRadius: 8,
                               padding: "8px 12px",

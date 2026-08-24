@@ -283,7 +283,7 @@ export default function IntervalsConnect({ athleteId, onNotify, refreshNonce = 0
       lineHeight: 1.7,
     },
     step: { marginBottom: 8 },
-    link: { color: "#f59e0b", fontWeight: 700, textDecoration: "none" },
+    link: { color: "#ff8a3d", fontWeight: 700, textDecoration: "none" },
     manualBox: { marginTop: 12, paddingTop: 12, borderTop: "1px dashed #e2e8f0" },
   };
 

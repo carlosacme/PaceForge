@@ -120,7 +120,7 @@ function InstallPwaBanner() {
             padding: "10px 16px",
             borderRadius: 8,
             border: "none",
-            background: "linear-gradient(135deg,#b45309,#f59e0b)",
+            background: "linear-gradient(135deg,#e86f28,#ff8a3d)",
             color: "white",
             fontWeight: 800,
             fontSize: ".8rem",
