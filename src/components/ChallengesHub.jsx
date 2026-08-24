@@ -17,6 +17,7 @@ import {
   extractJsonFromAnthropicText,
   extractAnthropicTextContent,
   authApiFetch,
+  userFacingError,
 } from "./shared/appShared";
 
 function ChallengesHub({
@@ -88,7 +89,7 @@ function ChallengesHub({
     const { data, error } = challengesRes;
     if (error) {
       console.error("load challenges:", error);
-      notify?.(error.message || "No se pudieron cargar los retos");
+      notify?.(userFacingError(error, "No se pudieron cargar los retos"));
       setRows([]);
       setLoading(false);
       return;
@@ -218,7 +219,7 @@ function ChallengesHub({
     });
     setJoiningChallengeId("");
     if (error) {
-      notify?.(error.message || "No se pudo unir al reto");
+      notify?.(userFacingError(error, "No se pudo unir al reto"));
       return;
     }
     notify?.("Te uniste al reto ✅");
@@ -271,7 +272,7 @@ function ChallengesHub({
     });
     setSavingCreate(false);
     if (error) {
-      notify?.(error.message || "No se pudo crear el reto");
+      notify?.(userFacingError(error, "No se pudo crear el reto"));
       return;
     }
     setShowCreate(false);
@@ -457,7 +458,7 @@ Reglas adicionales:
     const { error } = await supabase.from("challenges").delete().eq("id", challengeId);
     setDeletingId("");
     if (error) {
-      notify?.(error.message || "No se pudo eliminar el reto");
+      notify?.(userFacingError(error, "No se pudo eliminar el reto"));
       return;
     }
     notify?.("Reto eliminado");
@@ -478,7 +479,7 @@ Reglas adicionales:
     const { error } = await supabase.from("challenges").update(patch).eq("id", challengeId);
     setUpdatingRecurrenceId("");
     if (error) {
-      notify?.(error.message || "No se pudo actualizar la recurrencia");
+      notify?.(userFacingError(error, "No se pudo actualizar la recurrencia"));
       return;
     }
     notify?.(

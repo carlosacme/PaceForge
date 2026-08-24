@@ -82,6 +82,7 @@ import {
   acceptPendingInvitationIfAny,
   loadAthleteAchievementSnapshot,
   evaluateAndAwardAthleteAchievements,
+  userFacingError,
 } from "./components/shared/appShared";
 import {
   initMessaging,
@@ -2011,7 +2012,7 @@ export default function App() {
               "(volver a registrarte NO la cambia; usa «¿Olvidaste tu contraseña?»).",
             );
           } else {
-            setAuthError(error.message || "No se pudo iniciar sesión.");
+            setAuthError(userFacingError(error, "No se pudo iniciar sesión."));
           }
           return;
         }
@@ -2086,7 +2087,7 @@ export default function App() {
         });
         if (error) {
           console.error("Error en registro:", error);
-          setAuthError(error.message || "No se pudo crear la cuenta.");
+          setAuthError(userFacingError(error, "No se pudo crear la cuenta."));
           return;
         }
 
@@ -2361,7 +2362,7 @@ const handleSignOut = async () => {
       redirectTo: origin ? `${origin}/?type=recovery` : undefined,
     });
     if (error) {
-      setAuthError(error.message || "No se pudo enviar el correo de recuperación. Inténtalo de nuevo.");
+      setAuthError(userFacingError(error, "No se pudo enviar el correo de recuperación. Inténtalo de nuevo."));
       return;
     }
     setAuthError("");

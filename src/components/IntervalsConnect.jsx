@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { supabase } from "../lib/supabase";
+import { userFacingError } from "./shared/appShared";
 
 /**
  * IntervalsConnect
@@ -81,7 +82,7 @@ export default function IntervalsConnect({ athleteId, onNotify, refreshNonce = 0
       setStatus(d);
       setError("");
     } catch (e) {
-      setError(e.message);
+      setError(userFacingError(e, "No se pudo completar la acción con Intervals."));
     } finally {
       if (!silent) setLoading(false);
     }
@@ -123,7 +124,7 @@ export default function IntervalsConnect({ athleteId, onNotify, refreshNonce = 0
       if (!d?.authorize_url) throw new Error("No se pudo iniciar la conexión");
       window.location.href = d.authorize_url;
     } catch (e) {
-      setError(e.message);
+      setError(userFacingError(e, "No se pudo completar la acción con Intervals."));
       setBusy(false);
     }
   };
@@ -142,7 +143,7 @@ export default function IntervalsConnect({ athleteId, onNotify, refreshNonce = 0
       await loadStatus();
       onNotify?.("intervals.icu conectado. Ahora conecta tu reloj dentro de intervals.icu.");
     } catch (e) {
-      setError(e.message);
+      setError(userFacingError(e, "No se pudo completar la acción con Intervals."));
     } finally {
       setBusy(false);
     }
@@ -156,7 +157,7 @@ export default function IntervalsConnect({ athleteId, onNotify, refreshNonce = 0
       await loadStatus();
       onNotify?.("intervals.icu desconectado");
     } catch (e) {
-      setError(e.message);
+      setError(userFacingError(e, "No se pudo completar la acción con Intervals."));
     } finally {
       setBusy(false);
     }

@@ -45,6 +45,7 @@ import {
   sendAppEmail,
   styles,
   authApiFetch,
+  userFacingError,
 } from "./shared/appShared";
 import WorkoutStructureEditor from "./shared/WorkoutStructureEditor";
 import { enrichStructureWithPaces } from "../lib/enrichPace";
@@ -1111,7 +1112,7 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
 
     const { data: userData, error: userError } = await supabase.auth.getUser();
     if (userError || !userData?.user) {
-      alert(userError?.message || "No hay usuario autenticado.");
+      console.error(userError); alert(userFacingError(userError, "No hay usuario autenticado."));
       return;
     }
     const coachId = userData.user.id;
@@ -1122,7 +1123,7 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
       const { error } = await insertAssignedWorkouts(payload);
       if (error) {
         console.error("Error insertando plan:", error);
-        alert(`Error: ${error.message}`);
+        alert(userFacingError(error, "No se pudo asignar el plan."));
         return;
       }
 

@@ -13,6 +13,60 @@ import { distKmFromLabel } from "../../lib/intervals";
 
 export const BRAND_NAME = "RunningApexFlow";
 
+/**
+ * Mensaje legible para el usuario. El detalle técnico va a console.error;
+ * nunca se muestra error.message crudo de Supabase/API en la UI.
+ */
+export const userFacingError = (err, fallback = "Algo salió mal. Inténtalo de nuevo.") => {
+  console.error(err);
+  const raw = String(err?.message || err || "").trim();
+  const msg = raw.toLowerCase();
+  if (!msg) return fallback;
+  if (
+    msg.includes("failed to fetch") ||
+    msg.includes("networkerror") ||
+    msg.includes("network request failed") ||
+    msg.includes("load failed") ||
+    msg === "fetch failed"
+  ) {
+    return "No se pudo conectar, revisa tu internet.";
+  }
+  if (msg.includes("email not confirmed") || msg.includes("not confirmed")) {
+    return "Confirma tu correo antes de continuar. Revisa bandeja de entrada y spam.";
+  }
+  if (msg.includes("invalid login") || msg.includes("invalid credentials")) {
+    return "Correo o contraseña incorrectos.";
+  }
+  if (msg.includes("user already registered") || msg.includes("already been registered") || msg.includes("already registered")) {
+    return "Ese correo ya tiene una cuenta.";
+  }
+  if (msg.includes("password") && (msg.includes("weak") || msg.includes("least") || msg.includes("short"))) {
+    return "La contraseña es demasiado corta o débil. Usa al menos 6 caracteres.";
+  }
+  if (msg.includes("rate limit") || msg.includes("too many") || msg.includes("over_email_send_rate_limit")) {
+    return "Demasiados intentos. Espera un momento e inténtalo de nuevo.";
+  }
+  if (msg.includes("jwt") || msg.includes("session") || msg.includes("not authenticated") || msg.includes("refresh_token")) {
+    return "Tu sesión expiró. Vuelve a iniciar sesión.";
+  }
+  if (msg.includes("permission") || msg.includes("row-level security") || msg.includes("rls") || msg.includes("42501")) {
+    return "No tienes permiso para esta acción.";
+  }
+  if (msg.includes("duplicate") || msg.includes("unique") || msg.includes("23505")) {
+    return "Ese registro ya existe.";
+  }
+  if (msg.includes("timeout") || msg.includes("timed out")) {
+    return "La operación tardó demasiado. Inténtalo de nuevo.";
+  }
+  // Si ya viene en español claro (sin jerga técnica), se puede mostrar.
+  const looksTechnical =
+    /pgrst|postgrest|rpc|violates|constraint|null value|undefined|supabase|stack|exception|ecode|code\s*\d/i.test(raw) ||
+    /^[a-z0-9_:\s./-]+$/i.test(raw);
+  if (looksTechnical) return fallback;
+  if (/[áéíóúñ¿¡]|no se |error al |intenta|revisa|correo|contraseña/i.test(raw)) return raw;
+  return fallback;
+};
+
 export const WORKOUT_TYPES = [
   { id: "easy", label: "Rodaje Suave", color: "#22c55e" },
   { id: "tempo", label: "Tempo", color: "#f59e0b" },
