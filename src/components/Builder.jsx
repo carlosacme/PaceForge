@@ -28,6 +28,12 @@ import {
   authApiFetch,
 } from "./shared/appShared";
 import { fmtPace } from "../lib/vdot";
+import {
+  structureHasGradePct,
+  applyGradeAdjustedPacesToStructure,
+  raceZoneFromStructure,
+  estimateDurationMinFromStructure,
+} from "../lib/gpxRacePlan";
 import WorkoutStructureEditor from "./shared/WorkoutStructureEditor";
 
 const WorkoutStructureTable = ({ structure = [] }) => {
@@ -220,21 +226,32 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
         if (!Object.prototype.hasOwnProperty.call(vdotByAthlete, a.id)) vdotByAthlete[a.id] = null;
       }
 
-      const payload = selectedAthletes.map((selectedAthlete) => ({
-        ...w,
-        structure: enrichStructureWithPaces(
-          Array.isArray(w.structure) ? w.structure : [],
-          vdotByAthlete[selectedAthlete.id],
-          selectedAthlete.fc_max
-        ),
-        athlete_id: selectedAthlete.id,
-        coach_id: userData.user.id,
-        scheduled_date: assignDate,
-        // Con que VDOT quedaron escritos estos ritmos, para poder recalcularlos
-        // cuando el atleta vuelva a evaluarse.
-        generated_with_vdot: Number(vdotByAthlete[selectedAthlete.id]) || null,
-        done: false,
-      }));
+      const payload = selectedAthletes.map((selectedAthlete) => {
+        const rawStructure = Array.isArray(w.structure) ? w.structure : [];
+        const vdot = vdotByAthlete[selectedAthlete.id];
+        const structure = structureHasGradePct(rawStructure)
+          ? applyGradeAdjustedPacesToStructure(
+              rawStructure,
+              vdot,
+              raceZoneFromStructure(rawStructure, "M"),
+            )
+          : enrichStructureWithPaces(rawStructure, vdot, selectedAthlete.fc_max);
+        const duration_min = structureHasGradePct(rawStructure)
+          ? estimateDurationMinFromStructure(structure) || w.duration_min
+          : w.duration_min;
+        return {
+          ...w,
+          structure,
+          duration_min,
+          athlete_id: selectedAthlete.id,
+          coach_id: userData.user.id,
+          scheduled_date: assignDate,
+          // Con que VDOT quedaron escritos estos ritmos, para poder recalcularlos
+          // cuando el atleta vuelva a evaluarse.
+          generated_with_vdot: Number(vdot) || null,
+          done: false,
+        };
+      });
       const { error } = await insertAssignedWorkouts(payload);
       if (error) {
         console.error("Error guardando workout asignado:", error);

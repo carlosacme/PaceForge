@@ -3,6 +3,12 @@ import { supabase } from "../lib/supabase";
 import { enrichStructureWithPaces, rescaleStructureToVdot } from "../lib/enrichPace";
 import { PLAN_CALIBRATION_VDOT, progressionDelta } from "../lib/vdot";
 import {
+  structureHasGradePct,
+  applyGradeAdjustedPacesToStructure,
+  raceZoneFromStructure,
+  estimateDurationMinFromStructure,
+} from "../lib/gpxRacePlan";
+import {
   TAB_KEY_LIBRARY,
   formatLocalYMD,
   normalizeLibraryRow,
@@ -488,22 +494,30 @@ function WorkoutLibrary({
       // El VDOT ya esta en estado desde que se abrio el modal, con el delta que el
       // coach haya podido ajustar.
       const targetVdot = assignTargetVdotFor(a);
-      // Dos pasos, en este orden: primero se reescalan al VDOT objetivo los ritmos
-      // fijos que trae el plan, y despues el enriquecido rellena los bloques que
-      // siguen sin ritmo (los que solo traen señal de FC), al MISMO VDOT para que
-      // toda la sesion hable del mismo atleta.
-      const structure = enrichStructureWithPaces(
-        rescaleStructureToVdot(Array.isArray(row.structure) ? row.structure : [], targetVdot),
-        targetVdot,
-        a.fc_max,
-      );
+      // Planes GPX: cada bloque trae grade_pct → recalcular Minetti con el VDOT
+      // del atleta (no rescale de biblioteca, que borraría el ajuste de pendiente).
+      const rawStructure = Array.isArray(row.structure) ? row.structure : [];
+      const structure = structureHasGradePct(rawStructure)
+        ? applyGradeAdjustedPacesToStructure(
+            rawStructure,
+            targetVdot,
+            raceZoneFromStructure(rawStructure, "M"),
+          )
+        : enrichStructureWithPaces(
+            rescaleStructureToVdot(rawStructure, targetVdot),
+            targetVdot,
+            a.fc_max,
+          );
+      const durationFromGpx = structureHasGradePct(rawStructure)
+        ? estimateDurationMinFromStructure(structure)
+        : null;
       return {
         athlete_id: a.id,
         coach_id: coachUserId,
         title: assignedTitle,
         type: row.type,
         total_km: Number(row.total_km) || 0,
-        duration_min: Number(row.duration_min) || 0,
+        duration_min: durationFromGpx || Number(row.duration_min) || 0,
         description: row.description || "",
         structure,
         // Con que VDOT quedaron escritos estos ritmos. Sin este dato no se pueden

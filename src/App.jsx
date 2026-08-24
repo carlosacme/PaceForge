@@ -115,6 +115,7 @@ const AthleteHome = React.lazy(() => import("./components/AthleteHome"));
 const Plan2Weeks = React.lazy(() => import("./components/Plan2Weeks"));
 const Builder = React.lazy(() => import("./components/Builder"));
 const EvaluationView = React.lazy(() => import("./components/EvaluationView"));
+const GpxRacePlan = React.lazy(() => import("./components/GpxRacePlan"));
 
 
 
@@ -1097,8 +1098,16 @@ export default function App() {
     if (v === "challenges") return "retos";
     return "lista";
   }, []);
-  const getTrainingViewFromTab = useCallback((tab) => (tab === "crear_workout" ? "builder" : "plan12"), []);
-  const getTrainingTabFromView = useCallback((v) => (v === "builder" ? "crear_workout" : "plan_2_semanas"), []);
+  const getTrainingViewFromTab = useCallback((tab) => {
+    if (tab === "crear_workout") return "builder";
+    if (tab === "carrera_gpx") return "carrera_gpx";
+    return "plan12";
+  }, []);
+  const getTrainingTabFromView = useCallback((v) => {
+    if (v === "builder") return "crear_workout";
+    if (v === "carrera_gpx") return "carrera_gpx";
+    return "plan_2_semanas";
+  }, []);
 
   const notify = useCallback((msg) => {
     setNotification(msg);
@@ -1174,7 +1183,7 @@ export default function App() {
     return items;
   }, [profile?.role, session?.user?.email]);
   const allowedCoachViews = useMemo(() => {
-    const hiddenViews = ["evaluation", "plan12", "builder", "challenges", "plans"];
+    const hiddenViews = ["evaluation", "plan12", "builder", "carrera_gpx", "challenges", "plans"];
     return new Set([...coachNavItems.map((item) => item.id), ...hiddenViews]);
   }, [coachNavItems]);
 
@@ -1890,7 +1899,7 @@ export default function App() {
     if (view === "athletes" || view === "evaluation" || view === "challenges") {
       writeStoredTab(TAB_KEY_ATHLETES, getAthletesTabFromView(view));
     }
-    if (view === "plan12" || view === "builder" || view === "training") {
+    if (view === "plan12" || view === "builder" || view === "carrera_gpx" || view === "training") {
       writeStoredTab(TAB_KEY_TRAINING, getTrainingTabFromView(view));
     }
   }, [view, writeStoredTab, getAthletesTabFromView, getTrainingTabFromView]);
@@ -3151,7 +3160,7 @@ const handleSignOut = async () => {
       return;
     }
     if (id === "training") {
-      const trainingTab = readStoredTab(TAB_KEY_TRAINING, new Set(["plan_2_semanas", "crear_workout"]), "plan_2_semanas");
+      const trainingTab = readStoredTab(TAB_KEY_TRAINING, new Set(["plan_2_semanas", "crear_workout", "carrera_gpx"]), "plan_2_semanas");
       setView(getTrainingViewFromTab(trainingTab));
       setShowAddAthleteForm(false);
       return;
@@ -3254,7 +3263,7 @@ const handleSignOut = async () => {
             const active =
               view === item.id ||
               (item.id === "athletes" && (view === "evaluation" || view === "challenges")) ||
-              (item.id === "training" && (view === "plan12" || view === "builder"));
+              (item.id === "training" && (view === "plan12" || view === "builder" || view === "carrera_gpx"));
             return (
             <button
               key={item.id}
@@ -3507,11 +3516,12 @@ const handleSignOut = async () => {
         {view === "admin" && (profile?.role === "admin" || sessionEmailLower === ADMIN_EMAIL) && (
           <AdminPanel notify={notify} adminUserId={PLATFORM_ADMIN_USER_ID} />
         )}
-        {(view === "plan12" || view === "builder" || view === "training") && (
+        {(view === "plan12" || view === "builder" || view === "carrera_gpx" || view === "training") && (
           <>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "0 16px 10px" }}>
               <button type="button" onClick={() => selectTrainingTab("plan_2_semanas")} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", background: (view === "plan12" || view === "training") ? "rgba(139,92,246,.12)" : "#fff", color: (view === "plan12" || view === "training") ? "#6d28d9" : "#334155", fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>◇ Plan 2 Semanas</button>
               <button type="button" onClick={() => selectTrainingTab("crear_workout")} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", background: view === "builder" ? "rgba(234,88,12,.12)" : "#fff", color: view === "builder" ? "#c2410c" : "#334155", fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>◎ Crear Workout con IA</button>
+              <button type="button" onClick={() => selectTrainingTab("carrera_gpx")} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", background: view === "carrera_gpx" ? "rgba(220,38,38,.12)" : "#fff", color: view === "carrera_gpx" ? "#b91c1c" : "#334155", fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>⛰ Carrera GPX</button>
             </div>
             {(view === "plan12" || view === "training") && (
               <Plan2Weeks
@@ -3540,6 +3550,15 @@ const handleSignOut = async () => {
                 onGoToPlans={() => setView("plans")}
                 onWorkoutAssigned={() => setWorkoutsRefresh(r => r + 1)}
                 onSavedToLibrary={() => setLibraryRefresh((r) => r + 1)}
+              />
+            )}
+            {view === "carrera_gpx" && (
+              <GpxRacePlan
+                athletes={athletes}
+                coachUserId={session?.user?.id ?? null}
+                notify={notify}
+                onSavedToLibrary={() => setLibraryRefresh((r) => r + 1)}
+                onWorkoutAssigned={() => setWorkoutsRefresh((r) => r + 1)}
               />
             )}
           </>
@@ -3592,7 +3611,7 @@ const handleSignOut = async () => {
           const active =
             view === item.id ||
             (item.id === "athletes" && (view === "evaluation" || view === "challenges")) ||
-            (item.id === "training" && (view === "plan12" || view === "builder"));
+            (item.id === "training" && (view === "plan12" || view === "builder" || view === "carrera_gpx"));
           return (
             <button
               key={`m-${item.id}`}

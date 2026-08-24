@@ -671,7 +671,20 @@ export const normalizeWorkoutStructure = (rawStructure) => {
       // perderlo al pasar por el editor, que solo maneja el vocabulario fijo.
       const rawPhase = String(s?.phase || "").trim();
       const block_label = rawPhase && !WORKOUT_BLOCK_TYPES.includes(rawPhase) ? rawPhase : "";
-      return { block_type, duration_min, distance_km, target_pace, target_hr, description, block_label };
+      const gradeRaw = Number(s?.grade_pct);
+      const grade_pct = Number.isFinite(gradeRaw) ? gradeRaw : undefined;
+      const race_zone = String(s?.race_zone || "").trim().toUpperCase() || undefined;
+      return {
+        block_type,
+        duration_min,
+        distance_km,
+        target_pace,
+        target_hr,
+        description,
+        block_label,
+        ...(grade_pct != null ? { grade_pct } : {}),
+        ...(race_zone ? { race_zone } : {}),
+      };
     })
     .filter(Boolean);
 };
@@ -741,6 +754,10 @@ export const editableRowsToWorkoutStructure = (rows) => {
       // existe: "Repetition 3 - 400m" es lo que el reloj y la tabla muestran.
       const block_label = (r?.block_label ?? "").toString().trim();
       if (block_label) o.block_label = block_label;
+      const gradeRaw = Number(r?.grade_pct);
+      if (Number.isFinite(gradeRaw)) o.grade_pct = gradeRaw;
+      const race_zone = String(r?.race_zone || "").trim().toUpperCase();
+      if (race_zone) o.race_zone = race_zone;
       o.phase = block_label || block_type;
       o.duration = duration_min;
       o.pace = target_pace;
