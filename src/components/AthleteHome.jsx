@@ -30,6 +30,7 @@ import {
   resolveCoachUserIdFromPublicCode,
   resolveDefaultCoachUserId,
   sendChatPushNotification,
+  notifyCoachWorkoutCompletedFromClient,
   PUSH_INACTIVE_REASONS,
   markConversationRead,
   registerFcmToken,
@@ -823,6 +824,12 @@ export default function AthleteHome({ profile }) {
     }
     setWorkouts((prev) => prev.map((w) => (String(w.id) === String(workoutRow.id) ? normalizeWorkoutRow({ ...w, ...payload }) : w)));
     closeWorkoutModal();
+    if (athleteInfo?.coach_id) {
+      void notifyCoachWorkoutCompletedFromClient({
+        workout: { ...workoutRow, ...payload },
+        athlete: athleteInfo,
+      });
+    }
   };
 
   const toggleDone = async (w) => {
@@ -840,7 +847,10 @@ export default function AthleteHome({ profile }) {
     if (next && athleteInfo?.id) {
       try {
         if (athleteInfo?.coach_id) {
-          await sendChatPushNotification({ toUserId: athleteInfo.coach_id, title: "✅ Entreno completado", body: `${athleteInfo.name || "Atleta"} completó: ${w.title || "Entreno"}`, data: { type: "coach_athlete", athlete_id: athleteInfo.id }, logLabel: "workout done athlete→coach" });
+          await notifyCoachWorkoutCompletedFromClient({
+            workout: { ...w, done: true },
+            athlete: athleteInfo,
+          });
         }
       } catch (_) {}
       // Fire and forget: intenta traer lo ejecutado del reloj (intervals.icu).

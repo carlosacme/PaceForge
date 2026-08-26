@@ -1007,6 +1007,8 @@ export default function App() {
   const [view, setView] = useState("dashboard");
   const [selectedAthlete, setSelectedAthlete] = useState(null);
   const [workoutsRefresh, setWorkoutsRefresh] = useState(0);
+  /** Deep link: abrir modal Registro de este workout en la vista Atletas. */
+  const [pendingRegistroWorkoutId, setPendingRegistroWorkoutId] = useState(null);
   const [aiPrompt, setAiPrompt] = usePersistedState("raf_gen_prompt", "");
   const [aiWorkout, setAiWorkout] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
@@ -1860,6 +1862,9 @@ export default function App() {
     // volver a foco y pisaria el destino del deep link.
     try { localStorage.setItem("raf_lastView", "athletes"); } catch {}
     setViewRestored(true); // evita que el efecto de restauracion lo pise
+    if (data?.type === "coach_workout_completed" && data?.workout_id) {
+      setPendingRegistroWorkoutId(String(data.workout_id));
+    }
     return true;
   }, [athletes]);
 
@@ -3457,6 +3462,8 @@ const handleSignOut = async () => {
                 selected={selectedAthlete}
                 onSelect={setSelectedAthlete}
                 workoutsRefresh={workoutsRefresh}
+                openRegistroWorkoutId={pendingRegistroWorkoutId}
+                onRegistroOpened={() => setPendingRegistroWorkoutId(null)}
                 onAthleteWorkoutsDoneSync={(athleteId, workoutsDone) => {
                   setAthletes(prev => prev.map(a => (String(a.id) === String(athleteId) ? { ...a, workouts_done: workoutsDone } : a)));
                   setSelectedAthlete(prev => (prev && String(prev.id) === String(athleteId) ? { ...prev, workouts_done: workoutsDone } : prev));
@@ -4482,7 +4489,7 @@ const WeeklyLoadLine = ({ load }) => {
   );
 };
 
-function Athletes({ athletes, selected, onSelect, workoutsRefresh, onAthleteWorkoutsDoneSync, onAthleteFcSync, coachDisplayName, onDeleteAthlete, notify, onOpenInviteModal }) {
+function Athletes({ athletes, selected, onSelect, workoutsRefresh, openRegistroWorkoutId, onRegistroOpened, onAthleteWorkoutsDoneSync, onAthleteFcSync, coachDisplayName, onDeleteAthlete, notify, onOpenInviteModal }) {
   const S = styles;
   const athlete = (selected ? athletes.find(a => String(a.id) === String(selected.id)) : athletes[0]) || null;
   const [searchQuery, setSearchQuery] = useState("");
@@ -4786,6 +4793,16 @@ const [registroModal, setRegistroModal] = useState(null);
 const [registroLaps, setRegistroLaps] = useState(null);       // array de laps | null
 const [registroLapsLoading, setRegistroLapsLoading] = useState(false);
 const [registroLapsError, setRegistroLapsError] = useState(false);
+
+  // Deep link coach_workout_completed: abrir "Ver registro" de ese workout.
+  useEffect(() => {
+    if (!openRegistroWorkoutId || !workouts.length) return;
+    const w = workouts.find((x) => String(x.id) === String(openRegistroWorkoutId));
+    if (!w) return;
+    setRegistroModal(w);
+    onRegistroOpened?.();
+  }, [openRegistroWorkoutId, workouts, onRegistroOpened]);
+
 // Al abrir el modal, si el workout tiene actividad de intervals.icu y
 // estructura, traemos los laps para la comparacion por bloque.
 useEffect(() => {

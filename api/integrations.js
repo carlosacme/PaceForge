@@ -736,6 +736,14 @@ async function autoCompleteFromWebhook(conn, activity = null) {
     method: "PATCH", body: patch, prefer: "return=minimal",
   });
 
+  // Aviso al coach (best effort; dedupe vía coach_completion_notified_at).
+  try {
+    const { notifyCoachWorkoutCompleted } = await import("../lib/notifyCoachWorkoutCompleted.js");
+    await notifyCoachWorkoutCompleted({ workoutId: w.id });
+  } catch (e) {
+    console.warn("[webhook] notify coach workout completed:", e?.message || e);
+  }
+
   return { ok: true, source, marked: true, workout_id: w.id, activity_id: act.id ?? null, fecha };
 }
 

@@ -2428,6 +2428,60 @@ export async function sendChatPushNotification({ toUserId, title, body, data = n
   }
 }
 
+/** Deep-link / data.type al avisar al coach que el atleta terminó un entreno. */
+export const COACH_WORKOUT_COMPLETED_TYPE = "coach_workout_completed";
+
+/**
+ * Notifica al coach (best effort) tras marcar un workout done.
+ * Claim atómico en coach_completion_notified_at para no duplicar con el webhook.
+ */
+export async function notifyCoachWorkoutCompletedFromClient({ workout, athlete }) {
+  if (!workout?.id || !athlete?.coach_id || typeof window === "undefined") {
+    return { sent: false, reason: "sin datos" };
+  }
+  try {
+    const claimedAt = new Date().toISOString();
+    const { data: claimed, error: claimErr } = await supabase
+      .from("workouts")
+      .update({ coach_completion_notified_at: claimedAt })
+      .eq("id", workout.id)
+      .is("coach_completion_notified_at", null)
+      .eq("done", true)
+      .select("id")
+      .maybeSingle();
+    if (claimErr) {
+      // Columna aún no migrada u otro error: no tumbar el flujo del atleta.
+      console.warn("[workout-completed client] claim:", claimErr.message);
+      return { sent: false, reason: claimErr.message };
+    }
+    if (!claimed) return { sent: false, skipped: "ya notificado" };
+
+    const titleName = (athlete.name && String(athlete.name).trim()) || "Atleta";
+    const wTitle = (workout.title && String(workout.title).trim()) || workout.type || "Entreno";
+    const distRaw = workout.actual_distance_km ?? workout.manual_distance_km ?? workout.total_km;
+    const dist = Number(distRaw);
+    const body =
+      Number.isFinite(dist) && dist > 0
+        ? `${wTitle} · ${Math.round(dist * 10) / 10} km`
+        : String(wTitle);
+
+    return sendChatPushNotification({
+      toUserId: athlete.coach_id,
+      title: `✅ ${titleName} completó un entreno`,
+      body,
+      data: {
+        type: COACH_WORKOUT_COMPLETED_TYPE,
+        athlete_id: athlete.id,
+        workout_id: workout.id,
+      },
+      logLabel: "workout completed athlete→coach",
+    });
+  } catch (e) {
+    console.warn("[workout-completed client]", e);
+    return { sent: false, error: String(e?.message || e) };
+  }
+}
+
 /** Motivos por los que el destinatario no tiene notificaciones funcionando. */
 export const PUSH_INACTIVE_REASONS = new Set(["sin token", "token caducado"]);
 
