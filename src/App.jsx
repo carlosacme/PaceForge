@@ -13,7 +13,6 @@ import {
   PLAN_SESSION_TYPE_OPTIONS,
   normalizeAthlete,
   sumWeekKm,
-  WORKOUT_BLOCK_COLORS,
   formatLocalYMD,
   normalizeScheduledDateYmd,
   startOfWeekMonday,

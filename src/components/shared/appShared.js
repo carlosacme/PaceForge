@@ -2777,7 +2777,7 @@ export const computeFormaFatigaWeeklyPoints = (workouts) => {
     const endYmd = formatLocalYMD(endD);
     const acute = avgRpeKmInWindow(eligible, formatLocalYMD(addDays(endD, -6)), endYmd);
     const chronic = avgRpeKmInWindow(eligible, formatLocalYMD(addDays(endD, -27)), endYmd);
-    points.push({ i, label: i === 0 ? "Actual" : `-${i} sem`, endYmd, acute, chronic, forma: acute != null || chronic != null ? (chronic ?? 0) - (acute ?? 0) : null });
+    points.push({ i, label: i === 0 ? "Actual" : `−${i} sem`, endYmd, acute, chronic, forma: acute != null || chronic != null ? (chronic ?? 0) - (acute ?? 0) : null });
   }
   return points;
 };
