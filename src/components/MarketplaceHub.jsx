@@ -11,6 +11,7 @@ import {
 } from "./shared/appShared";
 import { readStructure } from "../lib/workoutStructure";
 import { enrichStructureWithPaces } from "../lib/enrichPace";
+import MarketplacePlanWorkoutsAccordion from "./shared/MarketplacePlanWorkoutsAccordion";
 
 function toMonday(date) {
   const d = new Date(date);
@@ -20,7 +21,7 @@ function toMonday(date) {
   return d;
 }
 
-function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify, styles, MarketplacePlanWorkoutsAccordion }) {
+function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify, styles }) {
   const S = styles;
   const isCoach = profileRole === "coach";
   const isAthlete = profileRole === "athlete";

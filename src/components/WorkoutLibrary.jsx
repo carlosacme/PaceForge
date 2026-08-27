@@ -26,6 +26,7 @@ import {
   sendWorkoutAssignmentPushToAthlete,
   insertAssignedWorkouts,
 } from "./shared/appShared";
+import MarketplacePlanWorkoutsAccordion from "./shared/MarketplacePlanWorkoutsAccordion";
 
 function WorkoutLibrary({
   coachUserId,
@@ -39,7 +40,6 @@ function WorkoutLibrary({
   onOpenAdminMarketplaceDraft,
   onAfterLibraryImportSuccess,
   styles,
-  MarketplacePlanWorkoutsAccordion,
   parentCoachId,
 }) {
   const S = styles;
