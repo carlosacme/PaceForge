@@ -168,54 +168,6 @@ const PLAN_12_LEVELS = [
 
 
 
-/** Convierte structure del workout a filas editables (fases). */
-
-/** Filas del formulario → JSON guardado en workouts.structure */
-
-
-
-const fitTitleKeywords = {
-  tempo: /\btempo\b/i,
-  interval: /\b(interval|intervalos|repeats?|series)\b/i,
-};
-
-const getFitAvgSpeedChanges = (records) => {
-  const speeds = (Array.isArray(records) ? records : [])
-    .map((r) => Number(r?.enhanced_speed ?? r?.speed))
-    .filter((s) => Number.isFinite(s) && s > 0);
-  if (speeds.length < 3) return 0;
-  let changes = 0;
-  for (let i = 1; i < speeds.length; i += 1) {
-    const prev = speeds[i - 1];
-    const curr = speeds[i];
-    if (prev <= 0 || curr <= 0) continue;
-    const delta = Math.abs(curr - prev) / prev;
-    if (delta >= 0.15) changes += 1;
-  }
-  return changes;
-};
-
-const mapFitWorkoutType = ({ sport, title, speedChanges, durationMin, distanceKm }) => {
-  const sportKey = String(sport || "").toLowerCase();
-  const safeTitle = String(title || "").trim();
-  const hasTempoWord = fitTitleKeywords.tempo.test(safeTitle);
-  const hasIntervalWord = fitTitleKeywords.interval.test(safeTitle);
-  const isIntervalBySpeed = Number(speedChanges) > 3;
-  const isLong = Number(durationMin) >= 80 || Number(distanceKm) >= 14;
-  if (sportKey === "running") {
-    if (hasTempoWord) return "tempo";
-    if (hasIntervalWord || isIntervalBySpeed) return "interval";
-    if (isLong) return "long";
-    return "easy";
-  }
-  if (sportKey === "walking") return "recovery";
-  return "easy";
-};
-
-
-
-
-
 
 /** Admin plataforma (Coaches, biblioteca global, prioridad en directorio). */
 
