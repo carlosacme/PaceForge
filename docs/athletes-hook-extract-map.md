@@ -5,7 +5,7 @@ HEAD de referencia: `bb0add4` (`refactor: extract Builder/Library bridge into us
 Archivo: `src/App.jsx` (~1369 líneas)  
 Contexto: `docs/shell-breakdown-map.md` §C / orden paso **#5** (Athletes list hook)
 
-**Estado:** solo mapeo. Sin extracción de código. Esperando validación (Paso 2 si se recomienda proceder).
+**Estado:** Paso 2 aplicado — hook `useCoachAthletes.js` en App.
 
 ---
 
@@ -253,11 +253,12 @@ const {
 
 ---
 
-## Checklist Paso 2 (cuando se valide)
+## Checklist Paso 2
 
-- [ ] Crear `useCoachAthletes` con 9 estados + load + CRUD + selected LS + sync helpers
-- [ ] App: mismo prop drilling; push hook recibe athletes/setters del nuevo hook
-- [ ] No tocar Plan2Weeks/Builder/Gpx salvo props; no mezclar con `libraryRefresh`
-- [ ] Smoke: load coach + staff; delete atleta; deep link registro; assign workout refresca Athletes; Settings `setAthletes`
-- [ ] Build limpio; auth-lock retry intacto
-- [ ] (Opcional, otro PR) decidir destino del form muerto vs InviteModal
+- [x] Crear `useCoachAthletes` con 9 estados + load + CRUD + selected LS + sync helpers
+- [x] App: mismo prop drilling; push hook recibe athletes/setters del nuevo hook
+- [x] No tocar Plan2Weeks/Builder/Gpx salvo props; no mezclar con `libraryRefresh`
+- [ ] Smoke staging: load; delete; deep link registro; assign → Athletes; Settings setAthletes
+- [x] Build limpio; auth-lock retry intacto en el hook
+- [ ] (Opcional, otro PR) form muerto vs InviteModal
+- [x] Fix colateral: `setNativePushPermission` expuesto desde push hook (sign-out lo usaba)

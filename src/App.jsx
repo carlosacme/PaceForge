@@ -3,11 +3,11 @@ import { supabase } from "./lib/supabase";
 import { useAppResumeRefresh } from "./hooks/useAppResumeRefresh";
 import { useCoachPushDeepLinks } from "./hooks/useCoachPushDeepLinks";
 import { useBuilderLibraryBridge } from "./hooks/useBuilderLibraryBridge";
+import { useCoachAthletes } from "./hooks/useCoachAthletes";
 import Athletes from "./components/Athletes";
 import AdminPanel from "./components/Admin";
 import Dashboard from "./components/Dashboard";
 import {
-  normalizeAthlete,
   ADMIN_EMAIL,
   PLATFORM_ADMIN_USER_ID,
   COACH_PROFILE_TRIAL_DAYS,
@@ -47,9 +47,6 @@ const GpxRacePlan = React.lazy(() => import("./components/GpxRacePlan"));
 
 
 
-
-/** Persistencia del atleta seleccionado en la vista Atletas del coach. */
-const RAF_SELECTED_ATHLETE_STORAGE_KEY = "raf_selected_athlete";
 
 /** Marca de "estamos restableciendo la contraseña", para sobrevivir a un refresco. */
 const RAF_PASSWORD_RECOVERY_KEY = "raf_password_recovery";
@@ -107,16 +104,7 @@ const TAB_KEY_TRAINING = "raf_tab_entrenamientos";
 
 export default function App() {
   const [view, setView] = useState("dashboard");
-  const [selectedAthlete, setSelectedAthlete] = useState(null);
-  const [workoutsRefresh, setWorkoutsRefresh] = useState(0);
-  /** Deep link: abrir modal Registro de este workout en la vista Atletas. */
-  const [pendingRegistroWorkoutId, setPendingRegistroWorkoutId] = useState(null);
   const [notification, setNotification] = useState(null);
-  const [athletes, setAthletes] = useState([]);
-  const [loadingAthletes, setLoadingAthletes] = useState(true);
-  const [showAddAthleteForm, setShowAddAthleteForm] = useState(false);
-  const [planLimitWarning, setPlanLimitWarning] = useState("");
-  const [newAthlete, setNewAthlete] = useState({ name: "", email: "", goal: "", pace: "", weekly_km: "" });
   const [session, setSession] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
   /**
@@ -141,7 +129,6 @@ export default function App() {
     } catch { return null; }
   });
   const [profileLoading, setProfileLoading] = useState(false);
-  const [staffParentCoachId, setStaffParentCoachId] = useState("");
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
   const [viewRestored, setViewRestored] = useState(false);
   const [coachPlanPickerVoluntary, setCoachPlanPickerVoluntary] = useState(false);
@@ -194,10 +181,37 @@ export default function App() {
   } = useBuilderLibraryBridge({ setView, notify });
 
   const {
+    athletes,
+    setAthletes,
+    loadingAthletes,
+    selectedAthlete,
+    setSelectedAthlete,
+    workoutsRefresh,
+    bumpWorkoutsRefresh,
+    pendingRegistroWorkoutId,
+    setPendingRegistroWorkoutId,
+    showAddAthleteForm,
+    setShowAddAthleteForm,
+    newAthlete,
+    updateNewAthleteField,
+    planLimitWarning,
+    setPlanLimitWarning,
+    staffParentCoachId,
+    loadAthletes,
+    saveNewAthlete,
+    cancelAddAthleteForm,
+    handleDeleteAthlete,
+    onAthleteWorkoutsDoneSync,
+    onAthleteFcSync,
+    clearSelectedOnSignOut,
+  } = useCoachAthletes({ session, authLoading, notify, profile });
+
+  const {
     syncFcmTokenToProfile,
     showPushInvite,
     dismissPushInvite,
     refreshNativePushPermission,
+    setNativePushPermission,
   } = useCoachPushDeepLinks({
     session,
     authLoading,
@@ -226,10 +240,6 @@ export default function App() {
   }, [coachNavItems]);
 
   const S = styles;
-
-  const updateNewAthleteField = (field, value) => {
-    setNewAthlete(prev => ({ ...prev, [field]: value }));
-  };
 
   const coachCodeFromId = useCallback((userId) => String(userId || "").replace(/-/g, "").slice(0, 8).toUpperCase(), []);
 
@@ -580,91 +590,13 @@ export default function App() {
     }
   }, [session?.user?.id]);
 
-  const loadAthletes = useCallback(async ({ silent = false } = {}) => {
-    if (authLoading || !session) {
-      setAthletes([]);
-      setLoadingAthletes(false);
-      return;
-    }
-    if (!silent) setLoadingAthletes(true);
-    try {
-      await withAuthLockRetry(async () => {
-        const { data: userData, error: userError } = await supabase.auth.getUser();
-        if (isAuthLockContentionError(userError)) throw userError;
-        if (userError || !userData?.user) {
-          console.error("Error obteniendo usuario para filtrar atletas:", userError);
-          if (!silent) notify("Error cargando atletas");
-          setAthletes([]);
-          return;
-        }
-        const coachId = userData.user.id;
-
-        const { data: staffRow, error: staffErr } = await supabase
-          .from("coach_staff")
-          .select("coach_id")
-          .eq("staff_id", coachId)
-          .maybeSingle();
-        if (isAuthLockContentionError(staffErr)) throw staffErr;
-        if (staffRow?.coach_id) setStaffParentCoachId(staffRow.coach_id);
-
-        let data;
-        let error;
-        if (staffRow) {
-          const { data: assignedRows, error: assignedErr } = await supabase
-            .from("staff_athletes")
-            .select("athlete_id")
-            .eq("staff_id", coachId)
-            .eq("coach_id", staffRow.coach_id);
-          if (isAuthLockContentionError(assignedErr)) throw assignedErr;
-          const assignedIds = [...new Set((assignedRows || []).map((r) => r.athlete_id))];
-          if (assignedIds.length === 0) {
-            setAthletes([]);
-          } else {
-            const res = await supabase.from("athletes").select("*").in("id", assignedIds).order("id", { ascending: true });
-            data = res.data;
-            error = res.error;
-          }
-        } else {
-          const res = await supabase.from("athletes").select("*").eq("coach_id", coachId).order("id", { ascending: true });
-          data = res.data;
-          error = res.error;
-        }
-
-        if (isAuthLockContentionError(error)) throw error;
-
-        if (error) {
-          if (!silent) notify("Error cargando atletas");
-          setAthletes([]);
-        } else if (data !== undefined) {
-          setAthletes((data || []).map(normalizeAthlete));
-        }
-      });
-    } catch (error) {
-      console.error("Error inesperado cargando atletas:", error);
-      if (!silent) {
-        notify(
-          isAuthLockContentionError(error)
-            ? "No se pudieron sincronizar los datos. Recarga la página e inténtalo de nuevo."
-            : "Error cargando atletas",
-        );
-      }
-      setAthletes([]);
-    } finally {
-      if (!silent) setLoadingAthletes(false);
-    }
-  }, [authLoading, session, notify]);
-
-  useEffect(() => {
-    loadAthletes({ silent: false });
-  }, [loadAthletes]);
-
   // Perfil siempre; coaches tambien lista + km/badges via workoutsRefresh.
   // AthleteHome hace su propio resume (ficha/workouts/intervals) sin duplicar profiles.
   useAppResumeRefresh(() => {
     void refreshProfileSilent();
     if (profile && profile.role !== "athlete") {
       void loadAthletes({ silent: true });
-      setWorkoutsRefresh((r) => r + 1);
+      bumpWorkoutsRefresh();
     }
   }, Boolean(session?.user?.id));
 
@@ -718,28 +650,6 @@ export default function App() {
     }
   }, [view, writeStoredTab, getAthletesTabFromView, getTrainingTabFromView]);
 
-  useEffect(() => {
-    if (typeof localStorage === "undefined") return;
-    if (selectedAthlete?.id != null) {
-      localStorage.setItem(RAF_SELECTED_ATHLETE_STORAGE_KEY, String(selectedAthlete.id));
-    }
-  }, [selectedAthlete?.id]);
-
-  useEffect(() => {
-    if (!athletes.length || typeof localStorage === "undefined") return;
-    const raw = localStorage.getItem(RAF_SELECTED_ATHLETE_STORAGE_KEY);
-    const foundByLs = raw ? athletes.find((a) => String(a.id) === String(raw)) : null;
-    if (raw && !foundByLs) {
-      localStorage.removeItem(RAF_SELECTED_ATHLETE_STORAGE_KEY);
-    }
-    setSelectedAthlete((prev) => {
-      if (prev && athletes.some((a) => String(a.id) === String(prev.id))) {
-        return prev;
-      }
-      return foundByLs || null;
-    });
-  }, [athletes]);
-
 const handleSignOut = async () => {
   if (typeof window !== "undefined" && window.posthog) window.posthog.reset();
     // Retirar el token de push de ESTE dispositivo ANTES de salir, para que el
@@ -773,7 +683,6 @@ const handleSignOut = async () => {
       alert(`Error al cerrar sesión: ${error.message}`);
     }
     if (typeof localStorage !== "undefined") {
-      localStorage.removeItem(RAF_SELECTED_ATHLETE_STORAGE_KEY);
       localStorage.removeItem("raf_lastView");
       localStorage.removeItem("raf_tab_atletas");
       localStorage.removeItem("raf_tab_entrenamientos");
@@ -789,7 +698,7 @@ const handleSignOut = async () => {
       localStorage.removeItem("raf_push_invite_dismissed");
     }
     setView("dashboard");
-    setSelectedAthlete(null);
+    clearSelectedOnSignOut();
   };
 
   /**
@@ -826,93 +735,6 @@ const handleSignOut = async () => {
         error: "",
       });
     }
-  };
-
-  const saveNewAthlete = async () => {
-    const name = newAthlete.name.trim();
-    const email = newAthlete.email.trim();
-    const goal = newAthlete.goal.trim();
-    const pace = newAthlete.pace.trim();
-    const weeklyKm = Number(newAthlete.weekly_km);
-
-    if (!name || !email || !goal || !pace || !Number.isFinite(weeklyKm) || weeklyKm <= 0) {
-      notify("Completa todos los campos ✓");
-      return;
-    }
-
-    const rawPlan = String(profile?.subscription_plan || "Basico").toLowerCase();
-    const isBasicPlan = rawPlan === "basico" || rawPlan === "básico" || rawPlan === "starter";
-    if (isBasicPlan && athletes.length >= 15) {
-      const limitMsg = "Has alcanzado el límite de tu plan. Actualiza al plan Pro para agregar más atletas.";
-      setPlanLimitWarning(limitMsg);
-      notify(limitMsg);
-      return;
-    }
-
-    const { data: userData, error: userError } = await supabase.auth.getUser();
-    if (userError || !userData?.user) {
-      console.error("Error obteniendo usuario para guardar atleta:", userError);
-      alert(userError?.message || "No se pudo obtener el usuario autenticado.");
-      notify("Error al guardar atleta");
-      return;
-    }
-
-    const payload = { name, email, goal, pace, weekly_km: weeklyKm, coach_id: userData.user.id };
-    const { data, error } = await supabase.from("athletes").insert(payload).select().single();
-    if (error) {
-      const errorText = [
-        "Error al guardar atleta en Supabase:",
-        `message: ${error.message || "N/A"}`,
-        `details: ${error.details || "N/A"}`,
-        `hint: ${error.hint || "N/A"}`,
-        `code: ${error.code || "N/A"}`,
-      ].join("\n");
-      console.error(errorText, error);
-      alert(errorText);
-      notify("Error al guardar atleta");
-      return;
-    }
-
-    setAthletes(prev => [normalizeAthlete(data), ...prev]);
-
-    setShowAddAthleteForm(false);
-    setNewAthlete({ name: "", email: "", goal: "", pace: "", weekly_km: "" });
-    setPlanLimitWarning("");
-    notify("Atleta agregado ✓");
-  };
-
-  const cancelAddAthleteForm = () => {
-    setShowAddAthleteForm(false);
-    setNewAthlete({ name: "", email: "", goal: "", pace: "", weekly_km: "" });
-  };
-
-  const handleDeleteAthlete = async (athleteRow) => {
-    if (!athleteRow?.id) return;
-    const name = athleteRow.name || "este atleta";
-    if (!window.confirm(`¿Eliminar a ${name}? Se borrarán sus mensajes y workouts asociados. Esta acción no se puede deshacer.`)) {
-      return;
-    }
-    const id = athleteRow.id;
-    const { error: mErr } = await supabase.from("messages").delete().eq("athlete_id", id);
-    if (mErr) console.warn("messages delete:", mErr);
-    const { error: wErr } = await supabase.from("workouts").delete().eq("athlete_id", id);
-    if (wErr) console.warn("workouts delete:", wErr);
-    const { error } = await supabase.from("athletes").delete().eq("id", id);
-    if (error) {
-      console.error(error);
-      alert(`No se pudo eliminar: ${error.message}`);
-      return;
-    }
-    setAthletes((prev) => prev.filter((a) => String(a.id) !== String(id)));
-    setSelectedAthlete((prev) => {
-      if (prev && String(prev.id) === String(id) && typeof localStorage !== "undefined") {
-        localStorage.removeItem(RAF_SELECTED_ATHLETE_STORAGE_KEY);
-        return null;
-      }
-      return prev;
-    });
-    setWorkoutsRefresh((r) => r + 1);
-    notify("Atleta eliminado");
   };
 
   // El enlace del correo aterriza en /auth/confirm: canjear el token antes de
@@ -1189,18 +1011,8 @@ const handleSignOut = async () => {
                 workoutsRefresh={workoutsRefresh}
                 openRegistroWorkoutId={pendingRegistroWorkoutId}
                 onRegistroOpened={() => setPendingRegistroWorkoutId(null)}
-                onAthleteWorkoutsDoneSync={(athleteId, workoutsDone) => {
-                  setAthletes(prev => prev.map(a => (String(a.id) === String(athleteId) ? { ...a, workouts_done: workoutsDone } : a)));
-                  setSelectedAthlete(prev => (prev && String(prev.id) === String(athleteId) ? { ...prev, workouts_done: workoutsDone } : prev));
-                }}
-                onAthleteFcSync={(athleteId, fc_max, fc_reposo) => {
-                  setAthletes((prev) =>
-                    prev.map((a) => (String(a.id) === String(athleteId) ? normalizeAthlete({ ...a, fc_max, fc_reposo }) : a)),
-                  );
-                  setSelectedAthlete((prev) =>
-                    prev && String(prev.id) === String(athleteId) ? normalizeAthlete({ ...prev, fc_max, fc_reposo }) : prev,
-                  );
-                }}
+                onAthleteWorkoutsDoneSync={onAthleteWorkoutsDoneSync}
+                onAthleteFcSync={onAthleteFcSync}
                 coachDisplayName={
                   profile?.name ||
                   session?.user?.user_metadata?.full_name ||
@@ -1261,7 +1073,7 @@ const handleSignOut = async () => {
                 coachPlan={String(profile?.subscription_plan || "Basico")}
                 profileRole={profile?.role ?? ""}
                 onGoToPlans={() => setCoachPlanPickerVoluntary(true)}
-                onPlanAssigned={() => setWorkoutsRefresh((r) => r + 1)}
+                onPlanAssigned={bumpWorkoutsRefresh}
               />
             )}
             {view === "builder" && (
@@ -1278,7 +1090,7 @@ const handleSignOut = async () => {
                 coachPlan={String(profile?.subscription_plan || "Basico")}
                 profileRole={profile?.role ?? ""}
                 onGoToPlans={() => setCoachPlanPickerVoluntary(true)}
-                onWorkoutAssigned={() => setWorkoutsRefresh(r => r + 1)}
+                onWorkoutAssigned={bumpWorkoutsRefresh}
                 onSavedToLibrary={bumpLibraryRefresh}
               />
             )}
@@ -1288,7 +1100,7 @@ const handleSignOut = async () => {
                 coachUserId={session?.user?.id ?? null}
                 notify={notify}
                 onSavedToLibrary={bumpLibraryRefresh}
-                onWorkoutAssigned={() => setWorkoutsRefresh((r) => r + 1)}
+                onWorkoutAssigned={bumpWorkoutsRefresh}
               />
             )}
           </>

@@ -217,5 +217,6 @@ export function useCoachPushDeepLinks({
     showPushInvite,
     dismissPushInvite,
     refreshNativePushPermission,
+    setNativePushPermission,
   };
 }
