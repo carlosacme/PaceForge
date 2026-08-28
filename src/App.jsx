@@ -15,7 +15,6 @@ import {
   formatCopInt,
   registerFcmToken,
   unregisterOwnDeviceToken,
-  sendAppEmail,
   ensureOwnProfile,
   acceptPendingInvitationIfAny,
   isAuthLockContentionError,
@@ -42,6 +41,7 @@ import InstallAppButton from "./components/InstallAppButton";
 import ResetPasswordScreen from "./components/ResetPasswordScreen";
 import ConfirmEmailScreen from "./components/ConfirmEmailScreen";
 import AuthLanding from "./components/AuthLanding";
+import InviteModal from "./components/InviteModal";
 import { isConfirmEmailRoute } from "./lib/authRoutes";
 import { initNativeAppLinks, consumePendingAppLink, subscribeAppLink, applyAppLink } from "./lib/nativeAppLinks";
 const CoachSettings = React.lazy(() => import("./components/CoachSettings"));
@@ -185,9 +185,6 @@ export default function App() {
   const [nativePushPermission, setNativePushPermission] = useState(null);
   const [staffParentCoachId, setStaffParentCoachId] = useState("");
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
-  const [inviteEmail, setInviteEmail] = useState("");
-  const [inviteSending, setInviteSending] = useState(false);
-  const [lastInviteLink, setLastInviteLink] = useState("");
   const [viewRestored, setViewRestored] = useState(false);
   const [coachPlanPickerVoluntary, setCoachPlanPickerVoluntary] = useState(false);
   const [coachPickerPlan, setCoachPickerPlan] = useState(null);
@@ -446,69 +443,6 @@ export default function App() {
     if (error) { console.error("resolveCoachIdByCode:", error); return null; }
     return data || null;
   }, []);
-
-  // Crea la invitacion (fila en invitations) y expone su link, SIN depender del
-  // email. El email es opcional: si el coach lo escribio, se guarda; si no, la
-  // fila queda con email null y el coach comparte el link directo.
-  const createInviteLink = useCallback(async () => {
-    if (!session?.user?.id) {
-      notify("No hay sesión activa.");
-      return null;
-    }
-    const code =
-      (typeof crypto !== "undefined" && crypto.randomUUID && crypto.randomUUID()) ||
-      `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-    const inviteLink = `https://www.runningapexflow.com?invite=${encodeURIComponent(code)}`;
-    const { error: insError } = await supabase.from("invitations").insert({
-      coach_id: session.user.id,
-      email: inviteEmail?.trim() || null,
-      code,
-      status: "pending",
-    });
-    if (insError) {
-      console.error("Error guardando invitación:", insError);
-      notify(insError.message || "No se pudo guardar la invitación.");
-      return null;
-    }
-    setLastInviteLink(inviteLink);
-    return inviteLink;
-  }, [inviteEmail, notify, session?.user?.id]);
-
-  const generateInviteLink = useCallback(async () => {
-    setInviteSending(true);
-    try {
-      await createInviteLink();
-    } finally {
-      setInviteSending(false);
-    }
-  }, [createInviteLink]);
-
-  const sendAthleteInvitation = useCallback(async () => {
-    const email = inviteEmail.trim().toLowerCase();
-    if (!email || !session?.user?.id) {
-      notify("Escribe un email o usa el link directo.");
-      return;
-    }
-    setInviteSending(true);
-    try {
-      const inviteLink = await createInviteLink();
-      if (!inviteLink) return;
-      const mail = await sendAppEmail({
-        template: "athlete_invite",
-        to: email,
-        vars: {
-          inviteLink,
-          coachCode: inviteCoachPublicCode || undefined,
-        },
-      });
-      notify(mail.ok ? "Invitación enviada ✓" : `No se pudo enviar el correo (${mail.reason}). Comparte el enlace a mano.`);
-    } catch (e) {
-      console.error("sendAthleteInvitation:", e);
-      notify("No se pudo enviar la invitación.");
-    } finally {
-      setInviteSending(false);
-    }
-  }, [inviteEmail, inviteCoachPublicCode, notify, session?.user?.id, createInviteLink]);
 
   // App Links de la APK: el enlace del correo llega por intent y el WebView
   // arranca en la raiz, asi que hay que llevar la vista a la ruta a mano. Fuera
@@ -1386,70 +1320,13 @@ const handleSignOut = async () => {
     <Suspense fallback={<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh"}}><p>Cargando...</p></div>}>
     <div style={S.root}>
       {notification && <div style={S.notification}>✓ {notification}</div>}
-      {inviteModalOpen ? (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 500, padding: 16 }}>
-          <div style={{ ...S.card, width: "100%", maxWidth: 460, margin: 0 }}>
-            <div style={{ fontSize: ".95em", fontWeight: 800, color: "#0f172a", marginBottom: 10 }}>📧 Invitar Atleta</div>
-            <div style={{ fontSize: ".8em", color: "#64748b", marginBottom: 8 }}>Email del atleta (opcional)</div>
-            <input
-              type="email"
-              value={inviteEmail}
-              onChange={(e) => setInviteEmail(e.target.value)}
-              placeholder="atleta@email.com"
-              style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", color: "#0f172a", fontFamily: "inherit", fontSize: ".85em", boxSizing: "border-box" }}
-            />
-            <div style={{ fontSize: ".8em", color: "#64748b", marginTop: 14, marginBottom: 4 }}>Código coach</div>
-            <input
-              type="text"
-              readOnly
-              value={inviteCoachPublicCode}
-              aria-readonly="true"
-              style={{ width: "100%", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", color: "#0f172a", fontFamily: "ui-monospace,monospace", fontSize: ".9em", fontWeight: 700, boxSizing: "border-box" }}
-            />
-            <div style={{ fontSize: ".72em", color: "#94a3b8", marginTop: 6, lineHeight: 1.45 }}>El atleta usará este código al registrarse.</div>
-            <div style={{ marginTop: 12, display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
-              <button type="button" onClick={() => { setInviteModalOpen(false); setLastInviteLink(""); }} style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 12px", color: "#64748b", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: ".8em" }}>Cerrar</button>
-              <button
-                type="button"
-                onClick={sendAthleteInvitation}
-                disabled={inviteSending}
-                style={{ background: inviteSending ? "#e2e8f0" : "linear-gradient(135deg,#0d9488,#14b8a6)", border: "none", borderRadius: 8, padding: "8px 12px", color: inviteSending ? "#64748b" : "#fff", cursor: inviteSending ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 800, fontSize: ".8em" }}
-              >
-                {inviteSending ? "Enviando..." : "📧 Enviar por correo"}
-              </button>
-              <button
-                type="button"
-                onClick={generateInviteLink}
-                disabled={inviteSending}
-                style={{ background: inviteSending ? "#e2e8f0" : "#0f172a", border: "none", borderRadius: 8, padding: "8px 12px", color: inviteSending ? "#64748b" : "#fff", cursor: inviteSending ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 800, fontSize: ".8em" }}
-              >
-                🔗 Generar link
-              </button>
-            </div>
-            {lastInviteLink && (
-              <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid #e2e8f0" }}>
-                <div style={{ fontSize: ".82em", color: "#166534", fontWeight: 700, marginBottom: 8 }}>
-                  ✅ Invitación enviada por correo. También puedes compartir el link:
-                </div>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <button type="button" onClick={() => {
-                    const msg = `¡Te invito a entrenar conmigo en RunningApexFlow! 🏃 Regístrate aquí y recibe tus entrenamientos directo en tu reloj: ${lastInviteLink}`;
-                    window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, "_blank");
-                  }} style={{ background:"#25D366", color:"#fff", border:"none", borderRadius:8, padding:"10px 16px", fontWeight:800, fontFamily:"inherit", cursor:"pointer", fontSize:".85em" }}>
-                    💬 Compartir por WhatsApp
-                  </button>
-                  <button type="button" onClick={async () => {
-                    try { await navigator.clipboard.writeText(lastInviteLink); alert("Link copiado"); }
-                    catch { alert("No se pudo copiar"); }
-                  }} style={{ background:"#f1f5f9", color:"#334155", border:"1px solid #cbd5e1", borderRadius:8, padding:"10px 16px", fontWeight:700, fontFamily:"inherit", cursor:"pointer", fontSize:".85em" }}>
-                    📋 Copiar link
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      ) : null}
+      <InviteModal
+        open={inviteModalOpen}
+        onClose={() => setInviteModalOpen(false)}
+        coachUserId={session?.user?.id}
+        coachPublicCode={inviteCoachPublicCode}
+        notify={notify}
+      />
 
       <aside className="pf-sidebar-desktop" style={S.sidebar}>
         <div style={S.logo}>
@@ -1637,7 +1514,7 @@ const handleSignOut = async () => {
               setView("athletes");
               setShowAddAthleteForm(false);
             }}
-            onRequestAddAthlete={() => { setLastInviteLink(""); setInviteModalOpen(true); }}
+            onRequestAddAthlete={() => setInviteModalOpen(true)}
             showAddAthleteForm={showAddAthleteForm}
             planLimitWarning={planLimitWarning}
             onGoToPlans={() => setCoachPlanPickerVoluntary(true)}
@@ -1683,7 +1560,7 @@ const handleSignOut = async () => {
                 }
                 onDeleteAthlete={handleDeleteAthlete}
                 notify={notify}
-                onOpenInviteModal={() => { setLastInviteLink(""); setInviteModalOpen(true); }}
+                onOpenInviteModal={() => setInviteModalOpen(true)}
               />
             )}
             {view === "evaluation" && (
