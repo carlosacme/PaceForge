@@ -1,7 +1,8 @@
-import React, { Fragment, useState, useEffect, useMemo, useCallback, useRef, Suspense } from "react";
+import React, { useState, useEffect, useMemo, useCallback, Suspense } from "react";
 import { supabase } from "./lib/supabase";
 import { usePersistedState } from "./hooks/usePersistedState";
 import { useAppResumeRefresh } from "./hooks/useAppResumeRefresh";
+import { useCoachPushDeepLinks } from "./hooks/useCoachPushDeepLinks";
 import Athletes from "./components/Athletes";
 import AdminPanel from "./components/Admin";
 import Dashboard from "./components/Dashboard";
@@ -12,7 +13,6 @@ import {
   PLATFORM_ADMIN_USER_ID,
   COACH_PROFILE_TRIAL_DAYS,
   coachTrialDaysRemainingFromStart,
-  registerFcmToken,
   unregisterOwnDeviceToken,
   ensureOwnProfile,
   acceptPendingInvitationIfAny,
@@ -21,20 +21,11 @@ import {
   styles,
 } from "./components/shared/appShared";
 import {
-  initMessaging,
-  onMessage,
-  refreshFcmTokenIfGranted,
-  requestNotificationPermission,
   clearFcmToken,
 } from "./firebase.js";
 import { Capacitor } from "@capacitor/core";
 import {
-  isNativePush,
-  registerNativePush,
-  nativePushPermissionState,
   clearNativePush,
-  consumePendingDeepLink,
-  subscribeDeepLink,
 } from "./lib/nativePush";
 import InstallAppButton from "./components/InstallAppButton";
 import ResetPasswordScreen from "./components/ResetPasswordScreen";
@@ -42,6 +33,7 @@ import ConfirmEmailScreen from "./components/ConfirmEmailScreen";
 import AuthLanding from "./components/AuthLanding";
 import InviteModal from "./components/InviteModal";
 import PlanPicker from "./components/PlanPicker";
+import PushInviteBanner from "./components/PushInviteBanner";
 import { isConfirmEmailRoute } from "./lib/authRoutes";
 import { initNativeAppLinks, consumePendingAppLink, subscribeAppLink, applyAppLink } from "./lib/nativeAppLinks";
 const CoachSettings = React.lazy(() => import("./components/CoachSettings"));
@@ -154,10 +146,6 @@ export default function App() {
     } catch { return null; }
   });
   const [profileLoading, setProfileLoading] = useState(false);
-  const [pushInviteDismissed, setPushInviteDismissed] = useState(() =>
-    typeof localStorage !== "undefined" && localStorage.getItem("raf_push_invite_dismissed") === "1",
-  );
-  const [nativePushPermission, setNativePushPermission] = useState(null);
   const [staffParentCoachId, setStaffParentCoachId] = useState("");
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
   const [viewRestored, setViewRestored] = useState(false);
@@ -198,63 +186,22 @@ export default function App() {
     setTimeout(() => setNotification(null), 3000);
   }, []);
 
-  const syncFcmTokenToProfile = useCallback(async () => {
-    try {
-      const uid = session?.user?.id;
-      if (!uid) {
-        return;
-      }
-      // En la APK no existen ni Notification ni el service worker, asi que el
-      // flujo web nunca obtenia token. El nativo pide permiso con el plugin y
-      // entrega el token por el listener "registration" a la misma
-      // registerFcmToken().
-      if (Capacitor.isNativePlatform()) {
-        await registerNativePush({ notify });
-        return;
-      }
-      const token = await requestNotificationPermission();
-      if (!token) {
-        return;
-      }
-      // El backend (service_role) limpia el token de otros perfiles antes de
-      // asignarlo al actual: dos usuarios del mismo navegador no pueden
-      // compartir token.
-      const ok = await registerFcmToken(token);
-      if (!ok) {
-        console.warn("[FCM] No se pudo registrar el token en el backend");
-      }
-    } catch (e) {
-      console.warn("syncFcmTokenToProfile", e);
-    }
-  }, [session?.user?.id, notify]);
-
-  const dismissPushInvite = useCallback(() => {
-    if (typeof localStorage !== "undefined") localStorage.setItem("raf_push_invite_dismissed", "1");
-    setPushInviteDismissed(true);
-  }, []);
-
-  /**
-   * El banner de "activa las notificaciones" mira Notification.permission en
-   * web, pero ese objeto no existe en el WebView: en nativo el estado sale de
-   * PushNotifications.checkPermissions().
-   */
-  const refreshNativePushPermission = useCallback(async () => {
-    if (!isNativePush()) return;
-    setNativePushPermission(await nativePushPermissionState());
-  }, []);
-
-  useEffect(() => {
-    if (!session?.user?.id) return;
-    void refreshNativePushPermission();
-  }, [session?.user?.id, refreshNativePushPermission]);
-
-  const pushPermissionGranted = isNativePush()
-    ? nativePushPermission === "granted"
-    : typeof Notification !== "undefined" && Notification.permission === "granted";
-  const pushPermissionKnown = isNativePush()
-    ? nativePushPermission != null
-    : typeof Notification !== "undefined";
-  const showPushInvite = Boolean(session) && pushPermissionKnown && !pushPermissionGranted && !pushInviteDismissed;
+  const {
+    syncFcmTokenToProfile,
+    showPushInvite,
+    dismissPushInvite,
+    refreshNativePushPermission,
+  } = useCoachPushDeepLinks({
+    session,
+    authLoading,
+    profile,
+    athletes,
+    notify,
+    setView,
+    setSelectedAthlete,
+    setViewRestored,
+    setPendingRegistroWorkoutId,
+  });
 
   const coachNavItems = useMemo(() => {
     const role = profile?.role;
@@ -725,43 +672,6 @@ export default function App() {
   }, [session?.user?.id, profile, viewRestored, allowedCoachViews]);
 
   useEffect(() => {
-    if (authLoading || !session?.user?.id) return undefined;
-    let cancelled = false;
-    (async () => {
-      // Nativo: register() vuelve a emitir el token en cada arranque, asi que
-      // esto cubre tambien las rotaciones que hace FCM.
-      if (Capacitor.isNativePlatform()) {
-        await registerNativePush({ notify });
-        return;
-      }
-      const tok = await refreshFcmTokenIfGranted();
-      if (cancelled || !tok) return;
-      await registerFcmToken(tok);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [authLoading, session?.user?.id, notify]);
-
-  useEffect(() => {
-    // En nativo el primer plano lo cubre el listener pushNotificationReceived
-    // de nativePush.js; firebase/messaging no funciona en el WebView.
-    if (!session || Capacitor.isNativePlatform()) return undefined;
-    let unsub = () => {};
-    (async () => {
-      const m = await initMessaging();
-      if (!m) return;
-      unsub = onMessage(m, (payload) => {
-        const t = payload.notification?.title;
-        notify(t || "Nuevo mensaje");
-      });
-    })();
-    return () => {
-      if (typeof unsub === "function") unsub();
-    };
-  }, [session, notify]);
-
-  useEffect(() => {
     const em = session?.user?.email?.toLowerCase();
     const role = profile?.role;
     if (view === "admin" && role !== "admin" && em !== ADMIN_EMAIL) {
@@ -791,73 +701,6 @@ export default function App() {
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, [session?.user?.id, profile?.role, allowedCoachViews]);
-
-  /** Destino de un push que aun no se pudo aplicar porque faltaba el atleta. */
-  const pendingCoachDeepLinkRef = useRef(null);
-  const [nativeDeepLinkTick, setNativeDeepLinkTick] = useState(0);
-
-  // Un tap con la app ya montada no vuelve a ejecutar el efecto de abajo por si
-  // solo (en la APK no hay recarga ni cambio de URL): el plugin avisa y este
-  // contador lo despierta.
-  useEffect(() => {
-    if (!isNativePush()) return undefined;
-    return subscribeDeepLink(() => setNativeDeepLinkTick((n) => n + 1));
-  }, []);
-
-  /**
-   * Salta al destino de un aviso push. La web lo recibe en la URL y la APK en
-   * el `data` de la notificacion, pero la navegacion es la misma, asi que vive
-   * en un solo sitio. Devuelve false si aun no se puede aplicar.
-   */
-  const applyCoachDeepLink = useCallback((data) => {
-    const athleteId = data?.athlete_id;
-    if (athleteId) {
-      const found = (athletes || []).find((a) => String(a.id) === String(athleteId));
-      if (!found) return false; // aun no cargaron; se reintenta cuando lleguen
-      setSelectedAthlete(found);
-    }
-    setView("athletes");
-    // Persistir: el efecto de visibilitychange re-aplica raf_lastView al
-    // volver a foco y pisaria el destino del deep link.
-    try { localStorage.setItem("raf_lastView", "athletes"); } catch {}
-    setViewRestored(true); // evita que el efecto de restauracion lo pise
-    if (data?.type === "coach_workout_completed" && data?.workout_id) {
-      setPendingRegistroWorkoutId(String(data.workout_id));
-    }
-    return true;
-  }, [athletes]);
-
-  // Deep link desde notificaciones push (tipos coach_*). Requiere que el
-  // perfil y la lista de atletas ya esten cargados; si el athlete_id aun no
-  // esta en `athletes`, el efecto reintenta cuando llegue (dep [athletes]).
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (!profile || profile.role === "athlete") return;
-
-    const params = new URLSearchParams(window.location.search);
-    const open = params.get("open");
-    const fromUrl = open && open.startsWith("coach_")
-      ? { type: open, athlete_id: params.get("athlete_id"), workout_id: params.get("workout_id") }
-      : null;
-    // En la APK la URL nunca cambia al tocar la notificacion: el destino lo
-    // dejo el listener nativo. Se guarda en el ref si no se pudo aplicar, para
-    // no perderlo (consumirlo lo borra del modulo).
-    const target = fromUrl || pendingCoachDeepLinkRef.current || consumePendingDeepLink("coach_");
-    if (!target) return;
-
-    if (!applyCoachDeepLink(target)) {
-      pendingCoachDeepLinkRef.current = target;
-      return;
-    }
-    pendingCoachDeepLinkRef.current = null;
-
-    // Consumir el parametro para que no se reprocese en recargas.
-    if (fromUrl) {
-      params.delete("open"); params.delete("athlete_id"); params.delete("workout_id");
-      const qs = params.toString();
-      window.history.replaceState({}, "", window.location.pathname + (qs ? `?${qs}` : ""));
-    }
-  }, [profile, athletes, applyCoachDeepLink, nativeDeepLinkTick]);
 
   useEffect(() => {
     if (view === "athletes" || view === "evaluation" || view === "challenges") {
@@ -1243,66 +1086,15 @@ const handleSignOut = async () => {
         <div style={{ padding: "12px 16px 0" }}>
           <InstallAppButton />
         </div>
-        {showPushInvite && (
-            <div
-              style={{
-                margin: "12px 16px 0",
-                padding: "12px 16px",
-                borderRadius: 12,
-                background: "#fffbeb",
-                border: "1px solid #fde68a",
-                display: "flex",
-                flexWrap: "wrap",
-                alignItems: "center",
-                gap: 12,
-                boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
-              }}
-            >
-              <span style={{ flex: "1 1 200px", color: "#78350f", fontSize: ".88em", fontWeight: 600 }}>
-                Activa las notificaciones para recibir mensajes
-              </span>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    if (typeof localStorage !== "undefined") localStorage.removeItem("raf_push_invite_dismissed");
-                    await syncFcmTokenToProfile();
-                    await refreshNativePushPermission();
-                  }}
-                  style={{
-                    padding: "8px 14px",
-                    borderRadius: 8,
-                    border: "none",
-                    background: "linear-gradient(135deg,#e86f28,#ff8a3d)",
-                    color: "#fff",
-                    fontWeight: 800,
-                    fontSize: ".8em",
-                    cursor: "pointer",
-                    fontFamily: "inherit",
-                  }}
-                >
-                  Activar
-                </button>
-                <button
-                  type="button"
-                  onClick={dismissPushInvite}
-                  style={{
-                    padding: "8px 14px",
-                    borderRadius: 8,
-                    border: "1px solid #e2e8f0",
-                    background: "#fff",
-                    color: "#64748b",
-                    fontWeight: 700,
-                    fontSize: ".8em",
-                    cursor: "pointer",
-                    fontFamily: "inherit",
-                  }}
-                >
-                  Ahora no
-                </button>
-              </div>
-            </div>
-          )}
+        <PushInviteBanner
+          visible={showPushInvite}
+          onActivate={async () => {
+            if (typeof localStorage !== "undefined") localStorage.removeItem("raf_push_invite_dismissed");
+            await syncFcmTokenToProfile();
+            await refreshNativePushPermission();
+          }}
+          onDismiss={dismissPushInvite}
+        />
         {showTrialBanner ? (
           <div
             style={{
