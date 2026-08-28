@@ -5,7 +5,7 @@ HEAD de referencia: `338daea` (`refactor: extract Dashboard and consolidate athl
 Archivo: `src/App.jsx` (~3468 líneas / ~3281 no vacías)  
 Contexto: `docs/app-extract-map-v2.md` §3 orden **#5** (limpieza prelude / unificar styles)
 
-**Estado:** solo mapeo. Sin mover ni eliminar código. Esperando validación.
+**Estado:** **HECHO** (commits FIT → styles → dead code). Ver historial `fix: define FIT helpers…` / `refactor: use appShared.styles…` / limpieza prelude.
 
 Tras Athletes, accordion, Admin, eliminación de Plans y extracción de Dashboard, el “prelude” ya no son ~426 líneas densas: quedan **~288 líneas hasta `export default function App`** (mucho es blanco + comentarios huérfanos) y **`styles` ~82 líneas** al final.
 

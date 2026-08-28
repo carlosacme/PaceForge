@@ -7,9 +7,6 @@ import AdminPanel from "./components/Admin";
 import Dashboard from "./components/Dashboard";
 import {
   BRAND_NAME,
-  EVAL_DISTANCES,
-  PLAN_PREVIEW_FULL_DAYS,
-  PLAN_SESSION_TYPE_OPTIONS,
   normalizeAthlete,
   libraryRowToBuilderWorkout,
   ADMIN_EMAIL,
@@ -109,96 +106,6 @@ if (PASSWORD_RECOVERY_IN_URL && typeof sessionStorage !== "undefined") {
 }
 
 
-/** Días completos para planes marketplace (admin) y formulario de sesión. */
-
-
-/** Ritmos (min/km) para generación IA de marketplace: pace_range = H:MM-H:MM con guión ASCII. */
-
-
-/** easy/long/recovery/fartlek → banda "fácil"; tempo / interval según tipo. */
-
-
-
-/** Sesiones para "Ver plan": plan completo en `plan_sessions` (o alias) si hay más filas que en `preview_workouts`. */
-
-const DAYS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
-
-
-// sendChatPushNotification, sendWorkoutAssignmentPushToAthlete y pushBodySnippet
-// viven ahora en src/components/shared/appShared.js (fuente unica) y se importan arriba.
-
-
-
-
-
-
-
-
-/** YYYY-MM-DD desde componentes locales (celdas del calendario); evita desfaces vs strings ISO del workout. */
-
-/** Normaliza scheduled_date del workout a YYYY-MM-DD sin depender de Date cuando ya viene como fecha. */
-
-
-
-/** Primer día del mes siguiente (YYYY-MM-DD, calendario local). */
-
-/** Último día del mes siguiente (YYYY-MM-DD, calendario local). */
-
-/** Lunes a domingo de la próxima semana (respecto a hoy), calendario local. */
-
-/** Suma de minutos → texto legible (horas y minutos). */
-
-/** Lunes de la semana que contiene el primer día del mes */
-
-/** 42 celdas (6 semanas), vista mensual */
-
-
-
-
-
-
-/** Carreras con fecha >= todayYmd, la primera es la más próxima */
-
-
-const PLAN_12_LEVELS = [
-  { id: "principiante", label: "Principiante" },
-  { id: "intermedio", label: "Intermedio" },
-  { id: "avanzado", label: "Avanzado" },
-];
-
-
-
-
-
-/** Admin plataforma (Coaches, biblioteca global, prioridad en directorio). */
-
-const ADMIN_WHATSAPP_E164 = "573233675434";
-
-async function resolveCoachUserIdFromPublicCode(codeInput) {
-  const codigoIngresado = String(codeInput || "").trim();
-  if (!codigoIngresado) return null;
-  const { data, error } = await supabase
-    .from("profiles")
-    .select("user_id, role, name")
-    .eq("coach_id", codigoIngresado.trim().toUpperCase())
-    .maybeSingle();
-  if (error) {
-    console.error("resolveCoachUserIdFromPublicCode:", error);
-    return null;
-  }
-  return data?.user_id ?? null;
-}
-
-function coachDirectorySpecialtyLabel(row) {
-  const city = (row?.city || "").trim();
-  const country = (row?.country || "").trim();
-  const loc = [city, country].filter(Boolean).join(" · ");
-  if (loc) return loc;
-  const plan = (row?.subscription_plan || "").trim();
-  if (plan) return plan;
-  return "Entrenador de running";
-}
-
 const COACH_NAV_BASE_ITEMS = [
   { id: "dashboard", icon: "▤", label: "Panel", shortLabel: "Inicio", color: "#ff8a3d" },
   { id: "athletes", icon: "◉", label: "Atletas", shortLabel: "Atletas", color: "#3b82f6" },
@@ -211,8 +118,6 @@ const COACH_SUBSCRIPTION_NEQUI = "3233675434";
 const COACH_SUBSCRIPTION_WA_E164 = "573233675434";
 const TAB_KEY_ATHLETES = "raf_tab_atletas";
 const TAB_KEY_TRAINING = "raf_tab_entrenamientos";
-
-const TAB_KEY_CREATE_WORKOUT = "raf_tab_crear_workout";
 
 
 /** Precios COP según tablas del producto (mensual base; semestral −12%; anual −20%). */
