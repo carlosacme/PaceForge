@@ -135,7 +135,7 @@ Imports, detección recovery URL (`PASSWORD_RECOVERY_IN_URL`), `COACH_NAV_BASE_I
 
 **Lógica:** `applyCoachPromo`, `handleCoachPlanPagarAhora` (`/api/wompi-create-checkout`), WhatsApp/Nequi, trial banner CTA → picker, blocked UI fullscreen.
 
-**Nota:** bloque muerto `{false ? ( … setCoachPaymentModalOpen …)}` (~L2115+): modal legacy no montado; `setCoachPaymentModalOpen` **no tiene** `useState` (código inalcanzable). Limpieza barata al extraer el picker.
+**Nota:** el modal legacy `{false ? ( … setCoachPaymentModalOpen …)}` (Nequi/WhatsApp) se confirmó muerto y **ya se eliminó** (sin `useState`, sin `set…(true)` en el repo).
 
 | Aislamiento | **Alta-media.** Mucho JSX + pocos callbacks desde fuera (`onGoToPlans`, trial, blocked). Ideal **segundo extract**. Depende de `profile`/`session`/`notify`. |
 
@@ -214,7 +214,7 @@ No un solo Paso 2: varios pasos pequeños, cada uno con map (si hace falta) → 
 | Paso | Qué sacar | Por qué primero / después |
 |---|---|---|
 | **1** | **Invite modal** → `InviteAthleteModal` (o similar) | Más aislado; ~4 estados; poco riesgo auth |
-| **2** | **Coach plan picker** (+ consts precios/Nequi; borrar modal `{false}`) | 8 estados; JSX grande; CTAs quedan como `onOpenPlans` |
+| **2** | **Coach plan picker** (+ consts precios) | 8 estados; JSX grande; CTAs quedan como `onOpenPlans` (modal Nequi muerto ya borrado) |
 | **3** | **Push invite banner + sync FCM helpers** → hook `useCoachPush` / componente banner | Aclara shell; deep links pueden quedar o ir en 3b |
 | **3b** (opcional mismo PR o siguiente) | **Deep links coach** → `useCoachDeepLinks` | Tras tener `setView`/`athletes` estables vía props |
 | **4** | **Builder/Library bridge state** → hook o contenedor training | Reduce 4 estados del top-level |
@@ -253,15 +253,15 @@ Seguir con **prop drilling** para invite/picker/athletes en los próximos extrac
 
 - **`loadProfile` es denso** (staff invite, trial sync, heal): al mover bootstrap, no “simplificar” mensajes ni orden.
 - **Deep link vs `raf_lastView` / visibilitychange:** acoplamiento sutil con nav; documentar en el extract de deep links.
-- **Código muerto plan picker** (`{false}` + `setCoachPaymentModalOpen`): limpiar al extraer H.
+- ~~Código muerto plan picker (`{false}` + `setCoachPaymentModalOpen`)~~ — eliminado.
 - **AthleteHome** solo recibe `profile`: no mezclar con chrome coach.
 
 ---
 
 ## 5) Checklist (cuando se valide el troceo)
 
-- [ ] Paso invite modal  
-- [ ] Paso plan picker (+ purge modal muerto)  
+- [ ] Paso plan picker  
+- [x] Purge modal muerto `{false}` / `setCoachPaymentModalOpen`  
 - [ ] Paso push (± deep links)  
 - [ ] Decidir NotifyContext sí/no  
 - [ ] Solo entonces athletes hook / CoachChrome / AuthGate  

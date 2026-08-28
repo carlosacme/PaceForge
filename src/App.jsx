@@ -111,8 +111,6 @@ const COACH_NAV_BASE_ITEMS = [
   { id: "marketplace", icon: "🛒", label: "Marketplace", shortLabel: "Market", color: "#0ea5e9" },
 ];
 
-const COACH_SUBSCRIPTION_NEQUI = "3233675434";
-const COACH_SUBSCRIPTION_WA_E164 = "573233675434";
 const TAB_KEY_ATHLETES = "raf_tab_atletas";
 const TAB_KEY_TRAINING = "raf_tab_entrenamientos";
 
@@ -425,22 +423,6 @@ export default function App() {
       setCoachSubscriptionSaving(false);
     }
   }, [coachPickerPlan, coachPickerPeriod, coachAppliedPromo, clearCoachPromo, notify]);
-
- const coachPlanPickerWhatsAppHref = useMemo(() => {
-    if (!coachPickerPlan || !coachPickerPeriod) return `https://wa.me/${COACH_SUBSCRIPTION_WA_E164}`;
-    const def = COACH_PLAN_PICKER_DEFS[coachPickerPlan];
-    const amountBase = def?.prices?.[coachPickerPeriod];
-    const discountPct = coachAppliedPromo?.discount_percent ?? 0;
-    const amount =
-      amountBase == null
-        ? amountBase
-        : Math.max(0, Math.round((amountBase * (100 - discountPct)) / 100));
-    const periodLabel = COACH_PLAN_PICKER_PERIODS.find((p) => p.id === coachPickerPeriod)?.label || coachPickerPeriod;
-    const planTitle = def?.title || coachPickerPlan;
-    const amountStr = formatCopInt(amount);
-    const text = `Hola, realicé el pago del plan ${planTitle} ${periodLabel} por $${amountStr} COP de RunningApexFlow`;
-    return `https://wa.me/${COACH_SUBSCRIPTION_WA_E164}?text=${encodeURIComponent(text)}`;
-  }, [coachPickerPlan, coachPickerPeriod, coachAppliedPromo]);
 
   const S = styles;
 
@@ -2111,87 +2093,6 @@ const handleSignOut = async () => {
               ) : null}
             </div>
           </div>
-
-          {false ? (
-            <div
-              style={{
-                position: "fixed",
-                inset: 0,
-                zIndex: 4100,
-                background: "rgba(15,23,42,.55)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                padding: 16,
-                boxSizing: "border-box",
-              }}
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="coach-pay-modal-title"
-            >
-              <div
-                style={{
-                  width: "100%",
-                  maxWidth: 460,
-                  background: "#fff",
-                  borderRadius: 16,
-                  padding: "24px 22px",
-                  border: "1px solid #e2e8f0",
-                  boxShadow: "0 20px 50px rgba(15,23,42,.2)",
-                }}
-              >
-                <h2 id="coach-pay-modal-title" style={{ margin: "0 0 14px", fontSize: "1.1em", fontWeight: 900, color: "#0f172a" }}>
-                  Instrucciones de pago
-                </h2>
-                <div style={{ color: "#334155", fontSize: ".88em", lineHeight: 1.65, marginBottom: 18 }}>
-                  <div>Realiza tu pago a:</div>
-                  <div style={{ marginTop: 10 }}>
-                    📱 Nequi: <strong>{COACH_SUBSCRIPTION_NEQUI}</strong>
-                  </div>
-                  <div style={{ marginTop: 10 }}>📸 Envía el comprobante por WhatsApp al mismo número</div>
-                  <div style={{ marginTop: 10 }}>✅ Tu cuenta será activada en menos de 24 horas</div>
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  <a
-                    href={coachPlanPickerWhatsAppHref}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{
-                      display: "block",
-                      textAlign: "center",
-                      padding: "12px 16px",
-                      borderRadius: 10,
-                      background: "linear-gradient(135deg,#22c55e,#16a34a)",
-                      color: "#fff",
-                      fontWeight: 800,
-                      fontSize: ".88em",
-                      textDecoration: "none",
-                      fontFamily: "inherit",
-                    }}
-                  >
-                    Enviar comprobante por WhatsApp
-                  </a>
-                  <button
-                    type="button"
-                    onClick={() => setCoachPaymentModalOpen(false)}
-                    style={{
-                      padding: "10px 14px",
-                      borderRadius: 10,
-                      border: "1px solid #e2e8f0",
-                      background: "#f8fafc",
-                      color: "#64748b",
-                      fontWeight: 700,
-                      fontSize: ".82em",
-                      cursor: "pointer",
-                      fontFamily: "inherit",
-                    }}
-                  >
-                    Cerrar
-                  </button>
-                </div>
-              </div>
-            </div>
-          ) : null}
         </div>
       ) : null}
     </div>
