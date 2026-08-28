@@ -18,6 +18,7 @@ import {
   extractAnthropicTextContent,
   authApiFetch,
   userFacingError,
+  normalizeWorkoutRow,
 } from "./shared/appShared";
 
 function ChallengesHub({
@@ -28,9 +29,10 @@ function ChallengesHub({
   coachAthletes = [],
   notify,
   styles,
-  normalizeWorkoutRow,
+  normalizeWorkoutRow: normalizeWorkoutRowProp,
   isAthlete: isAthleteProp,
 }) {
+  const normalizeRow = normalizeWorkoutRowProp || normalizeWorkoutRow;
   const S = styles;
   const isAdmin = profileRole === "admin" || String(currentUserId || "") === PLATFORM_ADMIN_USER_ID;
   const isAthlete = Boolean(isAthleteProp) || profileRole === "athlete";
@@ -171,7 +173,7 @@ function ChallengesHub({
       for (const row of workoutsRes.data || []) {
         const aid = String(row.athlete_id);
         if (!workoutsMap[aid]) workoutsMap[aid] = [];
-        workoutsMap[aid].push(normalizeWorkoutRow(row));
+        workoutsMap[aid].push(normalizeRow(row));
       }
     }
     const grouped = {};

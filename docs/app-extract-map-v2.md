@@ -206,7 +206,7 @@ De más aislado / barato → más estructural:
 | **1** | `MarketplacePlanWorkoutsAccordion` → `src/components/shared/` (o `Marketplace/`) | ~196 | Casi cero props de App; quita inyección a Library/Hub; ya depende de WST shared |
 | **2** | Pack **Admin** (`AdminPanel` + `AdminPromoCodes` + `AdminCoachesProfilesPanel`) | ~641 | Gate admin claro; props `notify`/`adminUserId`; no toca atletas/calendario |
 | **3** | ~~**Plans**~~ | — | **Hecho como fix de producto (no extract):** checkout legacy eliminado; entry points → picker canónico; promo migrada al picker. Ver `docs/plans-extract-map.md` |
-| **4** | **Dashboard** (+ `ProgressBar`, `getRaceMeta`; opcional `normalizeWorkoutRow`→appShared) | ~460+ | Pocos estados locales; hay que decidir si el form “nuevo atleta” sigue prop-drilling desde App o se mueve |
+| **4** | ~~**Dashboard**~~ (+ `ProgressBar`, `getRaceMeta`) | — | **Hecho:** `src/components/Dashboard.jsx`; atletas desde shell; workouts + `withAuthLockRetry`; `normalizeWorkoutRow` unificado a appShared |
 | **5** | Limpieza prelude (borrar FIT/`resolveCoach*` muertos; unificar `styles`) | variable | Reduce ruido sin cambiar UX |
 | **6** | **Auth landing / login UI** fuera de `App()` | ~600–900 (estim.) | Aísla pantallas pre-sesión; App queda en orquestación |
 | **7** | (Opcional, grande) Coach chrome / Context ligero | resto del shell | Solo cuando 1–6 estén verdes; el shell seguirá dueño de `athletes`/`view`/deep-links |

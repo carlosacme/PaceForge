@@ -5,7 +5,7 @@ HEAD de referencia: `7cb4797` (`fix: retry auth lock contention when loading pro
 Archivo origen: `src/App.jsx` (~3995 líneas / ~3824 no vacías)  
 Contexto: `docs/app-extract-map-v2.md` §3 orden **#4** (Plans #3 quedó supersedido)
 
-**Estado:** solo mapeo. Sin extracción de código. Esperando validación.
+**Estado:** **EXTRAÍDO** → `src/components/Dashboard.jsx` (atletas consolidados desde shell; workouts propios + auth-lock retry).
 
 ---
 
