@@ -260,10 +260,9 @@ Seguir con **prop drilling** para invite/picker/athletes en los próximos extrac
 
 ## 5) Checklist (cuando se valide el troceo)
 
+- [ ] Paso invite modal  
 - [ ] Paso plan picker  
 - [x] Purge modal muerto `{false}` / `setCoachPaymentModalOpen`  
 - [ ] Paso push (± deep links)  
 - [ ] Decidir NotifyContext sí/no  
 - [ ] Solo entonces athletes hook / CoachChrome / AuthGate  
-
-**No mover código en este commit** — solo este documento.
