@@ -14,6 +14,44 @@ import { distKmFromLabel } from "../../lib/intervals";
 export const BRAND_NAME = "RunningApexFlow";
 
 /**
+ * Contención de `navigator.locks` entre pestañas (@supabase/gotrue-js).
+ * Típico: AbortError "Lock broken by another request with the 'steal' option".
+ */
+export function isAuthLockContentionError(err) {
+  if (!err) return false;
+  const name = String(err.name || err.code || "");
+  const msg = String(err.message || err.error_description || err || "");
+  if (/lock broken by another request with the ['"]?steal['"]? option/i.test(msg)) return true;
+  if (/was released because another request stole it/i.test(msg)) return true;
+  if (/acquiring an exclusive navigator lockmanager lock/i.test(msg)) return true;
+  if (name === "AbortError" && /lock/i.test(msg)) return true;
+  if (name === "NavigatorLockAcquireTimeoutError" || name === "LockAcquireTimeoutError") return true;
+  return false;
+}
+
+const sleepMs = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Reintenta solo ante contención de auth lock entre pestañas.
+ * @template T
+ * @param {() => Promise<T>} fn
+ * @param {{ retries?: number, delayMs?: number }} [opts] `retries` = intentos extra (default 2)
+ * @returns {Promise<T>}
+ */
+export async function withAuthLockRetry(fn, { retries = 2, delayMs = 200 } = {}) {
+  let attempt = 0;
+  for (;;) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (!isAuthLockContentionError(err) || attempt >= retries) throw err;
+      attempt += 1;
+      await sleepMs(delayMs * attempt);
+    }
+  }
+}
+
+/**
  * Mensaje legible para el usuario. El detalle técnico va a console.error;
  * nunca se muestra error.message crudo de Supabase/API en la UI.
  */
@@ -57,6 +95,9 @@ export const userFacingError = (err, fallback = "Algo salió mal. Inténtalo de 
   }
   if (msg.includes("timeout") || msg.includes("timed out")) {
     return "La operación tardó demasiado. Inténtalo de nuevo.";
+  }
+  if (isAuthLockContentionError(err)) {
+    return "No se pudieron sincronizar los datos. Recarga la página e inténtalo de nuevo.";
   }
   // Si ya viene en español claro (sin jerga técnica), se puede mostrar.
   const looksTechnical =

@@ -32,6 +32,8 @@ import {
   stashPendingInviteCode,
   acceptPendingInvitationIfAny,
   userFacingError,
+  isAuthLockContentionError,
+  withAuthLockRetry,
 } from "./components/shared/appShared";
 import {
   initMessaging,
@@ -840,13 +842,25 @@ export default function App() {
   useEffect(() => {
     let mounted = true;
     const bootstrapAuth = async () => {
-      const { data, error } = await supabase.auth.getSession();
-      if (error) {
-        console.error("Error leyendo sesión:", error);
-      }
-      if (mounted) {
-        setSession(data?.session ?? null);
-        setAuthLoading(false);
+      try {
+        const { data, error } = await withAuthLockRetry(async () => {
+          const r = await supabase.auth.getSession();
+          if (isAuthLockContentionError(r.error)) throw r.error;
+          return r;
+        });
+        if (error) {
+          console.error("Error leyendo sesión:", error);
+        }
+        if (mounted) {
+          setSession(data?.session ?? null);
+          setAuthLoading(false);
+        }
+      } catch (err) {
+        console.error("Error leyendo sesión:", err);
+        if (mounted) {
+          setSession(null);
+          setAuthLoading(false);
+        }
       }
     };
 
@@ -940,14 +954,30 @@ export default function App() {
       // Solo mostrar loading si NO hay perfil cacheado (primera vez)
       const hasCached = (() => { try { return !!localStorage.getItem("raf_cached_profile"); } catch { return false; } })();
       if (!hasCached) setProfileLoading(true);
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("user_id", session.user.id)
-        .maybeSingle();
+      let data;
+      let error;
+      try {
+        const res = await withAuthLockRetry(async () => {
+          const r = await supabase
+            .from("profiles")
+            .select("*")
+            .eq("user_id", session.user.id)
+            .maybeSingle();
+          if (isAuthLockContentionError(r.error)) throw r.error;
+          return r;
+        });
+        data = res.data;
+        error = res.error;
+      } catch (err) {
+        console.error("Error cargando perfil:", err);
+        // Tras reintentos de lock: conservar cache si existe; no mostrar error técnico.
+        if (!hasCached) setProfile(null);
+        setProfileLoading(false);
+        return;
+      }
       if (error) {
         console.error("Error cargando perfil:", error);
-        setProfile(null);
+        if (!hasCached) setProfile(null);
         setProfileLoading(false);
         return;
       }
@@ -1137,21 +1167,29 @@ export default function App() {
   const refreshProfileSilent = useCallback(async () => {
     const uid = session?.user?.id;
     if (!uid) return;
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("user_id", uid)
-      .maybeSingle();
-    if (error) {
-      console.warn("[resume] profiles:", error);
-      return;
-    }
-    if (!data) return;
-    setProfile(data);
     try {
-      localStorage.setItem("raf_cached_profile", JSON.stringify(data));
-    } catch {
-      /* ignore */
+      const { data, error } = await withAuthLockRetry(async () => {
+        const r = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("user_id", uid)
+          .maybeSingle();
+        if (isAuthLockContentionError(r.error)) throw r.error;
+        return r;
+      });
+      if (error) {
+        console.warn("[resume] profiles:", error);
+        return;
+      }
+      if (!data) return;
+      setProfile(data);
+      try {
+        localStorage.setItem("raf_cached_profile", JSON.stringify(data));
+      } catch {
+        /* ignore */
+      }
+    } catch (err) {
+      console.warn("[resume] profiles:", err);
     }
   }, [session?.user?.id]);
 
@@ -1163,53 +1201,66 @@ export default function App() {
     }
     if (!silent) setLoadingAthletes(true);
     try {
-      const { data: userData, error: userError } = await supabase.auth.getUser();
-      if (userError || !userData?.user) {
-        console.error("Error obteniendo usuario para filtrar atletas:", userError);
-        if (!silent) notify("Error cargando atletas");
-        setAthletes([]);
-        throw new Error("No user");
-      }
-      const coachId = userData.user.id;
-
-      const { data: staffRow } = await supabase
-        .from("coach_staff")
-        .select("coach_id")
-        .eq("staff_id", coachId)
-        .maybeSingle();
-      if (staffRow?.coach_id) setStaffParentCoachId(staffRow.coach_id);
-
-      let data;
-      let error;
-      if (staffRow) {
-        const { data: assignedRows } = await supabase
-          .from("staff_athletes")
-          .select("athlete_id")
-          .eq("staff_id", coachId)
-          .eq("coach_id", staffRow.coach_id);
-        const assignedIds = [...new Set((assignedRows || []).map((r) => r.athlete_id))];
-        if (assignedIds.length === 0) {
+      await withAuthLockRetry(async () => {
+        const { data: userData, error: userError } = await supabase.auth.getUser();
+        if (isAuthLockContentionError(userError)) throw userError;
+        if (userError || !userData?.user) {
+          console.error("Error obteniendo usuario para filtrar atletas:", userError);
+          if (!silent) notify("Error cargando atletas");
           setAthletes([]);
+          return;
+        }
+        const coachId = userData.user.id;
+
+        const { data: staffRow, error: staffErr } = await supabase
+          .from("coach_staff")
+          .select("coach_id")
+          .eq("staff_id", coachId)
+          .maybeSingle();
+        if (isAuthLockContentionError(staffErr)) throw staffErr;
+        if (staffRow?.coach_id) setStaffParentCoachId(staffRow.coach_id);
+
+        let data;
+        let error;
+        if (staffRow) {
+          const { data: assignedRows, error: assignedErr } = await supabase
+            .from("staff_athletes")
+            .select("athlete_id")
+            .eq("staff_id", coachId)
+            .eq("coach_id", staffRow.coach_id);
+          if (isAuthLockContentionError(assignedErr)) throw assignedErr;
+          const assignedIds = [...new Set((assignedRows || []).map((r) => r.athlete_id))];
+          if (assignedIds.length === 0) {
+            setAthletes([]);
+          } else {
+            const res = await supabase.from("athletes").select("*").in("id", assignedIds).order("id", { ascending: true });
+            data = res.data;
+            error = res.error;
+          }
         } else {
-          const res = await supabase.from("athletes").select("*").in("id", assignedIds).order("id", { ascending: true });
+          const res = await supabase.from("athletes").select("*").eq("coach_id", coachId).order("id", { ascending: true });
           data = res.data;
           error = res.error;
         }
-      } else {
-        const res = await supabase.from("athletes").select("*").eq("coach_id", coachId).order("id", { ascending: true });
-        data = res.data;
-        error = res.error;
-      }
 
-      if (error) {
-        if (!silent) notify("Error cargando atletas");
-        setAthletes([]);
-      } else if (data !== undefined) {
-        setAthletes((data || []).map(normalizeAthlete));
-      }
+        if (isAuthLockContentionError(error)) throw error;
+
+        if (error) {
+          if (!silent) notify("Error cargando atletas");
+          setAthletes([]);
+        } else if (data !== undefined) {
+          setAthletes((data || []).map(normalizeAthlete));
+        }
+      });
     } catch (error) {
       console.error("Error inesperado cargando atletas:", error);
-      if (!silent) notify("Error cargando atletas");
+      if (!silent) {
+        notify(
+          isAuthLockContentionError(error)
+            ? "No se pudieron sincronizar los datos. Recarga la página e inténtalo de nuevo."
+            : "Error cargando atletas",
+        );
+      }
       setAthletes([]);
     } finally {
       if (!silent) setLoadingAthletes(false);
