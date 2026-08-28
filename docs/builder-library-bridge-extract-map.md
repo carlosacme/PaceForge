@@ -5,7 +5,7 @@ HEAD de referencia: `968a8ed` (`refactor: extract coach push/FCM and deep links 
 Archivo: `src/App.jsx` (~1367 líneas)  
 Contexto: `docs/shell-breakdown-map.md` §3 paso **#4** (Builder/Library bridge)
 
-**Estado:** solo mapeo. Sin extracción de código. Esperando validación.
+**Estado:** Paso 2 aplicado — hook `useBuilderLibraryBridge.js` en App.
 
 ---
 
@@ -155,9 +155,9 @@ const {
 
 ---
 
-## Checklist Paso 2 (cuando se valide)
+## Checklist Paso 2
 
-- [ ] Crear hook con los 4 estados + bump + useLibraryWorkout
-- [ ] Cablear Builder / Library / Gpx; dejar Plan2Weeks con `workoutsRefresh`
-- [ ] Smoke: generar IA → guardar a library → lista refresca; “Usar” en library → abre Builder con draft; Gpx save refresca library
-- [ ] Build limpio; `raf_gen_prompt` sigue persistiendo
+- [x] Crear hook con los 4 estados + bump + useLibraryWorkout
+- [x] Cablear Builder / Library / Gpx; dejar Plan2Weeks con `workoutsRefresh`
+- [ ] Smoke staging: Library “Usar” → Builder; save Builder/Gpx refresca Library; `raf_gen_prompt` tras reload
+- [x] Build limpio; key `raf_gen_prompt` intacta en el hook

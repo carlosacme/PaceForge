@@ -1,14 +1,13 @@
 import React, { useState, useEffect, useMemo, useCallback, Suspense } from "react";
 import { supabase } from "./lib/supabase";
-import { usePersistedState } from "./hooks/usePersistedState";
 import { useAppResumeRefresh } from "./hooks/useAppResumeRefresh";
 import { useCoachPushDeepLinks } from "./hooks/useCoachPushDeepLinks";
+import { useBuilderLibraryBridge } from "./hooks/useBuilderLibraryBridge";
 import Athletes from "./components/Athletes";
 import AdminPanel from "./components/Admin";
 import Dashboard from "./components/Dashboard";
 import {
   normalizeAthlete,
-  libraryRowToBuilderWorkout,
   ADMIN_EMAIL,
   PLATFORM_ADMIN_USER_ID,
   COACH_PROFILE_TRIAL_DAYS,
@@ -112,10 +111,6 @@ export default function App() {
   const [workoutsRefresh, setWorkoutsRefresh] = useState(0);
   /** Deep link: abrir modal Registro de este workout en la vista Atletas. */
   const [pendingRegistroWorkoutId, setPendingRegistroWorkoutId] = useState(null);
-  const [aiPrompt, setAiPrompt] = usePersistedState("raf_gen_prompt", "");
-  const [aiWorkout, setAiWorkout] = useState(null);
-  const [aiLoading, setAiLoading] = useState(false);
-  const [libraryRefresh, setLibraryRefresh] = useState(0);
   const [notification, setNotification] = useState(null);
   const [athletes, setAthletes] = useState([]);
   const [loadingAthletes, setLoadingAthletes] = useState(true);
@@ -185,6 +180,18 @@ export default function App() {
     setNotification(msg);
     setTimeout(() => setNotification(null), 3000);
   }, []);
+
+  const {
+    aiPrompt,
+    setAiPrompt,
+    aiWorkout,
+    setAiWorkout,
+    aiLoading,
+    setAiLoading,
+    libraryRefresh,
+    bumpLibraryRefresh,
+    useLibraryWorkout,
+  } = useBuilderLibraryBridge({ setView, notify });
 
   const {
     syncFcmTokenToProfile,
@@ -1272,7 +1279,7 @@ const handleSignOut = async () => {
                 profileRole={profile?.role ?? ""}
                 onGoToPlans={() => setCoachPlanPickerVoluntary(true)}
                 onWorkoutAssigned={() => setWorkoutsRefresh(r => r + 1)}
-                onSavedToLibrary={() => setLibraryRefresh((r) => r + 1)}
+                onSavedToLibrary={bumpLibraryRefresh}
               />
             )}
             {view === "carrera_gpx" && (
@@ -1280,7 +1287,7 @@ const handleSignOut = async () => {
                 athletes={athletes}
                 coachUserId={session?.user?.id ?? null}
                 notify={notify}
-                onSavedToLibrary={() => setLibraryRefresh((r) => r + 1)}
+                onSavedToLibrary={bumpLibraryRefresh}
                 onWorkoutAssigned={() => setWorkoutsRefresh((r) => r + 1)}
               />
             )}
@@ -1294,12 +1301,8 @@ const handleSignOut = async () => {
             profileRole={profile?.role ?? ""}
             adminLibraryOwnerId={PLATFORM_ADMIN_USER_ID}
             parentCoachId={staffParentCoachId || null}
-            onUseWorkout={(row) => {
-              setAiWorkout(libraryRowToBuilderWorkout(row));
-              setView("builder");
-              notify("Workout cargado en el generador. Puedes asignarlo a un atleta.");
-            }}
-            onCopiedGlobalToLibrary={() => setLibraryRefresh((r) => r + 1)}
+            onUseWorkout={useLibraryWorkout}
+            onCopiedGlobalToLibrary={bumpLibraryRefresh}
             onOpenAdminMarketplaceDraft={() => setView("admin")}
             onAfterLibraryImportSuccess={() => {
               setView("library");
@@ -1308,7 +1311,7 @@ const handleSignOut = async () => {
               } catch {
                 /* ignore */
               }
-              setLibraryRefresh((r) => r + 1);
+              bumpLibraryRefresh();
             }}
             notify={notify}
             styles={styles}
