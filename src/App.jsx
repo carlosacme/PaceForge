@@ -27,6 +27,7 @@ import {
   userFacingError,
   isAuthLockContentionError,
   withAuthLockRetry,
+  styles,
 } from "./components/shared/appShared";
 import {
   initMessaging,
@@ -3335,86 +3336,4 @@ const handleSignOut = async () => {
     </Suspense>
   );
 }
-
-const styles = {
-  root: {
-    display: "flex",
-    minHeight: "100vh",
-    background: "#f8fafc",
-    color: "#0f172a",
-    fontFamily: "'Plus Jakarta Sans', system-ui, -apple-system, sans-serif",
-  },
-  sidebar: {
-    width: 228,
-    background: "#ffffff",
-    borderRight: "1px solid #e2e8f0",
-    display: "flex",
-    flexDirection: "column",
-    padding: "0 0 20px",
-    flexShrink: 0,
-    boxShadow: "1px 0 0 rgba(15,23,42,0.04)",
-  },
-  logo: { display: "flex", gap: 10, alignItems: "center", padding: "20px 16px 22px", borderBottom: "1px solid #e2e8f0" },
-  logoTitle: { fontSize: "1em", fontWeight: 800, letterSpacing: ".06em", color: "#0f172a" },
-  logoSub: { fontSize: ".65em", color: "#64748b", letterSpacing: ".1em", textTransform: "uppercase", fontWeight: 600 },
-  navBtn: {
-    display: "flex",
-    gap: 12,
-    alignItems: "center",
-    width: "100%",
-    background: "transparent",
-    border: "none",
-    color: "#475569",
-    padding: "11px 16px",
-    cursor: "pointer",
-    fontSize: ".86em",
-    textAlign: "left",
-    fontFamily: "inherit",
-    fontWeight: 600,
-    borderRadius: 0,
-    borderRight: "3px solid transparent",
-  },
-  navBtnActive: {
-    color: "#c2410c",
-    background: "rgba(255,138,61, 0.14)",
-    borderRight: "3px solid #ff8a3d",
-  },
-  sidebarFooter: { padding: "16px", borderTop: "1px solid #e2e8f0", marginTop: "auto", background: "#fafafa" },
-  page: { padding: "28px 32px", maxWidth: 1120, width: "100%" },
-  pageTitle: { fontSize: "1.65em", fontWeight: 800, color: "#0f172a", margin: 0, letterSpacing: "-0.02em" },
-  card: {
-    background: "#ffffff",
-    border: "1px solid #f1f5f9",
-    borderRadius: 12,
-    padding: 22,
-    boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
-  },
-  avatar: {
-    width: 36,
-    height: 36,
-    borderRadius: "50%",
-    background: "rgba(255,138,61, 0.12)",
-    border: "1px solid rgba(255,138,61, 0.35)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontSize: "1.2em",
-    flexShrink: 0,
-  },
-  notification: {
-    position: "fixed",
-    top: 20,
-    right: 20,
-    background: "#ffffff",
-    border: "1px solid #86efac",
-    borderRadius: 10,
-    padding: "12px 18px",
-    fontSize: ".82em",
-    fontWeight: 700,
-    color: "#15803d",
-    zIndex: 200,
-    boxShadow: "0 4px 20px rgba(15,23,42,0.12)",
-  },
-};
-
 
