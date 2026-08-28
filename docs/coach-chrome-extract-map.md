@@ -5,7 +5,9 @@ HEAD de referencia: `2dff578` (`refactor: extract coach athletes list/CRUD into 
 Archivo: `src/App.jsx` (~1181 líneas)  
 Contexto: `docs/shell-breakdown-map.md` §D (nav/tabs) + §K (chrome + wire de vistas) — paso **#6** del orden
 
-**Estado:** solo mapeo. Sin extracción. Esperando validación: Paso 2 separado **o** fusión con bootstrap final.
+**Estado:** Paso 2 aplicado — `useCoachNavigation` + `CoachChrome.jsx` (opción D).
+
+**Diseño setView:** estado en `useCoachNavigation` llamado desde App; App pasa `setView` / `setViewRestored` a bridge y push. `CoachChrome` es presentacional (recibe `view`/`setView` por props). AuthLanding y PlanPicker sin cambios de API (PlanPicker montado dentro del chrome).
 
 ---
 
@@ -251,9 +253,9 @@ App post-extract (ideal): gates bootstrap → `<CoachChrome … />` + overlays s
 
 ---
 
-## Checklist (cuando se decida Paso 2 o fusión)
+## Checklist Paso 2
 
-- [ ] Decisión: **C/D chrome separado** vs diferir vs fusión bootstrap (no recomendada)
-- [ ] Si C/D: `CoachChrome` (+ opcional `useCoachNavigation`); mismos active rules sidebar/bottom
-- [ ] Smoke: restore lastView; tabs atletas/training; Library→Builder; push→athletes; admin gate; plan picker overlay; sign-out
-- [ ] Build limpio; AthleteHome / AuthLanding sin regresión
+- [x] Decisión: **D** (`useCoachNavigation` + `CoachChrome`) — no fusión bootstrap
+- [x] Mismos active rules sidebar/bottom; gates admin; trial/plan picker
+- [ ] Smoke staging: restore lastView; tabs; Library→Builder; push→athletes; admin; plan banner; sign-out
+- [x] Build limpio; AuthLanding / PlanPicker intactos (sin depender de `view`)
