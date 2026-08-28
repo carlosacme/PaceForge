@@ -1470,6 +1470,18 @@ export const ADMIN_EMAIL = "acostamerlano87@gmail.com";
 
 export const PLATFORM_ADMIN_USER_ID = "b5c9e44a-6695-4800-99bd-f19b05d2f66f";
 
+/** Duración fija del trial de coach (días desde trial_started_at). */
+export const COACH_PROFILE_TRIAL_DAYS = 7;
+
+/** Días restantes de trial: max(0, 7 − días transcurridos desde trial_started_at). */
+export const coachTrialDaysRemainingFromStart = (prof) => {
+  if (!prof || prof.plan_status !== "trial" || !prof.trial_started_at) return null;
+  const start = new Date(prof.trial_started_at);
+  if (Number.isNaN(start.getTime())) return null;
+  const elapsedDays = Math.floor((Date.now() - start.getTime()) / 86400000);
+  return Math.max(0, COACH_PROFILE_TRIAL_DAYS - elapsedDays);
+};
+
 export const styles = {
   root: {
     display: "flex",

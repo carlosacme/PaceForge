@@ -20,6 +20,8 @@ import {
   libraryRowToBuilderWorkout,
   ADMIN_EMAIL,
   PLATFORM_ADMIN_USER_ID,
+  COACH_PROFILE_TRIAL_DAYS,
+  coachTrialDaysRemainingFromStart,
   formatCopInt,
   registerFcmToken,
   unregisterOwnDeviceToken,
@@ -347,16 +349,6 @@ const ProgressBar = ({ value, total, color = "#ff8a3d" }) => (
 /** Admin plataforma (Coaches, biblioteca global, prioridad en directorio). */
 
 const ADMIN_WHATSAPP_E164 = "573233675434";
-const COACH_PROFILE_TRIAL_DAYS = 7;
-
-/** Días restantes de trial: max(0, 7 − días transcurridos desde trial_started_at). */
-const coachTrialDaysRemainingFromStart = (prof) => {
-  if (!prof || prof.plan_status !== "trial" || !prof.trial_started_at) return null;
-  const start = new Date(prof.trial_started_at);
-  if (Number.isNaN(start.getTime())) return null;
-  const elapsedDays = Math.floor((Date.now() - start.getTime()) / 86400000);
-  return Math.max(0, COACH_PROFILE_TRIAL_DAYS - elapsedDays);
-};
 
 async function resolveCoachUserIdFromPublicCode(codeInput) {
   const codigoIngresado = String(codeInput || "").trim();
