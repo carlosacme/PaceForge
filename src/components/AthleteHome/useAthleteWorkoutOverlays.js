@@ -67,6 +67,9 @@ export function useAthleteWorkoutOverlays({
         }),
       });
       const data = await res.json();
+      if (data?.cached) {
+        console.log("[ai-cache] briefing hit", workout?.id);
+      }
       setBriefingText(data?.analysis || "No se pudo generar el briefing.");
     } catch (e) {
       setBriefingText("Error generando el briefing. Intenta de nuevo.");

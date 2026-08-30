@@ -208,63 +208,89 @@ async function latestVdotForAthlete(athleteId) {
 }
 
 async function hydrateWorkout(userId, workout) {
-  if (!workout?.id) return workout || null;
+  if (!workout?.id) return { workout: workout || null, allowed: null };
   try {
     const allowed = await getWorkoutIfAllowed(userId, workout.id);
-    if (!allowed) return workout;
+    if (!allowed) return { workout, allowed: null };
     const clientHasSteps = readStructure(workout).length > 0;
     return {
-      ...allowed,
-      ...workout,
-      structure: clientHasSteps ? (workout.structure ?? allowed.structure) : allowed.structure,
-      athlete_id: allowed.athlete_id || workout.athlete_id,
+      allowed,
+      workout: {
+        ...allowed,
+        ...workout,
+        structure: clientHasSteps ? (workout.structure ?? allowed.structure) : allowed.structure,
+        athlete_id: allowed.athlete_id || workout.athlete_id,
+      },
     };
   } catch {
-    return workout;
+    return { workout, allowed: null };
   }
 }
 
-function sha256Hex(value) {
-  return crypto.createHash("sha256").update(JSON.stringify(value)).digest("hex");
+function stableStringify(value) {
+  if (value == null) return "null";
+  const t = typeof value;
+  if (t === "number") return Number.isFinite(value) ? String(value) : "null";
+  if (t === "boolean") return value ? "true" : "false";
+  if (t === "string") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+  if (t === "object") {
+    return `{${Object.keys(value).sort().map((k) => `${JSON.stringify(k)}:${stableStringify(value[k])}`).join(",")}}`;
+  }
+  return JSON.stringify(String(value));
 }
 
-function analyzeInputHash(workout, vdot, laps) {
+function sha256Hex(value) {
+  return crypto.createHash("sha256").update(stableStringify(value)).digest("hex");
+}
+
+function canonNum(v) {
+  if (v == null || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+function canonText(v) {
+  return v == null ? "" : String(v);
+}
+
+function analyzeInputHash(workout, vdot) {
   return sha256Hex({
     v: ANALYZE_PROMPT_V,
-    id: workout?.id ?? null,
-    title: workout?.title ?? "",
-    type: workout?.type ?? "",
-    total_km: workout?.total_km ?? null,
-    duration_min: workout?.duration_min ?? null,
+    id: workout?.id == null ? "" : String(workout.id),
+    title: canonText(workout?.title),
+    type: canonText(workout?.type),
+    total_km: canonNum(workout?.total_km),
+    duration_min: canonNum(workout?.duration_min),
     structure: readStructure(workout),
-    vdot: vdot ?? null,
-    rpe: workout?.rpe ?? null,
-    athlete_notes: workout?.athlete_notes ?? "",
-    actual_synced_at: workout?.actual_synced_at ?? null,
-    actual_distance_km: workout?.actual_distance_km ?? null,
-    actual_duration_min: workout?.actual_duration_min ?? null,
-    actual_avg_pace_s: workout?.actual_avg_pace_s ?? null,
-    actual_avg_hr: workout?.actual_avg_hr ?? null,
-    actual_max_hr: workout?.actual_max_hr ?? null,
-    actual_elevation_m: workout?.actual_elevation_m ?? null,
-    manual_distance_km: workout?.manual_distance_km ?? null,
-    manual_duration_min: workout?.manual_duration_min ?? null,
-    manual_avg_hr: workout?.manual_avg_hr ?? null,
-    manual_max_hr: workout?.manual_max_hr ?? null,
-    has_laps: Array.isArray(laps) && laps.length > 0,
+    vdot: canonNum(vdot),
+    rpe: canonNum(workout?.rpe),
+    athlete_notes: canonText(workout?.athlete_notes),
+    feeling: canonText(workout?.feeling),
+    actual_synced_at: canonText(workout?.actual_synced_at),
+    actual_distance_km: canonNum(workout?.actual_distance_km),
+    actual_duration_min: canonNum(workout?.actual_duration_min),
+    actual_avg_pace_s: canonNum(workout?.actual_avg_pace_s),
+    actual_avg_hr: canonNum(workout?.actual_avg_hr),
+    actual_max_hr: canonNum(workout?.actual_max_hr),
+    actual_elevation_m: canonNum(workout?.actual_elevation_m),
+    manual_distance_km: canonNum(workout?.manual_distance_km),
+    manual_duration_min: canonNum(workout?.manual_duration_min),
+    manual_avg_hr: canonNum(workout?.manual_avg_hr),
+    manual_max_hr: canonNum(workout?.manual_max_hr),
   });
 }
 
 function briefingInputHash(workout, goal, fcMax) {
   return sha256Hex({
     v: BRIEFING_PROMPT_V,
-    id: workout?.id ?? null,
-    title: workout?.title ?? "",
-    type: workout?.type ?? "",
-    total_km: workout?.total_km ?? null,
-    duration_min: workout?.duration_min ?? null,
-    goal: goal ?? "",
-    fc_max: fcMax ?? null,
+    id: workout?.id == null ? "" : String(workout.id),
+    title: canonText(workout?.title),
+    type: canonText(workout?.type),
+    total_km: canonNum(workout?.total_km),
+    duration_min: canonNum(workout?.duration_min),
+    goal: canonText(goal),
+    fc_max: canonNum(fcMax),
   });
 }
 
@@ -286,7 +312,7 @@ async function readAiCache(workoutId, kind) {
 async function upsertAiCache(workoutId, kind, text, inputHash) {
   if (!workoutId || !SUPABASE_URL || !text) return;
   try {
-    await fetch(
+    const r = await fetch(
       `${SUPABASE_URL}/rest/v1/workout_ai_cache?on_conflict=workout_id,kind`,
       {
         method: "POST",
@@ -300,8 +326,12 @@ async function upsertAiCache(workoutId, kind, text, inputHash) {
         }),
       },
     );
+    if (!r.ok) {
+      const err = await r.text().catch(() => "");
+      console.warn("[ai-cache] upsert fail", r.status, err.slice(0, 200));
+    }
   } catch (e) {
-    console.warn("[analyze-workout] upsert cache:", e?.message);
+    console.warn("[ai-cache] upsert exception:", e?.message);
   }
 }
 
@@ -352,14 +382,31 @@ export default async function handler(req, res) {
     const briefingHash = briefingWorkout
       ? briefingInputHash(briefingWorkout, req.body.athleteGoal, req.body.athleteFcMax)
       : null;
-    if (briefingWorkout && briefingHash && !force) {
+    if (briefingWorkout && briefingHash && force !== true) {
       const cached = await readAiCache(briefingWorkout.id, "athlete_briefing");
-      if (cached?.input_hash === briefingHash && cached.text) {
+      const hit = !!(cached?.input_hash === briefingHash && cached.text);
+      console.log("[ai-cache]", JSON.stringify({
+        kind: "athlete_briefing",
+        workoutId: briefingWorkout.id,
+        force: !!force,
+        hash: briefingHash,
+        cachedHash: cached?.input_hash ?? null,
+        hit,
+      }));
+      if (hit) {
         return res.status(200).json({
           analysis: cached.text,
           cached: true,
         });
       }
+    } else {
+      console.log("[ai-cache]", JSON.stringify({
+        kind: "athlete_briefing",
+        workoutId: briefingWorkout?.id ?? null,
+        force: !!force,
+        hash: briefingHash,
+        skippedLookup: true,
+      }));
     }
     const result = withTruncationGuard(
       await callClaude(apiKey, briefingPrompt, MAX_TOKENS.briefing),
@@ -385,7 +432,7 @@ export default async function handler(req, res) {
     laps,
   } = req.body || {};
 
-  const workout = await hydrateWorkout(user.id, workoutIn);
+  const { workout, allowed } = await hydrateWorkout(user.id, workoutIn);
   const vdot = await latestVdotForAthlete(workout?.athlete_id);
   const blocksSection = workout ? blocksPromptSection(workout, vdot, laps) : "";
 
@@ -453,15 +500,38 @@ Responde en 3 párrafos cortos (sin markdown, sin asteriscos), cada uno de 2-4 f
 2. Cómo estás progresando
 3. Consejo para el próximo entrenamiento`;
 
-    const inputHash = analyzeInputHash(workout, vdot, laps);
-    if (!force && workout.id) {
-      const cached = await readAiCache(workout.id, "coach_analyze");
-      if (cached?.input_hash === inputHash && cached.text) {
+    // Hash sobre la fila de DB (no el merge cliente) para que el orden de
+    // keys del jsonb / tipos (id number vs string) no cambien entre llamadas.
+    // has_laps NO entra: depende de si el modal Registro está abierto.
+    const hashSource = allowed || workout;
+    const inputHash = analyzeInputHash(hashSource, vdot);
+    if (force !== true && hashSource.id) {
+      const cached = await readAiCache(hashSource.id, "coach_analyze");
+      const hit = !!(cached?.input_hash === inputHash && cached.text);
+      console.log("[ai-cache]", JSON.stringify({
+        kind: "coach_analyze",
+        workoutId: hashSource.id,
+        force: !!force,
+        hash: inputHash,
+        cachedHash: cached?.input_hash ?? null,
+        hit,
+        hasLaps: Array.isArray(laps) && laps.length > 0,
+      }));
+      if (hit) {
         return res.status(200).json({
           analysis: cached.text,
           cached: true,
         });
       }
+    } else {
+      console.log("[ai-cache]", JSON.stringify({
+        kind: "coach_analyze",
+        workoutId: hashSource.id,
+        force: !!force,
+        hash: inputHash,
+        skippedLookup: force === true,
+        hasLaps: Array.isArray(laps) && laps.length > 0,
+      }));
     }
 
     const result = withTruncationGuard(

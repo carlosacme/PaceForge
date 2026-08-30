@@ -404,7 +404,7 @@ export default function AthleteCalendarSection({
                             {
                               label: "📄 Ver análisis",
                               onClick: () => {
-                                void onOpenAnalysis(ctxMenuWorkout, athleteName);
+                                onOpenAnalysis(ctxMenuWorkout);
                                 closeCalendarCtxMenu();
                               },
                             },

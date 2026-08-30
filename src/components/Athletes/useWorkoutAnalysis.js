@@ -64,7 +64,7 @@ export function useWorkoutAnalysis({
 
   const analyzeWorkoutAsCoach = async (w, athleteName, opts = {}) => {
     if (coachWorkoutAnalysisLoading[w.id]) return;
-    const force = opts.force !== false;
+    const force = opts.force === true;
     setCoachWorkoutAnalysisLoading((prev) => ({ ...prev, [w.id]: true }));
     if (force) setCoachWorkoutAnalysis((prev) => ({ ...prev, [w.id]: "" }));
     try {
@@ -85,6 +85,9 @@ export function useWorkoutAnalysis({
       });
       const data = await response.json();
       if (data?.analysis) {
+        if (data.cached) {
+          console.log("[ai-cache] coach hit", w.id);
+        }
         setCoachWorkoutAnalysis((prev) => ({ ...prev, [w.id]: data.analysis }));
         try { localStorage.setItem(`raf_analysis_${w.id}`, data.analysis); } catch {}
         if (opts.open) {
@@ -98,12 +101,10 @@ export function useWorkoutAnalysis({
     }
   };
 
-  const openCoachAnalysis = async (w, athleteName) => {
+  const openCoachAnalysis = (w) => {
     const existing = coachWorkoutAnalysis[w.id];
-    if (existing) {
-      setCoachAnalysisModal({ text: existing, title: w.title, workout: w });
-    }
-    await analyzeWorkoutAsCoach(w, athleteName, { force: false, open: true });
+    if (!existing) return;
+    setCoachAnalysisModal({ text: existing, title: w.title, workout: w });
   };
 
   const adjustPlanWithAI = async (completedWorkout) => {

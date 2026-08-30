@@ -357,7 +357,7 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, openRegistroW
     athleteVdot,
     coachWorkoutAnalysis: workoutAnalysis.coachWorkoutAnalysis,
     coachWorkoutAnalysisLoading: workoutAnalysis.coachWorkoutAnalysisLoading,
-    onAnalyze: (w, name) => workoutAnalysis.analyzeWorkoutAsCoach(w, name, { force: true }),
+    onAnalyze: (w, name) => workoutAnalysis.analyzeWorkoutAsCoach(w, name, { force: false }),
     onOpenAnalysis: workoutAnalysis.openCoachAnalysis,
   };
 
