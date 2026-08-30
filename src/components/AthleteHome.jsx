@@ -1,13 +1,13 @@
 import React, { lazy, Suspense, useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { supabase } from "../lib/supabase";
 import WeatherWidget, { useWeather } from "./WeatherWidget";
-import FormaFatigaLineChart from "./shared/FormaFatigaLineChart";
 import IntervalsConnect from "./IntervalsConnect";
 import InstallAppButton from "./InstallAppButton";
 import DeleteAccountSection from "./DeleteAccountSection";
 import ChangePasswordSection from "./ChangePasswordSection";
 import CoachLinkActions from "./AthleteHome/CoachLinkActions";
 import AchievementsGrid from "./AthleteHome/AchievementsGrid";
+import AthleteFormaFatigaPanel from "./AthleteHome/AthleteFormaFatigaPanel";
 import {
   formatLocalYMD,
   calendarCellToIsoYmd,
@@ -26,8 +26,6 @@ import {
   formatMessageTimestamp,
   clampWorkoutRpe,
   normalizeWorkoutRow,
-  computeFormaFatigaWeeklyPoints,
-  formaFatigaStatusFromPoint,
   resolveCoachUserIdFromPublicCode,
   resolveDefaultCoachUserId,
   sendChatPushNotification,
@@ -60,7 +58,6 @@ import {
   TAB_KEY_LIBRARY,
   CHALLENGE_TYPE_OPTIONS,
   normalizeChallengeType,
-  computeGarminLoadMetricsFromWorkouts,
 } from "./shared/appShared";
 import { ATHLETE_SOLO_COP } from "../lib/planPrices";
 
@@ -796,12 +793,6 @@ export default function AthleteHome({ profile }) {
     // Opcion C: 1 evaluacion gratis, despues requiere premium
     if (!hasPremiumAccess && athleteEvaluations.length >= 1) setShowEvaluation(false);
   }, [athleteInfo?.id, athleteInfo?.athlete_plan, athleteInfo?.coach_id, athleteTabRestored, hasPremiumAccess]);
-
-  const athleteFormaFatigaPoints = useMemo(() => computeFormaFatigaWeeklyPoints(workouts), [workouts]);
-  const athleteFormaFatigaChronological = useMemo(() => [...athleteFormaFatigaPoints].reverse(), [athleteFormaFatigaPoints]);
-  const athleteFormaFatigaStatus = useMemo(() => formaFatigaStatusFromPoint(athleteFormaFatigaPoints[0]), [athleteFormaFatigaPoints]);
-  const athleteFormaFatigaTableRows = useMemo(() => athleteFormaFatigaPoints.slice(0, 4), [athleteFormaFatigaPoints]);
-  const athleteLoadGarminMetrics = useMemo(() => computeGarminLoadMetricsFromWorkouts(workouts), [workouts]);
 
   const hasCoachPremiumIncluded = useMemo(() => {
     const uid = profile?.user_id;
@@ -1826,37 +1817,12 @@ export default function AthleteHome({ profile }) {
                 ) : null}
 
                 {athleteProfileTab === "forma" ? (
-                  hasPremiumAccess ? (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-                      <div style={{ ...S.card }}>
-                        <div style={{ fontSize: ".72em", marginBottom: 12, color: "#475569", textTransform: "uppercase", letterSpacing: ".13em" }}>Carga por volumen (completados · 4 semanas)</div>
-                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(168px, 1fr))", gap: 12 }}>
-                          <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: "14px 12px", background: "#fafafa" }}>
-                            <div style={{ fontSize: ".72em", color: "#64748b", fontWeight: 700, marginBottom: 6 }}>Estado de entrenamiento</div>
-                            <div style={{ fontSize: "1.2em", fontWeight: 900, color: athleteLoadGarminMetrics.statusColor }}>{athleteLoadGarminMetrics.statusLabel}</div>
-                          </div>
-                          <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: "14px 12px", background: "#fafafa" }}>
-                            <div style={{ fontSize: ".72em", color: "#64748b", fontWeight: 700, marginBottom: 6 }}>Carga aguda (7 días)</div>
-                            <div style={{ fontSize: "1.35em", fontWeight: 900, color: athleteLoadGarminMetrics.COLOR_ORANGE, fontFamily: "monospace" }}>{athleteLoadGarminMetrics.acuteKm.toFixed(1)} km</div>
-                          </div>
-                          <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: "14px 12px", background: "#fafafa" }}>
-                            <div style={{ fontSize: ".72em", color: "#64748b", fontWeight: 700, marginBottom: 6 }}>Carga crónica (prom. semanal)</div>
-                            <div style={{ fontSize: "1.35em", fontWeight: 900, color: athleteLoadGarminMetrics.COLOR_ORANGE, fontFamily: "monospace" }}>{athleteLoadGarminMetrics.chronicWeeklyAvgKm.toFixed(1)} km/sem</div>
-                          </div>
-                        </div>
-                      </div>
-                      <div style={{ ...S.card }}>
-                        <div style={{ fontSize: ".72em", marginBottom: 8, color: "#475569", textTransform: "uppercase", letterSpacing: ".13em" }}>RPE × km (tendencia)</div>
-                        <div style={{ marginBottom: 12, fontWeight: 800, color: athleteFormaFatigaStatus.kind === "forma" ? "#22c55e" : athleteFormaFatigaStatus.kind === "fatiga" ? "#f87171" : "#94a3b8" }}>Estado (RPE): {athleteFormaFatigaStatus.label}</div>
-                        <FormaFatigaLineChart chronological={athleteFormaFatigaChronological} />
-                      </div>
-                    </div>
-                  ) : (
-                    <div style={{ ...S.card, textAlign: "center" }}>
-                      <p style={{ color: "#64748b" }}>Esta sección requiere Plan Premium Atleta.</p>
-                      <button type="button" onClick={() => { setAthleteProfileTab("pagos"); handleAthleteNavTabChange("profile"); }} style={{ background: "linear-gradient(135deg,#e86f28,#ff8a3d)", border: "none", borderRadius: 10, padding: "10px 20px", color: "#fff", fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>Ir a Pagos para suscribirme</button>
-                    </div>
-                  )
+                  <AthleteFormaFatigaPanel
+                    cardStyle={S.card}
+                    workouts={workouts}
+                    hasPremiumAccess={hasPremiumAccess}
+                    onGoToPagos={() => { setAthleteProfileTab("pagos"); handleAthleteNavTabChange("profile"); }}
+                  />
                 ) : null}
 
                 {athleteProfileTab === "config" ? (
