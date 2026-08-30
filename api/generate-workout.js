@@ -1,14 +1,19 @@
 import { requireUser, jsonError } from "../lib/apiAuth.js";
+import { assertGenerateBudget } from "../lib/aiBudget.js";
 
 /**
  * Proxy autenticado a Anthropic Messages API.
  * Sin sesion esto era un relay abierto que quemaba ANTHROPIC_API_KEY.
+ * Coach/admin + techos mes/día (lib/aiBudget) ANTES de llamar a Anthropic.
  */
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
 
   const user = await requireUser(req);
   if (!user) return jsonError(res, 401, "No autenticado");
+
+  const blocked = await assertGenerateBudget(res, user);
+  if (blocked) return blocked;
 
   const body = req.body || {};
   const requested = Number(body.max_tokens);
