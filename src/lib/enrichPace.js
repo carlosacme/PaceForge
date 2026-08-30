@@ -121,6 +121,23 @@ export function isTestWorkoutTitle(title) {
   return TEST_TITLE_RE.test(String(title || ""));
 }
 
+/** Bloque de MEDICIÓN del TEST (el all-out). WU, activación y CD no calzan. */
+const TEST_MEASUREMENT_RE = /all[\s-]?out/i;
+
+export function isTestMeasurementBlock(block) {
+  const haystack = [block?.description, block?.block_type, block?.phase]
+    .filter(Boolean)
+    .join(" ");
+  return TEST_MEASUREMENT_RE.test(haystack);
+}
+
+function clearPrescribedPace(block) {
+  const next = { ...block, target_pace: "" };
+  if ("pace" in next) next.pace = "";
+  if ("target_zone" in next) delete next.target_zone;
+  return next;
+}
+
 /**
  * En TEST (título tipo "TEST 10K"): quita el reloj-objetivo del plan importado
  * ("Objetivo: 40:00-41:00 (VDOT 46-47)") y el "objetivo mm:ss" suelto.
@@ -139,14 +156,22 @@ export function stripTestTimeGoalFromDescription(title, description) {
   return out.trim();
 }
 
-/** Aplica stripTestTimeGoalFromDescription a cada paso de structure. */
+/**
+ * En TEST: limpia el reloj-objetivo de cada paso y deja el bloque all-out
+ * sin ritmo prescrito. WU, activaciones y enfriamiento conservan el suyo:
+ * esos sí son prescripción. Vaciar el all-out evita que el reloj ancle el
+ * esfuerzo al VDOT que el test viene a re-medir.
+ */
 export function stripTestTimeGoalsFromStructure(title, structure) {
   const arr = Array.isArray(structure) ? structure : [];
   if (!isTestWorkoutTitle(title)) return arr;
   return arr.map((b) => {
-    if (!b?.description) return b;
-    const next = stripTestTimeGoalFromDescription(title, b.description);
-    return next === b.description ? b : { ...b, description: next };
+    if (!b) return b;
+    const description = b.description
+      ? stripTestTimeGoalFromDescription(title, b.description)
+      : b.description;
+    const next = description !== b.description ? { ...b, description } : b;
+    return isTestMeasurementBlock(next) ? clearPrescribedPace(next) : next;
   });
 }
 
