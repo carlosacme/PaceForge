@@ -2,6 +2,7 @@ import { useState, useRef } from "react";
 import { supabase } from "../../lib/supabase";
 import {
   achievementJoinMeta,
+  ATHLETE_ACHIEVEMENT_DISPLAY_LIST,
   computeAchievementProgress,
   evaluateAndAwardAthleteAchievements,
   clampWorkoutRpe,
@@ -26,6 +27,23 @@ function composeAthleteNotes(feelingText, notes) {
   const feeling = FEELING_CHOICES.includes(feelingText) ? feelingText : "😐 Normal";
   const body = stripFeelingLines(notes);
   return [`Cómo me sentí: ${feeling}`, body].filter(Boolean).join("\n");
+}
+
+function medalLabelFromAward(row) {
+  const meta = achievementJoinMeta(row);
+  const code = row?.achievement_code || meta?.code || "";
+  const fromDisplay = ATHLETE_ACHIEVEMENT_DISPLAY_LIST.find((a) => (a.codes || []).includes(code));
+  const icon = (meta?.icon && String(meta.icon).trim()) || fromDisplay?.icon || "🏅";
+  const rawName = meta?.name && String(meta.name).trim();
+  const name = (rawName && rawName !== code ? rawName : null) || fromDisplay?.name || code;
+  return `${icon} ${name}`.trim();
+}
+
+function medalToastText(newAwards) {
+  const labels = (newAwards || []).map(medalLabelFromAward).filter(Boolean);
+  if (!labels.length) return "";
+  if (labels.length === 1) return `¡Nueva medalla desbloqueada! ${labels[0]}`;
+  return `¡${labels.length} medallas nuevas! ${labels.join(" · ")}`;
 }
 
 /**
@@ -198,9 +216,11 @@ export function useAthleteWorkoutRpe({
         setEarnedAchievements(snapshot.earned || []);
         setAchProgress(progress || computeAchievementProgress(nextWorkouts.filter((x) => x.done)));
         if (newAwards.length > 0) {
-          const first = achievementJoinMeta(newAwards[0]);
-          setMedalToast(`¡Nueva medalla desbloqueada! 🎉 ${first?.icon || ""} ${first?.name || ""}`.trim());
-          setTimeout(() => setMedalToast(""), 4200);
+          const text = medalToastText(newAwards);
+          if (text) {
+            setMedalToast(text);
+            setTimeout(() => setMedalToast(""), 4200);
+          }
         }
       }).catch((e) => {
         console.warn("[AthleteHome] evaluateAndAward after done:", e);

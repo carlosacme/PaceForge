@@ -15,6 +15,7 @@ import AthleteWorkoutOverlays from "./AthleteHome/AthleteWorkoutOverlays";
 import AthleteOwnCalendar from "./AthleteHome/AthleteOwnCalendar";
 import { useAthleteWorkoutRpe } from "./AthleteHome/useAthleteWorkoutRpe";
 import AthleteRpeModal from "./AthleteHome/AthleteRpeModal";
+import AthleteMedalToast from "./AthleteHome/AthleteMedalToast";
 import {
   formatLocalYMD,
   calendarCellToIsoYmd,
@@ -1020,6 +1021,8 @@ export default function AthleteHome({ profile }) {
         sendAthleteChat={athleteChat.sendAthleteChat}
       />
 
+
+      <AthleteMedalToast text={medalToast} />
 
       <AthleteRpeModal
         cardStyle={S.card}
