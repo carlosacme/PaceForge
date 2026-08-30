@@ -106,6 +106,21 @@ export function enrichStructureWithPaces(structure, vdot, fcMax) {
   });
 }
 
+/** Ritmo de carrera en prosa: "5:38-6:08/km", "3:43/km", "3:43 min/km", opcional "@ ". */
+const EMBEDDED_PACE_RE =
+  /(?:@\s*)?\d{1,2}:[0-5]\d(?:\s*[-–—]\s*\d{1,2}:[0-5]\d)?\s*(?:min\s*)?\/\s*km/gi;
+
+/** Quita "m:ss/km" o "m:ss-m:ss/km" de un texto libre. Deja el resto. */
+export function stripEmbeddedPaceFromText(text) {
+  const raw = String(text ?? "");
+  if (!raw) return raw;
+  let out = raw.replace(EMBEDDED_PACE_RE, " ");
+  out = out.replace(/\s+/g, " ").trim();
+  out = out.replace(/^(?:[@·|,;:\-–—]\s*)+|(?:\s*[@·|,;:\-–—])+$/g, "").trim();
+  out = out.replace(/\s+(?:[@·|,;:\-–—])\s+/g, " — ");
+  return out;
+}
+
 /**
  * Reescala los ritmos ABSOLUTOS de una estructura al VDOT objetivo del atleta.
  *
@@ -123,8 +138,12 @@ export function enrichStructureWithPaces(structure, vdot, fcMax) {
  * mano que no encaje. Preferimos dejarlo como estaba a inventar una zona.
  *
  * La zona deducida se guarda en target_zone para poder auditar la conversion.
- * NO se toca la description: ademas de los ritmos, ahi hay tiempos objetivo y
- * splits ("MARATON 3:15", "4:40→4:37") que un reemplazo a ciegas destrozaria.
+ *
+ * Si la description trae un ritmo embebido con /km (tipico del JSON Garmin:
+ * "WU @ 5:38-6:08/km — 15' calentamiento E"), se QUITA ese fragmento. El ritmo
+ * vigente queda solo en target_pace. No se reemplaza: los Garmin varían y un
+ * swap a ciegas rompería "MARATON 3:15" o splits "4:40→4:37" (no llevan /km).
+ * Un bloque que no se reescala se deja intacto, description incluida.
  */
 export function rescaleStructureToVdot(structure, targetVdot, calibrationVdot = PLAN_CALIBRATION_VDOT) {
   const arr = Array.isArray(structure) ? structure : [];
@@ -138,7 +157,10 @@ export function rescaleStructureToVdot(structure, targetVdot, calibrationVdot = 
     if (!zone) return b;
     const paceStr = zoneToPaceStr(zone, targetVdot);
     if (!paceStr) return b;
-    // Se reescribe en el campo que ya traia el ritmo, para no dejar dos.
-    return { ...b, [bPace ? "target_pace" : "pace"]: paceStr, target_zone: zone };
+    const next = { ...b, [bPace ? "target_pace" : "pace"]: paceStr, target_zone: zone };
+    if (next.description) {
+      next.description = stripEmbeddedPaceFromText(next.description);
+    }
+    return next;
   });
 }
