@@ -134,6 +134,20 @@ export function useAthleteCalendar({
     setMoveDateInput(w.scheduled_date || formatLocalYMD(new Date()));
   };
 
+  /**
+   * Suelta el candado DnD↔menú. onDragEnd del chip a menudo NO corre tras un
+   * drop exitoso: moveWorkoutToDate hace setWorkouts al instante, el botón
+   * cambia de celda (key distinta entre hermanos) y React lo desmonta antes
+   * de que el navegador dispare dragend. Hay que llamar esto también desde
+   * onDrop (finally), con el mismo setTimeout(0) para tragar el click residual.
+   */
+  const releaseCalendarDrag = () => {
+    setDragWorkoutId(null);
+    setTimeout(() => {
+      calendarDragRef.current = false;
+    }, 0);
+  };
+
   const openCalendarWorkoutMenu = (e, w) => {
     e.preventDefault();
     e.stopPropagation();
@@ -404,6 +418,7 @@ export function useAthleteCalendar({
     dragWorkoutId,
     setDragWorkoutId,
     calendarDragRef,
+    releaseCalendarDrag,
     calendarCtxMenu,
     setCalendarCtxMenu,
     calendarCtxMenuRef,

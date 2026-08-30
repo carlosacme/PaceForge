@@ -33,6 +33,7 @@ export default function AthleteCalendarSection({
   dragWorkoutId,
   setDragWorkoutId,
   calendarDragRef,
+  releaseCalendarDrag,
   calendarCtxMenu,
   setCalendarCtxMenu,
   calendarCtxMenuRef,
@@ -189,8 +190,12 @@ export default function AthleteCalendarSection({
                   onDragOver={(e) => e.preventDefault()}
                   onDrop={async () => {
                     if (!dragWorkoutId) return;
-                    await moveWorkoutToDate(dragWorkoutId, ymd, true);
-                    setDragWorkoutId(null);
+                    const id = dragWorkoutId;
+                    try {
+                      await moveWorkoutToDate(id, ymd, true);
+                    } finally {
+                      releaseCalendarDrag();
+                    }
                   }}
                   style={{
                     minHeight: 64,
@@ -261,10 +266,7 @@ export default function AthleteCalendarSection({
                           } catch (_) {}
                         }}
                         onDragEnd={() => {
-                          setDragWorkoutId(null);
-                          setTimeout(() => {
-                            calendarDragRef.current = false;
-                          }, 0);
+                          releaseCalendarDrag();
                         }}
                         onClick={(e) => openCalendarWorkoutMenu(e, w)}
                         title={`${w.title || "Entreno"}${kmLabel ? ` · ${kmLabel}` : ""}${w.done ? " · Hecho" : " · Pendiente"}`}
