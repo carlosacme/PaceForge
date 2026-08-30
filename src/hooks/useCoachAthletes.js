@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "../lib/supabase";
 import {
   normalizeAthlete,
@@ -29,6 +29,8 @@ export function useCoachAthletes({ session, authLoading, notify, profile }) {
   const [pendingRegistroWorkoutId, setPendingRegistroWorkoutId] = useState(null);
   const [athletes, setAthletes] = useState([]);
   const [loadingAthletes, setLoadingAthletes] = useState(true);
+  /** Primera carga real con sesion. Evita el flip false→true que desmonta el Dashboard. */
+  const hasLoadedAthletesRef = useRef(false);
   const [showAddAthleteForm, setShowAddAthleteForm] = useState(false);
   const [planLimitWarning, setPlanLimitWarning] = useState("");
   const [newAthlete, setNewAthlete] = useState({ name: "", email: "", goal: "", pace: "", weekly_km: "" });
@@ -42,13 +44,18 @@ export function useCoachAthletes({ session, authLoading, notify, profile }) {
     setWorkoutsRefresh((r) => r + 1);
   }, []);
 
+  const sessionUserId = session?.user?.id ?? null;
+
   const loadAthletes = useCallback(async ({ silent = false } = {}) => {
-    if (authLoading || !session) {
+    if (authLoading || !sessionUserId) {
       setAthletes([]);
-      setLoadingAthletes(false);
+      hasLoadedAthletesRef.current = false;
+      // Seguir en carga inicial: si aqui ponemos false, CoachChrome pinta el
+      // Dashboard un instante y loadAthletes lo tapa con "Cargando atletas...".
+      setLoadingAthletes(true);
       return;
     }
-    if (!silent) setLoadingAthletes(true);
+    if (!silent && !hasLoadedAthletesRef.current) setLoadingAthletes(true);
     try {
       await withAuthLockRetry(async () => {
         const { data: userData, error: userError } = await supabase.auth.getUser();
@@ -112,9 +119,12 @@ export function useCoachAthletes({ session, authLoading, notify, profile }) {
       }
       setAthletes([]);
     } finally {
-      if (!silent) setLoadingAthletes(false);
+      if (!silent) {
+        hasLoadedAthletesRef.current = true;
+        setLoadingAthletes(false);
+      }
     }
-  }, [authLoading, session, notify]);
+  }, [authLoading, sessionUserId, notify]);
 
   useEffect(() => {
     loadAthletes({ silent: false });
