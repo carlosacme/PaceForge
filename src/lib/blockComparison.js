@@ -105,6 +105,16 @@ function numericPaceToSecs(str) {
   return null;
 }
 
+/** Doble clic / glitch GPS: ~1s y pocos metros. No un sprint corto real. */
+const GLITCH_MAX_DUR_S = 5;
+const GLITCH_MAX_DIST_M = 20;
+
+function isWatchGlitchSplit(sp) {
+  const dur = Number(sp?.dur_s) || 0;
+  const dist = Number(sp?.dist_m) || 0;
+  return dur < GLITCH_MAX_DUR_S || dist < GLITCH_MAX_DIST_M;
+}
+
 /**
  * Compara plan vs ejecutado por step.
  *
@@ -216,12 +226,16 @@ export function compareBlocks({ structure, laps, vdot }) {
     const incomplete =
       st.planned_dur_s > 0 && st.actual_dur_s < 0.5 * st.planned_dur_s;
 
-    const splits = (st.splits || []).map((sp, i) => ({
-      name: `Vuelta ${i + 1}`,
-      dur_s: Math.round(sp.dur_s),
-      dist_m: Math.round(sp.dist_m),
-      pace_s: sp.dist_m > 0 ? sp.dur_s / (sp.dist_m / 1000) : null,
-    }));
+    // Solo lo que se pinta al expandir. El agregado del padre ya sumo
+    // todos los laps (glitches incluidos) arriba.
+    const splits = (st.splits || [])
+      .filter((sp) => !isWatchGlitchSplit(sp))
+      .map((sp, i) => ({
+        name: `Vuelta ${i + 1}`,
+        dur_s: Math.round(sp.dur_s),
+        dist_m: Math.round(sp.dist_m),
+        pace_s: sp.dist_m > 0 ? sp.dur_s / (sp.dist_m / 1000) : null,
+      }));
 
     return {
       step_name: st.step_name,
@@ -240,11 +254,9 @@ export function compareBlocks({ structure, laps, vdot }) {
   });
 }
 
-/** Chevron solo si hay 2+ vueltas sustanciales (no un residuo de frontera). */
+/** Chevron solo si, tras tirar glitches, quedan 2+ vueltas reales. */
 export function blockHasWatchSplits(block) {
-  const splits = Array.isArray(block?.splits) ? block.splits : [];
-  const real = splits.filter((s) => (s.dist_m || 0) >= 200 || (s.dur_s || 0) >= 30);
-  return real.length >= 2;
+  return Array.isArray(block?.splits) && block.splits.length >= 2;
 }
 
 export default compareBlocks;
