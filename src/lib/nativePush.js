@@ -1,6 +1,6 @@
 import { Capacitor } from "@capacitor/core";
 import { PushNotifications } from "@capacitor/push-notifications";
-import { registerFcmTokenDetailed, readOwnFcmToken, readOwnDeviceTokens } from "../components/shared/appShared";
+import { registerFcmTokenDetailed, readOwnFcmToken, readOwnDeviceTokens } from "./fcmClient";
 
 /**
  * Push nativo para la APK.

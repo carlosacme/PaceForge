@@ -14,10 +14,6 @@ import {
   normalizeLibraryRow,
   getMarketplacePlanWorkoutRows,
   WORKOUT_TYPES,
-  parseFitFileToLibraryDraft,
-  parseJsonFileToLibraryDrafts,
-  mapJsonWorkoutToLibraryDraft,
-  INVALID_JSON_WORKOUT_FORMAT_MSG,
   normalizeStructureForFitImportModal,
   emptyFitImportStructureRow,
   structureRowsForFitImportInsert,
@@ -26,6 +22,12 @@ import {
   sendWorkoutAssignmentPushToAthlete,
   insertAssignedWorkouts,
 } from "./shared/appShared";
+import {
+  parseFitFileToLibraryDraft,
+  parseJsonFileToLibraryDrafts,
+  mapJsonWorkoutToLibraryDraft,
+  INVALID_JSON_WORKOUT_FORMAT_MSG,
+} from "../lib/fitImport";
 import MarketplacePlanWorkoutsAccordion from "./shared/MarketplacePlanWorkoutsAccordion";
 
 function WorkoutLibrary({
