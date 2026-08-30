@@ -36,9 +36,10 @@ export function useAthleteWorkoutOverlays({
   const [not100Form, setNot100Form] = useState({ reason: "", level: "medio" });
   const [not100Sending, setNot100Sending] = useState(false);
 
-  const generateBriefing = async (workout) => {
+  const generateBriefing = async (workout, opts = {}) => {
+    const force = !!opts.force;
     setBriefingLoading(true);
-    setBriefingText("");
+    if (force) setBriefingText("");
     try {
       const hrZonesText = athleteFcMax ? `FC max: ${athleteFcMax} lpm` : "FC no configurada";
       const prompt = `Eres un coach de running experto. El atleta ${athleteName || "el atleta"} tiene programado hoy: "${workout.title || workout.type}" (${workout.total_km || 0} km, ${workout.duration_min || 0} min, tipo: ${workout.type || "general"}). Objetivo: ${athleteGoal || "mejorar rendimiento"}. ${hrZonesText}. Escribe un briefing motivacional de 3-4 oraciones en español. Incluye: 1) que va a trabajar hoy y por que es importante, 2) en que enfocarse durante la sesion, 3) una frase motivacional final. Sin bullets, solo texto corrido.`;
@@ -49,7 +50,21 @@ export function useAthleteWorkoutOverlays({
           "Content-Type": "application/json",
           Authorization: `Bearer ${session?.access_token}`,
         },
-        body: JSON.stringify({ prompt, mode: "briefing" }),
+        body: JSON.stringify({
+          prompt,
+          mode: "briefing",
+          workout_id: workout.id,
+          workout: {
+            id: workout.id,
+            title: workout.title,
+            type: workout.type,
+            total_km: workout.total_km,
+            duration_min: workout.duration_min,
+          },
+          athleteGoal,
+          athleteFcMax,
+          force,
+        }),
       });
       const data = await res.json();
       setBriefingText(data?.analysis || "No se pudo generar el briefing.");
@@ -63,7 +78,7 @@ export function useAthleteWorkoutOverlays({
   const openBriefing = (workout) => {
     setBriefingModal(workout);
     setBriefingText("");
-    generateBriefing(workout);
+    generateBriefing(workout, { force: false });
   };
 
   const sendNot100Report = async () => {

@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import { requireUser, getWorkoutIfAllowed, jsonError, adminHeaders } from "../lib/apiAuth.js";
 import { readStructure } from "../src/lib/workoutStructure.js";
 import { compareBlocks } from "../src/lib/blockComparison.js";
@@ -7,6 +8,10 @@ const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 const MODELS = [
   "claude-sonnet-5",
 ];
+
+/** Subir invalida todo el caché de ese kind. */
+const ANALYZE_PROMPT_V = 1;
+const BRIEFING_PROMPT_V = 1;
 
 /**
  * Techos de salida por accion.
@@ -219,6 +224,87 @@ async function hydrateWorkout(userId, workout) {
   }
 }
 
+function sha256Hex(value) {
+  return crypto.createHash("sha256").update(JSON.stringify(value)).digest("hex");
+}
+
+function analyzeInputHash(workout, vdot, laps) {
+  return sha256Hex({
+    v: ANALYZE_PROMPT_V,
+    id: workout?.id ?? null,
+    title: workout?.title ?? "",
+    type: workout?.type ?? "",
+    total_km: workout?.total_km ?? null,
+    duration_min: workout?.duration_min ?? null,
+    structure: readStructure(workout),
+    vdot: vdot ?? null,
+    rpe: workout?.rpe ?? null,
+    athlete_notes: workout?.athlete_notes ?? "",
+    actual_synced_at: workout?.actual_synced_at ?? null,
+    actual_distance_km: workout?.actual_distance_km ?? null,
+    actual_duration_min: workout?.actual_duration_min ?? null,
+    actual_avg_pace_s: workout?.actual_avg_pace_s ?? null,
+    actual_avg_hr: workout?.actual_avg_hr ?? null,
+    actual_max_hr: workout?.actual_max_hr ?? null,
+    actual_elevation_m: workout?.actual_elevation_m ?? null,
+    manual_distance_km: workout?.manual_distance_km ?? null,
+    manual_duration_min: workout?.manual_duration_min ?? null,
+    manual_avg_hr: workout?.manual_avg_hr ?? null,
+    manual_max_hr: workout?.manual_max_hr ?? null,
+    has_laps: Array.isArray(laps) && laps.length > 0,
+  });
+}
+
+function briefingInputHash(workout, goal, fcMax) {
+  return sha256Hex({
+    v: BRIEFING_PROMPT_V,
+    id: workout?.id ?? null,
+    title: workout?.title ?? "",
+    type: workout?.type ?? "",
+    total_km: workout?.total_km ?? null,
+    duration_min: workout?.duration_min ?? null,
+    goal: goal ?? "",
+    fc_max: fcMax ?? null,
+  });
+}
+
+async function readAiCache(workoutId, kind) {
+  if (!workoutId || !SUPABASE_URL) return null;
+  const q =
+    `workout_ai_cache?workout_id=eq.${encodeURIComponent(workoutId)}` +
+    `&kind=eq.${encodeURIComponent(kind)}&select=text,input_hash&limit=1`;
+  try {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/${q}`, { headers: adminHeaders() });
+    if (!r.ok) return null;
+    const rows = await r.json();
+    return Array.isArray(rows) && rows[0] ? rows[0] : null;
+  } catch {
+    return null;
+  }
+}
+
+async function upsertAiCache(workoutId, kind, text, inputHash) {
+  if (!workoutId || !SUPABASE_URL || !text) return;
+  try {
+    await fetch(
+      `${SUPABASE_URL}/rest/v1/workout_ai_cache?on_conflict=workout_id,kind`,
+      {
+        method: "POST",
+        headers: adminHeaders({ Prefer: "resolution=merge-duplicates,return=minimal" }),
+        body: JSON.stringify({
+          workout_id: workoutId,
+          kind,
+          text,
+          input_hash: inputHash,
+          created_at: new Date().toISOString(),
+        }),
+      },
+    );
+  } catch (e) {
+    console.warn("[analyze-workout] upsert cache:", e?.message);
+  }
+}
+
 function blocksPromptSection(workout, vdot, laps) {
   const structure = readStructure(workout);
   if (!structure.length) return "";
@@ -255,15 +341,37 @@ export default async function handler(req, res) {
   if (!user) return jsonError(res, 401, "No autenticado");
 
   // ── BRIEFING MODE ──────────────────────────────────────────
-  const { prompt: briefingPrompt, mode } = req.body || {};
+  const { prompt: briefingPrompt, mode, force } = req.body || {};
   if (mode === "briefing" && briefingPrompt) {
+    const briefingWorkoutId = req.body.workout_id ?? req.body.workout?.id;
+    let briefingWorkout = null;
+    if (briefingWorkoutId) {
+      briefingWorkout = await getWorkoutIfAllowed(user.id, briefingWorkoutId);
+      if (!briefingWorkout) return jsonError(res, 403, "Sin acceso a ese workout");
+    }
+    const briefingHash = briefingWorkout
+      ? briefingInputHash(briefingWorkout, req.body.athleteGoal, req.body.athleteFcMax)
+      : null;
+    if (briefingWorkout && briefingHash && !force) {
+      const cached = await readAiCache(briefingWorkout.id, "athlete_briefing");
+      if (cached?.input_hash === briefingHash && cached.text) {
+        return res.status(200).json({
+          analysis: cached.text,
+          cached: true,
+        });
+      }
+    }
     const result = withTruncationGuard(
       await callClaude(apiKey, briefingPrompt, MAX_TOKENS.briefing),
     );
     if (!result) return res.status(500).json({ error: "No se pudo generar el briefing" });
+    if (briefingWorkout && briefingHash) {
+      await upsertAiCache(briefingWorkout.id, "athlete_briefing", result.text, briefingHash);
+    }
     return res.status(200).json({
       analysis: result.text,
       truncated: !!result.truncated,
+      cached: false,
     });
   }
 
@@ -345,14 +453,29 @@ Responde en 3 párrafos cortos (sin markdown, sin asteriscos), cada uno de 2-4 f
 2. Cómo estás progresando
 3. Consejo para el próximo entrenamiento`;
 
+    const inputHash = analyzeInputHash(workout, vdot, laps);
+    if (!force && workout.id) {
+      const cached = await readAiCache(workout.id, "coach_analyze");
+      if (cached?.input_hash === inputHash && cached.text) {
+        return res.status(200).json({
+          analysis: cached.text,
+          cached: true,
+        });
+      }
+    }
+
     const result = withTruncationGuard(
       await callClaude(apiKey, prompt, MAX_TOKENS.analyze),
     );
     if (!result) return res.status(500).json({ error: "Todos los modelos fallaron." });
+    if (workout.id) {
+      await upsertAiCache(workout.id, "coach_analyze", result.text, inputHash);
+    }
     return res.status(200).json({
       analysis: result.text,
       model: result.model,
       truncated: !!result.truncated,
+      cached: false,
     });
   }
 

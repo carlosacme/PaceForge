@@ -870,7 +870,7 @@ export default function AthleteHome({ profile }) {
         briefingModal={workoutOverlays.briefingModal}
         briefingText={workoutOverlays.briefingText}
         briefingLoading={workoutOverlays.briefingLoading}
-        onRegenerateBriefing={workoutOverlays.generateBriefing}
+        onRegenerateBriefing={(w) => workoutOverlays.generateBriefing(w, { force: true })}
         onCloseBriefing={workoutOverlays.closeBriefing}
         not100Modal={workoutOverlays.not100Modal}
         not100Form={workoutOverlays.not100Form}

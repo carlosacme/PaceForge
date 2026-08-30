@@ -26,7 +26,7 @@ export function useWorkoutAnalysis({
     if (!athlete?.id) setCoachWorkoutAnalysis({});
   }, [athlete?.id]);
 
-  // Cargar análisis guardados desde localStorage al cambiar de atleta o workouts
+  // Hidratar desde servidor (fuente de verdad) + localStorage como primer nivel.
   useEffect(() => {
     if (!workouts.length) return;
     const loaded = {};
@@ -39,12 +39,34 @@ export function useWorkoutAnalysis({
     if (Object.keys(loaded).length > 0) {
       setCoachWorkoutAnalysis((prev) => ({ ...loaded, ...prev }));
     }
+    const ids = workouts.map((w) => w.id).filter((id) => id != null);
+    if (!ids.length) return undefined;
+    let cancelled = false;
+    supabase
+      .from("workout_ai_cache")
+      .select("workout_id, text")
+      .eq("kind", "coach_analyze")
+      .in("workout_id", ids)
+      .then(({ data, error }) => {
+        if (cancelled || error || !Array.isArray(data)) return;
+        const fromDb = {};
+        for (const row of data) {
+          if (row.workout_id != null && row.text) fromDb[row.workout_id] = row.text;
+        }
+        if (Object.keys(fromDb).length) {
+          setCoachWorkoutAnalysis((prev) => ({ ...prev, ...fromDb }));
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [workouts]);
 
-  const analyzeWorkoutAsCoach = async (w, athleteName) => {
+  const analyzeWorkoutAsCoach = async (w, athleteName, opts = {}) => {
     if (coachWorkoutAnalysisLoading[w.id]) return;
+    const force = opts.force !== false;
     setCoachWorkoutAnalysisLoading((prev) => ({ ...prev, [w.id]: true }));
-    setCoachWorkoutAnalysis((prev) => ({ ...prev, [w.id]: "" }));
+    if (force) setCoachWorkoutAnalysis((prev) => ({ ...prev, [w.id]: "" }));
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const response = await fetch("/api/analyze-workout", {
@@ -58,18 +80,30 @@ export function useWorkoutAnalysis({
           athleteName: athleteName || "el atleta",
           role: "coach",
           laps: registroModal && String(registroModal.id) === String(w.id) ? registroLaps : undefined,
+          force,
         }),
       });
       const data = await response.json();
       if (data?.analysis) {
         setCoachWorkoutAnalysis((prev) => ({ ...prev, [w.id]: data.analysis }));
         try { localStorage.setItem(`raf_analysis_${w.id}`, data.analysis); } catch {}
+        if (opts.open) {
+          setCoachAnalysisModal({ text: data.analysis, title: w.title, workout: w });
+        }
       }
     } catch (e) {
       console.error("analyzeWorkoutAsCoach error:", e);
     } finally {
       setCoachWorkoutAnalysisLoading((prev) => ({ ...prev, [w.id]: false }));
     }
+  };
+
+  const openCoachAnalysis = async (w, athleteName) => {
+    const existing = coachWorkoutAnalysis[w.id];
+    if (existing) {
+      setCoachAnalysisModal({ text: existing, title: w.title, workout: w });
+    }
+    await analyzeWorkoutAsCoach(w, athleteName, { force: false, open: true });
   };
 
   const adjustPlanWithAI = async (completedWorkout) => {
@@ -195,6 +229,7 @@ export function useWorkoutAnalysis({
     coachWorkoutAnalysis,
     coachWorkoutAnalysisLoading,
     analyzeWorkoutAsCoach,
+    openCoachAnalysis,
     adjustPlanWithAI,
     applyAdjustment,
   };
