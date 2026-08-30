@@ -433,6 +433,15 @@ export default async function handler(req, res) {
   } = req.body || {};
 
   const { workout, allowed } = await hydrateWorkout(user.id, workoutIn);
+
+  // analyze y adjust operan sobre un workout concreto: sin permiso real no se
+  // resuelve VDOT, no se llama a Claude y no se escribe workout_ai_cache.
+  // Mismo patrón que briefing y adjust-steps, que ya exigían acceso.
+  if (action === "analyze" || action === "adjust") {
+    if (!workoutIn?.id) return jsonError(res, 400, "Falta workout.id");
+    if (!allowed) return jsonError(res, 403, "Sin acceso a ese workout");
+  }
+
   const vdot = await latestVdotForAthlete(workout?.athlete_id);
   const blocksSection = workout ? blocksPromptSection(workout, vdot, laps) : "";
 
@@ -503,7 +512,8 @@ Responde en 3 párrafos cortos (sin markdown, sin asteriscos), cada uno de 2-4 f
     // Hash sobre la fila de DB (no el merge cliente) para que el orden de
     // keys del jsonb / tipos (id number vs string) no cambien entre llamadas.
     // has_laps NO entra: depende de si el modal Registro está abierto.
-    const hashSource = allowed || workout;
+    // `allowed` está garantizado por el gate de arriba.
+    const hashSource = allowed;
     const inputHash = analyzeInputHash(hashSource, vdot);
     if (force !== true && hashSource.id) {
       const cached = await readAiCache(hashSource.id, "coach_analyze");
@@ -538,9 +548,7 @@ Responde en 3 párrafos cortos (sin markdown, sin asteriscos), cada uno de 2-4 f
       await callClaude(apiKey, prompt, MAX_TOKENS.analyze),
     );
     if (!result) return res.status(500).json({ error: "Todos los modelos fallaron." });
-    if (workout.id) {
-      await upsertAiCache(workout.id, "coach_analyze", result.text, inputHash);
-    }
+    await upsertAiCache(allowed.id, "coach_analyze", result.text, inputHash);
     return res.status(200).json({
       analysis: result.text,
       model: result.model,
