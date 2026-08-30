@@ -233,6 +233,22 @@ const sectionOf = (label) => {
   return null;
 };
 
+/**
+ * Filtro del Registro (Garmin: Todos / Calentamiento / Carrera / Enfriamiento).
+ * Reusa sectionOf; aliases extra (WU, CD) no se meten en sectionOf para no
+ * cambiar el agrupado del texto hacia el reloj.
+ * "Carrera" = todo lo que no es warmup ni cooldown (incl. recuperaciones).
+ */
+export function classifyStepSection(label) {
+  const section = sectionOf(label);
+  if (section === "Warmup") return "warmup";
+  if (section === "Cooldown") return "cooldown";
+  const l = String(label || "").toLowerCase();
+  if (/\bwu\b|warm[\s-]?up/.test(l)) return "warmup";
+  if (/\bcd\b|cool[\s-]?down/.test(l)) return "cooldown";
+  return "race";
+}
+
 function isRecovery(label) {
   return /recovery|recuperaci|descanso|rest|trote|jog/.test(String(label).toLowerCase());
 }

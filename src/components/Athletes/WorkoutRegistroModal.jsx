@@ -1,5 +1,13 @@
-import React from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { fmtPace } from "../../lib/vdot";
+import { classifyStepSection } from "../../lib/intervals";
+
+const STEP_FILTERS = [
+  { id: "all", label: "Todos" },
+  { id: "warmup", label: "Calentamiento" },
+  { id: "race", label: "Carrera" },
+  { id: "cooldown", label: "Enfriamiento" },
+];
 
 const WorkoutRouteMap = React.lazy(() => import("../WorkoutRouteMap"));
 
@@ -14,6 +22,17 @@ export default function WorkoutRegistroModal({
   registroBlocks,
   onClose,
 }) {
+  const [stepFilter, setStepFilter] = useState("all");
+  useEffect(() => {
+    setStepFilter("all");
+  }, [workout?.id]);
+
+  const filteredBlocks = useMemo(() => {
+    const rows = registroBlocks || [];
+    if (stepFilter === "all") return rows;
+    return rows.filter((b) => classifyStepSection(b.step_name) === stepFilter);
+  }, [registroBlocks, stepFilter]);
+
   if (!workout) return null;
   const w = workout;
   const feelingMatch = String(w.athlete_notes || "").match(/^Cómo me sentí:\s*(.+)$/m);
@@ -73,6 +92,33 @@ export default function WorkoutRegistroModal({
                   {registroLapsLoading ? (
                     <div style={{ color: "#64748b" }}>Cargando bloques…</div>
                   ) : (registroBlocks && registroBlocks.length ? (
+                    <>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+                      {STEP_FILTERS.map((f) => {
+                        const selected = stepFilter === f.id;
+                        return (
+                          <button
+                            key={f.id}
+                            type="button"
+                            onClick={() => setStepFilter(f.id)}
+                            style={{
+                              padding: "5px 11px",
+                              borderRadius: 999,
+                              border: selected ? "2px solid #0d9488" : "1px solid #e2e8f0",
+                              background: selected ? "rgba(13,148,136,.1)" : "#f8fafc",
+                              color: selected ? "#0d9488" : "#475569",
+                              fontWeight: selected ? 800 : 600,
+                              cursor: "pointer",
+                              fontFamily: "inherit",
+                              fontSize: ".74em",
+                            }}
+                          >
+                            {f.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {filteredBlocks.length ? (
                     <table style={{ width: "100%", borderCollapse: "collapse", fontSize: ".9em" }}>
                       <thead>
                         <tr style={{ textAlign: "left", color: "#64748b", fontSize: ".85em" }}>
@@ -83,7 +129,7 @@ export default function WorkoutRegistroModal({
                         </tr>
                       </thead>
                       <tbody>
-                        {registroBlocks.map((b, i) => {
+                        {filteredBlocks.map((b, i) => {
                           const faster = b.delta_s != null && b.delta_s <= 0;
                           const deltaColor = b.delta_s == null ? "#94a3b8" : (faster ? "#16a34a" : "#ea580c");
                           const deltaTxt = b.delta_s == null ? "—" : `${b.delta_s <= 0 ? "" : "+"}${Math.round(b.delta_s)}s`;
@@ -102,6 +148,10 @@ export default function WorkoutRegistroModal({
                         })}
                       </tbody>
                     </table>
+                    ) : (
+                      <div style={{ color: "#94a3b8" }}>No hay bloques de este tipo</div>
+                    )}
+                    </>
                   ) : (
                     <div style={{ color: "#94a3b8" }}>No hay datos por bloque para esta actividad</div>
                   ))}
