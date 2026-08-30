@@ -26,7 +26,6 @@ export function useAthleteCalendar({
   deviceConnections,
   deviceConnectionsReady,
   onAthleteWorkoutsDoneSync,
-  setEarnedAchievements,
   races,
 }) {
   const [dragWorkoutId, setDragWorkoutId] = useState(null);
@@ -100,8 +99,7 @@ export function useAthleteCalendar({
       console.error("Error actualizando workouts_done en athletes:", athleteUpdateError);
     }
     if (next) {
-      const { newAwards, snapshot } = await evaluateAndAwardAthleteAchievements(athlete.id);
-      setEarnedAchievements(snapshot.earned || []);
+      const { newAwards } = await evaluateAndAwardAthleteAchievements(athlete.id);
       if (newAwards.length > 0) {
         const first = achievementJoinMeta(newAwards[0]);
         notify?.(`¡Nueva medalla desbloqueada! 🎉 ${first?.icon || ""} ${first?.name || ""}`.trim());

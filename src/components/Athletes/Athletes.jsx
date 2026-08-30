@@ -20,12 +20,10 @@ import { useWorkoutAnalysis } from "./useWorkoutAnalysis";
 import WorkoutAnalysisOverlays from "./WorkoutAnalysisOverlays";
 import { setResumeUiBusy } from "../../lib/resumeGuard";
 import {
-  computeAthleteAchievementVisualProgress,
   computeHrZones,
   RESTING_HR_MIN,
   RESTING_HR_MAX,
   MIN_HR_RESERVE,
-  loadAthleteAchievementSnapshot,
   fetchActiveDeviceConnections,
   fetchUnreadMessageCounts,
   fetchWeeklyKmByAthlete,
@@ -44,7 +42,6 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, openRegistroW
   const [fcSaving, setFcSaving] = useState(false);
   const [coachId, setCoachId] = useState(null);
   const [coachAthleteEvaluations, setCoachAthleteEvaluations] = useState([]);
-  const [earnedAchievements, setEarnedAchievements] = useState([]);
   const athletePaymentsApi = useAthletePayments({
     athleteId: athlete?.id ?? null,
     athleteEmail: athlete?.email,
@@ -145,7 +142,6 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, openRegistroW
     deviceConnections,
     deviceConnectionsReady,
     onAthleteWorkoutsDoneSync,
-    setEarnedAchievements,
     races: athleteRaces.races,
   });
 
@@ -264,8 +260,6 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, openRegistroW
     };
   }, [athlete?.id]);
 
-  const [expandedWorkoutLogs, setExpandedWorkoutLogs] = useState({});
-
   // VDOT del atleta desde la evaluacion mas reciente (normalizeAthlete no lo
   // arrastra, por eso athlete.vdot es undefined). coachAthleteEvaluations solo
   // trae { vdot, created_at }, asi que ordenamos por test_date||created_at.
@@ -303,36 +297,6 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, openRegistroW
     registroModal,
     registroLaps,
   });
-  const coachAchievementDisplayProgress = useMemo(
-    () => computeAthleteAchievementVisualProgress(workouts, coachAthleteEvaluations),
-    [workouts, coachAthleteEvaluations],
-  );
-  const coachEarnedAchievementDateByCode = useMemo(() => {
-    const m = {};
-    for (const row of earnedAchievements || []) {
-      const code = String(row?.achievement_code || "");
-      if (!code) continue;
-      if (!m[code]) m[code] = row?.awarded_at || null;
-    }
-    return m;
-  }, [earnedAchievements]);
-
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      if (!athlete?.id) {
-        setEarnedAchievements([]);
-        return;
-      }
-      const snapshot = await loadAthleteAchievementSnapshot(athlete.id);
-      if (cancelled) return;
-      setEarnedAchievements(snapshot.earned || []);
-    };
-    load();
-    return () => {
-      cancelled = true;
-    };
-  }, [athlete?.id, workouts]);
 
   useEffect(() => {
     let cancelled = false;
