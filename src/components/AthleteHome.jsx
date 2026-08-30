@@ -710,7 +710,15 @@ export default function AthleteHome({ profile }) {
   const workoutsAchSyncKey = useMemo(() => (workouts || []).map((w) => `${w.id}:${w.done ? 1 : 0}:${w.rpe ?? ""}`).join("|"), [workouts]);
 
   const openWorkoutSummaryModal = (workoutRow) => {
-    if (!workoutRow?.scheduled_date) return;
+    if (!workoutRow?.id) {
+      console.warn("[rpe-modal] open skipped: no workout id", workoutRow);
+      return;
+    }
+    console.info("[rpe-modal] open", {
+      id: workoutRow.id,
+      done: workoutRow.done,
+      scheduled_date: workoutRow.scheduled_date ?? null,
+    });
     void loadIntervalsConnected();
     const baseManual = {
       distanceKm: (!intervalsConnected && workoutRow.total_km) ? String(workoutRow.total_km) : "",
@@ -770,32 +778,41 @@ export default function AthleteHome({ profile }) {
   };
 
   const toggleDone = async (w) => {
+    if (!w?.id) {
+      console.warn("[rpe-modal] toggleDone skipped: no workout");
+      return;
+    }
     const next = !w.done;
+    console.info("[rpe-modal] toggleDone", {
+      id: w.id,
+      next,
+      scheduled_date: w.scheduled_date ?? null,
+      athleteId: athleteInfo?.id ?? null,
+    });
     const payload = next ? { done: true } : { done: false, rpe: null };
     const nextWorkouts = workouts.map((x) => (x.id === w.id ? { ...x, done: next, rpe: next ? x.rpe : null } : x));
     setWorkouts(nextWorkouts);
+    if (next) {
+      openWorkoutSummaryModal({ ...w, done: true, rpe: w.rpe ?? null });
+    } else {
+      setWorkoutSummaryModal(null);
+    }
     const { error } = await supabase.from("workouts").update(payload).eq("id", w.id);
+    console.info("[rpe-modal] update done", { id: w.id, next, ok: !error, message: error?.message || null });
     if (error) {
       console.error("Error actualizando workout:", error);
       setWorkouts(prev => prev.map(x => (x.id === w.id ? { ...x, done: !next, rpe: w.rpe } : x)));
+      if (next) setWorkoutSummaryModal(null);
       setMessage(`Error actualizando workout: ${error.message}`);
       return;
     }
     if (next && athleteInfo?.id) {
-      // El resumen/RPE no debe esperar push ni logros: si eso se cuelga, el
-      // atleta ya marco hecho y se quedaba sin el prompt.
-      openWorkoutSummaryModal({ ...w, done: true, rpe: next ? w.rpe : null });
-      try {
-        if (athleteInfo?.coach_id) {
-          await notifyCoachWorkoutCompletedFromClient({
-            workout: { ...w, done: true },
-            athlete: athleteInfo,
-          });
-        }
-      } catch (_) {}
-      // Fire and forget: intenta traer lo ejecutado del reloj (intervals.icu).
-      // Si el atleta no lo tiene conectado o aun no sincronizo, falla en
-      // silencio y NO debe romper el marcado ni el modal de resumen.
+      if (athleteInfo?.coach_id) {
+        void notifyCoachWorkoutCompletedFromClient({
+          workout: { ...w, done: true },
+          athlete: athleteInfo,
+        });
+      }
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.access_token) {
@@ -813,8 +830,7 @@ export default function AthleteHome({ profile }) {
           }).catch(() => {});
         }
       } catch {}
-      try {
-        const { newAwards, snapshot, progress } = await evaluateAndAwardAthleteAchievements(athleteInfo.id);
+      void evaluateAndAwardAthleteAchievements(athleteInfo.id).then(({ newAwards, snapshot, progress }) => {
         setAchievementsCatalog(snapshot.achievements || []);
         setEarnedAchievements(snapshot.earned || []);
         setAchProgress(progress || computeAchievementProgress(nextWorkouts.filter((x) => x.done)));
@@ -823,9 +839,9 @@ export default function AthleteHome({ profile }) {
           setMedalToast(`¡Nueva medalla desbloqueada! 🎉 ${first?.icon || ""} ${first?.name || ""}`.trim());
           setTimeout(() => setMedalToast(""), 4200);
         }
-      } catch (e) {
+      }).catch((e) => {
         console.warn("[AthleteHome] evaluateAndAward after done:", e);
-      }
+      });
     }
     // Notificar coach cuando el atleta desmarca un workout (sesion perdida)
     if (!next && athleteInfo?.coach_id) {
@@ -1709,7 +1725,7 @@ export default function AthleteHome({ profile }) {
             </>
           ) : (
             <>
-              <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={async (e) => { e.stopPropagation(); await toggleDone(ctxMenuAthleteWorkout); closeAthleteCalendarCtxMenu(); }} style={{ display: "block", width: "100%", textAlign: "left", background: "transparent", border: "none", borderRadius: 8, padding: "10px 12px", color: "#0f172a", fontWeight: 600, cursor: "pointer", fontFamily: "inherit", fontSize: ".82em" }}>
+              <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={(e) => { e.stopPropagation(); const row = ctxMenuAthleteWorkout; closeAthleteCalendarCtxMenu(); void toggleDone(row); }} style={{ display: "block", width: "100%", textAlign: "left", background: "transparent", border: "none", borderRadius: 8, padding: "10px 12px", color: "#0f172a", fontWeight: 600, cursor: "pointer", fontFamily: "inherit", fontSize: ".82em" }}>
                 {ctxMenuAthleteWorkout.done ? "✓ Marcar pendiente" : "✓ Marcar hecho"}
               </button>
               {!ctxMenuAthleteWorkout.done && (
@@ -2258,7 +2274,7 @@ export default function AthleteHome({ profile }) {
 
       {/* ── Modal resumen workout + análisis Claude */}
       {workoutSummaryModal && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.55)", zIndex: 10001, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.55)", zIndex: 10050, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
           <div style={{ ...S.card, width: "100%", maxWidth: 520, margin: 0, maxHeight: "90vh", overflowY: "auto" }}>
             <div style={{ fontSize: "1.1em", fontWeight: 900, color: "#0f172a", marginBottom: 6 }}>Resumen del entrenamiento</div>
             <div style={{ color: "#64748b", fontSize: ".84em", marginBottom: 12 }}>
