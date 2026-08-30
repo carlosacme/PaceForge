@@ -1,4 +1,4 @@
-import { requireUser, canAccessAthlete, jsonError } from "../lib/apiAuth.js";
+import { requireUser, canAccessAthlete, jsonError, adminHeaders } from "../lib/apiAuth.js";
 
 /**
  * Catalogo de logros + awards por atleta.
@@ -21,10 +21,7 @@ export default async function handler(req, res) {
     );
   }
 
-  const headers = {
-    apikey: SUPA_KEY,
-    "Content-Type": "application/json",
-  };
+  const headers = adminHeaders();
 
   if (req.method === "GET") {
     const athlete_id = req.query?.athlete_id;

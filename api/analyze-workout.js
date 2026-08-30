@@ -1,4 +1,4 @@
-import { requireUser, getWorkoutIfAllowed, jsonError } from "../lib/apiAuth.js";
+import { requireUser, getWorkoutIfAllowed, jsonError, adminHeaders } from "../lib/apiAuth.js";
 import { readStructure } from "../src/lib/workoutStructure.js";
 
 const MODELS = [
@@ -362,8 +362,7 @@ Los valores de signal válidos son exactamente: fatiga_alta, fatiga_media, bien,
     if (!owned) return jsonError(res, 403, "Sin acceso a ese workout");
 
     const supabaseUrl = process.env.SUPABASE_URL;
-    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    const h = { "apikey": serviceKey, "Content-Type": "application/json", "Prefer": "return=minimal" };
+    const h = adminHeaders({ Prefer: "return=minimal" });
 
     // Obtener structure actual
     // Solo `structure`: workout_structure se elimino en la migracion 0044.

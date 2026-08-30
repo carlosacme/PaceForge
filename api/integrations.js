@@ -39,7 +39,7 @@
  */
 
 import crypto from "crypto";
-import { requireUser, canAccessAthlete, jsonError } from "../lib/apiAuth.js";
+import { requireUser, canAccessAthlete, jsonError, adminHeaders } from "../lib/apiAuth.js";
 import {
   buildIntervalsEvent,
   buildIntervalsDeletePayload,
@@ -72,11 +72,7 @@ const ICU_WEBHOOK_SECRET = process.env.INTERVALS_WEBHOOK_SECRET;
 
 /* ---------- Supabase REST (el cliente JS cuelga en serverless) ---------- */
 function sbHeaders(extra = {}) {
-  return {
-    apikey: SERVICE_KEY,
-    "Content-Type": "application/json",
-    ...extra,
-  };
+  return adminHeaders(extra);
 }
 
 async function sb(path, { method = "GET", body, prefer } = {}) {
