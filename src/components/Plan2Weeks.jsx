@@ -368,46 +368,6 @@ function Plan2Weeks({ athletes, notify, coachUserId, coachPlan, profileRole, onG
     setOpenHistoryRows(new Set());
   }, [athleteId]);
 
-  const incrementGenerationCounter = useCallback(async () => {
-    if (!coachUserId) return;
-    const { data: existing, error: selErr } = await supabase
-      .from("ai_generations")
-      .select("count")
-      .eq("coach_id", coachUserId)
-      .eq("month", monthKey)
-      .maybeSingle();
-    if (selErr) {
-      console.error("ai_generations increment load (plan2):", selErr);
-      return;
-    }
-    const current = Number(existing?.count) || 0;
-    const nextCount = current + 1;
-    if (existing) {
-      const { error: updErr } = await supabase
-        .from("ai_generations")
-        .update({ count: nextCount, updated_at: new Date().toISOString() })
-        .eq("coach_id", coachUserId)
-        .eq("month", monthKey);
-      if (updErr) {
-        console.error("ai_generations increment update (plan2):", updErr);
-        return;
-      }
-    } else {
-      const { error: insErr } = await supabase.from("ai_generations").insert({
-        coach_id: coachUserId,
-        month: monthKey,
-        count: 1,
-        updated_at: new Date().toISOString(),
-      });
-      if (insErr) {
-        console.error("ai_generations increment insert (plan2):", insErr);
-        return;
-      }
-    }
-    setMonthGenerations(nextCount);
-    await loadGenerationCounter();
-  }, [coachUserId, monthKey, loadGenerationCounter]);
-
   useEffect(() => {
     loadGenerationCounter();
   }, [loadGenerationCounter]);
@@ -1016,7 +976,8 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
         startDateValue: startDate,
         blockNumber: currentBlock,
       });
-      await incrementGenerationCounter();
+      // El contador lo mueve /api/generate-workout con service_role; aquí solo
+      // se relee para pintar el "X/100" ya actualizado.
       await loadGenerationCounter();
       notify("Plan de 2 semanas generado ✓");
     } catch (e) {

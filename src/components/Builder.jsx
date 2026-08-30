@@ -87,31 +87,6 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
     setMonthGenerations(Number(data?.count) || 0);
   }, [coachUserId, monthKey]);
 
-  const incrementGenerationCounter = useCallback(async () => {
-    if (!coachUserId) return;
-    const nextCount = (Number(monthGenerations) || 0) + 1;
-    const { error: updErr } = await supabase
-      .from("ai_generations")
-      .update({ count: nextCount, updated_at: new Date().toISOString() })
-      .eq("coach_id", coachUserId)
-      .eq("month", monthKey);
-    if (updErr) {
-      const { error: insErr } = await supabase.from("ai_generations").insert({
-        coach_id: coachUserId,
-        month: monthKey,
-        count: 1,
-        updated_at: new Date().toISOString(),
-      });
-      if (insErr) {
-        console.error("ai_generations increment (builder):", insErr);
-        return;
-      }
-      setMonthGenerations(1);
-      return;
-    }
-    setMonthGenerations(nextCount);
-  }, [coachUserId, monthGenerations, monthKey]);
-
   useEffect(() => {
     loadGenerationCounter();
   }, [loadGenerationCounter]);
@@ -325,7 +300,9 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
         console.log(`[builder-ia] ${field} ${from} -> ${to} (${reason}, ritmo ${fmtPace(paceSecs)} min/km desde ${paceSource})`);
       }
       setAiWorkout(reconciled);
-      await incrementGenerationCounter();
+      // El contador lo mueve /api/generate-workout con service_role; aquí solo
+      // se relee para pintar el "X/100" ya actualizado.
+      await loadGenerationCounter();
     } catch { setAiWorkout(null); }
     finally { setAiLoading(false); }
   };
