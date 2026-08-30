@@ -9,6 +9,7 @@ import CoachLinkActions from "./AthleteHome/CoachLinkActions";
 import AchievementsGrid from "./AthleteHome/AchievementsGrid";
 import AthleteFormaFatigaPanel from "./AthleteHome/AthleteFormaFatigaPanel";
 import { AthleteHomeProgress, AthleteWeeklyStrip, AthleteMonthSummary } from "./AthleteHome/AthleteProgressPanel";
+import AthletePaymentsView from "./AthleteHome/AthletePaymentsView";
 import {
   formatLocalYMD,
   calendarCellToIsoYmd,
@@ -57,7 +58,6 @@ import {
   CHALLENGE_TYPE_OPTIONS,
   normalizeChallengeType,
 } from "./shared/appShared";
-import { ATHLETE_SOLO_COP } from "../lib/planPrices";
 
 /** Campos reales de public.workouts que AthleteHome / normalizeWorkoutRow leen.
  *  No incluir distance_km: esa columna no existe (PostgREST 400 y se vacía la lista). */
@@ -109,18 +109,6 @@ function composeAthleteNotes(feelingText, notes) {
   const body = stripFeelingLines(notes);
   return [`Cómo me sentí: ${feeling}`, body].filter(Boolean).join("\n");
 }
-
-function normalizeSoloAthletePlanKey(athletePlan, subscriptionPeriod) {
-  const planRaw = String(athletePlan ?? "").trim().toLowerCase();
-  if (planRaw !== "premium") return "free";
-  const periodRaw = String(subscriptionPeriod ?? "").trim().toLowerCase();
-  if (periodRaw === "annual" || periodRaw === "anual" || periodRaw === "yearly") return "annual";
-  return "monthly";
-}
-
-/** Misma fuente que /api/wompi-create-checkout (`src/lib/planPrices.js`). */
-const SOLO_PLAN_MONTHLY_COP = ATHLETE_SOLO_COP.monthly;
-const SOLO_PLAN_ANNUAL_COP = ATHLETE_SOLO_COP.annual;
 
 /**
  * Coaches publicos que hacen falta para que valga la pena enseñar el
@@ -204,8 +192,6 @@ export default function AthleteHome({ profile }) {
   const [athleteChatMessages, setAthleteChatMessages] = useState([]);
   const [athleteChatDraft, setAthleteChatDraft] = useState("");
   const [athleteChatSending, setAthleteChatSending] = useState(false);
-  const [showPlanModal, setShowPlanModal] = useState(false);
-  const [soloPayInstructions, setSoloPayInstructions] = useState(null);
   const [athleteNotRegistered, setAthleteNotRegistered] = useState(false);
   const [showEvaluation, setShowEvaluation] = useState(false);
   const [athleteActiveTab, setAthleteActiveTab] = useState(() => readStoredAthleteNavTab());
@@ -217,8 +203,6 @@ export default function AthleteHome({ profile }) {
   const [achProgress, setAchProgress] = useState(null);
   const [athleteEvaluations, setAthleteEvaluations] = useState([]);
   const [medalToast, setMedalToast] = useState("");
-  const [athletePayments, setAthletePayments] = useState([]);
-  const [loadingAthletePayments, setLoadingAthletePayments] = useState(false);
   const [pushInviteDismissed, setPushInviteDismissed] = useState(() =>
     typeof localStorage !== "undefined" && localStorage.getItem("raf_push_invite_dismissed") === "1",
   );
@@ -732,16 +716,6 @@ export default function AthleteHome({ profile }) {
     if (!hasPremiumAccess && athleteEvaluations.length >= 1) setShowEvaluation(false);
   }, [athleteInfo?.id, athleteInfo?.athlete_plan, athleteInfo?.coach_id, athleteTabRestored, hasPremiumAccess]);
 
-  const hasCoachPremiumIncluded = useMemo(() => {
-    const uid = profile?.user_id;
-    const cid = profile?.coach_id;
-    if (cid == null) return false;
-    const c = String(cid).trim();
-    if (c === "") return false;
-    if (uid != null && c === String(uid).trim()) return false;
-    return true;
-  }, [profile?.coach_id, profile?.user_id]);
-
   // Nombre y foto del coach asignado, en la misma consulta a coach_public.
   useEffect(() => {
     if (!profile?.coach_id) {
@@ -762,40 +736,6 @@ export default function AthleteHome({ profile }) {
     })();
     return () => { cancelled = true; };
   }, [profile?.coach_id]);
-
-  const soloAthletePlanKey = useMemo(() => normalizeSoloAthletePlanKey(profile?.athlete_plan ?? athleteInfo?.athlete_plan, profile?.subscription_period ?? athleteInfo?.subscription_period), [profile?.athlete_plan, athleteInfo?.athlete_plan, profile?.subscription_period, athleteInfo?.subscription_period]);
-
-  const subscriptionExpiresFormatted = useMemo(() => {
-    const raw = profile?.subscription_expires_at;
-    if (!raw) return null;
-    const d = new Date(raw);
-    if (Number.isNaN(d.getTime())) return null;
-    return d.toLocaleDateString("es-CO", { day: "numeric", month: "long", year: "numeric" });
-  }, [profile?.subscription_expires_at]);
-
-  const openAthletePremiumWa = (periodLabel, amountCopText) => {
-    const text = `Hola, quiero activar el plan Premium Atleta ${periodLabel} por ${amountCopText} COP`;
-    window.open(`https://wa.me/573233675434?text=${encodeURIComponent(text)}`, "_blank", "noopener,noreferrer");
-  };
-
-  const trySoloIndependentCheckout = async (period) => {
-    const amountCop = period === "annual" ? SOLO_PLAN_ANNUAL_COP : SOLO_PLAN_MONTHLY_COP;
-    try {
-      const { data: sessData } = await supabase.auth.getSession();
-      const accessToken = sessData?.session?.access_token;
-      if (!accessToken) { setMessage("Tu sesión expiró. Vuelve a iniciar sesión."); return; }
-      const response = await fetch("/api/wompi-create-checkout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
-        body: JSON.stringify({ payer_type: "athlete_solo_subscription", plan_key: "premium", plan_period: period === "annual" ? "annual" : "monthly", amount_cop: amountCop }),
-      });
-      const data = await response.json();
-      if (!response.ok) { console.error("create-checkout error:", data); setMessage(data?.error || "No se pudo iniciar el pago."); return; }
-      const params = new URLSearchParams({ "public-key": data.public_key, currency: data.currency, "amount-in-cents": String(data.amount_in_cents), reference: data.reference, "signature:integrity": data.signature, "redirect-url": data.redirect_url });
-      if (data.customer_email) params.set("customer-data:email", data.customer_email);
-      window.location.href = `https://checkout.wompi.co/p/?${params.toString()}`;
-    } catch (e) { console.error("trySoloIndependentCheckout exception:", e); setMessage("Error al iniciar el pago."); }
-  };
 
   const athleteName = useMemo(() => {
     const looksLikeEmail = (s) => /@/.test(String(s || ""));
@@ -879,15 +819,6 @@ export default function AthleteHome({ profile }) {
     });
   }, [athleteInfo?.id, coachIdForChat]);
 
-  const loadMyPayments = useCallback(async () => {
-    if (!athleteInfo?.id) { setAthletePayments([]); return; }
-    setLoadingAthletePayments(true);
-    const { data, error } = await supabase.from("athlete_payments").select("*").eq("athlete_id", athleteInfo.id).order("payment_date", { ascending: false }).order("created_at", { ascending: false });
-    setLoadingAthletePayments(false);
-    if (error) { console.error("Error cargando pagos del atleta:", error); setAthletePayments([]); return; }
-    setAthletePayments(data || []);
-  }, [athleteInfo?.id]);
-
   const loadIntervalsConnected = useCallback(async () => {
     if (!athleteInfo?.id) { setIntervalsConnected(false); return; }
     try {
@@ -944,7 +875,6 @@ export default function AthleteHome({ profile }) {
     if (!athleteChatOpen || !athleteInfo?.id || !coachIdForChat) return;
     markConversationRead({ coachId: coachIdForChat, athleteId: athleteInfo.id, readerRole: "athlete" });
   }, [athleteChatOpen, athleteInfo?.id, coachIdForChat, athleteChatMessages.length]);
-  useEffect(() => { loadMyPayments(); }, [loadMyPayments]);
   useEffect(() => { loadIntervalsConnected(); }, [loadIntervalsConnected]);
 
   useEffect(() => {
@@ -1800,52 +1730,16 @@ export default function AthleteHome({ profile }) {
                 ) : null}
 
                 {athleteProfileTab === "pagos" ? (
-                  <>
-                    {hasCoachPremiumIncluded ? (
-                      <div style={{ ...S.card, marginBottom: 14 }}>
-                        <div style={{ fontSize: ".72em", marginBottom: 12, color: "#475569", textTransform: "uppercase", letterSpacing: ".13em" }}>Tu acceso</div>
-                        <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "rgba(34,197,94,.14)", border: "1px solid rgba(34,197,94,.45)", color: "#166534", borderRadius: 10, padding: "12px 16px", fontWeight: 800, fontSize: ".9em", lineHeight: 1.35 }}>✅ Plan Premium — Incluido con tu coach</div>
-                        <p style={{ margin: "14px 0 0", color: "#64748b", fontSize: ".84em", lineHeight: 1.5 }}>No necesitas contratar un plan por separado: tu suscripción va ligada al coach que te entrena.</p>
-                      </div>
-                    ) : (
-                      <div style={{ ...S.card, marginBottom: 14 }}>
-                        <div style={{ fontSize: ".72em", marginBottom: 10, color: "#475569", textTransform: "uppercase", letterSpacing: ".13em" }}>Tu plan</div>
-                        <div style={{ fontWeight: 800, fontSize: ".95em", color: "#0f172a", marginBottom: 4 }}>Plan actual: {soloAthletePlanKey === "monthly" ? "Mensual" : soloAthletePlanKey === "annual" ? "Anual" : "Gratis (free)"}</div>
-                        <div style={{ color: "#64748b", fontSize: ".82em", marginBottom: 16, lineHeight: 1.45 }}>Atleta independiente — gestiona tu suscripción aquí.</div>
-                        {soloAthletePlanKey === "free" ? (
-                          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                            <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: "14px 16px", display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 12, background: "#fafafa" }}>
-                              <div><div style={{ fontWeight: 800, color: "#0f172a" }}>Mensual</div><div style={{ fontSize: ".92em", color: "#b45309", fontWeight: 800, marginTop: 6 }}>${Number(SOLO_PLAN_MONTHLY_COP).toLocaleString("es-CO")} COP/mes</div></div>
-                              <button type="button" onClick={() => trySoloIndependentCheckout("monthly")} style={{ padding: "10px 18px", borderRadius: 10, border: "none", background: "linear-gradient(135deg,#0d9488,#14b8a6)", color: "#fff", fontWeight: 800, fontSize: ".84em", cursor: "pointer", fontFamily: "inherit" }}>Suscribirse</button>
-                            </div>
-                            <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: "14px 16px", display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 12, background: "#fafafa" }}>
-                              <div><div style={{ fontWeight: 800, color: "#0f172a" }}>Anual <span style={{ fontSize: ".72em", fontWeight: 800, color: "#15803d", background: "rgba(34,197,94,.18)", border: "1px solid rgba(34,197,94,.4)", borderRadius: 8, padding: "4px 10px" }}>Ahorra $50.000</span></div><div style={{ fontSize: ".92em", color: "#b45309", fontWeight: 800, marginTop: 6 }}>${Number(SOLO_PLAN_ANNUAL_COP).toLocaleString("es-CO")} COP/año</div></div>
-                              <button type="button" onClick={() => trySoloIndependentCheckout("annual")} style={{ padding: "10px 18px", borderRadius: 10, border: "none", background: "linear-gradient(135deg,#0d9488,#14b8a6)", color: "#fff", fontWeight: 800, fontSize: ".84em", cursor: "pointer", fontFamily: "inherit" }}>Suscribirse</button>
-                            </div>
-                          </div>
-                        ) : (
-                          <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: "14px 16px", background: "#f8fafc" }}>
-                            <div style={{ fontWeight: 800, color: "#0f172a", marginBottom: 8 }}>Plan activo: {soloAthletePlanKey === "monthly" ? "Mensual" : "Anual"}</div>
-                            <div style={{ color: "#64748b", fontSize: ".86em", marginBottom: 14 }}>Fecha de vencimiento: <strong style={{ color: "#0f172a" }}>{subscriptionExpiresFormatted || "Sin fecha registrada"}</strong></div>
-                            <button type="button" onClick={() => trySoloIndependentCheckout(soloAthletePlanKey)} style={{ padding: "10px 18px", borderRadius: 10, border: "none", background: "linear-gradient(135deg,#e86f28,#ff8a3d)", color: "#fff", fontWeight: 800, fontSize: ".84em", cursor: "pointer", fontFamily: "inherit" }}>Renovar</button>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    <div style={{ ...S.card }}>
-                      <div style={{ fontSize: ".72em", marginBottom: 10, color: "#475569", textTransform: "uppercase", letterSpacing: ".13em" }}>Mis Pagos</div>
-                      {loadingAthletePayments ? <div style={{ color: "#64748b", fontSize: ".84em" }}>Cargando pagos…</div> : athletePayments.length === 0 ? <div style={{ color: "#64748b", fontSize: ".84em" }}>Tu coach aún no ha registrado pagos.</div> : (
-                        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                          {athletePayments.map((p) => (
-                            <div key={p.id} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: "10px 12px", background: "#f8fafc" }}>
-                              <div style={{ fontWeight: 700, fontSize: ".84em" }}>${Number(p.amount || 0).toLocaleString("es-CO")} {p.currency || "COP"} · {p.plan}</div>
-                              <div style={{ marginTop: 4, color: "#64748b", fontSize: ".74em" }}>{new Date(p.payment_date).toLocaleDateString("es-CO")} · {p.payment_method}</div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </>
+                  <AthletePaymentsView
+                    cardStyle={S.card}
+                    athleteId={athleteInfo?.id}
+                    athletePlan={profile?.athlete_plan ?? athleteInfo?.athlete_plan}
+                    subscriptionPeriod={profile?.subscription_period ?? athleteInfo?.subscription_period}
+                    subscriptionExpiresAt={profile?.subscription_expires_at}
+                    profileUserId={profile?.user_id}
+                    profileCoachId={profile?.coach_id}
+                    notify={notifyCallback}
+                  />
                 ) : null}
 
                 <ChangePasswordSection notify={notifyCallback} cardStyle={S.card} />
