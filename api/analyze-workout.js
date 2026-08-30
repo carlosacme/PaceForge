@@ -1,5 +1,8 @@
 import { requireUser, getWorkoutIfAllowed, jsonError, adminHeaders } from "../lib/apiAuth.js";
 import { readStructure } from "../src/lib/workoutStructure.js";
+import { compareBlocks } from "../src/lib/blockComparison.js";
+
+const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 
 const MODELS = [
   "claude-sonnet-5",
@@ -141,6 +144,77 @@ function extractJson(text) {
   return null;
 }
 
+function fmtPaceS(s) {
+  const n = Number(s);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  const m = Math.floor(n / 60);
+  const sec = Math.round(n % 60);
+  return `${m}:${String(sec).padStart(2, "0")}/km`;
+}
+
+/** Última evaluación del atleta (test_date, luego created_at). No usa athlete.vdot. */
+async function latestVdotForAthlete(athleteId) {
+  if (!athleteId || !SUPABASE_URL) return null;
+  const q =
+    `athlete_evaluations?athlete_id=eq.${encodeURIComponent(athleteId)}` +
+    `&select=vdot,test_date,created_at&order=test_date.desc.nullslast,created_at.desc&limit=8`;
+  try {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/${q}`, { headers: adminHeaders() });
+    if (!r.ok) return null;
+    const rows = await r.json();
+    if (!Array.isArray(rows) || !rows.length) return null;
+    const latest = [...rows].sort(
+      (a, b) => new Date(b.test_date || b.created_at) - new Date(a.test_date || a.created_at),
+    )[0];
+    const v = Number(latest?.vdot);
+    return Number.isFinite(v) && v > 0 ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+async function hydrateWorkout(userId, workout) {
+  if (!workout?.id) return workout || null;
+  try {
+    const allowed = await getWorkoutIfAllowed(userId, workout.id);
+    if (!allowed) return workout;
+    const clientHasSteps = readStructure(workout).length > 0;
+    return {
+      ...allowed,
+      ...workout,
+      structure: clientHasSteps ? (workout.structure ?? allowed.structure) : allowed.structure,
+      athlete_id: allowed.athlete_id || workout.athlete_id,
+    };
+  } catch {
+    return workout;
+  }
+}
+
+function blocksPromptSection(workout, vdot, laps) {
+  const structure = readStructure(workout);
+  if (!structure.length) return "";
+  let rows = [];
+  try {
+    rows = compareBlocks({
+      structure,
+      laps: Array.isArray(laps) ? laps : [],
+      vdot,
+    });
+  } catch {
+    return "";
+  }
+  if (!rows.length) return "";
+  const lines = rows.map((b, i) => {
+    const planned = fmtPaceS(b.planned_pace_s) || "N/A";
+    const actual = fmtPaceS(b.actual_pace_s);
+    const delta =
+      b.delta_s == null ? "" : ` (Δ ${b.delta_s > 0 ? "+" : ""}${Math.round(b.delta_s)}s/km)`;
+    const realBit = actual ? ` | ritmo real ${actual}${delta}` : "";
+    return `${i + 1}. ${b.step_name || "Bloque"} | objetivo ${b.target_effort || "—"} | ritmo plan ${planned}${realBit}`;
+  });
+  return `\nPASOS (ritmo objetivo rescalado al VDOT ${vdot ?? "N/A"}):\n${lines.join("\n")}`;
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
 
@@ -166,13 +240,17 @@ export default async function handler(req, res) {
 
   const {
     action = "analyze",
-    workout,
+    workout: workoutIn,
     athleteName,
-    vdot,
     recentWorkouts,
     role,
     futureWorkouts,
+    laps,
   } = req.body || {};
+
+  const workout = await hydrateWorkout(user.id, workoutIn);
+  const vdot = await latestVdotForAthlete(workout?.athlete_id);
+  const blocksSection = workout ? blocksPromptSection(workout, vdot, laps) : "";
 
   // ── ACTION: analyze ──────────────────────────────────────────
   if (action === "analyze") {
@@ -217,10 +295,11 @@ EJECUTADO (${fuente}):
 - Desnivel: ${workout.actual_elevation_m ?? "N/R"} m
 - RPE: ${workout.rpe ?? "N/R"}
 - Sensación: ${workout.feeling ?? workout.athlete_notes ?? "N/R"}
+${blocksSection}
 ${recentContext}
 
 Responde en español con 4 secciones cortas (sin markdown, sin asteriscos, sin tablas). Cada sección: 3-5 frases, no más de ~80 palabras:
-1. Rendimiento — Compara lo EJECUTADO contra lo PLANIFICADO (distancia completada, ritmo real vs objetivo, duración). ¿Cumplió el objetivo del workout?
+1. Rendimiento — Compara lo EJECUTADO contra lo PLANIFICADO por bloque (ritmo real vs ritmo plan de cada paso), no solo el promedio de la sesión. ¿Cumplió el objetivo del workout?
 2. Señales fisiológicas — ¿Qué indican RPE, FC y ritmo sobre su estado?
 3. Tendencia — Basado en los entrenamientos recientes, ¿está progresando, estancado o acumulando fatiga?
 4. Ajuste recomendado — ¿Qué ajustar en los próximos 2-3 entrenamientos? (respuesta en texto plano, no tabla)`
@@ -229,10 +308,11 @@ Responde en español con 4 secciones cortas (sin markdown, sin asteriscos, sin t
 PLANIFICADO: ${workout.total_km ?? "N/A"} km, ${workout.duration_min ?? "N/A"} min (${workout.type ?? "N/A"})
 EJECUTADO (${fuente}): ${realDist ?? "N/R"} km, ${realDur ?? "N/R"} min, ritmo ${paceStr ?? "N/R"}, FC prom/máx ${realHrAvg ?? "N/R"}/${realHrMax ?? "N/R"} lpm
 RPE: ${workout.rpe ?? "N/R"} | Sensación: ${workout.feeling ?? workout.athlete_notes ?? "N/R"}
+${blocksSection}
 ${recentContext}
 
 Responde en 3 párrafos cortos (sin markdown, sin asteriscos), cada uno de 2-4 frases:
-1. Qué hiciste bien hoy (compara lo que hiciste con lo planificado)
+1. Qué hiciste bien hoy (compara ritmos por bloque plan vs real, no solo el promedio)
 2. Cómo estás progresando
 3. Consejo para el próximo entrenamiento`;
 
@@ -278,6 +358,7 @@ Responde en 3 párrafos cortos (sin markdown, sin asteriscos), cada uno de 2-4 f
 - FC promedio: ${workout.manual_avg_hr ?? "N/R"} lpm
 - FC máxima: ${workout.manual_max_hr ?? "N/R"} lpm
 - Notas: ${workout.athlete_notes || "Sin notas"}
+${blocksSection}
 ${recentContext}
 
 PRÓXIMOS ENTRENAMIENTOS:
