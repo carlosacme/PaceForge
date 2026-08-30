@@ -1,5 +1,4 @@
 import React, { Suspense } from "react";
-import Athletes from "./Athletes";
 import AdminPanel from "./Admin";
 import Dashboard from "./Dashboard";
 import InstallAppButton from "./InstallAppButton";
@@ -12,6 +11,7 @@ import {
   styles,
 } from "./shared/appShared";
 
+const Athletes = React.lazy(() => import("./Athletes"));
 const CoachSettings = React.lazy(() => import("./CoachSettings"));
 const WorkoutLibrary = React.lazy(() => import("./WorkoutLibrary"));
 const MarketplaceHub = React.lazy(() => import("./MarketplaceHub"));
@@ -270,25 +270,27 @@ export default function CoachChrome({
                     <button type="button" onClick={() => selectAthletesTab("retos")} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", background: view === "challenges" ? "rgba(168,85,247,.12)" : "#fff", color: view === "challenges" ? "#7e22ce" : "#334155", fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>🏆 Retos</button>
                   </div>
                   {view === "athletes" && (
-                    <Athletes
-                      athletes={athletes}
-                      selected={selectedAthlete}
-                      onSelect={setSelectedAthlete}
-                      workoutsRefresh={workoutsRefresh}
-                      openRegistroWorkoutId={pendingRegistroWorkoutId}
-                      onRegistroOpened={() => setPendingRegistroWorkoutId(null)}
-                      onAthleteWorkoutsDoneSync={onAthleteWorkoutsDoneSync}
-                      onAthleteFcSync={onAthleteFcSync}
-                      coachDisplayName={
-                        profile?.name ||
-                        session?.user?.user_metadata?.full_name ||
-                        (session?.user?.email ? session.user.email.split("@")[0] : null) ||
-                        "Coach"
-                      }
-                      onDeleteAthlete={handleDeleteAthlete}
-                      notify={notify}
-                      onOpenInviteModal={() => setInviteModalOpen(true)}
-                    />
+                    <Suspense fallback={<div style={{ padding: 24, color: "#64748b" }}>Cargando atletas…</div>}>
+                      <Athletes
+                        athletes={athletes}
+                        selected={selectedAthlete}
+                        onSelect={setSelectedAthlete}
+                        workoutsRefresh={workoutsRefresh}
+                        openRegistroWorkoutId={pendingRegistroWorkoutId}
+                        onRegistroOpened={() => setPendingRegistroWorkoutId(null)}
+                        onAthleteWorkoutsDoneSync={onAthleteWorkoutsDoneSync}
+                        onAthleteFcSync={onAthleteFcSync}
+                        coachDisplayName={
+                          profile?.name ||
+                          session?.user?.user_metadata?.full_name ||
+                          (session?.user?.email ? session.user.email.split("@")[0] : null) ||
+                          "Coach"
+                        }
+                        onDeleteAthlete={handleDeleteAthlete}
+                        notify={notify}
+                        onOpenInviteModal={() => setInviteModalOpen(true)}
+                      />
+                    </Suspense>
                   )}
                   {view === "evaluation" && (
                     <Suspense fallback={<div style={{ padding: 24, color: "#64748b" }}>Cargando evaluación…</div>}>
