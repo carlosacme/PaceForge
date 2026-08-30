@@ -498,7 +498,7 @@ export default function AthleteCalendarSection({
                   <textarea rows={3} value={workoutEditForm.description} onChange={(e) => setWorkoutEditForm((f) => ({ ...f, description: e.target.value }))} style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", color: "#0f172a", fontFamily: "inherit", fontSize: ".84em", boxSizing: "border-box", resize: "vertical" }} />
                 </div>
                 <div style={{ gridColumn: "1 / -1" }}>
-                  <WorkoutStructureTable structure={workoutEditForm.structureRows} />
+                  <WorkoutStructureTable structure={workoutEditForm.structureRows} title={workoutEditForm.title} />
                   <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 8 }}>Estructura (fases, duración, ritmo objetivo)</div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                     {workoutEditForm.structureRows.map((row, idx) => (

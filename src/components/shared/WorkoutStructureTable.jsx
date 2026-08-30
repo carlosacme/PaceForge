@@ -1,8 +1,9 @@
 import React from "react";
 import { normalizeWorkoutStructure, WORKOUT_BLOCK_COLORS } from "./appShared";
+import { stripTestTimeGoalsFromStructure } from "../../lib/enrichPace";
 
-export default function WorkoutStructureTable({ structure = [] }) {
-  const rows = normalizeWorkoutStructure(structure);
+export default function WorkoutStructureTable({ structure = [], title = "" }) {
+  const rows = normalizeWorkoutStructure(stripTestTimeGoalsFromStructure(title, structure));
   if (!rows.length) return null;
   return (
     <div style={{ overflowX: "auto", border: "1px solid #e2e8f0", borderRadius: 10 }}>

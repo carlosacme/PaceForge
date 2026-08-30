@@ -46,7 +46,7 @@ import {
   intervalsExternalId,
   isRunWorkout,
 } from "../src/lib/intervals.js";
-import { rescaleStructureToVdot } from "../src/lib/enrichPace.js";
+import { rescaleStructureToVdot, stripTestTimeGoalsFromStructure } from "../src/lib/enrichPace.js";
 import { readStructure } from "../src/lib/workoutStructure.js";
 import { resolveTargetVdotAfterTest } from "../src/lib/vdot.js";
 
@@ -314,7 +314,12 @@ async function pushWorkouts(conn, workouts, vdot) {
 
   // Sin fecha no hay sitio en el calendario: no ocupan hueco en el lote.
   const sendable = workouts.filter((w) => w.scheduled_date);
-  const events = sendable.map((w) => buildIntervalsEvent(w, vdot));
+  const events = sendable.map((w) =>
+    buildIntervalsEvent({
+      ...w,
+      structure: stripTestTimeGoalsFromStructure(w.title, readStructure(w)),
+    }, vdot),
+  );
 
   let byExternalId = new Map();
   if (events.length) {
@@ -880,7 +885,10 @@ async function resyncPacesAfterEvaluation(athleteId) {
     const antes = readStructure(w);
     if (!antes.length) { sinCambio += 1; continue; }
 
-    const despues = rescaleStructureToVdot(antes, target, origen);
+    const despues = stripTestTimeGoalsFromStructure(
+      w.title,
+      rescaleStructureToVdot(antes, target, origen),
+    );
     if (JSON.stringify(antes) === JSON.stringify(despues)) { sinCambio += 1; continue; }
 
     await sb(`workouts?id=eq.${w.id}`, {

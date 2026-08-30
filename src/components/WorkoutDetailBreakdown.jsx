@@ -1,5 +1,6 @@
 import React, { useMemo } from "react";
 import { getWorkoutDetailGroups, formatDetailStepAmount } from "../lib/intervals";
+import { stripTestTimeGoalsFromStructure } from "../lib/enrichPace";
 
 /**
  * Desglose tipo TrainingPeaks: descripcion general + PASOS (con repeticiones
@@ -8,7 +9,13 @@ import { getWorkoutDetailGroups, formatDetailStepAmount } from "../lib/intervals
  */
 export default function WorkoutDetailBreakdown({ workout, vdot = 42.5 }) {
   const { hasStructure, groups } = useMemo(
-    () => getWorkoutDetailGroups(workout, vdot),
+    () => {
+      const structure = stripTestTimeGoalsFromStructure(
+        workout?.title,
+        workout?.structure ?? workout?.workout_structure,
+      );
+      return getWorkoutDetailGroups({ ...workout, structure }, vdot);
+    },
     [workout, vdot],
   );
 

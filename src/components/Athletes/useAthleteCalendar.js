@@ -11,6 +11,7 @@ import {
   evaluateAndAwardAthleteAchievements,
   deleteIntervalsEvents,
 } from "../shared/appShared";
+import { stripTestTimeGoalsFromStructure } from "../../lib/enrichPace";
 
 /**
  * Calendario del coach: grid, DnD (calendarDragRef + dragWorkoutId), menú
@@ -120,7 +121,9 @@ export function useAthleteCalendar({
   );
 
   const populateEditFormFromWorkout = (w) => {
-    const rows = workoutStructureToEditableRows(w.structure);
+    const rows = workoutStructureToEditableRows(
+      stripTestTimeGoalsFromStructure(w.title, w.structure),
+    );
     setWorkoutEditForm({
       title: w.title || "",
       type: WORKOUT_TYPES.some((t) => t.id === w.type) ? w.type : "easy",
