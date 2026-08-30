@@ -1548,8 +1548,6 @@ export const parseJsonFileToLibraryDrafts = async (file) => {
   return drafts;
 };
 
-export const ADMIN_EMAIL = "acostamerlano87@gmail.com";
-
 export const PLATFORM_ADMIN_USER_ID = "b5c9e44a-6695-4800-99bd-f19b05d2f66f";
 
 /** Duración fija del trial de coach (días desde trial_started_at). */

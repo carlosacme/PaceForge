@@ -1,5 +1,4 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { ADMIN_EMAIL } from "../components/shared/appShared";
 
 const COACH_NAV_BASE_ITEMS = [
   { id: "dashboard", icon: "▤", label: "Panel", shortLabel: "Inicio", color: "#ff8a3d" },
@@ -63,12 +62,11 @@ export function useCoachNavigation({ session, profile, onCloseAddAthleteForm }) 
     const role = profile?.role;
     const items = [...COACH_NAV_BASE_ITEMS];
     items.push({ id: "settings", icon: "⚙", label: "Configuración", shortLabel: "Ajustes", color: "#64748b" });
-    const em = session?.user?.email?.toLowerCase();
-    if (role === "admin" || em === ADMIN_EMAIL) {
+    if (role === "admin") {
       items.push({ id: "admin", icon: "🔐", label: "Admin", shortLabel: "Admin", color: "#7c3aed" });
     }
     return items;
-  }, [profile?.role, session?.user?.email]);
+  }, [profile?.role]);
 
   const allowedCoachViews = useMemo(() => {
     const hiddenViews = ["evaluation", "plan12", "builder", "carrera_gpx", "challenges"];
@@ -90,15 +88,14 @@ export function useCoachNavigation({ session, profile, onCloseAddAthleteForm }) 
   }, [session?.user?.id, profile, viewRestored, allowedCoachViews]);
 
   useEffect(() => {
-    const em = session?.user?.email?.toLowerCase();
     const role = profile?.role;
-    if (view === "admin" && role !== "admin" && em !== ADMIN_EMAIL) {
+    if (view === "admin" && role !== "admin") {
       setView("dashboard");
     }
     if (view === "admin-coaches") {
       setView("dashboard");
     }
-  }, [view, session?.user?.email, profile?.role]);
+  }, [view, profile?.role]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;

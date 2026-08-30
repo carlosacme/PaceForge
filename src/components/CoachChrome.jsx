@@ -7,7 +7,6 @@ import InviteModal from "./InviteModal";
 import PlanPicker from "./PlanPicker";
 import PushInviteBanner from "./PushInviteBanner";
 import {
-  ADMIN_EMAIL,
   PLATFORM_ADMIN_USER_ID,
   coachTrialDaysRemainingFromStart,
   styles,
@@ -89,7 +88,6 @@ export default function CoachChrome({
   handleSignOut,
 }) {
   const S = styles;
-  const sessionEmailLower = session?.user?.email?.toLowerCase() ?? "";
   const sessionUserId = session?.user?.id ?? "";
   const isProfilesAdmin = profile?.role === "admin";
   const coachPlanBlockedUi =
@@ -323,7 +321,7 @@ export default function CoachChrome({
                   isStaff={Boolean(profile?.is_staff || staffParentCoachId)}
                 />
               )}
-              {view === "admin" && (profile?.role === "admin" || sessionEmailLower === ADMIN_EMAIL) && (
+              {view === "admin" && isProfilesAdmin && (
                 <AdminPanel notify={notify} adminUserId={PLATFORM_ADMIN_USER_ID} />
               )}
               {(view === "plan12" || view === "builder" || view === "carrera_gpx" || view === "training") && (
