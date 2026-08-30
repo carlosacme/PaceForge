@@ -10,6 +10,8 @@ import AthletePaymentsView from "./AthleteHome/AthletePaymentsView";
 import { useAthleteSideChat } from "./AthleteHome/useAthleteSideChat";
 import AthleteChatSheet from "./AthleteHome/AthleteChatSheet";
 import AthleteSettingsPanel, { useCoachDirectory, AthleteProfileSessionFooter } from "./AthleteHome/AthleteSettingsPanel";
+import { useAthleteWorkoutOverlays } from "./AthleteHome/useAthleteWorkoutOverlays";
+import AthleteWorkoutOverlays from "./AthleteHome/AthleteWorkoutOverlays";
 import {
   formatLocalYMD,
   calendarCellToIsoYmd,
@@ -192,12 +194,6 @@ export default function AthleteHome({ profile }) {
   const [athleteCalendarCtxMenu, setAthleteCalendarCtxMenu] = useState(null);
   const athleteCalendarCtxMenuRef = useRef(null);
   const toggleDoneBusyIdRef = useRef(null);
-  const [not100Modal, setNot100Modal] = useState(null);
-  const [not100Form, setNot100Form] = useState({ reason: "", level: "medio" });
-  const [not100Sending, setNot100Sending] = useState(false);
-  const [briefingModal, setBriefingModal] = useState(null);
-  const [briefingText, setBriefingText] = useState("");
-  const [briefingLoading, setBriefingLoading] = useState(false);
   const { weather, getWorkoutWeatherNote } = useWeather();
   const [intervalsConnected, setIntervalsConnected] = useState(false);
   const [intervalsRefreshNonce, setIntervalsRefreshNonce] = useState(0);
@@ -968,65 +964,15 @@ export default function AthleteHome({ profile }) {
     setForceManualFields(false);
   };
 
-  const generateBriefing = async (workout) => {
-    setBriefingLoading(true);
-    setBriefingText("");
-    try {
-      const hrZonesText = athleteInfo?.fc_max ? `FC max: ${athleteInfo.fc_max} lpm` : "FC no configurada";
-      const prompt = `Eres un coach de running experto. El atleta ${athleteInfo?.name || "el atleta"} tiene programado hoy: "${workout.title || workout.type}" (${workout.total_km || 0} km, ${workout.duration_min || 0} min, tipo: ${workout.type || "general"}). Objetivo: ${athleteInfo?.goal || "mejorar rendimiento"}. ${hrZonesText}. Escribe un briefing motivacional de 3-4 oraciones en español. Incluye: 1) que va a trabajar hoy y por que es importante, 2) en que enfocarse durante la sesion, 3) una frase motivacional final. Sin bullets, solo texto corrido.`;
-      const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch("/api/analyze-workout", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session?.access_token}`,
-        },
-        body: JSON.stringify({ prompt, mode: "briefing" }),
-      });
-      const data = await res.json();
-      setBriefingText(data?.analysis || "No se pudo generar el briefing.");
-    } catch (e) {
-      setBriefingText("Error generando el briefing. Intenta de nuevo.");
-    } finally {
-      setBriefingLoading(false);
-    }
-  };
+  const workoutOverlays = useAthleteWorkoutOverlays({
+    athleteId: athleteInfo?.id ?? null,
+    athleteName: athleteInfo?.name,
+    athleteGoal: athleteInfo?.goal,
+    athleteFcMax: athleteInfo?.fc_max,
+    coachId: athleteInfo?.coach_id ?? null,
+    notify: notifyCallback,
+  });
 
-  const sendNot100Report = async () => {
-    if (!not100Modal || !athleteInfo?.coach_id) return;
-    setNot100Sending(true);
-    try {
-      const note = `[No estoy al 100% · Nivel: ${not100Form.level}] ${not100Form.reason || "Sin detalle adicional"}`;
-      const { data: updated, error } = await supabase
-        .from("workouts")
-        .update({ athlete_notes: note })
-        .eq("id", not100Modal.id)
-        .select("id");
-      if (error) {
-        console.error("not100:", error);
-        setMessage(error.message || "No se pudo guardar el aviso");
-        return;
-      }
-      if (!(updated || []).length) {
-        setMessage("No se guardó el aviso en el entreno (sin permiso sobre esa fila)");
-        return;
-      }
-      await sendChatPushNotification({
-        toUserId: athleteInfo.coach_id,
-        title: `😣 ${athleteInfo.name || "Tu atleta"} no esta al 100%`,
-        body: `${not100Modal.title || "Entreno"}: ${not100Form.reason || "Nivel " + not100Form.level}`,
-        data: { type: "coach_athlete", athlete_id: athleteInfo.id },
-        logLabel: "not100",
-      });
-      setNot100Modal(null);
-      setMessage("✅ Tu coach fue notificado");
-    } catch (e) {
-      console.error("not100:", e);
-      setMessage("No se pudo notificar al coach");
-    } finally {
-      setNot100Sending(false);
-    }
-  };
 
   return (
     <div style={{ ...S.page, paddingBottom: 96, overflowX: "hidden", overflowY: "visible", position: "relative" }}>
@@ -1303,7 +1249,7 @@ export default function AthleteHome({ profile }) {
                 {ctxMenuAthleteWorkout.done ? "✓ Marcar pendiente" : "✓ Marcar hecho"}
               </button>
               {!ctxMenuAthleteWorkout.done && (
-                <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={(e) => { e.stopPropagation(); setNot100Modal(ctxMenuAthleteWorkout); setNot100Form({ reason: "", level: "medio" }); closeAthleteCalendarCtxMenu(); }}
+                <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={(e) => { e.stopPropagation(); workoutOverlays.openNot100(ctxMenuAthleteWorkout); closeAthleteCalendarCtxMenu(); }}
                   style={{ display: "block", width: "100%", textAlign: "left", background: "transparent", border: "none", borderRadius: 8, padding: "10px 12px", color: "#ff8a3d", fontWeight: 600, cursor: "pointer", fontFamily: "inherit", fontSize: ".82em" }}>
                   😓 No estoy al 100%
                 </button>
@@ -1316,7 +1262,7 @@ export default function AthleteHome({ profile }) {
               >
                 📋 Ver detalle
               </button>
-              <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={(e) => { e.stopPropagation(); setBriefingModal(ctxMenuAthleteWorkout); setBriefingText(""); closeAthleteCalendarCtxMenu(); generateBriefing(ctxMenuAthleteWorkout); }}
+              <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={(e) => { e.stopPropagation(); workoutOverlays.openBriefing(ctxMenuAthleteWorkout); closeAthleteCalendarCtxMenu(); }}
                 style={{ display: "block", width: "100%", textAlign: "left", background: "transparent", border: "none", borderRadius: 8, padding: "10px 12px", color: "#6366f1", fontWeight: 600, cursor: "pointer", fontFamily: "inherit", fontSize: ".82em" }}>
                 ⚡ Briefing IA
               </button>
@@ -1327,72 +1273,20 @@ export default function AthleteHome({ profile }) {
 
       <AthleteWeeklyStrip cardStyle={S.card} workouts={workouts} />
 
-      {briefingModal && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.55)", zIndex: 10003, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-          <div style={{ background: "#fff", borderRadius: 14, padding: 20, width: "100%", maxWidth: 420, boxShadow: "0 20px 60px rgba(0,0,0,.3)" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-              <span style={{ fontSize: "1.2em" }}>⚡</span>
-              <div style={{ fontWeight: 900, fontSize: ".95em", color: "#4338ca" }}>Briefing del entreno</div>
-            </div>
-            <div style={{ fontSize: ".78em", color: "#64748b", marginBottom: 14 }}>{briefingModal.title} · {briefingModal.total_km || 0} km · {briefingModal.duration_min || 0} min</div>
-            {briefingLoading ? (
-              <div style={{ padding: "20px 0", textAlign: "center", color: "#6366f1", fontSize: ".85em" }}>Generando briefing con IA...</div>
-            ) : (
-              <div style={{ fontSize: ".88em", color: "#0f172a", lineHeight: 1.65, background: "rgba(99,102,241,.05)", border: "1px solid rgba(99,102,241,.2)", borderRadius: 10, padding: "14px 16px", marginBottom: 16 }}>
-                {briefingText}
-              </div>
-            )}
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-              {!briefingLoading && (
-                <button type="button" onClick={() => generateBriefing(briefingModal)}
-                  style={{ padding: "8px 14px", borderRadius: 8, border: "1px solid rgba(99,102,241,.3)", background: "rgba(99,102,241,.08)", color: "#4338ca", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".78em" }}>
-                  Regenerar
-                </button>
-              )}
-              <button type="button" onClick={() => setBriefingModal(null)}
-                style={{ padding: "8px 14px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#475569", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".82em" }}>
-                Cerrar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <AthleteWorkoutOverlays
+        briefingModal={workoutOverlays.briefingModal}
+        briefingText={workoutOverlays.briefingText}
+        briefingLoading={workoutOverlays.briefingLoading}
+        onRegenerateBriefing={workoutOverlays.generateBriefing}
+        onCloseBriefing={workoutOverlays.closeBriefing}
+        not100Modal={workoutOverlays.not100Modal}
+        not100Form={workoutOverlays.not100Form}
+        setNot100Form={workoutOverlays.setNot100Form}
+        not100Sending={workoutOverlays.not100Sending}
+        onSendNot100={workoutOverlays.sendNot100Report}
+        onCloseNot100={workoutOverlays.closeNot100}
+      />
 
-      {not100Modal && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.55)", zIndex: 10003, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-          <div style={{ background: "#fff", borderRadius: 14, padding: 20, width: "100%", maxWidth: 400, boxShadow: "0 20px 60px rgba(0,0,0,.3)" }}>
-            <div style={{ fontWeight: 900, fontSize: "1em", color: "#0f172a", marginBottom: 4 }}>😓 No estoy al 100%</div>
-            <div style={{ fontSize: ".8em", color: "#64748b", marginBottom: 14 }}>{not100Modal.title} · Cuéntale a tu coach cómo estás</div>
-            <div style={{ marginBottom: 12 }}>
-              <div style={{ fontSize: ".72em", fontWeight: 700, color: "#475569", marginBottom: 6 }}>Nivel</div>
-              <div style={{ display: "flex", gap: 8 }}>
-                {[["leve","😕 Leve"],["medio","😓 Regular"],["grave","🤒 Mal"]].map(([val, label]) => (
-                  <button key={val} type="button" onClick={() => setNot100Form(f => ({ ...f, level: val }))}
-                    style={{ flex: 1, padding: "8px 6px", borderRadius: 8, border: not100Form.level === val ? "2px solid #ff8a3d" : "1px solid #e2e8f0", background: not100Form.level === val ? "rgba(255,138,61,.1)" : "#f8fafc", color: not100Form.level === val ? "#b45309" : "#475569", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".75em" }}>
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: ".72em", fontWeight: 700, color: "#475569", marginBottom: 6 }}>¿Qué pasa? (opcional)</div>
-              <textarea rows={3} value={not100Form.reason} onChange={(e) => setNot100Form(f => ({ ...f, reason: e.target.value }))}
-                placeholder="Dolor muscular, cansancio, enfermedad..."
-                style={{ width: "100%", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit", fontSize: ".84em", boxSizing: "border-box", resize: "none" }} />
-            </div>
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-              <button type="button" onClick={() => setNot100Modal(null)}
-                style={{ padding: "8px 14px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#475569", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".82em" }}>
-                Cancelar
-              </button>
-              <button type="button" onClick={sendNot100Report} disabled={not100Sending}
-                style={{ padding: "8px 14px", borderRadius: 8, border: "none", background: not100Sending ? "#e2e8f0" : "linear-gradient(135deg,#ff8a3d,#d97706)", color: not100Sending ? "#94a3b8" : "#fff", fontWeight: 800, cursor: not100Sending ? "not-allowed" : "pointer", fontFamily: "inherit", fontSize: ".82em" }}>
-                {not100Sending ? "Enviando..." : "Notificar coach"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       <nav aria-label="Navegación atleta" style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 9999, display: "flex", flexDirection: "row", justifyContent: "space-around", alignItems: "center", background: "white", borderTop: "1px solid #e2e8f0", padding: "8px 0 12px 0", height: "60px" }}>
         <button type="button" style={{ minWidth: 60, color: athleteActiveTab === "home" ? "#c2410c" : "#64748b", background: athleteActiveTab === "home" ? "rgba(255,138,61,.14)" : "transparent", fontWeight: athleteActiveTab === "home" ? 800 : 600 }} onClick={() => handleAthleteNavTabChange("home")}><span className="pf-bnav-icon">🏠</span><span style={{ fontSize: "10px" }}>Inicio</span></button>
