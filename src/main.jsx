@@ -221,9 +221,17 @@ function UpdateAvailableBanner() {
 if ("serviceWorker" in navigator) {
   // Cuando un deploy nuevo activa otro SW, recargar para no quedarse con el
   // index/assets de la build anterior (sintoma: logo viejo, pantallas antiguas).
+  // Solo si YA habia un controlador: la primera activacion en un host nuevo
+  // (Preview, primera visita) tambien dispara controllerchange y un reload
+  // ahi remonta login/dashboard como si la pagina se recargara sola.
   let refreshing = false;
+  let hadController = Boolean(navigator.serviceWorker.controller);
   navigator.serviceWorker.addEventListener("controllerchange", () => {
     if (refreshing) return;
+    if (!hadController) {
+      hadController = true;
+      return;
+    }
     refreshing = true;
     window.location.reload();
   });
