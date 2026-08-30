@@ -152,6 +152,35 @@ function fmtPaceS(s) {
   return `${m}:${String(sec).padStart(2, "0")}/km`;
 }
 
+/**
+ * Número de ejecución para el prompt de adjust: actual_* → manual_*.
+ * 0 no cuenta (km planificado de un rodaje por tiempo, o FC nula).
+ * No usar en analyze: ese prompt ya tiene su propia prioridad.
+ */
+function pickExecNumber(...vals) {
+  for (const v of vals) {
+    const n = Number(v);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return null;
+}
+
+function fmtAdjustExecKm(w) {
+  const n = pickExecNumber(w?.actual_distance_km, w?.manual_distance_km);
+  if (n == null) return "N/A";
+  return String(Number.isInteger(n) ? n : Math.round(n * 100) / 100);
+}
+
+function fmtAdjustExecMin(w) {
+  const n = pickExecNumber(w?.actual_duration_min, w?.manual_duration_min);
+  return n == null ? "N/A" : String(Math.round(n));
+}
+
+function fmtAdjustExecHr(w, actualKey, manualKey) {
+  const n = pickExecNumber(w?.[actualKey], w?.[manualKey]);
+  return n == null ? "N/R" : String(Math.round(n));
+}
+
 /** Última evaluación del atleta (test_date, luego created_at). No usa athlete.vdot. */
 async function latestVdotForAthlete(athleteId) {
   if (!athleteId || !SUPABASE_URL) return null;
@@ -337,7 +366,7 @@ Responde en 3 párrafos cortos (sin markdown, sin asteriscos), cada uno de 2-4 f
       Array.isArray(recentWorkouts) && recentWorkouts.length > 0
         ? `\nÚltimos entrenamientos:\n${recentWorkouts
             .map((w, i) =>
-              `${i + 1}. ${w.title || w.type} — ${w.total_km || 0}km, RPE ${w.rpe ?? "N/R"}, FC ${w.manual_avg_hr ?? "N/R"}`
+              `${i + 1}. ${w.title || w.type} — ${fmtAdjustExecKm(w)} km, RPE ${w.rpe ?? "N/R"}, FC ${fmtAdjustExecHr(w, "actual_avg_hr", "manual_avg_hr")}`
             )
             .join("\n")}`
         : "";
@@ -352,11 +381,12 @@ Responde en 3 párrafos cortos (sin markdown, sin asteriscos), cada uno de 2-4 f
 
 ÚLTIMO ENTRENAMIENTO COMPLETADO:
 - Tipo: ${workout.type} | Título: ${workout.title}
-- Distancia real: ${workout.manual_distance_km ?? workout.total_km ?? "N/A"} km
-- Duración real: ${workout.manual_duration_min ?? workout.duration_min ?? "N/A"} min
+- Distancia real: ${fmtAdjustExecKm(workout)} km
+- Duración real: ${fmtAdjustExecMin(workout)} min
+- Ritmo medio: ${fmtPaceS(workout.actual_avg_pace_s) ?? "N/A"}
 - RPE: ${workout.rpe ?? "N/R"} / 10
-- FC promedio: ${workout.manual_avg_hr ?? "N/R"} lpm
-- FC máxima: ${workout.manual_max_hr ?? "N/R"} lpm
+- FC promedio: ${fmtAdjustExecHr(workout, "actual_avg_hr", "manual_avg_hr")} lpm
+- FC máxima: ${fmtAdjustExecHr(workout, "actual_max_hr", "manual_max_hr")} lpm
 - Notas: ${workout.athlete_notes || "Sin notas"}
 ${blocksSection}
 ${recentContext}
