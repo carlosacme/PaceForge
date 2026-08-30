@@ -22,4 +22,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
-".env" 
+
+# Env locales (nunca commitear secretos)
+.env
+.env.*
+!.env.example
+

@@ -74,7 +74,6 @@ const ICU_WEBHOOK_SECRET = process.env.INTERVALS_WEBHOOK_SECRET;
 function sbHeaders(extra = {}) {
   return {
     apikey: SERVICE_KEY,
-    Authorization: `Bearer ${SERVICE_KEY}`,
     "Content-Type": "application/json",
     ...extra,
   };

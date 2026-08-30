@@ -23,7 +23,6 @@ export default async function handler(req, res) {
 
   const headers = {
     apikey: SUPA_KEY,
-    Authorization: `Bearer ${SUPA_KEY}`,
     "Content-Type": "application/json",
   };
 

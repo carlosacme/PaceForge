@@ -363,7 +363,7 @@ Los valores de signal válidos son exactamente: fatiga_alta, fatiga_media, bien,
 
     const supabaseUrl = process.env.SUPABASE_URL;
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    const h = { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}`, "Content-Type": "application/json", "Prefer": "return=minimal" };
+    const h = { "apikey": serviceKey, "Content-Type": "application/json", "Prefer": "return=minimal" };
 
     // Obtener structure actual
     // Solo `structure`: workout_structure se elimino en la migracion 0044.
