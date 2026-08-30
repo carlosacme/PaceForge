@@ -96,6 +96,24 @@ const ATHLETE_HOME_WORKOUT_COLUMNS = [
   "intervals_activity_id",
 ].join(",");
 
+const FEELING_CHOICES = ["😴 Muy cansado", "😕 Cansado", "😐 Normal", "🙂 Bien", "💪 Excelente"];
+
+function stripFeelingLines(notes) {
+  return String(notes || "").replace(/^Cómo me sentí:\s*.+$/gm, "").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function feelingFromNotes(notes) {
+  const matches = [...String(notes || "").matchAll(/^Cómo me sentí:\s*(.+)$/gm)];
+  const raw = matches.at(-1)?.[1]?.trim();
+  return FEELING_CHOICES.includes(raw) ? raw : "😐 Normal";
+}
+
+function composeAthleteNotes(feelingText, notes) {
+  const feeling = FEELING_CHOICES.includes(feelingText) ? feelingText : "😐 Normal";
+  const body = stripFeelingLines(notes);
+  return [`Cómo me sentí: ${feeling}`, body].filter(Boolean).join("\n");
+}
+
 function normalizeSoloAthletePlanKey(athletePlan, subscriptionPeriod) {
   const planRaw = String(athletePlan ?? "").trim().toLowerCase();
   if (planRaw !== "premium") return "free";
@@ -336,6 +354,7 @@ export default function AthleteHome({ profile }) {
   const coachPushWarnedRef = useRef(false);
   const [athleteCalendarCtxMenu, setAthleteCalendarCtxMenu] = useState(null);
   const athleteCalendarCtxMenuRef = useRef(null);
+  const toggleDoneBusyIdRef = useRef(null);
   const [not100Modal, setNot100Modal] = useState(null);
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [not100Form, setNot100Form] = useState({ reason: "", level: "medio" });
@@ -727,8 +746,8 @@ export default function AthleteHome({ profile }) {
       avgHr: workoutRow.manual_avg_hr != null ? String(workoutRow.manual_avg_hr) : "",
       maxHr: workoutRow.manual_max_hr != null ? String(workoutRow.manual_max_hr) : "",
       calories: workoutRow.manual_calories != null ? String(workoutRow.manual_calories) : "",
-      feeling: "😐 Normal",
-      notes: workoutRow.athlete_notes || "",
+      feeling: feelingFromNotes(workoutRow.athlete_notes),
+      notes: stripFeelingLines(workoutRow.athlete_notes),
     };
     setManualSummaryForm(baseManual);
     setWorkoutSummaryModal({ workout: workoutRow });
@@ -743,10 +762,7 @@ export default function AthleteHome({ profile }) {
     const avgHr = Math.round(Number(manualSummaryForm.avgHr) || 0);
     const maxHr = Math.round(Number(manualSummaryForm.maxHr) || 0);
     const calories = Math.round(Number(manualSummaryForm.calories) || 0);
-    const feelings = ["😴 Muy cansado", "😕 Cansado", "😐 Normal", "🙂 Bien", "💪 Excelente"];
-    const feelingText = feelings.includes(manualSummaryForm.feeling) ? manualSummaryForm.feeling : "😐 Normal";
-    const notesBody = manualSummaryForm.notes.trim();
-    const athleteNotes = [`Cómo me sentí: ${feelingText}`, notesBody].filter(Boolean).join("\n");
+    const athleteNotes = composeAthleteNotes(manualSummaryForm.feeling, manualSummaryForm.notes);
     const payload = {
       manual_distance_km: Number.isFinite(parsedDistance) && parsedDistance > 0 ? parsedDistance : null,
       manual_duration_min: Number.isFinite(durationMin) && durationMin > 0 ? durationMin : null,
@@ -786,6 +802,10 @@ export default function AthleteHome({ profile }) {
       console.warn("[rpe-modal] toggleDone skipped: no workout");
       return;
     }
+    const busyKey = String(w.id);
+    if (toggleDoneBusyIdRef.current === busyKey) return;
+    toggleDoneBusyIdRef.current = busyKey;
+    try {
     const next = !w.done;
     console.info("[rpe-modal] toggleDone", {
       id: w.id,
@@ -858,6 +878,9 @@ export default function AthleteHome({ profile }) {
           logLabel: "workout missed athlete→coach",
         });
       } catch (_) {}
+    }
+    } finally {
+      if (toggleDoneBusyIdRef.current === busyKey) toggleDoneBusyIdRef.current = null;
     }
   };
 
