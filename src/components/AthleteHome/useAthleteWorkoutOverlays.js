@@ -2,11 +2,23 @@ import { useState } from "react";
 import { supabase } from "../../lib/supabase";
 import { sendChatPushNotification } from "../shared/appShared";
 
+const NOT100_LINE_RE = /^\[No estoy al 100% · Nivel: [^\]]+\][^\n]*$/gm;
+
+function stripNot100Lines(notes) {
+  return String(notes || "").replace(NOT100_LINE_RE, "").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function composeNot100Notes(existing, level, reason) {
+  const line = `[No estoy al 100% · Nivel: ${level}] ${reason || "Sin detalle adicional"}`;
+  const body = stripNot100Lines(existing);
+  return body ? `${body}\n${line}` : line;
+}
+
 /**
  * Overlays del menú del calendario: briefing IA + “No estoy al 100%”.
  * No es el analyze/adjust del coach (`Athletes/useWorkoutAnalysis`).
- * Not-100 escribe `athlete_notes` (pisa el campo) y push; no ajusta km/ritmo
- * ni usa composeAthleteNotes del modal RPE.
+ * Not-100 agrega una línea a `athlete_notes` (idempotente: sustituye la
+ * línea not-100 previa, no pisa el resto). No usa composeAthleteNotes del RPE.
  */
 export function useAthleteWorkoutOverlays({
   athleteId,
@@ -15,6 +27,7 @@ export function useAthleteWorkoutOverlays({
   athleteFcMax,
   coachId,
   notify,
+  onNotesSaved,
 }) {
   const [briefingModal, setBriefingModal] = useState(null);
   const [briefingText, setBriefingText] = useState("");
@@ -57,7 +70,14 @@ export function useAthleteWorkoutOverlays({
     if (!not100Modal || !coachId) return;
     setNot100Sending(true);
     try {
-      const note = `[No estoy al 100% · Nivel: ${not100Form.level}] ${not100Form.reason || "Sin detalle adicional"}`;
+      const { data: current, error: readErr } = await supabase
+        .from("workouts")
+        .select("athlete_notes")
+        .eq("id", not100Modal.id)
+        .maybeSingle();
+      if (readErr) console.error("not100 read:", readErr);
+      const existing = current?.athlete_notes ?? not100Modal.athlete_notes ?? "";
+      const note = composeNot100Notes(existing, not100Form.level, not100Form.reason);
       const { data: updated, error } = await supabase
         .from("workouts")
         .update({ athlete_notes: note })
@@ -79,6 +99,7 @@ export function useAthleteWorkoutOverlays({
         data: { type: "coach_athlete", athlete_id: athleteId },
         logLabel: "not100",
       });
+      onNotesSaved?.(not100Modal.id, note);
       setNot100Modal(null);
       notify?.("✅ Tu coach fue notificado");
     } catch (e) {

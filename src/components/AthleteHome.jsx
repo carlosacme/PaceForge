@@ -971,6 +971,9 @@ export default function AthleteHome({ profile }) {
     athleteFcMax: athleteInfo?.fc_max,
     coachId: athleteInfo?.coach_id ?? null,
     notify: notifyCallback,
+    onNotesSaved: (id, athleteNotes) => {
+      setWorkouts((prev) => prev.map((w) => (w.id === id ? { ...w, athlete_notes: athleteNotes } : w)));
+    },
   });
 
 
