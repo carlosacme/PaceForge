@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { supabase } from "../lib/supabase";
-import { enrichStructureWithPaces, rescaleStructureToVdot, stripTestTimeGoalFromDescription } from "../lib/enrichPace";
+import { enrichStructureWithPaces, rescaleStructureToVdot, stripTestTimeGoalFromDescription, stripTestTimeGoalsFromStructure } from "../lib/enrichPace";
 import { PLAN_CALIBRATION_VDOT, progressionDelta } from "../lib/vdot";
 import {
   structureHasGradePct,
@@ -499,17 +499,20 @@ function WorkoutLibrary({
       // Planes GPX: cada bloque trae grade_pct → recalcular Minetti con el VDOT
       // del atleta (no rescale de biblioteca, que borraría el ajuste de pendiente).
       const rawStructure = Array.isArray(row.structure) ? row.structure : [];
-      const structure = structureHasGradePct(rawStructure)
-        ? applyGradeAdjustedPacesToStructure(
-            rawStructure,
-            targetVdot,
-            raceZoneFromStructure(rawStructure, "M"),
-          )
-        : enrichStructureWithPaces(
-            rescaleStructureToVdot(rawStructure, targetVdot),
-            targetVdot,
-            a.fc_max,
-          );
+      const structure = stripTestTimeGoalsFromStructure(
+        assignedTitle,
+        structureHasGradePct(rawStructure)
+          ? applyGradeAdjustedPacesToStructure(
+              rawStructure,
+              targetVdot,
+              raceZoneFromStructure(rawStructure, "M"),
+            )
+          : enrichStructureWithPaces(
+              rescaleStructureToVdot(rawStructure, targetVdot),
+              targetVdot,
+              a.fc_max,
+            ),
+      );
       const durationFromGpx = structureHasGradePct(rawStructure)
         ? estimateDurationMinFromStructure(structure)
         : null;

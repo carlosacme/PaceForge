@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { supabase } from "../lib/supabase";
-import { enrichStructureWithPaces, rescaleStructureToVdot, stripTestTimeGoalFromDescription } from "../lib/enrichPace";
+import { enrichStructureWithPaces, rescaleStructureToVdot, stripTestTimeGoalFromDescription, stripTestTimeGoalsFromStructure } from "../lib/enrichPace";
 import {
   BRAND_NAME,
   WORKOUT_TYPES,
@@ -196,17 +196,20 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
       const payload = selectedAthletes.map((selectedAthlete) => {
         const rawStructure = Array.isArray(w.structure) ? w.structure : [];
         const vdot = vdotByAthlete[selectedAthlete.id];
-        const structure = structureHasGradePct(rawStructure)
-          ? applyGradeAdjustedPacesToStructure(
-              rawStructure,
-              vdot,
-              raceZoneFromStructure(rawStructure, "M"),
-            )
-          : enrichStructureWithPaces(
-              rescaleStructureToVdot(rawStructure, vdot),
-              vdot,
-              selectedAthlete.fc_max,
-            );
+        const structure = stripTestTimeGoalsFromStructure(
+          w.title,
+          structureHasGradePct(rawStructure)
+            ? applyGradeAdjustedPacesToStructure(
+                rawStructure,
+                vdot,
+                raceZoneFromStructure(rawStructure, "M"),
+              )
+            : enrichStructureWithPaces(
+                rescaleStructureToVdot(rawStructure, vdot),
+                vdot,
+                selectedAthlete.fc_max,
+              ),
+        );
         const duration_min = structureHasGradePct(rawStructure)
           ? estimateDurationMinFromStructure(structure) || w.duration_min
           : w.duration_min;

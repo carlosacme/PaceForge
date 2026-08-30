@@ -123,8 +123,9 @@ export function isTestWorkoutTitle(title) {
 
 /**
  * En TEST (título tipo "TEST 10K"): quita el reloj-objetivo del plan importado
- * ("Objetivo: 40:00-41:00 (VDOT 46-47)") de la descripción del workout.
- * No toca bloques ni workouts que no sean TEST. Un TEST 3K sin objetivo queda igual.
+ * ("Objetivo: 40:00-41:00 (VDOT 46-47)") y el "objetivo mm:ss" suelto.
+ * Misma función para la descripción del workout y la de cada paso.
+ * Un TEST 3K sin objetivo queda igual. No-TEST no se toca.
  */
 export function stripTestTimeGoalFromDescription(title, description) {
   const raw = String(description ?? "");
@@ -136,6 +137,17 @@ export function stripTestTimeGoalFromDescription(title, description) {
   out = out.replace(/[ \t]{2,}/g, " ");
   out = out.replace(/\n{3,}/g, "\n\n");
   return out.trim();
+}
+
+/** Aplica stripTestTimeGoalFromDescription a cada paso de structure. */
+export function stripTestTimeGoalsFromStructure(title, structure) {
+  const arr = Array.isArray(structure) ? structure : [];
+  if (!isTestWorkoutTitle(title)) return arr;
+  return arr.map((b) => {
+    if (!b?.description) return b;
+    const next = stripTestTimeGoalFromDescription(title, b.description);
+    return next === b.description ? b : { ...b, description: next };
+  });
 }
 
 /** Quita "m:ss/km" o "m:ss-m:ss/km" de un texto libre. Deja el resto. */
