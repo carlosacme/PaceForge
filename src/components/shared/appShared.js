@@ -2533,19 +2533,20 @@ export async function notifyCoachWorkoutCompletedFromClient({ workout, athlete }
   }
   try {
     const claimedAt = new Date().toISOString();
-    const { data: claimed, error: claimErr } = await supabase
+    // Sin maybeSingle/single: 0 filas (ya notificado) es 200 + [] , no 406.
+    const { data: claimedRows, error: claimErr } = await supabase
       .from("workouts")
       .update({ coach_completion_notified_at: claimedAt })
       .eq("id", workout.id)
       .is("coach_completion_notified_at", null)
       .eq("done", true)
-      .select("id")
-      .maybeSingle();
+      .select("id");
     if (claimErr) {
       // Columna aún no migrada u otro error: no tumbar el flujo del atleta.
       console.warn("[workout-completed client] claim:", claimErr.message);
       return { sent: false, reason: claimErr.message };
     }
+    const claimed = Array.isArray(claimedRows) ? claimedRows[0] : null;
     if (!claimed) return { sent: false, skipped: "ya notificado" };
 
     const titleName = (athlete.name && String(athlete.name).trim()) || "Atleta";

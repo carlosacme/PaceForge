@@ -761,20 +761,24 @@ export default function AthleteHome({ profile }) {
       done: true,
     };
     setManualSummarySaving(true);
-    const { error } = await supabase.from("workouts").update(payload).eq("id", workoutRow.id);
+    // Sin .single()/.maybeSingle(): 0 filas no debe ser 406. El aviso al coach
+    // ya salió en toggleDone; repetirlo aquí reclamaba 0 filas (columna ya llena).
+    const { data: savedRows, error } = await supabase
+      .from("workouts")
+      .update(payload)
+      .eq("id", workoutRow.id)
+      .select("id");
     setManualSummarySaving(false);
     if (error) {
       setMessage(error.message || "No se pudo guardar el resumen.");
       return;
     }
+    if (!Array.isArray(savedRows) || !savedRows.length) {
+      setMessage("No se pudo guardar el resumen (sin permiso o fila no encontrada).");
+      return;
+    }
     setWorkouts((prev) => prev.map((w) => (String(w.id) === String(workoutRow.id) ? normalizeWorkoutRow({ ...w, ...payload }) : w)));
     closeWorkoutModal();
-    if (athleteInfo?.coach_id) {
-      void notifyCoachWorkoutCompletedFromClient({
-        workout: { ...workoutRow, ...payload },
-        athlete: athleteInfo,
-      });
-    }
   };
 
   const toggleDone = async (w) => {
