@@ -10,6 +10,8 @@ import AchievementsGrid from "./AthleteHome/AchievementsGrid";
 import AthleteFormaFatigaPanel from "./AthleteHome/AthleteFormaFatigaPanel";
 import { AthleteHomeProgress, AthleteWeeklyStrip, AthleteMonthSummary } from "./AthleteHome/AthleteProgressPanel";
 import AthletePaymentsView from "./AthleteHome/AthletePaymentsView";
+import { useAthleteSideChat } from "./AthleteHome/useAthleteSideChat";
+import AthleteChatSheet from "./AthleteHome/AthleteChatSheet";
 import {
   formatLocalYMD,
   calendarCellToIsoYmd,
@@ -23,15 +25,12 @@ import {
   computeAchievementProgress,
   loadAthleteAchievementSnapshot,
   evaluateAndAwardAthleteAchievements,
-  formatMessageTimestamp,
   clampWorkoutRpe,
   normalizeWorkoutRow,
   resolveCoachUserIdFromPublicCode,
   resolveDefaultCoachUserId,
   sendChatPushNotification,
   notifyCoachWorkoutCompletedFromClient,
-  PUSH_INACTIVE_REASONS,
-  markConversationRead,
   registerFcmToken,
   unregisterOwnDeviceToken,
   normalizeScheduledDateYmd,
@@ -189,9 +188,6 @@ export default function AthleteHome({ profile }) {
   const [workouts, setWorkouts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
-  const [athleteChatMessages, setAthleteChatMessages] = useState([]);
-  const [athleteChatDraft, setAthleteChatDraft] = useState("");
-  const [athleteChatSending, setAthleteChatSending] = useState(false);
   const [athleteNotRegistered, setAthleteNotRegistered] = useState(false);
   const [showEvaluation, setShowEvaluation] = useState(false);
   const [athleteActiveTab, setAthleteActiveTab] = useState(() => readStoredAthleteNavTab());
@@ -206,9 +202,6 @@ export default function AthleteHome({ profile }) {
   const [pushInviteDismissed, setPushInviteDismissed] = useState(() =>
     typeof localStorage !== "undefined" && localStorage.getItem("raf_push_invite_dismissed") === "1",
   );
-  const athleteChatScrollRef = useRef(null);
-  /** El aviso de "tu coach no tiene push" se da una vez, no en cada mensaje. */
-  const coachPushWarnedRef = useRef(false);
   const [athleteCalendarCtxMenu, setAthleteCalendarCtxMenu] = useState(null);
   const athleteCalendarCtxMenuRef = useRef(null);
   const toggleDoneBusyIdRef = useRef(null);
@@ -220,7 +213,6 @@ export default function AthleteHome({ profile }) {
   const [briefingText, setBriefingText] = useState("");
   const [briefingLoading, setBriefingLoading] = useState(false);
   const { weather, getWorkoutWeatherNote } = useWeather();
-  const [athleteChatClearing, setAthleteChatClearing] = useState(false);
   const [intervalsConnected, setIntervalsConnected] = useState(false);
   const [intervalsRefreshNonce, setIntervalsRefreshNonce] = useState(0);
   const [forceManualFields, setForceManualFields] = useState(false);
@@ -802,22 +794,13 @@ export default function AthleteHome({ profile }) {
   }, [nativeDeepLinkTick, applyAthleteDeepLink]);
   const nextRaceText = athleteInfo?.next_race ? `🏁 ${getRaceCountdownText(athleteInfo.next_race)}` : "🏁 Próxima carrera · fecha pendiente";
   const coachIdForChat = athleteInfo?.coach_id || null;
-
-  const loadAthleteChat = useCallback(async () => {
-    if (!athleteInfo?.id || !coachIdForChat) { setAthleteChatMessages([]); return; }
-    const { data, error } = await supabase.from("messages").select("*").eq("athlete_id", athleteInfo.id).eq("coach_id", coachIdForChat).order("created_at", { ascending: true });
-    if (error) { console.error("Error cargando chat atleta:", error); return; }
-    const rows = data || [];
-    // Fusiona: conserva los optimistas que aun NO tienen su fila real en la BD
-    // (evita el parpadeo de duplicado entre el optimista y el reload).
-    setAthleteChatMessages((prev) => {
-      const pendientes = prev.filter((m) => {
-        if (!m._pending) return false;
-        return !rows.some((r) => r.body === m.body && r.sender_role === m.sender_role);
-      });
-      return [...rows, ...pendientes];
-    });
-  }, [athleteInfo?.id, coachIdForChat]);
+  const athleteChat = useAthleteSideChat({
+    athleteId: athleteInfo?.id ?? null,
+    coachId: coachIdForChat,
+    athleteName,
+    panelOpen: athleteChatOpen,
+    notify: notifyCallback,
+  });
 
   const loadIntervalsConnected = useCallback(async () => {
     if (!athleteInfo?.id) { setIntervalsConnected(false); return; }
@@ -862,19 +845,10 @@ export default function AthleteHome({ profile }) {
   }, Boolean(athleteInfo?.id));
 
   useEffect(() => {
-    setResumeUiBusy(Boolean(athleteChatOpen) || Boolean(String(athleteChatDraft || "").trim()));
+    setResumeUiBusy(Boolean(athleteChatOpen) || Boolean(String(athleteChat.chatDraft || "").trim()));
     return () => setResumeUiBusy(false);
-  }, [athleteChatOpen, athleteChatDraft]);
+  }, [athleteChatOpen, athleteChat.chatDraft]);
 
-  useEffect(() => { loadAthleteChat(); }, [loadAthleteChat]);
-
-  // Simetrico al coach: con el panel de chat abierto, los mensajes del coach
-  // pasan a leidos. athleteChatMessages.length cubre los que llegan con el
-  // panel ya abierto.
-  useEffect(() => {
-    if (!athleteChatOpen || !athleteInfo?.id || !coachIdForChat) return;
-    markConversationRead({ coachId: coachIdForChat, athleteId: athleteInfo.id, readerRole: "athlete" });
-  }, [athleteChatOpen, athleteInfo?.id, coachIdForChat, athleteChatMessages.length]);
   useEffect(() => { loadIntervalsConnected(); }, [loadIntervalsConnected]);
 
   useEffect(() => {
@@ -891,64 +865,6 @@ export default function AthleteHome({ profile }) {
     return () => { cancelled = true; };
   }, [athleteInfo?.id, workoutsAchSyncKey]);
 
-  useEffect(() => {
-    if (!athleteInfo?.id || !coachIdForChat) return undefined;
-    const channel = supabase
-      .channel(`chat-athlete-${athleteInfo.id}`)
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "messages", filter: `athlete_id=eq.${athleteInfo.id}` },
-        () => loadAthleteChat(),
-      )
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [athleteInfo?.id, coachIdForChat, loadAthleteChat]);
-
-  // Respaldo por si Realtime se cae o el navegador suspende la conexion.
-  useEffect(() => { const t = setInterval(() => loadAthleteChat(), 60000); return () => clearInterval(t); }, [loadAthleteChat]);
-  useEffect(() => { if (!athleteChatScrollRef.current) return; athleteChatScrollRef.current.scrollTop = athleteChatScrollRef.current.scrollHeight; }, [athleteChatMessages]);
-
-  const sendAthleteChat = async () => {
-    const body = athleteChatDraft.trim();
-    if (!body || !athleteInfo?.id || !coachIdForChat || athleteChatSending) return;
-    setAthleteChatSending(true);
-    // Optimistic: limpiar el input y mostrar el mensaje al instante.
-    setAthleteChatDraft("");
-    const optimistic = {
-      id: `tmp-${Date.now()}`,
-      athlete_id: athleteInfo.id,
-      coach_id: coachIdForChat,
-      sender_role: "athlete",
-      body,
-      created_at: new Date().toISOString(),
-      _pending: true,
-    };
-    setAthleteChatMessages((prev) => [...prev, optimistic]);
-    try {
-      const { error } = await supabase.from("messages").insert({ athlete_id: athleteInfo.id, coach_id: coachIdForChat, sender_role: "athlete", body });
-      if (error) {
-        console.error(error);
-        // Revertir el optimista y restaurar el texto en el input.
-        setAthleteChatMessages((prev) => prev.filter((m) => m.id !== optimistic.id));
-        setAthleteChatDraft(body);
-        setMessage(`Error al enviar mensaje: ${error.message}`);
-        return;
-      }
-      // Notificar sin bloquear la UI (fire and forget). Si el coach no tiene
-      // push activo se avisa UNA vez por sesion: el mensaje esta guardado, pero
-      // el atleta no debe quedarse esperando una respuesta que nadie sabe que
-      // tiene pendiente.
-      sendChatPushNotification({ toUserId: coachIdForChat, title: `Tu atleta ${athleteName} respondió`, body, data: { type: "coach_chat", athlete_id: athleteInfo.id }, logLabel: "chat atleta→coach" })
-        .then((r) => {
-          if (r.sent || !PUSH_INACTIVE_REASONS.has(r.reason) || coachPushWarnedRef.current) return;
-          coachPushWarnedRef.current = true;
-          setMessage("Mensaje enviado. Tu coach no tiene las notificaciones activas, así que puede tardar en verlo.");
-        })
-        .catch(() => {});
-      // Reconciliar el id real del mensaje optimista, sin await bloqueante.
-      loadAthleteChat();
-    } finally { setAthleteChatSending(false); }
-  };
 
   // Solicitud de entrenador: la tabla coach_requests y el panel del coach ya
   // existian, faltaba que el atleta pudiera crear la fila.
@@ -1002,16 +918,6 @@ export default function AthleteHome({ profile }) {
     }
   }, [athleteInfo?.id, profile?.user_id, athleteName]);
 
-  const clearAthleteChat = async () => {
-    if (!athleteInfo?.id || !coachIdForChat) return;
-    if (!window.confirm("¿Estás seguro? Esto eliminará todos los mensajes de esta conversación.")) return;
-    setAthleteChatClearing(true);
-    try {
-      const { error } = await supabase.from("messages").delete().eq("athlete_id", athleteInfo.id).eq("coach_id", coachIdForChat);
-      if (error) { console.error(error); setMessage(error.message || "No se pudo limpiar el chat"); return; }
-      setAthleteChatMessages([]);
-    } finally { setAthleteChatClearing(false); }
-  };
 
   const athleteNeedsCoachLink = Boolean(athleteInfo) && !athleteNotRegistered && (athleteInfo.coach_id == null || athleteInfo.coach_id === "");
 
@@ -1789,32 +1695,17 @@ export default function AthleteHome({ profile }) {
         </div>
       ) : null}
 
-      {athleteChatOpen ? (
-        <div style={{ position: "fixed", inset: 0, zIndex: 9989, background: "rgba(15,23,42,.4)", display: "flex", alignItems: "flex-end" }}>
-          <div style={{ width: "100%", height: "100%", background: "#fff", borderTopLeftRadius: 18, borderTopRightRadius: 18, overflowY: "auto", padding: 16, paddingBottom: 94 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-              <div style={{ fontSize: "1.05em", fontWeight: 900 }}>💬 Chat con tu coach</div>
-              <button type="button" onClick={() => setAthleteChatOpen(false)} style={{ border: "1px solid #e2e8f0", background: "#fff", borderRadius: 8, padding: "6px 10px", color: "#475569", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>✕</button>
-            </div>
-            {!coachIdForChat ? (
-              <div style={{ color: "#64748b", fontSize: ".85em" }}>Sin datos de coach. Contacta a soporte si esto continúa.</div>
-            ) : (
-              <>
-                <div ref={athleteChatScrollRef} style={{ maxHeight: 420, overflowY: "auto", padding: "10px 8px", borderRadius: 10, background: "#f1f5f9", border: "1px solid #e2e8f0", marginBottom: 10, display: "flex", flexDirection: "column", gap: 8 }}>
-                  {athleteChatMessages.length === 0 ? <div style={{ color: "#64748b", fontSize: ".8em", textAlign: "center", padding: "12px 0" }}>Sin mensajes aún</div> : athleteChatMessages.map((m) => {
-                    const isCoach = m.sender_role === "coach";
-                    return <div key={m.id} style={{ alignSelf: isCoach ? "flex-end" : "flex-start", maxWidth: "88%", padding: "8px 12px", borderRadius: 10, background: isCoach ? "linear-gradient(135deg, rgba(180,83,9,.85), rgba(255,138,61,.75))" : "#eff6ff", border: `1px solid ${isCoach ? "rgba(255,138,61,.5)" : "rgba(59,130,246,.35)"}`, color: isCoach ? "#f8fafc" : "#0f172a", fontSize: ".82em", lineHeight: 1.45 }}><div>{m.body}</div><div style={{ fontSize: ".65em", color: isCoach ? "rgba(255,255,255,.85)" : "#64748b", marginTop: 6 }}>{formatMessageTimestamp(m.created_at)}</div></div>;
-                  })}
-                </div>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <input type="text" value={athleteChatDraft} onChange={(e) => setAthleteChatDraft(e.target.value)} onKeyDown={(e) => e.key === "Enter" && sendAthleteChat()} placeholder="Escribe un mensaje a tu coach…" style={{ flex: 1, background: "#f1f5f9", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", color: "#0f172a", fontFamily: "inherit", fontSize: ".85em" }} />
-                  <button type="button" onClick={sendAthleteChat} disabled={athleteChatSending || !athleteChatDraft.trim()} style={{ background: athleteChatSending || !athleteChatDraft.trim() ? "#e2e8f0" : "linear-gradient(135deg,#e86f28,#ff8a3d)", border: "none", borderRadius: 8, padding: "10px 16px", color: athleteChatSending || !athleteChatDraft.trim() ? "#64748b" : "#fff", fontWeight: 800, cursor: athleteChatSending || !athleteChatDraft.trim() ? "not-allowed" : "pointer", fontFamily: "inherit", fontSize: ".82em" }}>Enviar</button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      ) : null}
+      <AthleteChatSheet
+        open={athleteChatOpen}
+        onClose={() => setAthleteChatOpen(false)}
+        coachId={coachIdForChat}
+        chatMessages={athleteChat.chatMessages}
+        chatDraft={athleteChat.chatDraft}
+        setChatDraft={athleteChat.setChatDraft}
+        chatSending={athleteChat.chatSending}
+        sendAthleteChat={athleteChat.sendAthleteChat}
+      />
+
 
       {/* ── Modal resumen workout + análisis Claude */}
       {workoutSummaryModal && (
