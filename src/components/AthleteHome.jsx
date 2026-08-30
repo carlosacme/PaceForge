@@ -13,6 +13,8 @@ import AthleteSettingsPanel, { useCoachDirectory, AthleteProfileSessionFooter } 
 import { useAthleteWorkoutOverlays } from "./AthleteHome/useAthleteWorkoutOverlays";
 import AthleteWorkoutOverlays from "./AthleteHome/AthleteWorkoutOverlays";
 import AthleteOwnCalendar from "./AthleteHome/AthleteOwnCalendar";
+import { useAthleteWorkoutRpe } from "./AthleteHome/useAthleteWorkoutRpe";
+import AthleteRpeModal from "./AthleteHome/AthleteRpeModal";
 import {
   formatLocalYMD,
   calendarCellToIsoYmd,
@@ -27,7 +29,6 @@ import {
   resolveCoachUserIdFromPublicCode,
   resolveDefaultCoachUserId,
   sendChatPushNotification,
-  notifyCoachWorkoutCompletedFromClient,
   registerFcmToken,
   normalizeWorkoutStructure,
   emptyWorkoutStructureRow,
@@ -85,24 +86,6 @@ const ATHLETE_HOME_WORKOUT_COLUMNS = [
   "actual_synced_at",
   "intervals_activity_id",
 ].join(",");
-
-const FEELING_CHOICES = ["😴 Muy cansado", "😕 Cansado", "😐 Normal", "🙂 Bien", "💪 Excelente"];
-
-function stripFeelingLines(notes) {
-  return String(notes || "").replace(/^Cómo me sentí:\s*.+$/gm, "").replace(/\n{3,}/g, "\n\n").trim();
-}
-
-function feelingFromNotes(notes) {
-  const matches = [...String(notes || "").matchAll(/^Cómo me sentí:\s*(.+)$/gm)];
-  const raw = matches.at(-1)?.[1]?.trim();
-  return FEELING_CHOICES.includes(raw) ? raw : "😐 Normal";
-}
-
-function composeAthleteNotes(feelingText, notes) {
-  const feeling = FEELING_CHOICES.includes(feelingText) ? feelingText : "😐 Normal";
-  const body = stripFeelingLines(notes);
-  return [`Cómo me sentí: ${feeling}`, body].filter(Boolean).join("\n");
-}
 
 import { refreshFcmTokenIfGranted } from "../firebase.js";
 import { Capacitor } from "@capacitor/core";
@@ -186,28 +169,14 @@ export default function AthleteHome({ profile }) {
   const [pushInviteDismissed, setPushInviteDismissed] = useState(() =>
     typeof localStorage !== "undefined" && localStorage.getItem("raf_push_invite_dismissed") === "1",
   );
-  const toggleDoneBusyIdRef = useRef(null);
   const { weather, getWorkoutWeatherNote } = useWeather();
   const [intervalsConnected, setIntervalsConnected] = useState(false);
   const [intervalsRefreshNonce, setIntervalsRefreshNonce] = useState(0);
-  const [forceManualFields, setForceManualFields] = useState(false);
   const [findCoachCodeInput, setFindCoachCodeInput] = useState("");
   const [findCoachCodeBusy, setFindCoachCodeBusy] = useState(false);
   const [coachRequestBusy, setCoachRequestBusy] = useState(false);
   const [coachRequestPending, setCoachRequestPending] = useState(false);
   const [coachRequestMsg, setCoachRequestMsg] = useState("");
-  const [workoutSummaryModal, setWorkoutSummaryModal] = useState(null);
-  const [manualSummaryForm, setManualSummaryForm] = useState({
-    distanceKm: "",
-    durationMin: "",
-    rpe: "",
-    avgHr: "",
-    maxHr: "",
-    calories: "",
-    feeling: "😐 Normal",
-    notes: "",
-  });
-  const [manualSummarySaving, setManualSummarySaving] = useState(false);
 
   const profileUserId = profile?.user_id ?? null;
 
@@ -426,162 +395,6 @@ export default function AthleteHome({ profile }) {
 
   const workoutsAchSyncKey = useMemo(() => (workouts || []).map((w) => `${w.id}:${w.done ? 1 : 0}:${w.rpe ?? ""}`).join("|"), [workouts]);
 
-  const openWorkoutSummaryModal = (workoutRow) => {
-    if (!workoutRow?.id) {
-      console.warn("[rpe-modal] open skipped: no workout id", workoutRow);
-      return;
-    }
-    console.info("[rpe-modal] open", {
-      id: workoutRow.id,
-      done: workoutRow.done,
-      scheduled_date: workoutRow.scheduled_date ?? null,
-    });
-    void loadIntervalsConnected();
-    const baseManual = {
-      distanceKm: (!intervalsConnected && workoutRow.total_km) ? String(workoutRow.total_km) : "",
-      durationMin: (!intervalsConnected && workoutRow.duration_min) ? String(workoutRow.duration_min) : "",
-      rpe: workoutRow.rpe != null ? String(workoutRow.rpe) : "",
-      avgHr: workoutRow.manual_avg_hr != null ? String(workoutRow.manual_avg_hr) : "",
-      maxHr: workoutRow.manual_max_hr != null ? String(workoutRow.manual_max_hr) : "",
-      calories: workoutRow.manual_calories != null ? String(workoutRow.manual_calories) : "",
-      feeling: feelingFromNotes(workoutRow.athlete_notes),
-      notes: stripFeelingLines(workoutRow.athlete_notes),
-    };
-    setManualSummaryForm(baseManual);
-    setWorkoutSummaryModal({ workout: workoutRow });
-  };
-
-  const saveManualWorkoutSummary = async () => {
-    const workoutRow = workoutSummaryModal?.workout;
-    if (!workoutRow?.id) return;
-    const parsedDistance = Number(manualSummaryForm.distanceKm);
-    const durationMin = Math.round(Number(manualSummaryForm.durationMin) || 0);
-    const parsedRpe = clampWorkoutRpe(manualSummaryForm.rpe);
-    const avgHr = Math.round(Number(manualSummaryForm.avgHr) || 0);
-    const maxHr = Math.round(Number(manualSummaryForm.maxHr) || 0);
-    const calories = Math.round(Number(manualSummaryForm.calories) || 0);
-    const athleteNotes = composeAthleteNotes(manualSummaryForm.feeling, manualSummaryForm.notes);
-    const payload = {
-      manual_distance_km: Number.isFinite(parsedDistance) && parsedDistance > 0 ? parsedDistance : null,
-      manual_duration_min: Number.isFinite(durationMin) && durationMin > 0 ? durationMin : null,
-      manual_avg_hr: Number.isFinite(avgHr) && avgHr > 0 ? avgHr : null,
-      manual_max_hr: Number.isFinite(maxHr) && maxHr > 0 ? maxHr : null,
-      manual_calories: Number.isFinite(calories) && calories > 0 ? calories : null,
-      athlete_notes: athleteNotes,
-      total_km: Number.isFinite(parsedDistance) && parsedDistance > 0 ? parsedDistance : workoutRow.total_km,
-      duration_min: Number.isFinite(durationMin) && durationMin > 0 ? durationMin : workoutRow.duration_min,
-      rpe: parsedRpe ?? workoutRow.rpe ?? null,
-      completed_at: new Date().toISOString(),
-      done: true,
-    };
-    setManualSummarySaving(true);
-    // Sin .single()/.maybeSingle(): 0 filas no debe ser 406. El aviso al coach
-    // ya salió en toggleDone; repetirlo aquí reclamaba 0 filas (columna ya llena).
-    const { data: savedRows, error } = await supabase
-      .from("workouts")
-      .update(payload)
-      .eq("id", workoutRow.id)
-      .select("id");
-    setManualSummarySaving(false);
-    if (error) {
-      setMessage(error.message || "No se pudo guardar el resumen.");
-      return;
-    }
-    if (!Array.isArray(savedRows) || !savedRows.length) {
-      setMessage("No se pudo guardar el resumen (sin permiso o fila no encontrada).");
-      return;
-    }
-    setWorkouts((prev) => prev.map((w) => (String(w.id) === String(workoutRow.id) ? normalizeWorkoutRow({ ...w, ...payload }) : w)));
-    closeWorkoutModal();
-  };
-
-  const toggleDone = async (w) => {
-    if (!w?.id) {
-      console.warn("[rpe-modal] toggleDone skipped: no workout");
-      return;
-    }
-    const busyKey = String(w.id);
-    if (toggleDoneBusyIdRef.current === busyKey) return;
-    toggleDoneBusyIdRef.current = busyKey;
-    try {
-    const next = !w.done;
-    console.info("[rpe-modal] toggleDone", {
-      id: w.id,
-      next,
-      scheduled_date: w.scheduled_date ?? null,
-      athleteId: athleteInfo?.id ?? null,
-    });
-    const payload = next ? { done: true } : { done: false, rpe: null };
-    const nextWorkouts = workouts.map((x) => (x.id === w.id ? { ...x, done: next, rpe: next ? x.rpe : null } : x));
-    setWorkouts(nextWorkouts);
-    if (next) {
-      openWorkoutSummaryModal({ ...w, done: true, rpe: w.rpe ?? null });
-    } else {
-      setWorkoutSummaryModal(null);
-    }
-    const { error } = await supabase.from("workouts").update(payload).eq("id", w.id);
-    console.info("[rpe-modal] update done", { id: w.id, next, ok: !error, message: error?.message || null });
-    if (error) {
-      console.error("Error actualizando workout:", error);
-      setWorkouts(prev => prev.map(x => (x.id === w.id ? { ...x, done: !next, rpe: w.rpe } : x)));
-      if (next) setWorkoutSummaryModal(null);
-      setMessage(`Error actualizando workout: ${error.message}`);
-      return;
-    }
-    if (next && athleteInfo?.id) {
-      if (athleteInfo?.coach_id) {
-        void notifyCoachWorkoutCompletedFromClient({
-          workout: { ...w, done: true },
-          athlete: athleteInfo,
-        });
-      }
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.access_token) {
-          fetch("/api/integrations", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${session.access_token}`,
-            },
-            body: JSON.stringify({
-              action: "pull-activity",
-              athlete_id: athleteInfo.id,
-              workout_id: w.id,
-            }),
-          }).catch(() => {});
-        }
-      } catch {}
-      void evaluateAndAwardAthleteAchievements(athleteInfo.id).then(({ newAwards, snapshot, progress }) => {
-        setAchievementsCatalog(snapshot.achievements || []);
-        setEarnedAchievements(snapshot.earned || []);
-        setAchProgress(progress || computeAchievementProgress(nextWorkouts.filter((x) => x.done)));
-        if (newAwards.length > 0) {
-          const first = achievementJoinMeta(newAwards[0]);
-          setMedalToast(`¡Nueva medalla desbloqueada! 🎉 ${first?.icon || ""} ${first?.name || ""}`.trim());
-          setTimeout(() => setMedalToast(""), 4200);
-        }
-      }).catch((e) => {
-        console.warn("[AthleteHome] evaluateAndAward after done:", e);
-      });
-    }
-    // Notificar coach cuando el atleta desmarca un workout (sesion perdida)
-    if (!next && athleteInfo?.coach_id) {
-      try {
-        await sendChatPushNotification({
-          toUserId: athleteInfo.coach_id,
-          title: "⚠️ Sesion no completada",
-          body: `${athleteInfo.name || "Atleta"} no completo: ${w.title || "Entreno"} (${w.total_km || 0} km). Puede requerir ajuste de plan.`,
-          data: { type: "coach_athlete", athlete_id: athleteInfo.id },
-          logLabel: "workout missed athlete→coach",
-        });
-      } catch (_) {}
-    }
-    } finally {
-      if (toggleDoneBusyIdRef.current === busyKey) toggleDoneBusyIdRef.current = null;
-    }
-  };
-
   const saveWorkoutRpe = async (w, rawVal) => {
     if (!w.done) return;
     const rpe = clampWorkoutRpe(rawVal);
@@ -726,6 +539,19 @@ export default function AthleteHome({ profile }) {
       setIntervalsConnected(Boolean(res.ok && d?.connected));
     } catch { setIntervalsConnected(false); }
   }, [athleteInfo?.id]);
+
+  const workoutRpe = useAthleteWorkoutRpe({
+    workouts,
+    setWorkouts,
+    athleteInfo,
+    intervalsConnected,
+    loadIntervalsConnected,
+    setMessage,
+    setAchievementsCatalog,
+    setEarnedAchievements,
+    setAchProgress,
+    setMedalToast,
+  });
 
   // Al volver: workouts + ficha (nombre/avatar/coach/plan) + intervals.
   // El perfil (profiles) lo refresca App.jsx en el mismo resume.
@@ -889,11 +715,6 @@ export default function AthleteHome({ profile }) {
     excludeCoachUserId: athleteInfo?.coach_id ?? null,
   });
 
-  const closeWorkoutModal = () => {
-    setWorkoutSummaryModal(null);
-    setForceManualFields(false);
-  };
-
   const workoutOverlays = useAthleteWorkoutOverlays({
     athleteId: athleteInfo?.id ?? null,
     athleteName: athleteInfo?.name,
@@ -1037,7 +858,7 @@ export default function AthleteHome({ profile }) {
         workouts={workouts}
         loading={loading}
         evaluations={athleteEvaluations}
-        onToggleDone={toggleDone}
+        onToggleDone={workoutRpe.toggleDone}
         onOpenNot100={workoutOverlays.openNot100}
         onOpenBriefing={workoutOverlays.openBriefing}
       />
@@ -1200,131 +1021,19 @@ export default function AthleteHome({ profile }) {
       />
 
 
-      {/* ── Modal resumen workout + análisis Claude */}
-      {workoutSummaryModal && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.55)", zIndex: 10050, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-          <div style={{ ...S.card, width: "100%", maxWidth: 520, margin: 0, maxHeight: "90vh", overflowY: "auto" }}>
-            <div style={{ fontSize: "1.1em", fontWeight: 900, color: "#0f172a", marginBottom: 6 }}>Resumen del entrenamiento</div>
-            <div style={{ color: "#64748b", fontSize: ".84em", marginBottom: 12 }}>
-              {(workoutSummaryModal.workout?.title || "Entreno")} · {workoutSummaryModal.workout?.scheduled_date || "—"}
-            </div>
-
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14, padding: 12, background: "#f8fafc", borderRadius: 10 }}>
-              <div>
-                <div style={{ fontSize: ".7em", fontWeight: 700, color: "#64748b", marginBottom: 6 }}>PROGRAMADO</div>
-                <div style={{ fontSize: ".82em", color: "#0f172a" }}>📏 {workoutSummaryModal?.workout?.total_km || "—"} km</div>
-                <div style={{ fontSize: ".82em", color: "#0f172a" }}>⏱ {workoutSummaryModal?.workout?.duration_min || "—"} min</div>
-                <div style={{ fontSize: ".82em", color: "#0f172a" }}>🏃 {workoutSummaryModal?.workout?.type || "—"}</div>
-              </div>
-              <div>
-                <div style={{ fontSize: ".7em", fontWeight: 700, color: "#0d9488", marginBottom: 6 }}>LO QUE HICISTE</div>
-                <div style={{ fontSize: ".82em", color: "#0f172a" }}>📏 {manualSummaryForm.distanceKm || "—"} km</div>
-                <div style={{ fontSize: ".82em", color: "#0f172a" }}>⏱ {manualSummaryForm.durationMin || "—"} min</div>
-                <div style={{ fontSize: ".82em", color: "#0f172a" }}>RPE {manualSummaryForm.rpe || "—"} / 10</div>
-              </div>
-            </div>
-
-            <div style={{ display: "flex", flexDirection: "column", gap: 14, marginBottom: 14 }}>
-          {intervalsConnected ? (
-            <div style={{ fontSize: ".8em", color: "#0d9488", background: "rgba(13,148,136,.08)", border: "1px solid rgba(13,148,136,.25)", borderRadius: 8, padding: "9px 11px" }}>
-              ⌚ Los datos de tu carrera (distancia, tiempo, FC) llegan automáticamente desde tu reloj. Solo cuéntanos cómo te sentiste.
-              {!forceManualFields ? (
-                <div style={{ marginTop: 6 }}>
-                  <button
-                    type="button"
-                    onClick={() => setForceManualFields(true)}
-                    style={{ background: "none", border: "none", color: "#64748b", fontSize: ".74em", textDecoration: "underline", cursor: "pointer", fontFamily: "inherit", padding: 0 }}
-                  >
-                    ¿No llegaron los datos? Escríbelos a mano
-                  </button>
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-          {(!intervalsConnected || forceManualFields) ? (
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              <div>
-                <div style={{ fontSize: ".72em", fontWeight: 700, color: "#475569", marginBottom: 4 }}>Distancia (km)</div>
-                <input type="number" min="0" step="0.1" value={manualSummaryForm.distanceKm} onChange={(e) => setManualSummaryForm((f) => ({ ...f, distanceKm: e.target.value }))} placeholder="0.0" style={{ width: "100%", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit", boxSizing: "border-box" }} />
-              </div>
-              <div>
-                <div style={{ fontSize: ".72em", fontWeight: 700, color: "#475569", marginBottom: 4 }}>Duracion (min)</div>
-                <input type="number" min="0" step="1" value={manualSummaryForm.durationMin} onChange={(e) => setManualSummaryForm((f) => ({ ...f, durationMin: e.target.value }))} placeholder="0" style={{ width: "100%", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit", boxSizing: "border-box" }} />
-              </div>
-            </div>
-          ) : null}
-
-          <div>
-            <div style={{ fontSize: ".72em", fontWeight: 700, color: "#475569", marginBottom: 6 }}>Esfuerzo percibido (RPE)</div>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              {[1,2,3,4,5,6,7,8,9,10].map((n) => {
-                const selected = Number(manualSummaryForm.rpe) === n;
-                const color = n <= 3 ? "#16a34a" : n <= 6 ? "#d97706" : n <= 8 ? "#ea580c" : "#dc2626";
-                const label = n <= 3 ? "Suave" : n <= 6 ? "Mod." : n <= 8 ? "Duro" : "Max";
-                return (
-                  <button key={n} type="button" onClick={() => setManualSummaryForm((f) => ({ ...f, rpe: String(n) }))}
-                    style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 1, width: 40, padding: "5px 0", borderRadius: 8, border: selected ? ("2px solid " + color) : "1px solid #e2e8f0", background: selected ? color : "#f8fafc", color: selected ? "#fff" : "#334155", fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>
-                    <span style={{ fontSize: ".9em" }}>{n}</span>
-                    <span style={{ fontSize: ".5em", fontWeight: 600 }}>{label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <div>
-            <div style={{ fontSize: ".72em", fontWeight: 700, color: "#475569", marginBottom: 6 }}>Como te sentiste?</div>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              {[["Muy cansado","Muy cansado"],["Cansado","Cansado"],["Normal","Normal"],["Bien","Bien"],["Excelente","Excelente"]].map(([label, val]) => {
-                const emoji = label === "Muy cansado" ? "Muy cansado" : label === "Cansado" ? "Cansado" : label === "Normal" ? "Normal" : label === "Bien" ? "Bien" : "Excelente";
-                const fullVal = label === "Muy cansado" ? "\uD83D\uDE34 Muy cansado" : label === "Cansado" ? "\uD83D\uDE15 Cansado" : label === "Normal" ? "\uD83D\uDE10 Normal" : label === "Bien" ? "\uD83D\uDE42 Bien" : "\uD83D\uDCAA Excelente";
-                const selected = manualSummaryForm.feeling === fullVal;
-                return (
-                  <button key={val} type="button" onClick={() => setManualSummaryForm((f) => ({ ...f, feeling: fullVal }))}
-                    style={{ padding: "6px 12px", borderRadius: 20, border: selected ? "2px solid #0d9488" : "1px solid #e2e8f0", background: selected ? "rgba(13,148,136,.1)" : "#f8fafc", color: selected ? "#0d9488" : "#475569", fontWeight: selected ? 800 : 600, cursor: "pointer", fontFamily: "inherit", fontSize: ".78em" }}>
-                    {fullVal}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {(!intervalsConnected || forceManualFields) ? (
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
-              <div>
-                <div style={{ fontSize: ".68em", fontWeight: 700, color: "#94a3b8", marginBottom: 4 }}>FC prom (lpm)</div>
-                <input type="number" min="0" step="1" value={manualSummaryForm.avgHr} onChange={(e) => setManualSummaryForm((f) => ({ ...f, avgHr: e.target.value }))} placeholder="0" style={{ width: "100%", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 8px", fontFamily: "inherit", boxSizing: "border-box", fontSize: ".88em" }} />
-              </div>
-              <div>
-                <div style={{ fontSize: ".68em", fontWeight: 700, color: "#94a3b8", marginBottom: 4 }}>FC max (lpm)</div>
-                <input type="number" min="0" step="1" value={manualSummaryForm.maxHr} onChange={(e) => setManualSummaryForm((f) => ({ ...f, maxHr: e.target.value }))} placeholder="0" style={{ width: "100%", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 8px", fontFamily: "inherit", boxSizing: "border-box", fontSize: ".88em" }} />
-              </div>
-              <div>
-                <div style={{ fontSize: ".68em", fontWeight: 700, color: "#94a3b8", marginBottom: 4 }}>Calorias</div>
-                <input type="number" min="0" step="1" value={manualSummaryForm.calories} onChange={(e) => setManualSummaryForm((f) => ({ ...f, calories: e.target.value }))} placeholder="0" style={{ width: "100%", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 8px", fontFamily: "inherit", boxSizing: "border-box", fontSize: ".88em" }} />
-              </div>
-            </div>
-          ) : null}
-
-          <div>
-            <div style={{ fontSize: ".72em", fontWeight: 700, color: "#475569", marginBottom: 4 }}>Notas del entreno</div>
-            <textarea rows={3} value={manualSummaryForm.notes} onChange={(e) => setManualSummaryForm((f) => ({ ...f, notes: e.target.value }))} placeholder="Como fue? Algo importante para tu coach?" style={{ width: "100%", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit", boxSizing: "border-box", resize: "none" }} />
-          </div>
-              <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                <button type="button" disabled={manualSummarySaving} onClick={saveManualWorkoutSummary} style={{ background: manualSummarySaving ? "#cbd5e1" : "linear-gradient(135deg,#0d9488,#14b8a6)", border: "none", borderRadius: 8, padding: "8px 12px", color: "#fff", fontWeight: 800, fontFamily: "inherit", cursor: manualSummarySaving ? "not-allowed" : "pointer", fontSize: ".78em" }}>
-                  {manualSummarySaving ? "Guardando…" : intervalsConnected ? "Guardar notas" : "Guardar registro"}
-                </button>
-              </div>
-            </div>
-
-            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 14 }}>
-              <button type="button" onClick={closeWorkoutModal} style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#475569", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".8em" }}>
-                Cerrar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <AthleteRpeModal
+        cardStyle={S.card}
+        workoutSummaryModal={workoutRpe.workoutSummaryModal}
+        intervalsConnected={intervalsConnected}
+        forceManualFields={workoutRpe.forceManualFields}
+        setForceManualFields={workoutRpe.setForceManualFields}
+        manualSummaryForm={workoutRpe.manualSummaryForm}
+        setManualSummaryForm={workoutRpe.setManualSummaryForm}
+        manualSummarySaving={workoutRpe.manualSummarySaving}
+        onSave={workoutRpe.saveManualWorkoutSummary}
+        onClose={workoutRpe.closeWorkoutModal}
+      />
     </div>
   );
 }
+
