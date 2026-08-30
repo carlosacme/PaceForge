@@ -17,6 +17,7 @@ const STEP_FILTERS = [
 ];
 
 const WorkoutRouteMap = React.lazy(() => import("../WorkoutRouteMap"));
+const RegistroPaceChart = React.lazy(() => import("./RegistroPaceChart"));
 
 /**
  * Modal 📋 Registro. z-index 10010 (por encima del menú del calendario, 300).
@@ -62,7 +63,7 @@ export default function WorkoutRegistroModal({
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.6)", zIndex: 10010, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-      <div style={{ background: "#fff", borderRadius: 16, padding: 24, maxWidth: 640, width: "100%", maxHeight: "80vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,.3)" }}>
+      <div style={{ background: "#fff", borderRadius: 16, padding: 24, maxWidth: 720, width: "100%", maxHeight: "80vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,.3)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
           <div>
             <div style={{ fontSize: ".7em", fontWeight: 800, color: "#0369a1", textTransform: "uppercase", letterSpacing: ".1em" }}>📋 Registro</div>
@@ -131,6 +132,10 @@ export default function WorkoutRegistroModal({
                       })}
                     </div>
                     {filteredBlocks.length ? (
+                    <>
+                    <React.Suspense fallback={<div style={{ height: 220, color: "#94a3b8", fontSize: ".85em" }}>Cargando gráfico…</div>}>
+                      <RegistroPaceChart blocks={filteredBlocks} />
+                    </React.Suspense>
                     <table style={{ width: "100%", borderCollapse: "collapse", fontSize: ".9em" }}>
                       <thead>
                         <tr style={{ textAlign: "left", color: "#64748b", fontSize: ".85em" }}>
@@ -219,6 +224,7 @@ export default function WorkoutRegistroModal({
                         })}
                       </tbody>
                     </table>
+                    </>
                     ) : (
                       <div style={{ color: "#94a3b8" }}>No hay bloques de este tipo</div>
                     )}
