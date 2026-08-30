@@ -63,16 +63,17 @@ import {
 } from "./shared/appShared";
 import { ATHLETE_SOLO_COP } from "../lib/planPrices";
 
-/** Campos que consume AthleteHome + normalizeWorkoutRow + WorkoutDetailBreakdown. */
+/** Campos reales de public.workouts que AthleteHome / normalizeWorkoutRow leen.
+ *  No incluir distance_km: esa columna no existe (PostgREST 400 y se vacía la lista). */
 const ATHLETE_HOME_WORKOUT_COLUMNS = [
   "id",
   "athlete_id",
   "coach_id",
+  "created_at",
   "scheduled_date",
   "type",
   "title",
   "total_km",
-  "distance_km",
   "duration_min",
   "description",
   "structure",
@@ -781,6 +782,9 @@ export default function AthleteHome({ profile }) {
       return;
     }
     if (next && athleteInfo?.id) {
+      // El resumen/RPE no debe esperar push ni logros: si eso se cuelga, el
+      // atleta ya marco hecho y se quedaba sin el prompt.
+      openWorkoutSummaryModal({ ...w, done: true, rpe: next ? w.rpe : null });
       try {
         if (athleteInfo?.coach_id) {
           await notifyCoachWorkoutCompletedFromClient({
@@ -809,17 +813,19 @@ export default function AthleteHome({ profile }) {
           }).catch(() => {});
         }
       } catch {}
-      const { newAwards, snapshot, progress } = await evaluateAndAwardAthleteAchievements(athleteInfo.id);
-      if (progress) void progress;
-      setAchievementsCatalog(snapshot.achievements || []);
-      setEarnedAchievements(snapshot.earned || []);
-      setAchProgress(progress || computeAchievementProgress(nextWorkouts.filter((x) => x.done)));
-      if (newAwards.length > 0) {
-        const first = achievementJoinMeta(newAwards[0]);
-        setMedalToast(`¡Nueva medalla desbloqueada! 🎉 ${first?.icon || ""} ${first?.name || ""}`.trim());
-        setTimeout(() => setMedalToast(""), 4200);
+      try {
+        const { newAwards, snapshot, progress } = await evaluateAndAwardAthleteAchievements(athleteInfo.id);
+        setAchievementsCatalog(snapshot.achievements || []);
+        setEarnedAchievements(snapshot.earned || []);
+        setAchProgress(progress || computeAchievementProgress(nextWorkouts.filter((x) => x.done)));
+        if (newAwards.length > 0) {
+          const first = achievementJoinMeta(newAwards[0]);
+          setMedalToast(`¡Nueva medalla desbloqueada! 🎉 ${first?.icon || ""} ${first?.name || ""}`.trim());
+          setTimeout(() => setMedalToast(""), 4200);
+        }
+      } catch (e) {
+        console.warn("[AthleteHome] evaluateAndAward after done:", e);
       }
-      openWorkoutSummaryModal({ ...w, done: true, rpe: next ? w.rpe : null });
     }
     // Notificar coach cuando el atleta desmarca un workout (sesion perdida)
     if (!next && athleteInfo?.coach_id) {
