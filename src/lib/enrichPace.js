@@ -110,6 +110,34 @@ export function enrichStructureWithPaces(structure, vdot, fcMax) {
 const EMBEDDED_PACE_RE =
   /(?:@\s*)?\d{1,2}:[0-5]\d(?:\s*[-–—]\s*\d{1,2}:[0-5]\d)?\s*(?:min\s*)?\/\s*km/gi;
 
+const TEST_TITLE_RE = /TEST\s*\d*K/i;
+const TEST_OBJETIVO_VDOT_RE =
+  /Objetivo:\s*\d{1,2}:\d{2}(?:\s*[-–—]\s*\d{1,2}:\d{2})?\s*\(VDOT\s*\d+(?:\s*[-–—]\s*\d+)?\)/gi;
+const TEST_OBJETIVO_TIME_RE =
+  /\bobjetivo\s+\d{1,2}:\d{2}(?:\s*[-–—]\s*\d{1,2}:\d{2})?/gi;
+const TEST_EFFORT_COPY = "corre a tu máximo esfuerzo sostenible";
+
+export function isTestWorkoutTitle(title) {
+  return TEST_TITLE_RE.test(String(title || ""));
+}
+
+/**
+ * En TEST (título tipo "TEST 10K"): quita el reloj-objetivo del plan importado
+ * ("Objetivo: 40:00-41:00 (VDOT 46-47)") de la descripción del workout.
+ * No toca bloques ni workouts que no sean TEST. Un TEST 3K sin objetivo queda igual.
+ */
+export function stripTestTimeGoalFromDescription(title, description) {
+  const raw = String(description ?? "");
+  if (!isTestWorkoutTitle(title) || !raw) return raw;
+  let out = raw.replace(TEST_OBJETIVO_VDOT_RE, TEST_EFFORT_COPY);
+  out = out.replace(TEST_OBJETIVO_TIME_RE, "");
+  out = out.replace(/[ \t]+$/gm, "");
+  out = out.replace(/[ \t]*[-–—]\s*$/gm, "");
+  out = out.replace(/[ \t]{2,}/g, " ");
+  out = out.replace(/\n{3,}/g, "\n\n");
+  return out.trim();
+}
+
 /** Quita "m:ss/km" o "m:ss-m:ss/km" de un texto libre. Deja el resto. */
 export function stripEmbeddedPaceFromText(text) {
   const raw = String(text ?? "");

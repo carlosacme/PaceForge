@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { supabase } from "../lib/supabase";
-import { enrichStructureWithPaces, rescaleStructureToVdot } from "../lib/enrichPace";
+import { enrichStructureWithPaces, rescaleStructureToVdot, stripTestTimeGoalFromDescription } from "../lib/enrichPace";
 import { PLAN_CALIBRATION_VDOT, progressionDelta } from "../lib/vdot";
 import {
   structureHasGradePct,
@@ -520,7 +520,7 @@ function WorkoutLibrary({
         type: row.type,
         total_km: Number(row.total_km) || 0,
         duration_min: durationFromGpx || Number(row.duration_min) || 0,
-        description: row.description || "",
+        description: stripTestTimeGoalFromDescription(assignedTitle, row.description || ""),
         structure,
         // Con que VDOT quedaron escritos estos ritmos. Sin este dato no se pueden
         // recalcular despues: un ritmo absoluto no dice a que zona pertenece.
