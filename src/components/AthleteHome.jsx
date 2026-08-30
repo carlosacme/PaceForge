@@ -63,6 +63,38 @@ import {
 } from "./shared/appShared";
 import { ATHLETE_SOLO_COP } from "../lib/planPrices";
 
+/** Campos que consume AthleteHome + normalizeWorkoutRow + WorkoutDetailBreakdown. */
+const ATHLETE_HOME_WORKOUT_COLUMNS = [
+  "id",
+  "athlete_id",
+  "coach_id",
+  "scheduled_date",
+  "type",
+  "title",
+  "total_km",
+  "distance_km",
+  "duration_min",
+  "description",
+  "structure",
+  "done",
+  "rpe",
+  "manual_distance_km",
+  "manual_duration_min",
+  "manual_avg_hr",
+  "manual_max_hr",
+  "manual_calories",
+  "athlete_notes",
+  "completed_at",
+  "actual_distance_km",
+  "actual_duration_min",
+  "actual_avg_pace_s",
+  "actual_avg_hr",
+  "actual_max_hr",
+  "actual_elevation_m",
+  "actual_synced_at",
+  "intervals_activity_id",
+].join(",");
+
 function normalizeSoloAthletePlanKey(athletePlan, subscriptionPeriod) {
   const planRaw = String(athletePlan ?? "").trim().toLowerCase();
   if (planRaw !== "premium") return "free";
@@ -420,7 +452,7 @@ export default function AthleteHome({ profile }) {
     if (!athleteId) return { ok: false, rows: null };
     const { data, error } = await supabase
       .from("workouts")
-      .select("*")
+      .select(ATHLETE_HOME_WORKOUT_COLUMNS)
       .eq("athlete_id", athleteId)
       .order("scheduled_date", { ascending: true });
     if (error) {
@@ -1223,7 +1255,7 @@ export default function AthleteHome({ profile }) {
     const { error: eProf } = await supabase.from("profiles").update({ coach_id: coachUserId }).eq("user_id", profile.user_id);
     if (eProf) { setMessage(eProf.message || "No se pudo actualizar tu perfil. Revisa permisos o contacta soporte."); return false; }
     setAthleteInfo((prev) => (prev ? { ...prev, coach_id: coachUserId } : prev));
-    const { data: wRows, error: wErr } = await supabase.from("workouts").select("*").eq("athlete_id", athleteInfo.id).order("scheduled_date", { ascending: true });
+    const { data: wRows, error: wErr } = await supabase.from("workouts").select(ATHLETE_HOME_WORKOUT_COLUMNS).eq("athlete_id", athleteInfo.id).order("scheduled_date", { ascending: true });
     if (!wErr && wRows) setWorkouts((wRows || []).map(normalizeWorkoutRow));
     return true;
   };
