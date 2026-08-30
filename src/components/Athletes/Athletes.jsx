@@ -4,7 +4,6 @@ import { supabase } from "../../lib/supabase";
 import WeatherWidget from "../WeatherWidget";
 import PushToWatchButton from "../PushToWatchButton";
 import WorkoutDetailBreakdown from "../WorkoutDetailBreakdown";
-import WorkoutRouteMap from "../WorkoutRouteMap";
 import WorkoutStructureTable from "../shared/WorkoutStructureTable";
 import { readStructure } from "../../lib/workoutStructure";
 import { compareBlocks } from "../../lib/blockComparison";
@@ -56,6 +55,8 @@ import {
   computeFormaFatigaWeeklyPoints,
   formaFatigaStatusFromPoint,
 } from "../shared/appShared";
+
+const WorkoutRouteMap = React.lazy(() => import("../WorkoutRouteMap"));
 
 /** Same labels as App calendar headers (accented). */
 const DAYS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
@@ -1013,8 +1014,8 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
       body: JSON.stringify({
         workout: w,
         athleteName: athleteName || "el atleta",
-        vdot: athlete?.vdot || null,
         role: "coach",
+        laps: registroModal && String(registroModal.id) === String(w.id) ? registroLaps : undefined,
       }),
     });
     const data = await response.json();
@@ -1056,7 +1057,6 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
           action: "adjust",
           workout: completedWorkout,
           athleteName: athlete?.name,
-          vdot: athlete?.vdot || null,
           recentWorkouts: recent,
           futureWorkouts: future,
           role: "coach",
@@ -3752,7 +3752,9 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
                     <div><strong>FC prom/máx real:</strong> {w.actual_avg_hr ?? "—"} / {w.actual_max_hr ?? "—"} lpm</div>
                     <div><strong>Desnivel:</strong> {w.actual_elevation_m != null ? `${w.actual_elevation_m} m` : "—"}</div>
                     <div style={{ color: "#94a3b8", marginTop: 4 }}>Sincronizado del reloj: {new Date(w.actual_synced_at).toLocaleString("es-CO")}</div>
-                    <WorkoutRouteMap workout={w} />
+                    <React.Suspense fallback={<div style={{ marginTop: 8, color: "#94a3b8", fontSize: ".85em" }}>Cargando mapa…</div>}>
+                      <WorkoutRouteMap workout={w} />
+                    </React.Suspense>
                     {w.intervals_activity_id ? (
                       <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px dashed #e2e8f0" }}>
                         <div style={{ fontWeight: 800, color: "#0f172a", marginBottom: 6 }}>📊 Comparación por bloque</div>
