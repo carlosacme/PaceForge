@@ -123,7 +123,8 @@ function numericPaceToSecs(str) {
  * @param {Array}    args.laps        laps de intervals.icu (icu_intervals):
  *                                    { moving_time, distance, average_speed }.
  * @param {number}   args.vdot        VDOT del atleta (athlete_evaluations).
- * @returns {Array} un objeto por step (ver campos abajo).
+ * @returns {Array} un objeto por step. Campos agregados iguales que antes
+ *   + splits[] aditivo (vueltas del reloj consumidas por ese step).
  */
 export function compareBlocks({ structure, laps, vdot }) {
   const steps = Array.isArray(structure) ? structure : [];
@@ -146,6 +147,7 @@ export function compareBlocks({ structure, laps, vdot }) {
       planned_dur_s: dur,
       actual_dur_s: 0,
       actual_dist_m: 0,
+      splits: [],
     };
   });
 
@@ -166,10 +168,12 @@ export function compareBlocks({ structure, laps, vdot }) {
       const lap = queue[qi];
       if (lap.remT <= 0) { qi++; continue; }
       const take = Math.min(need, lap.remT);
+      const takeD = take * lap.rate;
       st.actual_dur_s += take;
-      st.actual_dist_m += take * lap.rate;   // distancia proporcional al tiempo
+      st.actual_dist_m += takeD;   // distancia proporcional al tiempo
+      st.splits.push({ lap_index: qi, dur_s: take, dist_m: takeD });
       lap.remT -= take;
-      lap.remD -= take * lap.rate;
+      lap.remD -= takeD;
       need -= take;
       if (lap.remT <= 1e-9) qi++;            // lap agotado -> siguiente
     }
@@ -181,13 +185,20 @@ export function compareBlocks({ structure, laps, vdot }) {
         if (lap.remT > 0) {
           st.actual_dur_s += lap.remT;
           st.actual_dist_m += lap.remD;
+          const last = st.splits[st.splits.length - 1];
+          if (last && last.lap_index === qi) {
+            last.dur_s += lap.remT;
+            last.dist_m += lap.remD;
+          } else {
+            st.splits.push({ lap_index: qi, dur_s: lap.remT, dist_m: lap.remD });
+          }
         }
         qi++;
       }
     }
   }
 
-  // 4) Metricas por step.
+  // 4) Metricas por step. splits es aditivo: el agregado del padre no cambia.
   return planSteps.map((st) => {
     const actual_pace_s =
       st.actual_dist_m > 0 ? st.actual_dur_s / (st.actual_dist_m / 1000) : null;
@@ -205,6 +216,13 @@ export function compareBlocks({ structure, laps, vdot }) {
     const incomplete =
       st.planned_dur_s > 0 && st.actual_dur_s < 0.5 * st.planned_dur_s;
 
+    const splits = (st.splits || []).map((sp, i) => ({
+      name: `Vuelta ${i + 1}`,
+      dur_s: Math.round(sp.dur_s),
+      dist_m: Math.round(sp.dist_m),
+      pace_s: sp.dist_m > 0 ? sp.dur_s / (sp.dist_m / 1000) : null,
+    }));
+
     return {
       step_name: st.step_name,
       target_effort: st.target_effort,
@@ -217,8 +235,16 @@ export function compareBlocks({ structure, laps, vdot }) {
       actual_dist_m: Math.round(st.actual_dist_m),
       dur_mismatch,
       incomplete,
+      splits,
     };
   });
+}
+
+/** Chevron solo si hay 2+ vueltas sustanciales (no un residuo de frontera). */
+export function blockHasWatchSplits(block) {
+  const splits = Array.isArray(block?.splits) ? block.splits : [];
+  const real = splits.filter((s) => (s.dist_m || 0) >= 200 || (s.dur_s || 0) >= 30);
+  return real.length >= 2;
 }
 
 export default compareBlocks;
@@ -246,6 +272,7 @@ export default compareBlocks;
  *     actual_dur_s  = 300
  *     actual_dist_m = 1200
  *     actual_pace_s = 300 / 1.2 = 250 s/km (4:10/km)
+ *     splits        = 2 vueltas (expandible) / 1 vuelta (sin chevron)
  *
  * Fraccionamiento: si lap0 fuera 700s/2000m y el step0 solo necesita 600s,
  * se asigna 600/700 del lap -> 600s y 2000*(600/700)=1714m al step0, y el
