@@ -61,6 +61,7 @@ import {
   normalizeChallengeType,
   computeGarminLoadMetricsFromWorkouts,
 } from "./shared/appShared";
+import { ATHLETE_SOLO_COP } from "../lib/planPrices";
 
 function normalizeSoloAthletePlanKey(athletePlan, subscriptionPeriod) {
   const planRaw = String(athletePlan ?? "").trim().toLowerCase();
@@ -70,8 +71,9 @@ function normalizeSoloAthletePlanKey(athletePlan, subscriptionPeriod) {
   return "monthly";
 }
 
-const SOLO_PLAN_MONTHLY_COP = 25000;
-const SOLO_PLAN_ANNUAL_COP = 250000;
+/** Misma fuente que /api/wompi-create-checkout (`src/lib/planPrices.js`). */
+const SOLO_PLAN_MONTHLY_COP = ATHLETE_SOLO_COP.monthly;
+const SOLO_PLAN_ANNUAL_COP = ATHLETE_SOLO_COP.annual;
 
 /**
  * Coaches publicos que hacen falta para que valga la pena enseñar el

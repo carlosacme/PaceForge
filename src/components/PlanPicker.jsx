@@ -2,22 +2,34 @@ import React, { useState, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { supabase } from "../lib/supabase";
 import { formatCopInt } from "./shared/appShared";
+import { COACH_LIST_COP, applyPromoPercent } from "../lib/planPrices";
 
-/** Precios COP según tablas del producto (mensual base; semestral −12%; anual −20%). */
+/**
+ * UI del picker. Los COP salen de src/lib/planPrices.js (misma fuente que
+ * /api/wompi-create-checkout). No volver a hardcodear montos aquí.
+ */
 const COACH_PLAN_PICKER_DEFS = {
   basico: {
     key: "basico",
     dbPlan: "Basico",
     title: "Básico",
     bullets: ["Hasta 15 atletas", "100 generaciones IA/mes"],
-    prices: { monthly: 100000, semestral: 528000, anual: 960000 },
+    prices: {
+      monthly: COACH_LIST_COP.basico.mensual,
+      semestral: COACH_LIST_COP.basico.semestral,
+      anual: COACH_LIST_COP.basico.anual,
+    },
   },
   pro: {
     key: "pro",
     dbPlan: "Pro",
     title: "Pro",
     bullets: ["Atletas ilimitados", "Generaciones IA ilimitadas", "Acceso prioritario"],
-    prices: { monthly: 160000, semestral: 844800, anual: 1536000 },
+    prices: {
+      monthly: COACH_LIST_COP.pro.mensual,
+      semestral: COACH_LIST_COP.pro.semestral,
+      anual: COACH_LIST_COP.pro.anual,
+    },
   },
 };
 
@@ -99,27 +111,15 @@ export default function PlanPicker({ open, locked = false, onClose, notify }) {
       notify("Plan o período no válido.");
       return;
     }
-    let amountCop = amountCopBase;
-    if (coachAppliedPromo?.discount_percent != null) {
-      amountCop = Math.max(0, Math.round((amountCopBase * (100 - coachAppliedPromo.discount_percent)) / 100));
+    const amountCop = coachAppliedPromo?.discount_percent != null
+      ? applyPromoPercent(amountCopBase, coachAppliedPromo.discount_percent)
+      : amountCopBase;
+    if (amountCop == null) {
+      notify("No se pudo calcular el monto.");
+      return;
     }
     setCoachSubscriptionSaving(true);
     try {
-      if (coachAppliedPromo?.code) {
-        const { data: ok, error: redeemErr } = await supabase.rpc("redeem_promo_code", {
-          code_input: coachAppliedPromo.code,
-        });
-        if (redeemErr) {
-          console.error(redeemErr);
-          notify(redeemErr.message || "No se pudo registrar el uso del código");
-          return;
-        }
-        if (!ok) {
-          notify("El código ya no es válido o no tiene usos");
-          clearCoachPromo();
-          return;
-        }
-      }
       const periodDb = coachPickerPeriod === "monthly" ? "mensual" : coachPickerPeriod;
       const { data: sessData } = await supabase.auth.getSession();
       const accessToken = sessData?.session?.access_token;
@@ -138,6 +138,7 @@ export default function PlanPicker({ open, locked = false, onClose, notify }) {
           plan_key: coachPickerPlan,
           plan_period: periodDb,
           amount_cop: amountCop,
+          ...(coachAppliedPromo?.code ? { promo_code: coachAppliedPromo.code } : {}),
         }),
       });
       const data = await response.json();
@@ -163,7 +164,7 @@ export default function PlanPicker({ open, locked = false, onClose, notify }) {
     } finally {
       setCoachSubscriptionSaving(false);
     }
-  }, [coachPickerPlan, coachPickerPeriod, coachAppliedPromo, clearCoachPromo, notify]);
+  }, [coachPickerPlan, coachPickerPeriod, coachAppliedPromo, notify]);
 
   if (!open) return null;
   if (typeof document === "undefined") return null;
@@ -331,7 +332,7 @@ export default function PlanPicker({ open, locked = false, onClose, notify }) {
                 <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 4 }}>
                   {COACH_PLAN_PICKER_PERIODS.map((per) => {
                     const amount = def.prices[per.id];
-                    const amountAfter = Math.max(0, Math.round((amount * (100 - discountPct)) / 100));
+                    const amountAfter = applyPromoPercent(amount, discountPct) ?? amount;
                     const selected = selectedPlan && coachPickerPeriod === per.id;
                     const priceLine =
                       per.id === "monthly"

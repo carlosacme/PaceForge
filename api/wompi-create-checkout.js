@@ -1,17 +1,30 @@
 import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
+import {
+  MIN_CHECKOUT_COP,
+  resolveListAmountCop,
+  applyPromoPercent,
+} from "../src/lib/planPrices.js";
 
 /**
  * Crea una transacción Wompi pendiente y devuelve los datos firmados al frontend.
- * 
- * Flujo:
- * 1. Frontend llama: POST /api/wompi-create-checkout con { payer_type, plan_key, plan_period, amount_cop, marketplace_plan_id? }
- * 2. Validamos sesión del usuario y monto
- * 3. Generamos reference único e insertamos fila PENDING en subscription_payments
- * 4. Calculamos signature de integridad (Wompi exige SHA-256 de reference+amount+currency+integrity_secret)
- * 5. Devolvemos { reference, amount_in_cents, signature, public_key, redirect_url } al frontend
- * 6. Frontend abre checkout.wompi.co con esos datos como query params
+ *
+ * El monto que se firma NUNCA sale del amount_cop del cliente. Se deriva del
+ * catálogo (coach/atleta) o de plan_marketplace.price_cop (marketplace),
+ * más un promo revalidado en servidor si aplica.
  */
+
+const VALID_TYPES = ["coach_subscription", "athlete_solo_subscription", "marketplace_purchase"];
+const VALID_COACH_PLANS = { basico: ["mensual", "semestral", "anual"], pro: ["mensual", "semestral", "anual"] };
+const VALID_ATHLETE_PLANS = { premium: ["monthly", "annual"] };
+
+function promoRow(data) {
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row || row.discount_percent == null) return null;
+  const pct = Number(row.discount_percent);
+  if (!Number.isFinite(pct) || pct < 0 || pct > 100) return null;
+  return { discount_percent: pct };
+}
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -46,28 +59,19 @@ export default async function handler(req, res) {
   const userId = userData.user.id;
   const userEmail = userData.user.email || "";
 
-  const { 
-    payer_type, 
-    plan_key, 
-    plan_period, 
-    amount_cop, 
-    marketplace_plan_id, 
-    marketplace_purchase_id 
+  const {
+    payer_type,
+    plan_key,
+    plan_period,
+    amount_cop,
+    marketplace_plan_id,
+    marketplace_purchase_id,
+    promo_code,
   } = req.body || {};
 
-  const VALID_TYPES = ["coach_subscription", "athlete_solo_subscription", "marketplace_purchase"];
   if (!VALID_TYPES.includes(payer_type)) {
     return res.status(400).json({ error: "Invalid payer_type" });
   }
-
-  const amountNum = Math.round(Number(amount_cop));
-  if (!Number.isFinite(amountNum) || amountNum < 5000) {
-    return res.status(400).json({ error: "Invalid amount (min 5000 COP)" });
-  }
-  const amountInCents = amountNum * 100;
-
-  const VALID_COACH_PLANS = { basico: ["mensual", "semestral", "anual"], pro: ["mensual", "semestral", "anual"] };
-  const VALID_ATHLETE_PLANS = { premium: ["monthly", "annual"] };
 
   if (payer_type === "coach_subscription") {
     if (!VALID_COACH_PLANS[plan_key]?.includes(plan_period)) {
@@ -83,6 +87,76 @@ export default async function handler(req, res) {
     }
   }
 
+  let listCop = null;
+
+  if (payer_type === "marketplace_purchase") {
+    const { data: planRow, error: planErr } = await supabase
+      .from("plan_marketplace")
+      .select("id, price_cop")
+      .eq("id", marketplace_plan_id)
+      .maybeSingle();
+    if (planErr) {
+      console.error("[wompi-create-checkout] marketplace lookup:", planErr);
+      return res.status(500).json({ error: "No se pudo leer el precio del plan" });
+    }
+    if (!planRow) {
+      return res.status(400).json({ error: "Plan de marketplace no encontrado" });
+    }
+    const n = Math.round(Number(planRow.price_cop));
+    if (!Number.isFinite(n)) {
+      return res.status(400).json({ error: "El plan no tiene un precio válido" });
+    }
+    listCop = n;
+  } else {
+    listCop = resolveListAmountCop(payer_type, plan_key, plan_period);
+    if (listCop == null) {
+      return res.status(400).json({ error: "No hay un precio de catálogo para ese plan y período" });
+    }
+  }
+
+  let expectedCop = listCop;
+  const rawPromo = typeof promo_code === "string" ? promo_code.trim() : "";
+  const wantsPromo = rawPromo.length > 0;
+
+  if (wantsPromo && payer_type !== "coach_subscription") {
+    return res.status(400).json({ error: "Los códigos promo solo aplican a la suscripción de coach" });
+  }
+
+  if (wantsPromo) {
+    const { data: promoData, error: promoErr } = await supabase.rpc("validate_promo_code", {
+      code_input: rawPromo,
+    });
+    if (promoErr) {
+      console.error("[wompi-create-checkout] validate_promo_code:", promoErr);
+      return res.status(400).json({ error: "No se pudo validar el código promo" });
+    }
+    const promo = promoRow(promoData);
+    if (!promo) {
+      return res.status(400).json({ error: "Código promo no válido o sin usos disponibles" });
+    }
+    expectedCop = applyPromoPercent(listCop, promo.discount_percent);
+    if (expectedCop == null) {
+      return res.status(400).json({ error: "No se pudo aplicar el descuento del código" });
+    }
+  }
+
+  if (!Number.isFinite(expectedCop) || expectedCop < MIN_CHECKOUT_COP) {
+    return res.status(400).json({
+      error: `El monto resultante (${expectedCop} COP) es menor al mínimo de ${MIN_CHECKOUT_COP} COP. Un descuento tan alto no se puede cobrar por Wompi.`,
+    });
+  }
+
+  if (amount_cop != null && String(amount_cop).trim() !== "") {
+    const clientAmt = Math.round(Number(amount_cop));
+    if (!Number.isFinite(clientAmt) || clientAmt !== expectedCop) {
+      return res.status(400).json({
+        error: "El monto no coincide con el precio del plan",
+        expected_cop: expectedCop,
+      });
+    }
+  }
+
+  const amountInCents = expectedCop * 100;
   const ts = Date.now();
   const reference = `runningapexflow-${payer_type}-${plan_key || "mp"}-${plan_period || "x"}-${userId.slice(0, 8)}-${ts}`;
 
@@ -93,7 +167,7 @@ export default async function handler(req, res) {
     plan_period: plan_period || null,
     marketplace_plan_id: marketplace_plan_id || null,
     marketplace_purchase_id: marketplace_purchase_id || null,
-    amount_cop: amountNum,
+    amount_cop: expectedCop,
     currency: "COP",
     wompi_reference: reference,
     wompi_status: "PENDING",
@@ -106,6 +180,18 @@ export default async function handler(req, res) {
   if (insErr) {
     console.error("[wompi-create-checkout] Insert error:", insErr);
     return res.status(500).json({ error: insErr.message });
+  }
+
+  // Redeem solo cuando el monto ya es válido y la fila PENDING existe.
+  // Así no se quema un uso si el combo/monto era inválido.
+  if (wantsPromo) {
+    const { data: redeemed, error: redeemErr } = await supabase.rpc("redeem_promo_code", {
+      code_input: rawPromo,
+    });
+    if (redeemErr || !redeemed) {
+      console.error("[wompi-create-checkout] redeem_promo_code:", redeemErr);
+      return res.status(400).json({ error: "El código ya no es válido o no tiene usos" });
+    }
   }
 
   const concatenated = `${reference}${amountInCents}COP${integritySecret}`;
