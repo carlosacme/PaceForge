@@ -46,6 +46,25 @@ const formatPaceMinKm = (paceMinPerKm) => {
   return `${m}:${String(s).padStart(2, "0")} /km`;
 };
 
+/** Mismo delta de VDOT que el gráfico de historial, contra la evaluación previa. */
+function vdotProgressVsPrevious(currentVdot, previousVdot) {
+  const current = Number(currentVdot);
+  const previous = Number(previousVdot);
+  if (!Number.isFinite(current) || current <= 0) return null;
+  if (!Number.isFinite(previous) || previous <= 0) {
+    return { label: "Primera medición", tone: "neutral" };
+  }
+  const delta = current - previous;
+  if (Math.abs(delta) < 0.05) {
+    return { label: "Sin cambio vs tu evaluación anterior", tone: "neutral" };
+  }
+  const sign = delta > 0 ? "+" : "";
+  return {
+    label: `${sign}${delta.toFixed(1)} vs tu evaluación anterior`,
+    tone: delta > 0 ? "up" : "down",
+  };
+}
+
 const vdotFromCooper = (distanceMeters) => {
   const d = Number(distanceMeters);
   if (!Number.isFinite(d) || d <= 0) return null;
@@ -128,6 +147,7 @@ export default function EvaluationView({ athletes, currentUserId, notify, athlet
   const [fcRest, setFcRest] = usePersistedState("raf_eval_fcRest", "");
   const [weeklyKm, setWeeklyKm] = usePersistedState("raf_eval_weeklyKm", "");
   const [results, setResults] = useState(null);
+  const [resultsPersisted, setResultsPersisted] = useState(false);
   const [saving, setSaving] = useState(false);
   const [history, setHistory] = useState([]);
   const [openHistoryId, setOpenHistoryId] = useState(null);
@@ -258,6 +278,7 @@ export default function EvaluationView({ athletes, currentUserId, notify, athlet
     // validacion, ella misma cae a %FCmax y devuelve el aviso.
     const hr = computeHrZones(fcMax, fcRest);
     const restingHrOk = isValidRestingHr(fcRest, fcMax);
+    setResultsPersisted(false);
     setResults({
       vdot,
       source,
@@ -358,10 +379,11 @@ export default function EvaluationView({ athletes, currentUserId, notify, athlet
     }
 
     setSaving(false);
+    setResultsPersisted(true);
     loadHistory();
   };
 
-  const renderEvaluationCards = (dataObj) => {
+  const renderEvaluationCards = (dataObj, previousEval = null) => {
     const paces = Array.isArray(dataObj?.paces) ? dataObj.paces : [];
     const zones = Array.isArray(dataObj?.zones) ? dataObj.zones : [];
     const predictions = Array.isArray(dataObj?.predictions) ? dataObj.predictions : [];
@@ -404,6 +426,23 @@ export default function EvaluationView({ athletes, currentUserId, notify, athlet
 
         <div style={{ ...S.card, marginBottom: 16 }}>
           <div style={{ fontSize: ".76em", color: "#64748b", fontWeight: 700, marginBottom: 10 }}>TIEMPOS PREDICHOS</div>
+          {(() => {
+            const progress = vdotProgressVsPrevious(vdot, previousEval?.vdot);
+            if (!progress) return null;
+            const tone =
+              progress.tone === "up"
+                ? { color: "#15803d", bg: "#dcfce7" }
+                : progress.tone === "down"
+                  ? { color: "#b91c1c", bg: "#fee2e2" }
+                  : { color: "#475569", bg: "#f1f5f9" };
+            return (
+              <div style={{ marginBottom: 12, textAlign: "center" }}>
+                <span style={{ display: "inline-flex", padding: "4px 10px", borderRadius: 999, fontSize: ".72em", fontWeight: 800, background: tone.bg, color: tone.color }}>
+                  {progress.label}
+                </span>
+              </div>
+            );
+          })()}
           <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}>
             {predictions.map((p) => {
               const pid = String(p.id || "").toLowerCase();
@@ -416,40 +455,13 @@ export default function EvaluationView({ athletes, currentUserId, notify, athlet
                     : pid === "21k"
                       ? { border: "#ff8a3d55", bg: "#fffbeb", accent: "#b45309" }
                       : { border: "#ef444455", bg: "#fef2f2", accent: "#b91c1c" };
-              const level = (() => {
-                if (pid === "5k") {
-                  if (totalSec <= 1080) return { label: "Élite", color: "#065f46", bg: "#d1fae5" };
-                  if (totalSec <= 1320) return { label: "Avanzado", color: "#1d4ed8", bg: "#dbeafe" };
-                  if (totalSec <= 1620) return { label: "Intermedio", color: "#b45309", bg: "#fef3c7" };
-                  return { label: "Principiante", color: "#92400e", bg: "#ffedd5" };
-                }
-                if (pid === "10k") {
-                  if (totalSec <= 2280) return { label: "Élite", color: "#065f46", bg: "#d1fae5" };
-                  if (totalSec <= 2820) return { label: "Avanzado", color: "#1d4ed8", bg: "#dbeafe" };
-                  if (totalSec <= 3480) return { label: "Intermedio", color: "#b45309", bg: "#fef3c7" };
-                  return { label: "Principiante", color: "#92400e", bg: "#ffedd5" };
-                }
-                if (pid === "21k") {
-                  if (totalSec <= 4800) return { label: "Élite", color: "#065f46", bg: "#d1fae5" };
-                  if (totalSec <= 6000) return { label: "Avanzado", color: "#1d4ed8", bg: "#dbeafe" };
-                  if (totalSec <= 7500) return { label: "Intermedio", color: "#b45309", bg: "#fef3c7" };
-                  return { label: "Principiante", color: "#92400e", bg: "#ffedd5" };
-                }
-                if (totalSec <= 10200) return { label: "Élite", color: "#065f46", bg: "#d1fae5" };
-                if (totalSec <= 12600) return { label: "Avanzado", color: "#1d4ed8", bg: "#dbeafe" };
-                if (totalSec <= 15600) return { label: "Intermedio", color: "#b45309", bg: "#fef3c7" };
-                return { label: "Principiante", color: "#92400e", bg: "#ffedd5" };
-              })();
               const hhmmss = formatDurationClock(totalSec);
               return (
                 <div key={p.id || p.label} style={{ border: `1px solid ${palette.border}`, borderRadius: 12, padding: "12px 10px", background: palette.bg, textAlign: "center" }}>
                   <div style={{ color: palette.accent, fontSize: ".98em", fontWeight: 900, letterSpacing: ".02em", marginBottom: 8 }}>
                     {p.label || String(p.id || "").toUpperCase()}
                   </div>
-                  <div style={{ color: "#0f172a", fontWeight: 900, fontSize: "1.26em", marginBottom: 10, fontFamily: "monospace" }}>{hhmmss}</div>
-                  <span style={{ display: "inline-flex", padding: "3px 9px", borderRadius: 999, fontSize: ".68em", fontWeight: 800, background: level.bg, color: level.color }}>
-                    {level.label}
-                  </span>
+                  <div style={{ color: "#0f172a", fontWeight: 900, fontSize: "1.26em", fontFamily: "monospace" }}>{hhmmss}</div>
                 </div>
               );
             })}
@@ -635,7 +647,7 @@ export default function EvaluationView({ athletes, currentUserId, notify, athlet
         </div>
       </div>
 
-      {results && renderEvaluationCards(results)}
+      {results && renderEvaluationCards(results, resultsPersisted ? history[1] : history[0])}
 
       <div style={{ ...S.card }}>
         <div style={{ fontSize: ".76em", color: "#64748b", fontWeight: 700, marginBottom: 10 }}>Historial de evaluaciones</div>
@@ -687,7 +699,7 @@ export default function EvaluationView({ athletes, currentUserId, notify, athlet
         {history.length === 0 ? (
           <div style={{ color: "#94a3b8", fontSize: ".9em" }}>Sin evaluaciones previas.</div>
         ) : (
-          history.map((h) => (
+          history.map((h, historyIdx) => (
             <div key={h.id} style={{ border: "1px solid #e2e8f0", borderRadius: 10, marginBottom: 8, overflow: "hidden" }}>
               <button
                 type="button"
@@ -732,7 +744,7 @@ export default function EvaluationView({ athletes, currentUserId, notify, athlet
                         label: EVAL_DISTANCES.find((d) => d.id === p.id)?.label || String(p.id || "").toUpperCase(),
                         seconds: p.seconds,
                       })),
-                    });
+                    }, history[historyIdx + 1] || null);
                   })()}
                 </div>
               )}
