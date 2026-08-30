@@ -12,6 +12,8 @@ import { useAthletePayments } from "./useAthletePayments";
 import { useAthleteChat } from "./useAthleteChat";
 import AthletePaymentsPanel, { AthletePaymentModal } from "./AthletePaymentsPanel";
 import AthleteChatPanel from "./AthleteChatPanel";
+import { useAthleteRaces } from "./useAthleteRaces";
+import AthleteRaceOverlays from "./AthleteRaceOverlays";
 import { readStructure } from "../../lib/workoutStructure";
 import { compareBlocks } from "../../lib/blockComparison";
 import { fmtPace } from "../../lib/vdot";
@@ -22,12 +24,7 @@ import {
   formatLocalYMD,
   getMonthGrid,
   cellIsInViewMonth,
-  RACE_DISTANCE_PRESETS,
-  RACE_PRIORITY_OPTIONS,
   racePriorityMeta,
-  raceDistanceToFormFields,
-  normalizeRaceRow,
-  getNextRaceCountdown,
   emptyWorkoutStructureRow,
   workoutStructureToEditableRows,
   editableRowsToWorkoutStructure,
@@ -324,30 +321,12 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, openRegistroW
     [calendarViewMonth],
   );
 
-  const [races, setRaces] = useState([]);
-  const [raceModalOpen, setRaceModalOpen] = useState(false);
-  const [raceSaving, setRaceSaving] = useState(false);
-  const [raceForm, setRaceForm] = useState({
-    name: "",
-    date: formatLocalYMD(new Date()),
-    distance: "21K",
-    distanceOther: "",
-    city: "",
-    priority: "A",
+  const athleteRaces = useAthleteRaces({
+    athleteId: athlete?.id ?? null,
+    coachId,
+    notify,
+    workoutsRefresh,
   });
-  const [raceCtxMenu, setRaceCtxMenu] = useState(null);
-  const raceCtxMenuRef = useRef(null);
-  const [racePanel, setRacePanel] = useState(null);
-  const [raceEditForm, setRaceEditForm] = useState({
-    name: "",
-    date: "",
-    distance: "21K",
-    distanceOther: "",
-    city: "",
-    priority: "A",
-  });
-  const [raceMoveDate, setRaceMoveDate] = useState("");
-  const [raceActionBusy, setRaceActionBusy] = useState(false);
   const [rangeDeleteOpen, setRangeDeleteOpen] = useState(false);
   const [rangeDeleteFrom, setRangeDeleteFrom] = useState("");
   const [rangeDeleteTo, setRangeDeleteTo] = useState("");
@@ -578,186 +557,6 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
       String(w.id) === String(adjustment.workout_id) ? { ...w, ...chg } : w
     ));
   };
-
-  const refreshRacesList = useCallback(async () => {
-    if (!athlete?.id) return;
-    const { data, error } = await supabase
-      .from("races")
-      .select("*")
-      .eq("athlete_id", athlete.id)
-      .order("date", { ascending: true });
-    if (error) {
-      console.error("Error cargando carreras:", error);
-      return;
-    }
-    setRaces((data || []).map(normalizeRaceRow));
-  }, [athlete?.id]);
-
-  useEffect(() => {
-    if (!athlete?.id) {
-      setRaces([]);
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      const { data, error } = await supabase
-        .from("races")
-        .select("*")
-        .eq("athlete_id", athlete.id)
-        .order("date", { ascending: true });
-      if (cancelled) return;
-      if (error) {
-        console.error("Error cargando carreras:", error);
-        setRaces([]);
-        return;
-      }
-      setRaces((data || []).map(normalizeRaceRow));
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [athlete?.id, workoutsRefresh]);
-
-  const racesByDate = useMemo(() => {
-    const m = {};
-    for (const r of races) {
-      const k = r.date;
-      if (!k) continue;
-      if (!m[k]) m[k] = [];
-      m[k].push(r);
-    }
-    return m;
-  }, [races]);
-
-  const nextRaceCountdown = useMemo(() => getNextRaceCountdown(races, formatLocalYMD(new Date())), [races]);
-
-  const closeRaceCtxMenu = () => setRaceCtxMenu(null);
-
-  const ctxMenuRace = useMemo(
-    () => (raceCtxMenu ? races.find((r) => String(r.id) === String(raceCtxMenu.raceId)) || null : null),
-    [races, raceCtxMenu],
-  );
-
-  const panelRace = useMemo(
-    () => (racePanel ? races.find((r) => String(r.id) === String(racePanel.raceId)) || null : null),
-    [races, racePanel],
-  );
-
-  const openRaceCalendarMenu = (e, race) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const pad = 8;
-    const mw = 280;
-    const mh = 160;
-    const vw = typeof window !== "undefined" ? window.innerWidth : 800;
-    const vh = typeof window !== "undefined" ? window.innerHeight : 600;
-    const x = Math.min(e.clientX, vw - mw - pad);
-    const y = Math.min(e.clientY, vh - mh - pad);
-    setRaceCtxMenu({ x, y, raceId: race.id });
-  };
-
-  const openRaceEditPanel = (race) => {
-    if (!race) return;
-    const df = raceDistanceToFormFields(race.distance);
-    setRaceEditForm({
-      name: race.name || "",
-      date: race.date || formatLocalYMD(new Date()),
-      ...df,
-      city: race.city || "",
-      priority: race.priority || "A",
-    });
-    setRacePanel({ mode: "edit", raceId: race.id });
-    closeRaceCtxMenu();
-  };
-
-  const openRaceMovePanel = (race) => {
-    if (!race) return;
-    setRaceMoveDate(race.date || formatLocalYMD(new Date()));
-    setRacePanel({ mode: "move", raceId: race.id });
-    closeRaceCtxMenu();
-  };
-
-  const closeRacePanel = () => {
-    setRacePanel(null);
-    setRaceActionBusy(false);
-  };
-
-  const saveRaceEdits = async () => {
-    if (!panelRace?.id) return;
-    const dist =
-      raceEditForm.distance === "Otro"
-        ? (raceEditForm.distanceOther || "").trim() || "Otro"
-        : raceEditForm.distance;
-    if (raceEditForm.distance === "Otro" && !(raceEditForm.distanceOther || "").trim()) {
-      notify?.("Describe la distancia (Otro)");
-      return;
-    }
-    setRaceActionBusy(true);
-    const { error } = await supabase
-      .from("races")
-      .update({
-        name: raceEditForm.name.trim() || panelRace.name,
-        date: raceEditForm.date,
-        distance: dist,
-        city: raceEditForm.city.trim() || null,
-        priority: raceEditForm.priority || "A",
-      })
-      .eq("id", panelRace.id);
-    setRaceActionBusy(false);
-    if (error) {
-      console.error(error);
-      notify?.(error.message || "Error al guardar");
-      return;
-    }
-    notify?.("Carrera actualizada");
-    closeRacePanel();
-    await refreshRacesList();
-  };
-
-  const applyRaceMoveDate = async () => {
-    if (!panelRace?.id || !raceMoveDate) return;
-    setRaceActionBusy(true);
-    const { error } = await supabase.from("races").update({ date: raceMoveDate }).eq("id", panelRace.id);
-    setRaceActionBusy(false);
-    if (error) {
-      console.error(error);
-      notify?.(error.message || "Error al mover");
-      return;
-    }
-    notify?.("Fecha actualizada");
-    closeRacePanel();
-    await refreshRacesList();
-  };
-
-  const deleteRaceFromCalendar = async (race) => {
-    if (!race?.id) return;
-    if (!window.confirm("¿Eliminar esta carrera?")) return;
-    closeRaceCtxMenu();
-    closeRacePanel();
-    setRaceActionBusy(true);
-    const { error } = await supabase.from("races").delete().eq("id", race.id);
-    setRaceActionBusy(false);
-    if (error) {
-      console.error(error);
-      notify?.(error.message || "No se pudo eliminar");
-      return;
-    }
-    notify?.("Carrera eliminada");
-    await refreshRacesList();
-  };
-
-  useEffect(() => {
-    if (!raceCtxMenu) return;
-    const onDown = (ev) => {
-      if (raceCtxMenuRef.current?.contains(ev.target)) return;
-      closeRaceCtxMenu();
-    };
-    const t = setTimeout(() => document.addEventListener("mousedown", onDown), 0);
-    return () => {
-      clearTimeout(t);
-      document.removeEventListener("mousedown", onDown);
-    };
-  }, [raceCtxMenu]);
 
   const coachAchievementDisplayProgress = useMemo(
     () => computeAthleteAchievementVisualProgress(workouts, coachAthleteEvaluations),
@@ -1040,11 +839,11 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
   /** Carreras en el rango: solo para avisar de que NO se van a tocar. */
   const rangeDeleteRaces = useMemo(() => {
     if (!rangeDeleteValid) return [];
-    return (races || []).filter((r) => {
+    return (athleteRaces.races || []).filter((r) => {
       const d = String(r?.date || "");
       return d && d >= rangeDeleteFrom && d <= rangeDeleteTo;
     });
-  }, [races, rangeDeleteFrom, rangeDeleteTo, rangeDeleteValid]);
+  }, [athleteRaces.races, rangeDeleteFrom, rangeDeleteTo, rangeDeleteValid]);
 
   const rangeDeleteDoneCount = useMemo(
     () => rangeDeleteWorkouts.filter((w) => w.done).length,
@@ -1111,59 +910,6 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
     // app, asi que su evento debe seguir en el reloj.
     forgetIntervalsEvents(athlete.id, [...deletedIds]);
     setRangeDeleteOpen(false);
-  };
-
-  const openRaceModal = () => {
-    setRaceForm({
-      name: "",
-      date: formatLocalYMD(new Date()),
-      distance: "21K",
-      distanceOther: "",
-      city: "",
-      priority: "A",
-    });
-    setRaceModalOpen(true);
-  };
-
-  const saveRace = async () => {
-    if (!athlete?.id || !coachId) return;
-    const name = raceForm.name.trim();
-    if (!name) {
-      notify?.("Indica el nombre de la carrera");
-      return;
-    }
-    if (!raceForm.date) {
-      notify?.("Indica la fecha de la carrera");
-      return;
-    }
-    const dist =
-      raceForm.distance === "Otro" ? (raceForm.distanceOther || "").trim() || "Otro" : raceForm.distance;
-    if (raceForm.distance === "Otro" && !(raceForm.distanceOther || "").trim()) {
-      notify?.("Describe la distancia (Otro)");
-      return;
-    }
-    setRaceSaving(true);
-    try {
-      const { error } = await supabase.from("races").insert({
-        athlete_id: athlete.id,
-        coach_id: coachId,
-        name,
-        date: raceForm.date,
-        distance: dist,
-        city: raceForm.city.trim() || null,
-        priority: raceForm.priority || "A",
-      });
-      if (error) {
-        console.error(error);
-        notify?.(error.message || "No se pudo guardar la carrera");
-        return;
-      }
-      notify?.("Carrera registrada");
-      setRaceModalOpen(false);
-      await refreshRacesList();
-    } finally {
-      setRaceSaving(false);
-    }
   };
 
   useEffect(() => {
@@ -1319,15 +1065,15 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
             <div style={{ flex: "1 1 180px", minWidth: 0 }}>
               <div style={{ fontSize: "1.3em", fontWeight: 700, color: "#0f172a" }}>{athlete.name}</div>
               <div style={{ color: "#64748b", fontSize: ".85em" }}>{athlete.goal}</div>
-              {nextRaceCountdown ? (
+              {athleteRaces.nextRaceCountdown ? (
                 <div style={{ marginTop: 8, fontSize: ".88em", fontWeight: 700, color: "#b45309", lineHeight: 1.35 }}>
-                  🏁 {nextRaceCountdown.race.name}
+                  🏁 {athleteRaces.nextRaceCountdown.race.name}
                   {" · "}
-                  {nextRaceCountdown.days === 0
+                  {athleteRaces.nextRaceCountdown.days === 0
                     ? "¡Hoy es la carrera!"
-                    : nextRaceCountdown.days === 1
+                    : athleteRaces.nextRaceCountdown.days === 1
                       ? "falta 1 día"
-                      : `faltan ${nextRaceCountdown.days} días`}
+                      : `faltan ${athleteRaces.nextRaceCountdown.days} días`}
                 </div>
               ) : null}
             </div>
@@ -1508,7 +1254,7 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
               </button>
               <button
                 type="button"
-                onClick={openRaceModal}
+                onClick={athleteRaces.openRaceModal}
                 style={{
                   background: "linear-gradient(135deg,#fffbeb,#ffedd5)",
                   border: "1px solid rgba(255,138,61,.45)",
@@ -1551,7 +1297,7 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
               {calendarCells.map((cellDate, i) => {
                 const ymd = formatLocalYMD(cellDate);
                 const dayWorkouts = workoutsByDate[ymd] || [];
-                const dayRaces = racesByDate[ymd] || [];
+                const dayRaces = athleteRaces.racesByDate[ymd] || [];
                 const hasWorkout = dayWorkouts.length > 0;
                 const hasDoneWorkout = dayWorkouts.some(w => w.done);
                 const hasRace = dayRaces.length > 0;
@@ -1600,7 +1346,7 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
                         <button
                           key={race.id}
                           type="button"
-                          onClick={(e) => openRaceCalendarMenu(e, race)}
+                          onClick={(e) => athleteRaces.openRaceCalendarMenu(e, race)}
                           title={`${race.name} · ${race.distance} · Prioridad ${pri.id} (${pri.short})${race.city ? ` · ${race.city}` : ""}`}
                           style={{
                             fontSize: ".48em",
@@ -1862,170 +1608,30 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
         </div>
       ) : null}
 
-      {raceCtxMenu && ctxMenuRace ? (
-        <div
-          ref={raceCtxMenuRef}
-          style={{
-            position: "fixed",
-            left: raceCtxMenu.x,
-            top: raceCtxMenu.y,
-            zIndex: 305,
-            minWidth: 240,
-            maxWidth: "min(92vw, 300px)",
-            background: "#ffffff",
-            borderRadius: 10,
-            boxShadow: "0 10px 40px rgba(15,23,42,.2)",
-            border: "1px solid #e2e8f0",
-            padding: 6,
-          }}
-        >
-          {[
-            { label: "✏️ Editar", onClick: () => openRaceEditPanel(ctxMenuRace) },
-            { label: "📅 Mover fecha", onClick: () => openRaceMovePanel(ctxMenuRace) },
-            { label: "🗑 Eliminar", danger: true, onClick: () => deleteRaceFromCalendar(ctxMenuRace) },
-          ].map((item, i) => (
-            <button
-              key={i}
-              type="button"
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={(e) => {
-                e.stopPropagation();
-                item.onClick();
-              }}
-              style={{
-                display: "block",
-                width: "100%",
-                textAlign: "left",
-                background: "transparent",
-                border: "none",
-                borderRadius: 8,
-                padding: "10px 12px",
-                color: item.danger ? "#b91c1c" : "#0f172a",
-                fontWeight: 600,
-                cursor: "pointer",
-                fontFamily: "inherit",
-                fontSize: ".82em",
-              }}
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
-      ) : null}
-
-      {racePanel && panelRace ? (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 290, padding: 16 }}>
-          <div style={{ ...S.card, width: "100%", maxWidth: 480, margin: 0, maxHeight: "90vh", overflowY: "auto" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 10 }}>
-              <div style={{ fontSize: ".95em", fontWeight: 800, color: "#0f172a" }}>
-                {racePanel.mode === "edit" ? "Editar carrera" : "Mover fecha"} · {panelRace.name}
-              </div>
-              <button type="button" onClick={closeRacePanel} style={{ background: "transparent", border: "none", color: "#64748b", cursor: "pointer", fontFamily: "inherit", fontWeight: 700 }}>✕</button>
-            </div>
-            {racePanel.mode === "edit" ? (
-              <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 10 }}>
-                <div>
-                  <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Nombre</div>
-                  <input
-                    value={raceEditForm.name}
-                    onChange={(e) => setRaceEditForm((f) => ({ ...f, name: e.target.value }))}
-                    style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", color: "#0f172a", fontFamily: "inherit", fontSize: ".84em", boxSizing: "border-box" }}
-                  />
-                </div>
-                <div>
-                  <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Fecha</div>
-                  <input
-                    type="date"
-                    value={raceEditForm.date}
-                    onChange={(e) => setRaceEditForm((f) => ({ ...f, date: e.target.value }))}
-                    style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", color: "#0f172a", fontFamily: "inherit", fontSize: ".84em", boxSizing: "border-box" }}
-                  />
-                </div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 10 }}>
-                  <div>
-                    <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Distancia</div>
-                    <select
-                      value={raceEditForm.distance}
-                      onChange={(e) => setRaceEditForm((f) => ({ ...f, distance: e.target.value }))}
-                      style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", color: "#0f172a", fontFamily: "inherit", fontSize: ".84em", boxSizing: "border-box" }}
-                    >
-                      {RACE_DISTANCE_PRESETS.map((d) => (
-                        <option key={d} value={d}>
-                          {d}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Ciudad</div>
-                    <input
-                      value={raceEditForm.city}
-                      onChange={(e) => setRaceEditForm((f) => ({ ...f, city: e.target.value }))}
-                      style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", color: "#0f172a", fontFamily: "inherit", fontSize: ".84em", boxSizing: "border-box" }}
-                    />
-                  </div>
-                </div>
-                <div>
-                  <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Prioridad</div>
-                  <select
-                    value={raceEditForm.priority}
-                    onChange={(e) => setRaceEditForm((f) => ({ ...f, priority: e.target.value }))}
-                    style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", color: "#0f172a", fontFamily: "inherit", fontSize: ".84em", boxSizing: "border-box" }}
-                  >
-                    {RACE_PRIORITY_OPTIONS.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                {raceEditForm.distance === "Otro" ? (
-                  <div>
-                    <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Describe la distancia</div>
-                    <input
-                      value={raceEditForm.distanceOther}
-                      onChange={(e) => setRaceEditForm((f) => ({ ...f, distanceOther: e.target.value }))}
-                      style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", color: "#0f172a", fontFamily: "inherit", fontSize: ".84em", boxSizing: "border-box" }}
-                    />
-                  </div>
-                ) : null}
-                <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
-                  <button type="button" onClick={closeRacePanel} style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 12px", color: "#64748b", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: ".8em" }}>Cancelar</button>
-                  <button
-                    type="button"
-                    disabled={raceActionBusy}
-                    onClick={saveRaceEdits}
-                    style={{ background: raceActionBusy ? "#e2e8f0" : "linear-gradient(135deg,#e86f28,#ff8a3d)", border: "none", borderRadius: 8, padding: "8px 12px", color: raceActionBusy ? "#64748b" : "#fff", cursor: raceActionBusy ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 800, fontSize: ".8em" }}
-                  >
-                    {raceActionBusy ? "Guardando…" : "Guardar"}
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div>
-                <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Nueva fecha</div>
-                <input
-                  type="date"
-                  value={raceMoveDate}
-                  onChange={(e) => setRaceMoveDate(e.target.value)}
-                  style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", color: "#0f172a", fontFamily: "inherit", fontSize: ".84em", boxSizing: "border-box" }}
-                />
-                <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
-                  <button type="button" onClick={closeRacePanel} style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 12px", color: "#64748b", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: ".8em" }}>Cancelar</button>
-                  <button
-                    type="button"
-                    disabled={raceActionBusy}
-                    onClick={applyRaceMoveDate}
-                    style={{ background: raceActionBusy ? "#e2e8f0" : "linear-gradient(135deg,#e86f28,#ff8a3d)", border: "none", borderRadius: 8, padding: "8px 12px", color: raceActionBusy ? "#64748b" : "#fff", cursor: raceActionBusy ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 800, fontSize: ".8em" }}
-                  >
-                    {raceActionBusy ? "Guardando…" : "Guardar fecha"}
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      ) : null}
+      <AthleteRaceOverlays
+        raceCtxMenu={athleteRaces.raceCtxMenu}
+        raceCtxMenuRef={athleteRaces.raceCtxMenuRef}
+        ctxMenuRace={athleteRaces.ctxMenuRace}
+        openRaceEditPanel={athleteRaces.openRaceEditPanel}
+        openRaceMovePanel={athleteRaces.openRaceMovePanel}
+        deleteRaceFromCalendar={athleteRaces.deleteRaceFromCalendar}
+        racePanel={athleteRaces.racePanel}
+        panelRace={athleteRaces.panelRace}
+        raceEditForm={athleteRaces.raceEditForm}
+        setRaceEditForm={athleteRaces.setRaceEditForm}
+        raceMoveDate={athleteRaces.raceMoveDate}
+        setRaceMoveDate={athleteRaces.setRaceMoveDate}
+        raceActionBusy={athleteRaces.raceActionBusy}
+        closeRacePanel={athleteRaces.closeRacePanel}
+        saveRaceEdits={athleteRaces.saveRaceEdits}
+        applyRaceMoveDate={athleteRaces.applyRaceMoveDate}
+        raceModalOpen={athleteRaces.raceModalOpen}
+        raceSaving={athleteRaces.raceSaving}
+        raceForm={athleteRaces.raceForm}
+        setRaceForm={athleteRaces.setRaceForm}
+        closeRaceModal={athleteRaces.closeRaceModal}
+        saveRace={athleteRaces.saveRace}
+      />
 
       {workoutPanel && panelWorkout ? (
         <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 280, padding: 16, overflowY: "auto" }}>
@@ -2255,104 +1861,6 @@ const analyzeWorkoutAsCoach = async (w, athleteName) => {
         </div>
       ) : null}
 
-      {raceModalOpen && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 215, padding: 16 }}>
-          <div style={{ ...S.card, width: "100%", maxWidth: 480, margin: 0 }}>
-            <div style={{ fontSize: ".95em", fontWeight: 800, color: "#0f172a", marginBottom: 10 }}>🏁 Nueva carrera</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 10 }}>
-              <div>
-                <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Nombre de la carrera</div>
-                <input
-                  value={raceForm.name}
-                  onChange={(e) => setRaceForm((f) => ({ ...f, name: e.target.value }))}
-                  placeholder="Ej: Media Maratón de Bogotá"
-                  style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", color: "#0f172a", fontFamily: "inherit", fontSize: ".84em", boxSizing: "border-box" }}
-                />
-              </div>
-              <div>
-                <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Fecha</div>
-                <input
-                  type="date"
-                  value={raceForm.date}
-                  onChange={(e) => setRaceForm((f) => ({ ...f, date: e.target.value }))}
-                  style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", color: "#0f172a", fontFamily: "inherit", fontSize: ".84em", boxSizing: "border-box" }}
-                />
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 10 }}>
-                <div>
-                  <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Distancia</div>
-                  <select
-                    value={raceForm.distance}
-                    onChange={(e) => setRaceForm((f) => ({ ...f, distance: e.target.value }))}
-                    style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", color: "#0f172a", fontFamily: "inherit", fontSize: ".84em", boxSizing: "border-box" }}
-                  >
-                    {RACE_DISTANCE_PRESETS.map((d) => (
-                      <option key={d} value={d}>
-                        {d}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Ciudad</div>
-                  <input
-                    value={raceForm.city}
-                    onChange={(e) => setRaceForm((f) => ({ ...f, city: e.target.value }))}
-                    placeholder="Ciudad"
-                    style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", color: "#0f172a", fontFamily: "inherit", fontSize: ".84em", boxSizing: "border-box" }}
-                  />
-                </div>
-              </div>
-              <div>
-                <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Prioridad</div>
-                <select
-                  value={raceForm.priority}
-                  onChange={(e) => setRaceForm((f) => ({ ...f, priority: e.target.value }))}
-                  style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", color: "#0f172a", fontFamily: "inherit", fontSize: ".84em", boxSizing: "border-box" }}
-                >
-                  {RACE_PRIORITY_OPTIONS.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.label}
-                    </option>
-                  ))}
-                </select>
-                <div style={{ fontSize: ".68em", color: "#64748b", marginTop: 5, lineHeight: 1.4 }}>
-                  La prioridad decide el afinamiento que el generador mete en el plan de 2 semanas.
-                </div>
-              </div>
-              {raceForm.distance === "Otro" ? (
-                <div>
-                  <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Describe la distancia</div>
-                  <input
-                    value={raceForm.distanceOther}
-                    onChange={(e) => setRaceForm((f) => ({ ...f, distanceOther: e.target.value }))}
-                    placeholder="Ej: 15K, ultra 50K…"
-                    style={{ width: "100%", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", color: "#0f172a", fontFamily: "inherit", fontSize: ".84em", boxSizing: "border-box" }}
-                  />
-                </div>
-              ) : null}
-            </div>
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 14 }}>
-              <button
-                type="button"
-                onClick={() => setRaceModalOpen(false)}
-                disabled={raceSaving}
-                style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 12px", color: "#64748b", cursor: raceSaving ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: ".82em" }}
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={saveRace}
-                disabled={raceSaving}
-                style={{ background: raceSaving ? "#e2e8f0" : "linear-gradient(135deg,#e86f28,#ff8a3d)", border: "none", borderRadius: 8, padding: "8px 12px", color: raceSaving ? "#64748b" : "#fff", cursor: raceSaving ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 800, fontSize: ".82em" }}
-              >
-                {raceSaving ? "Guardando…" : "Guardar carrera"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
       {rangeDeleteOpen && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 215, padding: 16 }}>
           <div style={{ ...S.card, width: "100%", maxWidth: 460, margin: 0 }}>
