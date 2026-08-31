@@ -907,7 +907,7 @@ export default function AthleteHome({ profile }) {
 
             {athleteActiveTab === "challenges" ? (
               <Suspense fallback={<div style={{ padding: 20 }}>Cargando retos...</div>}>
-                <ChallengesHub profileRole="athlete" currentUserId={profile?.user_id ?? null} athleteId={athleteInfo?.id ?? null} isAthlete coachAthletes={EMPTY_ARRAY} workouts={workouts} notify={notifyCallback} styles={styles} normalizeWorkoutRow={normalizeWorkoutRowStable} />
+                <ChallengesHub profileRole="athlete" currentUserId={profile?.user_id ?? null} athleteId={athleteInfo?.id ?? null} athleteCoachId={athleteInfo?.coach_id ?? null} isAthlete coachAthletes={EMPTY_ARRAY} workouts={workouts} notify={notifyCallback} styles={styles} normalizeWorkoutRow={normalizeWorkoutRowStable} />
               </Suspense>
             ) : null}
 

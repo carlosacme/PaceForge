@@ -25,6 +25,7 @@ function ChallengesHub({
   profileRole,
   currentUserId,
   athleteId = null,
+  athleteCoachId = null,
   workouts = [],
   coachAthletes = [],
   notify,
@@ -36,6 +37,27 @@ function ChallengesHub({
   const S = styles;
   const isAdmin = profileRole === "admin" || String(currentUserId || "") === PLATFORM_ADMIN_USER_ID;
   const isAthlete = Boolean(isAthleteProp) || profileRole === "athlete";
+  const canCreateChallenge = isAdmin || (profileRole === "coach" && !isAthlete);
+  const canManageChallenge = (c) =>
+    Boolean(c) && (isAdmin || (c.coach_id != null && String(c.coach_id) === String(currentUserId || "")));
+  const rosterAthleteIds = new Set((coachAthletes || []).map((a) => String(a?.id ?? "")).filter(Boolean));
+  // Reto de equipo: el ranking solo muestra atletas de ese coach.
+  // coachAthletes es el roster del usuario actual — aplicamos el filtro cuando
+  // es el dueño del reto (o admin con roster). Sin roster no recortamos a [].
+  const visibleParticipants = (challenge, list) => {
+    const rows = Array.isArray(list) ? list : [];
+    if (!challenge?.coach_id || !rosterAthleteIds.size) return rows;
+    // coachAthletes es el roster del usuario logueado: solo recorta si es el dueño.
+    if (String(challenge.coach_id) !== String(currentUserId || "")) return rows;
+    return rows.filter((p) => rosterAthleteIds.has(String(p.athlete_id)));
+  };
+  const isVisibleChallenge = (c) => {
+    if (isAdmin) return true;
+    if (c?.coach_id == null || c.coach_id === "") return true;
+    if (String(c.coach_id) === String(currentUserId || "")) return true;
+    if (isAthlete && athleteCoachId && String(c.coach_id) === String(athleteCoachId)) return true;
+    return false;
+  };
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [participantsByChallenge, setParticipantsByChallenge] = useState({});
@@ -96,7 +118,7 @@ function ChallengesHub({
       setLoading(false);
       return;
     }
-    const list = Array.isArray(data) ? data : [];
+    const list = (Array.isArray(data) ? data : []).filter(isVisibleChallenge);
     setRows(list);
     const ids = list.map((c) => c.id).filter(Boolean);
     if (ids.length === 0) {
@@ -205,7 +227,7 @@ function ChallengesHub({
     setWorkoutsByAthlete(workoutsMap);
     setMyChallengeIds(mine);
     setLoading(false);
-  }, [notify, currentUserId, athleteId, coachAthletes, isAdmin]);
+  }, [notify, currentUserId, athleteId, athleteCoachId, coachAthletes, isAdmin, isAthlete]);
 
   useEffect(() => {
     loadChallenges();
@@ -229,7 +251,7 @@ function ChallengesHub({
   };
 
   const createChallenge = async () => {
-    if (!isAdmin) return;
+    if (!canCreateChallenge || !currentUserId) return;
     const title = form.title.trim();
     const isDist = form.challenge_type === "distancia";
     const targetRaw = String(form.target_value ?? "").trim();
@@ -267,7 +289,8 @@ function ChallengesHub({
       end_date: form.end_date,
       emoji: form.emoji.trim() || "🏁",
       color: form.color || "#a855f7",
-      created_by: PLATFORM_ADMIN_USER_ID,
+      created_by: isAdmin ? PLATFORM_ADMIN_USER_ID : currentUserId,
+      coach_id: isAdmin ? null : currentUserId,
       is_active: true,
       is_recurring: Boolean(form.is_recurring),
       recurrence: form.is_recurring ? (form.recurrence === "weekly" ? "weekly" : "monthly") : null,
@@ -291,7 +314,7 @@ function ChallengesHub({
   };
 
   const renewChallengeForNextPeriod = async (c) => {
-    if (!isAdmin) return;
+    if (!canManageChallenge(c)) return;
     const today = formatLocalYMD(new Date());
     const endYmd = String(c.end_date || "").slice(0, 10);
     if (!endYmd || endYmd >= today) return;
@@ -326,7 +349,8 @@ function ChallengesHub({
         end_date,
         emoji: c.emoji ?? "🏁",
         color: c.color ?? "#a855f7",
-        created_by: PLATFORM_ADMIN_USER_ID,
+        created_by: isAdmin ? PLATFORM_ADMIN_USER_ID : currentUserId,
+        coach_id: c.coach_id ?? (isAdmin ? null : currentUserId),
         is_active: true,
         is_recurring: nextIsRecurring,
         recurrence: nextIsRecurring ? recurrence : null,
@@ -454,7 +478,8 @@ Reglas adicionales:
   };
 
   const deleteChallenge = async (challengeId) => {
-    if (!isAdmin) return;
+    const target = rows.find((r) => String(r.id) === String(challengeId));
+    if (!canManageChallenge(target)) return;
     if (typeof window !== "undefined" && !window.confirm("¿Eliminar este reto?")) return;
     setDeletingId(String(challengeId));
     const { error } = await supabase.from("challenges").delete().eq("id", challengeId);
@@ -469,7 +494,8 @@ Reglas adicionales:
 
   /** Admin: No recurrente | Semanal | Mensual → is_recurring + recurrence */
   const updateChallengeRecurrence = async (challengeId, mode) => {
-    if (!isAdmin) return;
+    const target = rows.find((r) => String(r.id) === String(challengeId));
+    if (!canManageChallenge(target)) return;
     const value = String(mode || "none");
     const patch =
       value === "weekly"
@@ -506,15 +532,17 @@ Reglas adicionales:
           <div style={{ fontSize: "1.1em", fontWeight: 900, color: "#0f172a" }}>🏆 Retos</div>
           <div style={{ color: "#64748b", fontSize: ".8em", marginTop: 3 }}>Retos activos de la comunidad</div>
         </div>
-        {isAdmin ? (
+        {canCreateChallenge ? (
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button
-              type="button"
-              onClick={() => setShowAiGenerateModal(true)}
-              style={{ background: "linear-gradient(135deg,#0ea5e9,#6366f1)", border: "none", borderRadius: 10, padding: "9px 14px", color: "#fff", fontWeight: 800, fontFamily: "inherit", cursor: "pointer", fontSize: ".78em" }}
-            >
-              ✨ Generar con IA
-            </button>
+            {isAdmin ? (
+              <button
+                type="button"
+                onClick={() => setShowAiGenerateModal(true)}
+                style={{ background: "linear-gradient(135deg,#0ea5e9,#6366f1)", border: "none", borderRadius: 10, padding: "9px 14px", color: "#fff", fontWeight: 800, fontFamily: "inherit", cursor: "pointer", fontSize: ".78em" }}
+              >
+                ✨ Generar con IA
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={() => setShowCreate((v) => !v)}
@@ -552,7 +580,7 @@ Reglas adicionales:
         </div>
       ) : null}
 
-      {isAdmin && showCreate ? (
+      {canCreateChallenge && showCreate ? (
         <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: 14, background: "#f8fafc", marginBottom: 14 }}>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: 10 }}>
             <input value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} placeholder="Título" style={{ border: "1px solid #dbe2ea", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit" }} />
@@ -643,7 +671,7 @@ Reglas adicionales:
             const todayYmd = formatLocalYMD(new Date());
             const challengeEndYmd = String(challenge.end_date || "").slice(0, 10);
             const challengeExpired = Boolean(challengeEndYmd && challengeEndYmd < todayYmd);
-            const participants = participantsByChallenge[challenge.id] || [];
+            const participants = visibleParticipants(challenge, participantsByChallenge[challenge.id] || []);
             const isMine = myChallengeIds.has(String(challenge.id));
             const progress = computeChallengeProgressForAthlete(challenge, workouts);
             const openDistanceChallenge = challengeHasOpenTarget(challenge);
@@ -682,7 +710,7 @@ Reglas adicionales:
                 <div style={{ marginTop: 10, color: "#64748b", fontSize: ".76em" }}>
                   Fecha límite: {challenge.end_date ? new Date(`${challenge.end_date}T12:00:00`).toLocaleDateString("es-CO") : "—"} · Participantes: {participants.length}
                 </div>
-                {isAdmin ? (
+                {canManageChallenge(challenge) ? (
                   <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                     <label style={{ fontSize: ".72em", fontWeight: 700, color: "#64748b" }} htmlFor={`recurrence-${challenge.id}`}>
                       Recurrencia
@@ -850,7 +878,7 @@ Reglas adicionales:
                       </div>
                     )
                   ) : <span />}
-                  {isAdmin ? (
+                  {canManageChallenge(challenge) ? (
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginLeft: "auto" }}>
                       {challengeExpired ? (
                         <button
@@ -897,10 +925,10 @@ Reglas adicionales:
                 Cerrar
               </button>
             </div>
-            {(participantsByChallenge[participantsModalChallenge.id] || []).length === 0 ? (
+            {visibleParticipants(participantsModalChallenge, participantsByChallenge[participantsModalChallenge.id] || []).length === 0 ? (
               <div style={{ color: "#94a3b8", fontSize: ".82em" }}>Sin participantes</div>
             ) : (() => {
-                const modalList = participantsByChallenge[participantsModalChallenge.id] || [];
+                const modalList = visibleParticipants(participantsModalChallenge, participantsByChallenge[participantsModalChallenge.id] || []);
                 const isDistanceChallenge = normalizeChallengeType(participantsModalChallenge.challenge_type) === "distancia";
                 const modalTargetRaw = Number(participantsModalChallenge?.target_value);
                 const modalOpenRanking = !Number.isFinite(modalTargetRaw) || modalTargetRaw <= 0;
