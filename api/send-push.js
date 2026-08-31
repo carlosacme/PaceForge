@@ -85,6 +85,58 @@ function requireCron(req, res) {
   return true;
 }
 
+function uniqueIds(values, limit = 80) {
+  const ids = [...new Set((values || []).filter((v) => v != null && v !== "").map(String))];
+  return ids.slice(0, limit);
+}
+
+function cronRuntimeDebug() {
+  return {
+    serverNowIso: new Date().toISOString(),
+    vercelEnv: process.env.VERCEL_ENV || null,
+    gitSha: process.env.VERCEL_GIT_COMMIT_SHA || null,
+    deploymentId: process.env.VERCEL_DEPLOYMENT_ID || null,
+  };
+}
+
+function writeJson(res, status, payload) {
+  const json = JSON.stringify(payload);
+  res.statusCode = status;
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("X-RAF-Cron", String(payload?.debug?.handler || "cron"));
+  res.end(json);
+}
+
+function remindDryBody({
+  ok = true,
+  date = null,
+  workoutsToday = 0,
+  streak = 0,
+  reminded = 0,
+  sent = 0,
+  devices = 0,
+  preview = [],
+  debug = {},
+}) {
+  return {
+    ok,
+    dry: true,
+    date,
+    workoutsToday,
+    streak,
+    reminded,
+    sent,
+    devices,
+    preview,
+    debug: {
+      handler: "remind",
+      ...cronRuntimeDebug(),
+      ...debug,
+    },
+  };
+}
+
 async function deliverOrDry({ dry, targets, toUserId, kind, title, body, pushData }) {
   if (dry) {
     return { delivered: targets.length ? 1 : 0, devices: targets.length, dry: true };
@@ -93,125 +145,243 @@ async function deliverOrDry({ dry, targets, toUserId, kind, title, body, pushDat
 }
 
 async function handleDailyReminders(req, res) {
-  const { supabase, error: cfgError } = adminClient();
-  if (!supabase) return res.status(500).json({ error: cfgError });
-
-  const today = cronDate(req);
   const dry = isDryRun(req);
+  const today = cronDate(req);
   const windowFrom = addDaysYmd(today, -STREAK_WINDOW_DAYS);
-  console.log("[remind] date:", today, dry ? "(dry)" : "");
+  const silentErrors = [];
+  const query = {
+    action: req.query?.action ?? null,
+    dry: req.query?.dry ?? null,
+    as_of: req.query?.as_of ?? null,
+  };
 
-  let windowRows;
+  const finishDry = (fields) => {
+    return writeJson(res, 200, remindDryBody({
+      date: today,
+      ...fields,
+      debug: {
+        query,
+        cotDate: today,
+        windowFrom,
+        ...fields.debug,
+        silentErrors,
+      },
+    }));
+  };
+
   try {
-    windowRows = await fetchWorkoutsInRange(supabase, {
-      from: windowFrom,
-      to: today,
-      columns: "id,title,type,total_km,duration_min,athlete_id,scheduled_date,done",
-    });
-  } catch (e) {
-    console.error("[remind] workouts:", e.message);
-    return res.status(500).json({ error: "No se pudieron leer los workouts" });
-  }
-
-  const todayUndone = windowRows.filter((w) => workoutYmd(w) === today && !w.done);
-  const streakByAthleteId = streaksByAthlete(windowRows, today);
-  const { streakAthleteIds, genericWorkouts } = planDailyPushes(todayUndone, streakByAthleteId);
-
-  const athleteIds = [
-    ...new Set([
-      ...[...streakAthleteIds],
-      ...genericWorkouts.map((w) => w.athlete_id).filter(Boolean),
-    ]),
-  ];
-  if (!athleteIds.length) {
-    return res.status(200).json({ ok: true, sent: 0, date: today, dry, streak: 0, reminded: 0 });
-  }
-
-  let athleteMap;
-  try {
-    athleteMap = await loadAthleteUserMap(supabase, athleteIds);
-  } catch (e) {
-    console.error("[remind] athletes:", e.message);
-    return res.status(500).json({ error: "No se pudieron leer los atletas" });
-  }
-  const userIds = Object.values(athleteMap).filter(Boolean);
-  const { targetsFor } = await loadPushTargetsByUser(supabase, userIds);
-
-  let alreadyStreak = new Set();
-  try {
-    alreadyStreak = await sentKindUserIds(supabase, {
-      kind: STREAK_KIND,
-      userIds,
-      sinceIso: colombiaMidnightIso(today),
-    });
-  } catch (e) {
-    console.warn("[remind] dedup streak:", e.message);
-  }
-
-  let streakSent = 0;
-  let remindSent = 0;
-  let devices = 0;
-  const dryLog = [];
-
-  for (const athleteId of streakAthleteIds) {
-    const userId = userForAthlete(athleteMap, athleteId);
-    if (!userId || alreadyStreak.has(userId)) continue;
-    const targets = targetsFor(userId);
-    if (!targets.length) continue;
-    const { x, y } = streakByAthleteId[athleteId] || streakByAthleteId[String(athleteId)] || {};
-    const { title, body } = streakRiskCopy(x, y);
-    const outcome = await deliverOrDry({
-      dry,
-      targets,
-      toUserId: userId,
-      kind: STREAK_KIND,
-      title,
-      body,
-      pushData: { type: REMIND_KIND },
-    });
-    devices += outcome.delivered;
-    if (outcome.delivered > 0) {
-      streakSent += 1;
-      dryLog.push({ kind: STREAK_KIND, userId, athleteId, x, y, title, body });
-      console.log(`[remind] streak ${userId}: ${body}`);
+    const { supabase, error: cfgError } = adminClient();
+    if (!supabase) {
+      if (dry) {
+        silentErrors.push(cfgError || "Missing config");
+        return finishDry({ ok: false, debug: { windowRowCount: 0, athleteIds: [], coachIds: [] } });
+      }
+      return res.status(500).json({ error: cfgError });
     }
-  }
 
-  for (const w of genericWorkouts) {
-    const userId = userForAthlete(athleteMap, w.athlete_id);
-    const targets = targetsFor(userId);
-    if (!targets.length) continue;
-    const kmText = w.total_km ? ` · ${w.total_km}km` : "";
-    const minText = w.duration_min ? ` · ${w.duration_min}min` : "";
-    const body = `${w.title || w.type || "Entrenamiento"}${kmText}${minText}`;
-    const outcome = await deliverOrDry({
-      dry,
-      targets,
-      toUserId: userId,
-      kind: REMIND_KIND,
-      title: "🏃 Tienes un entreno hoy",
-      body,
-      pushData: { type: REMIND_KIND, workout_id: w.id },
-    });
-    devices += outcome.delivered;
-    if (outcome.delivered > 0) {
-      remindSent += 1;
-      dryLog.push({ kind: REMIND_KIND, userId, athleteId: w.athlete_id, workoutId: w.id, body });
-      console.log(`[remind] ✓ ${userId} (${outcome.delivered}/${outcome.devices} disp.): ${body}`);
+    console.log("[remind] date:", today, dry ? "(dry)" : "");
+
+    let windowRows;
+    try {
+      windowRows = await fetchWorkoutsInRange(supabase, {
+        from: windowFrom,
+        to: today,
+        columns: "id,title,type,total_km,duration_min,athlete_id,scheduled_date,done",
+      });
+    } catch (e) {
+      const msg = e?.message || String(e);
+      console.error("[remind] workouts:", msg);
+      if (dry) {
+        silentErrors.push(`workouts: ${msg}`);
+        return finishDry({ ok: false, debug: { windowRowCount: 0, athleteIds: [], coachIds: [] } });
+      }
+      return res.status(500).json({ error: "No se pudieron leer los workouts" });
     }
-  }
 
-  return res.status(200).json({
-    ok: true,
-    date: today,
-    dry,
-    workoutsToday: todayUndone.length,
-    streak: streakSent,
-    reminded: remindSent,
-    sent: streakSent + remindSent,
-    devices,
-    ...(dry ? { preview: dryLog } : {}),
-  });
+    const todayUndone = windowRows.filter((w) => workoutYmd(w) === today && !w.done);
+    const streakByAthleteId = streaksByAthlete(windowRows, today);
+    const { streakAthleteIds, genericWorkouts } = planDailyPushes(todayUndone, streakByAthleteId);
+    const streakIds = [...streakAthleteIds];
+    const athleteIds = [...new Set([...streakIds, ...genericWorkouts.map((w) => w.athlete_id).filter(Boolean)])];
+
+    const debugBase = {
+      windowRowCount: windowRows.length,
+      streakCandidateCount: streakIds.length,
+      genericWorkoutCount: genericWorkouts.length,
+      athleteIds: uniqueIds(athleteIds),
+      coachIds: [],
+    };
+
+    if (!athleteIds.length) {
+      if (dry) return finishDry({ workoutsToday: todayUndone.length, debug: debugBase });
+      return res.status(200).json({
+        ok: true,
+        sent: 0,
+        date: today,
+        dry: false,
+        streak: 0,
+        reminded: 0,
+        workoutsToday: todayUndone.length,
+      });
+    }
+
+    let users = {};
+    let coaches = {};
+    try {
+      const loaded = await loadAthleteUserMap(supabase, athleteIds);
+      users = loaded.users || {};
+      coaches = loaded.coaches || {};
+    } catch (e) {
+      const msg = e?.message || String(e);
+      console.error("[remind] athletes:", msg);
+      if (dry) {
+        silentErrors.push(`athletes: ${msg}`);
+        return finishDry({ ok: false, workoutsToday: todayUndone.length, debug: debugBase });
+      }
+      return res.status(500).json({ error: "No se pudieron leer los atletas" });
+    }
+
+    const userIds = Object.values(users).filter(Boolean);
+    debugBase.coachIds = uniqueIds([...debugBase.coachIds, ...Object.values(coaches)]);
+
+    let targetsFor = () => [];
+    try {
+      const loadedTargets = await loadPushTargetsByUser(supabase, userIds);
+      targetsFor = loadedTargets.targetsFor;
+    } catch (e) {
+      const msg = e?.message || String(e);
+      console.warn("[remind] tokens:", msg);
+      silentErrors.push(`tokens: ${msg}`);
+      if (!dry) throw e;
+    }
+
+    let alreadyStreak = new Set();
+    try {
+      alreadyStreak = await sentKindUserIds(supabase, {
+        kind: STREAK_KIND,
+        userIds,
+        sinceIso: colombiaMidnightIso(today),
+      });
+    } catch (e) {
+      const msg = e?.message || String(e);
+      console.warn("[remind] dedup streak:", msg);
+      silentErrors.push(`dedup: ${msg}`);
+    }
+
+    let streakSent = 0;
+    let remindSent = 0;
+    let devices = 0;
+    const dryLog = [];
+    let skippedNoUser = 0;
+    let skippedNoToken = 0;
+    let skippedAlreadySent = 0;
+
+    for (const athleteId of streakAthleteIds) {
+      const userId = userForAthlete(users, athleteId);
+      if (!userId) {
+        skippedNoUser += 1;
+        continue;
+      }
+      if (alreadyStreak.has(userId)) {
+        skippedAlreadySent += 1;
+        continue;
+      }
+      const targets = targetsFor(userId);
+      if (!targets.length) {
+        skippedNoToken += 1;
+        if (dry) {
+          const { x, y } = streakByAthleteId[athleteId] || streakByAthleteId[String(athleteId)] || {};
+          const copy = streakRiskCopy(x, y);
+          dryLog.push({ kind: STREAK_KIND, skipped: "no_token", athleteId, x, y, title: copy.title, body: copy.body });
+        }
+        continue;
+      }
+      const { x, y } = streakByAthleteId[athleteId] || streakByAthleteId[String(athleteId)] || {};
+      const { title, body } = streakRiskCopy(x, y);
+      const outcome = await deliverOrDry({
+        dry,
+        targets,
+        toUserId: userId,
+        kind: STREAK_KIND,
+        title,
+        body,
+        pushData: { type: REMIND_KIND },
+      });
+      devices += outcome.delivered;
+      if (outcome.delivered > 0) {
+        streakSent += 1;
+        dryLog.push({ kind: STREAK_KIND, userId, athleteId, x, y, title, body });
+        console.log(`[remind] streak ${userId}: ${body}`);
+      }
+    }
+
+    for (const w of genericWorkouts) {
+      const userId = userForAthlete(users, w.athlete_id);
+      if (!userId) {
+        skippedNoUser += 1;
+        continue;
+      }
+      const targets = targetsFor(userId);
+      const kmText = w.total_km ? ` · ${w.total_km}km` : "";
+      const minText = w.duration_min ? ` · ${w.duration_min}min` : "";
+      const body = `${w.title || w.type || "Entrenamiento"}${kmText}${minText}`;
+      if (!targets.length) {
+        skippedNoToken += 1;
+        if (dry) dryLog.push({ kind: REMIND_KIND, skipped: "no_token", athleteId: w.athlete_id, workoutId: w.id, body });
+        continue;
+      }
+      const outcome = await deliverOrDry({
+        dry,
+        targets,
+        toUserId: userId,
+        kind: REMIND_KIND,
+        title: "🏃 Tienes un entreno hoy",
+        body,
+        pushData: { type: REMIND_KIND, workout_id: w.id },
+      });
+      devices += outcome.delivered;
+      if (outcome.delivered > 0) {
+        remindSent += 1;
+        dryLog.push({ kind: REMIND_KIND, userId, athleteId: w.athlete_id, workoutId: w.id, body });
+        console.log(`[remind] ✓ ${userId} (${outcome.delivered}/${outcome.devices} disp.): ${body}`);
+      }
+    }
+
+    const counts = {
+      workoutsToday: todayUndone.length,
+      streak: streakSent,
+      reminded: remindSent,
+      sent: streakSent + remindSent,
+      devices,
+      preview: dry ? dryLog : undefined,
+      debug: {
+        ...debugBase,
+        skippedNoUser,
+        skippedNoToken,
+        skippedAlreadySent,
+      },
+    };
+
+    if (dry) return finishDry(counts);
+    return res.status(200).json({
+      ok: true,
+      date: today,
+      dry: false,
+      workoutsToday: counts.workoutsToday,
+      streak: counts.streak,
+      reminded: counts.reminded,
+      sent: counts.sent,
+      devices: counts.devices,
+    });
+  } catch (e) {
+    const msg = e?.message || String(e);
+    console.error("[remind] uncaught:", msg);
+    if (dry) {
+      silentErrors.push(`uncaught: ${msg}`);
+      return finishDry({ ok: false, debug: { windowRowCount: 0, athleteIds: [], coachIds: [] } });
+    }
+    return res.status(500).json({ error: "Error interno del cron de remind" });
+  }
 }
 
 async function handleWeeklySummary(req, res) {
@@ -257,14 +427,15 @@ async function handleWeeklySummary(req, res) {
     return res.status(200).json({ ok: true, sent: 0, date: today, dry, range });
   }
 
-  let athleteMap;
+  let users = {};
   try {
-    athleteMap = await loadAthleteUserMap(supabase, summaries.map((s) => s.athleteId));
+    const loaded = await loadAthleteUserMap(supabase, summaries.map((s) => s.athleteId));
+    users = loaded.users || {};
   } catch (e) {
     console.error("[weekly] athletes:", e.message);
     return res.status(500).json({ error: "No se pudieron leer los atletas" });
   }
-  const userIds = Object.values(athleteMap).filter(Boolean);
+  const userIds = Object.values(users).filter(Boolean);
   const { targetsFor } = await loadPushTargetsByUser(supabase, userIds);
 
   let already = new Set();
@@ -283,7 +454,7 @@ async function handleWeeklySummary(req, res) {
   const dryLog = [];
 
   for (const { athleteId, summary } of summaries) {
-    const userId = userForAthlete(athleteMap, athleteId);
+    const userId = userForAthlete(users, athleteId);
     if (!userId || already.has(userId)) continue;
     const targets = targetsFor(userId);
     if (!targets.length) continue;
