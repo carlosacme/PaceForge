@@ -10,8 +10,10 @@ import {
  * Perfil -> Forma del atleta.
  *
  * 0 estados propios: deriva de `workouts`. Paywall propio (Premium Atleta).
- * Subset vs el FormaFatigaPanel del coach: sin ratio, sin barras semanales,
- * sin tabla 4 semanas, sin spinner de loadingWorkouts. No fusionar.
+ * Subset vs el FormaFatigaPanel del coach: sin el número ACWR, sin barras
+ * semanales, sin tabla 4 semanas, sin spinner de loadingWorkouts. El label
+ * (Óptimo / Desentrenado / Precaución / Sobreentrenado) usa las mismas bandas
+ * que el coach. No fusionar con el bloque RPE.
  */
 export default function AthleteFormaFatigaPanel({
   cardStyle,

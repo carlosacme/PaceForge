@@ -20,6 +20,14 @@ import {
   fmtPace,
 } from "../../lib/vdot";
 import { distKmFromLabel } from "../../lib/intervals";
+import {
+  acwrBandFromRatio,
+  acwrGaugePercent,
+  COLOR_GREEN,
+  COLOR_RED,
+  COLOR_ORANGE,
+} from "../../../lib/acwrBands.js";
+import { workoutActualKm as workoutActualKmFromLib, sumWeekKm as sumWeekKmFromLib } from "../../../lib/weekStats.js";
 
 export {
   registerFcmToken,
@@ -426,9 +434,6 @@ export const addDays = (d, n) => {
 
 /** Km últimos 7d vs promedio semanal (4 semanas lun–dom), ratio aguda/crónica y barras (solo workouts completados). */
 export const computeGarminLoadMetricsFromWorkouts = (workouts) => {
-  const COLOR_GREEN = "#16a34a";
-  const COLOR_RED = "#dc2626";
-  const COLOR_ORANGE = "#f97316";
   const today = new Date();
   const todayYmd = formatLocalYMD(today);
   const doneWorkouts = (workouts || []).filter((w) => w?.done);
@@ -477,21 +482,8 @@ export const computeGarminLoadMetricsFromWorkouts = (workouts) => {
   const chronicWeeklyAvgKm = totalKm4w / 4;
   const ratio = chronicWeeklyAvgKm > 1e-6 ? acuteKm / chronicWeeklyAvgKm : null;
   const avgSessionsPerWeek = totalSessions4w / 4;
-
-  let statusLabel = "Sin datos suficientes";
-  let statusColor = "#64748b";
-  if (ratio != null && Number.isFinite(ratio)) {
-    if (ratio < 0.8) {
-      statusLabel = "Desentrenado";
-      statusColor = COLOR_RED;
-    } else if (ratio > 1.3) {
-      statusLabel = "Sobreentrenado";
-      statusColor = COLOR_RED;
-    } else {
-      statusLabel = "Óptimo";
-      statusColor = COLOR_GREEN;
-    }
-  }
+  const band = acwrBandFromRatio(ratio);
+  const gaugePct = acwrGaugePercent(ratio);
 
   const maxBarKm = Math.max(1, ...weekBars.map((b) => b.km));
   const weekBarsOldestFirst = [...weekBars].reverse();
@@ -500,9 +492,11 @@ export const computeGarminLoadMetricsFromWorkouts = (workouts) => {
     acuteKm,
     chronicWeeklyAvgKm,
     ratio,
-    statusLabel,
-    statusColor,
-    ratioIndicatorColor: ratio == null || !Number.isFinite(ratio) ? COLOR_ORANGE : ratio < 0.8 || ratio > 1.3 ? COLOR_RED : COLOR_GREEN,
+    statusLabel: band.label,
+    statusColor: band.color,
+    acwrBandKey: band.key,
+    ratioIndicatorColor: band.color,
+    ratioGaugePercent: gaugePct,
     weekBarsOldestFirst,
     maxBarKm,
     avgSessionsPerWeek,
@@ -981,34 +975,11 @@ export const currentWeekRangeYmd = (ref = new Date()) => {
 };
 
 /**
- * Distancia REALMENTE corrida de un workout: manda lo que sincronizo el reloj
- * y, si no hay, lo que el atleta tecleo a mano. 0 si no hay ninguno de los dos.
+ * Distancia realmente corrida y km semanales: misma fórmula que el cron de
+ * resumen (`lib/weekStats.js`). planned = total_km; actual solo si done.
  */
-export const workoutActualKm = (w) => {
-  const fromDevice = Number(w?.actual_distance_km);
-  if (Number.isFinite(fromDevice) && fromDevice > 0) return fromDevice;
-  const manual = Number(w?.manual_distance_km);
-  if (Number.isFinite(manual) && manual > 0) return manual;
-  return 0;
-};
-
-const roundKm = (n) => Math.round(n * 10) / 10;
-
-/**
- * Km programados y corridos de un conjunto de workouts ya cargados.
- * Solo cuentan como corridos los marcados done: un workout con distancia del
- * reloj pero sin marcar no esta cerrado todavia.
- */
-export const sumWeekKm = (rows) => {
-  let planned = 0;
-  let actual = 0;
-  for (const w of Array.isArray(rows) ? rows : []) {
-    const km = Number(w?.total_km);
-    if (Number.isFinite(km) && km > 0) planned += km;
-    if (w?.done) actual += workoutActualKm(w);
-  }
-  return { planned: roundKm(planned), actual: roundKm(actual) };
-};
+export const workoutActualKm = workoutActualKmFromLib;
+export const sumWeekKm = sumWeekKmFromLib;
 
 /**
  * Km programados y corridos de esta semana por atleta, en UNA sola consulta

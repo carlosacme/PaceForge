@@ -33,10 +33,10 @@ export default function FormaFatigaPanel({ workouts, loadingWorkouts }) {
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(168px, 1fr))", gap: 12 }}>
             <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: "14px 12px", background: "#fafafa" }}>
-              <div style={{ fontSize: ".72em", color: "#64748b", fontWeight: 700, marginBottom: 6 }}>Estado de entrenamiento</div>
+              <div style={{ fontSize: ".72em", color: "#64748b", fontWeight: 700, marginBottom: 6 }}>ACWR (riesgo de carga)</div>
               <div style={{ fontSize: "1.2em", fontWeight: 900, color: coachGarminLoadMetrics.statusColor }}>{coachGarminLoadMetrics.statusLabel}</div>
               <div style={{ fontSize: ".7em", color: "#64748b", marginTop: 8, lineHeight: 1.45 }}>
-                Ratio 7 días / promedio semanal (4 sem): &lt; 0.8 desentrenado · 0.8–1.3 óptimo · &gt; 1.3 sobreentrenado
+                Aguda 7d / crónica 4 sem. Informativo: no cambia el plan. Seguro 0.8–1.3 · precaución 1.3–1.5 · riesgo &gt; 1.5
               </div>
             </div>
             <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: "14px 12px", background: "#fafafa" }}>
@@ -48,14 +48,14 @@ export default function FormaFatigaPanel({ workouts, loadingWorkouts }) {
               <div style={{ fontSize: "1.35em", fontWeight: 900, color: coachGarminLoadMetrics.COLOR_ORANGE, fontFamily: "monospace" }}>{coachGarminLoadMetrics.chronicWeeklyAvgKm.toFixed(1)} km/sem</div>
             </div>
             <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: "14px 12px", background: "#fafafa", gridColumn: "1 / -1", minWidth: 0 }}>
-              <div style={{ fontSize: ".72em", color: "#64748b", fontWeight: 700, marginBottom: 6 }}>Ratio carga aguda / crónica</div>
+              <div style={{ fontSize: ".72em", color: "#64748b", fontWeight: 700, marginBottom: 6 }}>Ratio carga aguda / crónica (ACWR)</div>
               <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
                 <span style={{ fontSize: "1.35em", fontWeight: 900, fontFamily: "monospace", color: coachGarminLoadMetrics.ratioIndicatorColor }}>
                   {coachGarminLoadMetrics.hasRatio ? coachGarminLoadMetrics.ratio.toFixed(2) : "—"}
                 </span>
-                <span style={{ fontSize: ".72em", color: "#64748b" }}>verde = óptimo · rojo = extremos</span>
+                <span style={{ fontSize: ".72em", color: "#64748b" }}>verde = seguro · amarillo = precaución · rojo = sobrecarga</span>
               </div>
-              <div style={{ position: "relative", marginTop: 10, height: 14, borderRadius: 7, background: "linear-gradient(90deg, #dc2626 0%, #dc2626 40%, #16a34a 40%, #16a34a 65%, #dc2626 65%, #dc2626 100%)" }}>
+              <div style={{ position: "relative", marginTop: 10, height: 14, borderRadius: 7, background: "linear-gradient(90deg, #f59e0b 0%, #f59e0b 40%, #16a34a 40%, #16a34a 65%, #eab308 65%, #eab308 75%, #dc2626 75%, #dc2626 100%)" }}>
                 {coachGarminLoadMetrics.hasRatio ? (
                   <div
                     style={{
@@ -64,7 +64,7 @@ export default function FormaFatigaPanel({ workouts, loadingWorkouts }) {
                       width: 4,
                       height: 18,
                       marginLeft: -2,
-                      left: `${Math.min(100, Math.max(0, (coachGarminLoadMetrics.ratio / 2) * 100))}%`,
+                      left: `${coachGarminLoadMetrics.ratioGaugePercent ?? Math.min(100, Math.max(0, (coachGarminLoadMetrics.ratio / 2) * 100))}%`,
                       background: "#0f172a",
                       borderRadius: 2,
                       boxShadow: "0 0 0 2px #fff",
@@ -74,7 +74,9 @@ export default function FormaFatigaPanel({ workouts, loadingWorkouts }) {
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: ".65em", color: "#94a3b8", marginTop: 4 }}>
                 <span>0</span>
-                <span>Óptimo 0.8–1.3</span>
+                <span>0.8</span>
+                <span>1.3</span>
+                <span>1.5</span>
                 <span>2+</span>
               </div>
             </div>
