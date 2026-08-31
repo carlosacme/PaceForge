@@ -62,6 +62,18 @@ function isDryRun(req) {
 
 function requireCron(req, res) {
   const cronSecret = process.env.CRON_SECRET;
+  const authHeader = String(req.headers.authorization ?? "");
+  const bearerMatch = authHeader.match(/^Bearer\s(.*)$/i);
+  const receivedToken = bearerMatch ? bearerMatch[1] : "";
+  // TEMP: diagnostic 401 — lengths and whitespace only; never log the values.
+  console.warn("[cron-auth]", {
+    receivedTokenLen: receivedToken.length,
+    envLen: cronSecret == null ? 0 : String(cronSecret).length,
+    envConfigured: Boolean(cronSecret),
+    receivedHasOuterWs: receivedToken !== receivedToken.trim(),
+    envHasOuterWs: cronSecret == null ? false : String(cronSecret) !== String(cronSecret).trim(),
+    headerStartsWithBearer: /^Bearer\s/i.test(authHeader),
+  });
   if (!cronSecret) {
     jsonError(res, 500, "CRON_SECRET no configurada");
     return false;
