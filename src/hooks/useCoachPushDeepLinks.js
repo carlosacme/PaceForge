@@ -162,6 +162,20 @@ export function useCoachPushDeepLinks({
    * en un solo sitio. Devuelve false si aun no se puede aplicar.
    */
   const applyCoachDeepLink = useCallback((data) => {
+    const type = String(data?.type || "");
+    // El solicitante aun no esta en el roster: no esperar athlete_id.
+    if (type === "coach_request") {
+      try { sessionStorage.setItem("raf_scroll_coach_requests", "1"); } catch {}
+      setView("dashboard");
+      try { localStorage.setItem("raf_lastView", "dashboard"); } catch {}
+      setViewRestored(true);
+      if (typeof window !== "undefined") {
+        window.setTimeout(() => {
+          document.getElementById("coach-pending-requests")?.scrollIntoView({ behavior: "smooth", block: "start" });
+        }, 250);
+      }
+      return true;
+    }
     const athleteId = data?.athlete_id;
     if (athleteId) {
       const found = (athletes || []).find((a) => String(a.id) === String(athleteId));
@@ -173,11 +187,11 @@ export function useCoachPushDeepLinks({
     // volver a foco y pisaria el destino del deep link.
     try { localStorage.setItem("raf_lastView", "athletes"); } catch {}
     setViewRestored(true); // evita que el efecto de restauracion lo pise
-    if (data?.type === "coach_workout_completed" && data?.workout_id) {
+    if (type === "coach_workout_completed" && data?.workout_id) {
       setPendingRegistroWorkoutId(String(data.workout_id));
     }
     return true;
-  }, [athletes]);
+  }, [athletes, setView, setViewRestored, setSelectedAthlete, setPendingRegistroWorkoutId]);
 
   // Deep link desde notificaciones push (tipos coach_*). Requiere que el
   // perfil y la lista de atletas ya esten cargados; si el athlete_id aun no

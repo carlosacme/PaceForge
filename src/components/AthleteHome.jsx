@@ -809,9 +809,13 @@ export default function AthleteHome({ profile }) {
             marginBottom: 12,
           }}
         >
-          <div style={{ fontSize: ".95em", fontWeight: 900, color: "#0f172a", marginBottom: 4 }}>Aún no tienes entrenador</div>
+          <div style={{ fontSize: ".95em", fontWeight: 900, color: "#0f172a", marginBottom: 4 }}>
+            {coachRequestPending ? "Tu solicitud fue enviada" : "Aún no tienes entrenador"}
+          </div>
           <div style={{ fontSize: ".82em", color: "#475569", marginBottom: 12, lineHeight: 1.45 }}>
-            Conéctate con tu coach para recibir tus entrenamientos personalizados.
+            {coachRequestPending
+              ? "Un coach te contactará pronto. Mientras tanto el calendario estará vacío: tus entrenos aparecen cuando te acepten y te asignen un plan. Si ya tienes un código, conéctate aquí abajo."
+              : "Conéctate con tu coach para recibir tus entrenamientos personalizados."}
           </div>
           <CoachLinkActions
             code={findCoachCodeInput}
@@ -862,6 +866,11 @@ export default function AthleteHome({ profile }) {
         onToggleDone={workoutRpe.toggleDone}
         onOpenNot100={workoutOverlays.openNot100}
         onOpenBriefing={workoutOverlays.openBriefing}
+        emptyHint={
+          athleteNeedsCoachLink && coachRequestPending
+            ? "Vacío a propósito: tu solicitud ya está en camino. Un coach te asignará los entrenos cuando te acepte."
+            : null
+        }
       />
 
       <AthleteWeeklyStrip cardStyle={S.card} workouts={workouts} />

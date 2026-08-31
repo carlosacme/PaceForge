@@ -23,6 +23,7 @@ export default function AthleteOwnCalendar({
   onToggleDone,
   onOpenNot100,
   onOpenBriefing,
+  emptyHint = null,
 }) {
   const [calendarViewMonth, setCalendarViewMonth] = useState(() => {
     const n = new Date();
@@ -117,6 +118,11 @@ export default function AthleteOwnCalendar({
             <button type="button" onClick={() => setCalendarViewMonth(({ y, m }) => (m === 11 ? { y: y + 1, m: 0 } : { y, m: m + 1 }))} style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "6px 10px", color: "#0f172a", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".78em" }}>→</button>
           </div>
         </div>
+        {emptyHint && !(workouts || []).length ? (
+          <div style={{ fontSize: ".8em", color: "#475569", lineHeight: 1.45, marginBottom: 10, padding: "10px 12px", borderRadius: 8, background: "rgba(255,138,61,.08)", border: "1px solid rgba(255,138,61,.25)" }}>
+            {emptyHint}
+          </div>
+        ) : null}
         {loading ? (
           <div style={{ color: "#64748b", fontSize: ".85em", padding: "20px 0" }}>Cargando...</div>
         ) : (
