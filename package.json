@@ -9,6 +9,7 @@
     "postbuild": "node scripts/stamp-sw.cjs",
     "lint": "eslint .",
     "preview": "vite preview",
+    "test": "node --test lib/streakRisk.test.js lib/weekStats.test.js lib/acwrBands.test.js",
     "version:bump": "node scripts/bump-version.js"
   },
   "dependencies": {

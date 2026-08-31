@@ -480,7 +480,7 @@ export default function AthleteHome({ profile }) {
    * manual.
    */
   const applyAthleteDeepLink = useCallback((type) => {
-    if (type === "athlete_calendar") {
+    if (type === "athlete_calendar" || type === "streak_risk" || type === "weekly_summary") {
       handleAthleteNavTabChange("home");
     } else if (type === "athlete_chat") {
       handleAthleteNavTabChange("home");
