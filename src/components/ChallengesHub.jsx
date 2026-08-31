@@ -290,7 +290,7 @@ function ChallengesHub({
       emoji: form.emoji.trim() || "🏁",
       color: form.color || "#a855f7",
       created_by: isAdmin ? PLATFORM_ADMIN_USER_ID : currentUserId,
-      coach_id: isAdmin ? null : currentUserId,
+      coach_id: currentUserId,
       is_active: true,
       is_recurring: Boolean(form.is_recurring),
       recurrence: form.is_recurring ? (form.recurrence === "weekly" ? "weekly" : "monthly") : null,
