@@ -310,7 +310,7 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
         const mondayOfWeek = addDays(startDate, (week - 1) * 7);
         const scheduledDate = formatLocalYMD(addDays(mondayOfWeek, dayOffset));
         const assignedTitle = w.title || `Sesión ${idx + 1}`;
-        const fitnessTestFlag = w.is_fitness_test;
+        const fitnessTestFlag = w.is_fitness_test === true ? true : undefined;
         const structure = stripTestTimeGoalsFromStructure(
           assignedTitle,
           enrichStructureWithPaces(readStructure(w), athleteVdot, athleteFcMax),

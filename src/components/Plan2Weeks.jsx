@@ -1024,7 +1024,14 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
         const type = WORKOUT_TYPES.some((t) => t.id === typeRaw) ? typeRaw : "easy";
         const kmVal = wo.total_km ?? wo.km;
         const assignedTitle = String(wo.title || "Entrenamiento");
-        const fitnessTestFlag = wo.is_fitness_test;
+        // Plan2Weeks no es workout_library: el flag solo cuenta si viene true.
+        // false/undefined caen al regex del título (TEST 5K escrito a mano).
+        const fitnessTestFlag = wo.is_fitness_test === true ? true : undefined;
+        const assignedDescription = stripTestTimeGoalFromDescription(
+          assignedTitle,
+          String(wo.description || ""),
+          fitnessTestFlag,
+        );
         // Los bloques llegan al reloj con ritmos numericos segun el VDOT del
         // atleta, igual que hace el Builder al asignar un workout suelto.
         // En TEST se quita el reloj-objetivo (mismo criterio que Biblioteca).
@@ -1043,11 +1050,7 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
           type,
           total_km: Number.isFinite(Number(kmVal)) ? Number(kmVal) : 0,
           duration_min: Number.isFinite(Number(wo.duration_min)) ? Number(wo.duration_min) : 0,
-          description: stripTestTimeGoalFromDescription(
-            assignedTitle,
-            String(wo.description || ""),
-            fitnessTestFlag,
-          ),
+          description: assignedDescription,
           structure,
           // Con que VDOT quedaron escritos estos ritmos, para poder recalcularlos
           // cuando el atleta vuelva a evaluarse.
@@ -1099,9 +1102,30 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
         return;
       }
 
+      const strippedPlan = {
+        ...generatedPlan,
+        weeks: (generatedPlan.weeks || []).map((week) => ({
+          ...week,
+          workouts: (Array.isArray(week.workouts) ? week.workouts : []).map((wo) => {
+            const title = String(wo.title || "Entrenamiento");
+            const flag = wo.is_fitness_test === true ? true : undefined;
+            return {
+              ...wo,
+              description: stripTestTimeGoalFromDescription(title, String(wo.description || ""), flag),
+              structure: stripTestTimeGoalsFromStructure(
+                title,
+                Array.isArray(wo.structure) ? wo.structure : [],
+                flag,
+              ),
+            };
+          }),
+        })),
+      };
+      setGeneratedPlan(strippedPlan);
+
       await persistPlanDraft({
         status: "assigned",
-        planJson: generatedPlan,
+        planJson: strippedPlan,
         startDateValue: startDate,
         blockNumber: currentBlock,
       });

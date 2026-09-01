@@ -119,9 +119,10 @@ const TEST_EFFORT_COPY = "corre a tu máximo esfuerzo sostenible";
 
 /**
  * ¿Es un TEST de esfuerzo?
- * El flag de biblioteca gana: true/false explícitos no se discuten.
- * null/undefined (filas viejas, JSON de plan, workouts asignados) cae al regex
- * del título, el mismo /TEST *K/ que había antes.
+ * true  → sí, aunque el título no calce.
+ * false → no (override de biblioteca). Solo pasar false desde workout_library.
+ * undefined/null/otro → regex del título (/TEST *K/). Sesiones de Plan2Weeks
+ * o JSON de plan no deben pasar false: apagaría el fallback.
  */
 export function isTestWorkoutTitle(title, isFitnessTest) {
   if (isFitnessTest === true) return true;
