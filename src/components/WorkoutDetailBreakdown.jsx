@@ -1,6 +1,6 @@
 import React, { useMemo } from "react";
 import { getWorkoutDetailGroups, formatDetailStepAmount } from "../lib/intervals";
-import { stripTestTimeGoalsFromStructure } from "../lib/enrichPace";
+import { stripTestTimeGoalFromDescription, stripTestTimeGoalsFromStructure } from "../lib/enrichPace";
 
 /**
  * Desglose tipo TrainingPeaks: descripcion general + PASOS (con repeticiones
@@ -19,7 +19,10 @@ export default function WorkoutDetailBreakdown({ workout, vdot = 42.5 }) {
     [workout, vdot],
   );
 
-  const generalDescription = String(workout?.description || "").trim();
+  const generalDescription = stripTestTimeGoalFromDescription(
+    workout?.title,
+    workout?.description || "",
+  ).trim();
   const title = String(workout?.title || "Entrenamiento").trim();
   const simpleKm = workout?.total_km != null && Number(workout.total_km) > 0
     ? `${Number(workout.total_km)} km`

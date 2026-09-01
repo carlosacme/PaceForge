@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { supabase } from "../lib/supabase";
-import { enrichStructureWithPaces, rescaleStructureToVdot, stripTestTimeGoalFromDescription, stripTestTimeGoalsFromStructure } from "../lib/enrichPace";
+import { enrichStructureWithPaces, isTestWorkoutTitle, rescaleStructureToVdot, stripTestTimeGoalFromDescription, stripTestTimeGoalsFromStructure } from "../lib/enrichPace";
 import {
   BRAND_NAME,
   WORKOUT_TYPES,
@@ -60,6 +60,7 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
   const [monthGenerations, setMonthGenerations] = useState(0);
   const [loadingGenerations, setLoadingGenerations] = useState(false);
   const [generationLimitMsg, setGenerationLimitMsg] = useState("");
+  const [saveAsFitnessTest, setSaveAsFitnessTest] = useState(false);
   const monthKey = useMemo(() => getCurrentMonthKey(), []);
   const isBasicPlan = useMemo(() => {
     const p = String(coachPlan || "").toLowerCase();
@@ -111,6 +112,18 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
     }
     return aiWorkout;
   }, [builderTab, manualForm, aiWorkout]);
+
+  useEffect(() => {
+    if (!previewWorkout) {
+      setSaveAsFitnessTest(false);
+      return;
+    }
+    if (previewWorkout.is_fitness_test === true || previewWorkout.is_fitness_test === false) {
+      setSaveAsFitnessTest(previewWorkout.is_fitness_test);
+      return;
+    }
+    setSaveAsFitnessTest(isTestWorkoutTitle(previewWorkout.title));
+  }, [builderTab, previewWorkout?.title, previewWorkout?.is_fitness_test]);
 
   const openAssignModal = () => {
     if (!previewWorkout) return;
@@ -184,15 +197,18 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
                 vdot,
                 selectedAthlete.fc_max,
               ),
+          saveAsFitnessTest,
         );
         const duration_min = structureHasGradePct(rawStructure)
           ? estimateDurationMinFromStructure(structure) || w.duration_min
           : w.duration_min;
+        const { is_fitness_test: _omitFitnessTest, ...workoutFields } = w;
+        void _omitFitnessTest;
         return {
-          ...w,
+          ...workoutFields,
           structure,
           duration_min,
-          description: stripTestTimeGoalFromDescription(w.title, w.description || ""),
+          description: stripTestTimeGoalFromDescription(w.title, w.description || "", saveAsFitnessTest),
           athlete_id: selectedAthlete.id,
           coach_id: userData.user.id,
           scheduled_date: assignDate,
@@ -335,6 +351,7 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
       duration_min: Number.isFinite(Number(w.duration_min)) ? Math.round(Number(w.duration_min)) : 0,
       description: w.description != null ? String(w.description) : "",
       structure: Array.isArray(w.structure) ? w.structure : [],
+      is_fitness_test: saveAsFitnessTest,
     };
     setSavingLibrary(true);
     try {
@@ -545,6 +562,14 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
               ) : (
                 <WorkoutStructureTable structure={previewWorkout.structure} title={previewWorkout.title} />
               )}
+              <label style={{ display: "inline-flex", alignItems: "center", gap: 8, marginTop: 12, fontSize: ".78em", color: "#334155", cursor: "pointer", fontWeight: 700 }}>
+                <input
+                  type="checkbox"
+                  checked={saveAsFitnessTest}
+                  onChange={(e) => setSaveAsFitnessTest(e.target.checked)}
+                />
+                TEST de esfuerzo (sin objetivo de tiempo al asignar)
+              </label>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 16 }}>
                 <button type="button" onClick={exportGarmin} style={{ background: "rgba(22,163,74,.12)", border: "1px solid rgba(22,163,74,.3)", borderRadius: 8, padding: "8px 14px", color: "#22c55e", cursor: "pointer", fontSize: ".78em", fontFamily: "inherit", fontWeight: 600 }}>⌚ Exportar a Garmin</button>
                 <button

@@ -117,7 +117,16 @@ const TEST_OBJETIVO_TIME_RE =
   /\bobjetivo\s+\d{1,2}:\d{2}(?:\s*[-–—]\s*\d{1,2}:\d{2})?/gi;
 const TEST_EFFORT_COPY = "corre a tu máximo esfuerzo sostenible";
 
-export function isTestWorkoutTitle(title) {
+/**
+ * ¿Es un TEST de esfuerzo?
+ * true  → sí, aunque el título no calce.
+ * false → no (override de biblioteca). Solo pasar false desde workout_library.
+ * undefined/null/otro → regex del título (/TEST *K/). Sesiones de Plan2Weeks
+ * o JSON de plan no deben pasar false: apagaría el fallback.
+ */
+export function isTestWorkoutTitle(title, isFitnessTest) {
+  if (isFitnessTest === true) return true;
+  if (isFitnessTest === false) return false;
   return TEST_TITLE_RE.test(String(title || ""));
 }
 
@@ -157,9 +166,9 @@ function clearPrescribedPace(block) {
  * Misma función para la descripción del workout y la de cada paso.
  * Un TEST 3K sin objetivo queda igual. No-TEST no se toca.
  */
-export function stripTestTimeGoalFromDescription(title, description) {
+export function stripTestTimeGoalFromDescription(title, description, isFitnessTest) {
   const raw = String(description ?? "");
-  if (!isTestWorkoutTitle(title) || !raw) return raw;
+  if (!isTestWorkoutTitle(title, isFitnessTest) || !raw) return raw;
   let out = raw.replace(TEST_OBJETIVO_VDOT_RE, TEST_EFFORT_COPY);
   out = out.replace(TEST_OBJETIVO_TIME_RE, "");
   out = out.replace(/[ \t]+$/gm, "");
@@ -175,13 +184,13 @@ export function stripTestTimeGoalFromDescription(title, description) {
  * esos sí son prescripción. Vaciar el all-out evita que el reloj ancle el
  * esfuerzo al VDOT que el test viene a re-medir.
  */
-export function stripTestTimeGoalsFromStructure(title, structure) {
+export function stripTestTimeGoalsFromStructure(title, structure, isFitnessTest) {
   const arr = Array.isArray(structure) ? structure : [];
-  if (!isTestWorkoutTitle(title)) return arr;
+  if (!isTestWorkoutTitle(title, isFitnessTest)) return arr;
   const out = arr.map((b) => {
     if (!b) return b;
     const description = b.description
-      ? stripTestTimeGoalFromDescription(title, b.description)
+      ? stripTestTimeGoalFromDescription(title, b.description, isFitnessTest)
       : b.description;
     const next = description !== b.description ? { ...b, description } : b;
     const match = isTestMeasurementBlock(next, title);

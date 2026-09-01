@@ -10,7 +10,7 @@ import {
   insertAssignedWorkouts,
 } from "./shared/appShared";
 import { readStructure } from "../lib/workoutStructure";
-import { enrichStructureWithPaces } from "../lib/enrichPace";
+import { enrichStructureWithPaces, stripTestTimeGoalFromDescription, stripTestTimeGoalsFromStructure } from "../lib/enrichPace";
 import MarketplacePlanWorkoutsAccordion from "./shared/MarketplacePlanWorkoutsAccordion";
 
 function toMonday(date) {
@@ -90,7 +90,7 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
     if (!coachUserId) return;
     setLoadingLibrary(true);
     // Solo `structure`: la columna workout_structure se elimino en 0044.
-    const { data, error } = await supabase.from("workout_library").select("id,title,type,total_km,duration_min,description,structure").eq("coach_id", coachUserId).order("created_at", { ascending: false });
+    const { data, error } = await supabase.from("workout_library").select("id,title,type,total_km,duration_min,description,structure,is_fitness_test").eq("coach_id", coachUserId).order("created_at", { ascending: false });
     setLoadingLibrary(false);
     if (error) { console.error("workout_library for marketplace:", error); setCoachLibraryRows([]); return; }
     setCoachLibraryRows(data || []);
@@ -309,12 +309,19 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
         const dayOffset = sortedDays[sessionInWeek % sortedDays.length];
         const mondayOfWeek = addDays(startDate, (week - 1) * 7);
         const scheduledDate = formatLocalYMD(addDays(mondayOfWeek, dayOffset));
-        const structure = enrichStructureWithPaces(readStructure(w), athleteVdot, athleteFcMax);
+        const assignedTitle = w.title || `Sesión ${idx + 1}`;
+        const fitnessTestFlag = w.is_fitness_test === true ? true : undefined;
+        const structure = stripTestTimeGoalsFromStructure(
+          assignedTitle,
+          enrichStructureWithPaces(readStructure(w), athleteVdot, athleteFcMax),
+          fitnessTestFlag,
+        );
         return {
           athlete_id: athleteId, coach_id: coachIdForWorkout, scheduled_date: scheduledDate,
-          title: w.title || `Sesión ${idx + 1}`, type: w.type || "easy",
+          title: assignedTitle, type: w.type || "easy",
           total_km: Number(w.distance_km || w.total_km || 0), duration_min: Number(w.duration_min || 0),
-          description: w.description || "", structure, done: false,
+          description: stripTestTimeGoalFromDescription(assignedTitle, w.description || "", fitnessTestFlag),
+          structure, done: false,
           // Con que VDOT quedaron escritos estos ritmos, para poder recalcularlos
           // cuando el atleta vuelva a evaluarse.
           generated_with_vdot: Number(athleteVdot) || null,
@@ -394,7 +401,7 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
     const sessionsPerWeek = Math.max(1, Math.round(Number(planForm.sessions_per_week) || 0));
     const priceCop = Math.max(0, Math.round(Number(String(planForm.price_cop).replace(/[^\d]/g, "")) || 0));
     const selectedPreview = (coachLibraryRows || []).filter((w) => planForm.preview_workouts.includes(String(w.id)));
-    const previewWorkouts = selectedPreview.map((w) => ({ id: w.id, title: w.title, type: w.type, total_km: Number(w.total_km || 0), duration_min: Number(w.duration_min || 0), description: w.description || "", structure: Array.isArray(w.structure) ? w.structure : [] }));
+    const previewWorkouts = selectedPreview.map((w) => ({ id: w.id, title: w.title, type: w.type, total_km: Number(w.total_km || 0), duration_min: Number(w.duration_min || 0), description: w.description || "", structure: Array.isArray(w.structure) ? w.structure : [], is_fitness_test: w.is_fitness_test === true }));
     const fallbackPreview = editingPlanSnapshot && Array.isArray(editingPlanSnapshot.preview_workouts) ? editingPlanSnapshot.preview_workouts : [];
     const fallbackSessions = editingPlanSnapshot ? getMarketplacePlanWorkoutRows(editingPlanSnapshot) : [];
     const outPreview = previewWorkouts.length > 0 ? previewWorkouts : fallbackPreview;

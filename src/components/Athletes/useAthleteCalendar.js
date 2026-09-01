@@ -11,7 +11,7 @@ import {
   evaluateAndAwardAthleteAchievements,
   deleteIntervalsEvents,
 } from "../shared/appShared";
-import { stripTestTimeGoalsFromStructure } from "../../lib/enrichPace";
+import { stripTestTimeGoalFromDescription, stripTestTimeGoalsFromStructure } from "../../lib/enrichPace";
 
 /**
  * Calendario del coach: grid, DnD (calendarDragRef + dragWorkoutId), menú
@@ -129,7 +129,7 @@ export function useAthleteCalendar({
       type: WORKOUT_TYPES.some((t) => t.id === w.type) ? w.type : "easy",
       total_km: String(Number(w.total_km) || 0),
       duration_min: String(Number(w.duration_min) || 0),
-      description: w.description || "",
+      description: stripTestTimeGoalFromDescription(w.title, w.description || ""),
       structureRows: rows.length ? rows : [emptyWorkoutStructureRow()],
     });
     setMoveDateInput(w.scheduled_date || formatLocalYMD(new Date()));

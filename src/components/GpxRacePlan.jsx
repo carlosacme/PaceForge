@@ -127,6 +127,7 @@ export default function GpxRacePlan({ athletes = [], coachUserId, notify, onSave
       ...workoutPayloadBase(),
       structure,
       coach_id: coachUserId,
+      is_fitness_test: false,
     };
     const { error } = await supabase.from("workout_library").insert(row);
     setSavingLibrary(false);
