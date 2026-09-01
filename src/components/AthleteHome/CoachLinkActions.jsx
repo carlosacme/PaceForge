@@ -54,7 +54,9 @@ export default function CoachLinkActions({
         {requesting ? "Enviando..." : requestPending ? "Solicitud enviada" : "Solicitar entrenador"}
       </button>
       <div style={{ fontSize: ".72em", color: "#64748b", marginTop: 6, lineHeight: 1.4 }}>
-        ¿No tienes código? Pide que te asignen un entrenador y él te contactará.
+        {requestPending
+          ? "Si tu coach te pasa un código, puedes conectarte aquí sin esperar."
+          : "¿No tienes código? Pide que te asignen un entrenador y él te contactará."}
       </div>
       {requestMsg ? (
         <div style={{ fontSize: ".78em", color: requestMsg.startsWith("Solicitud enviada") ? "#166534" : "#b45309", fontWeight: 600, marginTop: 6 }}>{requestMsg}</div>

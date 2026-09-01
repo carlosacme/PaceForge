@@ -722,6 +722,7 @@ const handleSignOut = async () => {
       setPlanLimitWarning={setPlanLimitWarning}
       staffParentCoachId={staffParentCoachId}
       saveNewAthlete={saveNewAthlete}
+      loadAthletes={loadAthletes}
       cancelAddAthleteForm={cancelAddAthleteForm}
       handleDeleteAthlete={handleDeleteAthlete}
       onAthleteWorkoutsDoneSync={onAthleteWorkoutsDoneSync}

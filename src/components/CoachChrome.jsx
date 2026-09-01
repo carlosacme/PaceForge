@@ -65,6 +65,7 @@ export default function CoachChrome({
   setPlanLimitWarning,
   staffParentCoachId,
   saveNewAthlete,
+  loadAthletes,
   cancelAddAthleteForm,
   handleDeleteAthlete,
   onAthleteWorkoutsDoneSync,
@@ -260,6 +261,8 @@ export default function CoachChrome({
                   onChangeNewAthleteField={updateNewAthleteField}
                   onSaveNewAthlete={saveNewAthlete}
                   onCancelAddAthlete={cancelAddAthleteForm}
+                  notify={notify}
+                  onReloadAthletes={loadAthletes}
                 />
               )}
               {(view === "athletes" || view === "evaluation" || view === "challenges") && (
@@ -318,6 +321,7 @@ export default function CoachChrome({
                   athletes={athletes}
                   setAthletes={setAthletes}
                   notify={notify}
+                  onReloadAthletes={loadAthletes}
                   onSignOut={handleSignOut}
                   styles={styles}
                   isStaff={Boolean(profile?.is_staff || staffParentCoachId)}

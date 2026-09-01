@@ -3,8 +3,10 @@ import { supabase } from "../lib/supabase";
 import { BRAND_NAME, sendAppEmail } from "./shared/appShared";
 import DeleteAccountSection from "./DeleteAccountSection";
 import ChangePasswordSection from "./ChangePasswordSection";
+import CoachRequestsInbox from "./CoachRequestsInbox";
+import { useCoachRequests } from "../hooks/useCoachRequests";
 
-function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAthletes, notify, onSignOut, styles, isStaff = false }) {
+function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAthletes, notify, onSignOut, styles, isStaff = false, onReloadAthletes }) {
   const S = styles;
   const athletesRef = useRef(athletes);
   const isDirtyRef = useRef(false);
@@ -29,8 +31,6 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
     subscription_plan: "",
     subscription_renews_at: "",
   });
-  const [coachRequests, setCoachRequests] = useState([]);
-  const [requestsBusyId, setRequestsBusyId] = useState("");
   const [staffList, setStaffList] = useState([]);
   const [staffEmail, setStaffEmail] = useState("");
   const [staffInviteSending, setStaffInviteSending] = useState(false);
@@ -151,113 +151,23 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
 
   const coachCode = useMemo(() => String(coachUserId || "").replace(/-/g, "").slice(0, 8).toUpperCase(), [coachUserId]);
 
-  const loadCoachRequests = useCallback(async () => {
-    if (!coachUserId) return;
-    const { data, error } = await supabase
-      .from("coach_requests")
-      .select("id, athlete_id, coach_id, status, created_at")
-      .eq("coach_id", coachUserId)
-      .order("created_at", { ascending: false });
-    if (error) {
-      console.error("Error cargando coach_requests:", error);
-      setCoachRequests([]);
-      return;
-    }
-    const rows = data || [];
-    // El solicitante aun no esta en el roster (coach_id null): hay que leer
-    // athletes por id, no buscar en la lista `athletes` del coach.
-    const ids = [...new Set(rows.map((r) => r.athlete_id).filter(Boolean))];
-    let byId = {};
-    if (ids.length > 0) {
-      const { data: athRows, error: athErr } = await supabase
-        .from("athletes")
-        .select("id, name, email")
-        .in("id", ids);
-      if (athErr) {
-        console.error("Error cargando atletas de solicitudes:", athErr);
-      } else {
-        byId = Object.fromEntries((athRows || []).map((a) => [String(a.id), a]));
-      }
-    }
-    setCoachRequests(
-      rows.map((r) => {
-        const a = byId[String(r.athlete_id)];
-        return {
-          ...r,
-          athlete_name: a?.name || "",
-          athlete_email: a?.email || "",
-        };
-      }),
-    );
-  }, [coachUserId]);
-
-  useEffect(() => {
-    loadCoachRequests();
-  }, [loadCoachRequests]);
-
-  const updateCoachRequestStatus = async (row, status) => {
-    if (!row?.id || !coachUserId) return;
-    setRequestsBusyId(row.id);
-    const { data: reqRows, error } = await supabase
-      .from("coach_requests")
-      .update({ status })
-      .eq("id", row.id)
-      .eq("coach_id", coachUserId)
-      .select("id");
-    if (error) {
-      console.error("Error actualizando solicitud:", error);
-      notify(error.message || "No se pudo actualizar la solicitud");
-      setRequestsBusyId("");
-      return;
-    }
-    if (!(reqRows || []).length) {
-      notify("No se actualizó la solicitud (sin permiso o ya no existe)");
-      setRequestsBusyId("");
-      return;
-    }
-    if (status === "accepted") {
-      const { data: athleteRow } = await supabase.from("athletes").select("id, user_id").eq("id", row.athlete_id).maybeSingle();
-      const { data: athleteUpdated, error: athleteErr } = await supabase
-        .from("athletes")
-        .update({ coach_id: coachUserId })
-        .eq("id", row.athlete_id)
-        .select("id");
-      if (athleteErr) {
-        console.error("Error vinculando atleta:", athleteErr);
-        notify(athleteErr.message || "Solicitud aceptada, pero no se pudo vincular el atleta");
-        setRequestsBusyId("");
-        await loadCoachRequests();
-        return;
-      }
-      if (!(athleteUpdated || []).length) {
-        notify("Solicitud aceptada, pero no se vinculó el atleta (sin permiso sobre esa fila)");
-        setRequestsBusyId("");
-        await loadCoachRequests();
-        return;
-      }
-      if (athleteRow?.user_id) {
-        const { data: profileUpdated, error: profileErr } = await supabase
-          .from("profiles")
-          .update({ coach_id: coachUserId })
-          .eq("user_id", athleteRow.user_id)
-          .select("user_id");
-        if (profileErr) {
-          console.error("Error sincronizando profiles.coach_id:", profileErr);
-          notify(`Atleta vinculado, pero el perfil no se sincronizó: ${profileErr.message}`);
-        } else if (!(profileUpdated || []).length) {
-          notify("Atleta vinculado, pero el perfil no se actualizó (sin permiso o sin fila)");
-        }
-      }
+  const handleRequestAccepted = useCallback(
+    async (row) => {
       if (typeof setAthletes === "function") {
         setAthletes((prev) => prev.map((a) => (String(a.id) === String(row.athlete_id) ? { ...a, coach_id: coachUserId } : a)));
       }
-      notify("Solicitud aceptada");
-    } else {
-      notify(status === "rejected" ? "Solicitud rechazada" : "Solicitud actualizada");
-    }
-    await loadCoachRequests();
-    setRequestsBusyId("");
-  };
+      if (typeof onReloadAthletes === "function") {
+        await onReloadAthletes({ silent: true });
+      }
+    },
+    [coachUserId, setAthletes, onReloadAthletes],
+  );
+
+  const { pendingRequests, requestsBusyId, loadingRequests, updateCoachRequestStatus } = useCoachRequests({
+    coachUserId,
+    notify,
+    onAccepted: handleRequestAccepted,
+  });
 
   // ── STAFF FUNCTIONS ─────────────────────────────────────────
   const loadStaff = useCallback(async () => {
@@ -682,33 +592,13 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
           </div>
 
           <div style={{ ...S.card, marginBottom: 18 }}>
-            <div style={{ fontSize: ".72em", letterSpacing: ".12em", color: "#64748b", fontWeight: 700, marginBottom: 16 }}>
-              SOLICITUDES DE ATLETAS
-            </div>
-            {coachRequests.filter((r) => r.status === "pending").length === 0 ? (
-              <div style={{ color: "#64748b", fontSize: ".84em" }}>No tienes solicitudes pendientes.</div>
-            ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {coachRequests
-                  .filter((r) => r.status === "pending")
-                  .map((r) => {
-                    const displayName = (r.athlete_name || "").trim() || "Atleta";
-                    const displayEmail = (r.athlete_email || "").trim();
-                    return (
-                      <div key={r.id} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: "10px 12px", background: "#f8fafc", display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-                        <div>
-                          <div style={{ color: "#0f172a", fontWeight: 700, fontSize: ".82em" }}>{displayName}</div>
-                          <div style={{ color: "#64748b", fontSize: ".72em" }}>{displayEmail || "Sin correo"}</div>
-                        </div>
-                        <div style={{ display: "flex", gap: 8 }}>
-                          <button type="button" disabled={requestsBusyId === r.id} onClick={() => updateCoachRequestStatus(r, "accepted")} style={{ background: "rgba(34,197,94,.14)", border: "1px solid rgba(34,197,94,.35)", borderRadius: 8, padding: "6px 10px", color: "#15803d", fontSize: ".72em", fontWeight: 700, cursor: requestsBusyId === r.id ? "not-allowed" : "pointer", fontFamily: "inherit" }}>Aceptar</button>
-                          <button type="button" disabled={requestsBusyId === r.id} onClick={() => updateCoachRequestStatus(r, "rejected")} style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "6px 10px", color: "#b91c1c", fontSize: ".72em", fontWeight: 700, cursor: requestsBusyId === r.id ? "not-allowed" : "pointer", fontFamily: "inherit" }}>Rechazar</button>
-                        </div>
-                      </div>
-                    );
-                  })}
-              </div>
-            )}
+            <CoachRequestsInbox
+              pendingRequests={pendingRequests}
+              requestsBusyId={requestsBusyId}
+              loading={loadingRequests}
+              onAccept={(r) => updateCoachRequestStatus(r, "accepted")}
+              onReject={(r) => updateCoachRequestStatus(r, "rejected")}
+            />
           </div>
 
           <div style={{ ...S.card, marginBottom: 18 }}>

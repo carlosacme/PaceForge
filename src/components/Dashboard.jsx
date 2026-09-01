@@ -11,6 +11,8 @@ import {
   isAuthLockContentionError,
   withAuthLockRetry,
 } from "./shared/appShared";
+import CoachRequestsInbox from "./CoachRequestsInbox";
+import { useCoachRequests } from "../hooks/useCoachRequests";
 
 const MONTH_INDEX = {
   Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5,
@@ -62,6 +64,8 @@ function Dashboard({
   onChangeNewAthleteField,
   onSaveNewAthlete,
   onCancelAddAthlete,
+  notify,
+  onReloadAthletes,
 }) {
   const S = styles;
   const weekStart = useMemo(() => startOfWeekMonday(new Date()), []);
@@ -73,6 +77,28 @@ function Dashboard({
 
   const [weekWorkouts, setWeekWorkouts] = useState([]);
   const [dashLoading, setDashLoading] = useState(true);
+
+  const handleRequestAccepted = useCallback(async () => {
+    if (typeof onReloadAthletes === "function") {
+      await onReloadAthletes({ silent: true });
+    }
+  }, [onReloadAthletes]);
+
+  const { pendingRequests, requestsBusyId, loadingRequests, updateCoachRequestStatus } = useCoachRequests({
+    coachUserId,
+    notify,
+    onAccepted: handleRequestAccepted,
+  });
+
+  useEffect(() => {
+    if (typeof sessionStorage === "undefined") return;
+    if (sessionStorage.getItem("raf_scroll_coach_requests") !== "1") return;
+    sessionStorage.removeItem("raf_scroll_coach_requests");
+    const t = window.setTimeout(() => {
+      document.getElementById("coach-pending-requests")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 80);
+    return () => window.clearTimeout(t);
+  }, [pendingRequests.length]);
 
   const loadDashboardData = useCallback(async (silent) => {
     if (!coachUserId) {
@@ -187,6 +213,17 @@ function Dashboard({
             ＋ Nuevo Atleta
           </button>
         </div>
+      </div>
+
+      <div style={{ ...S.card, marginBottom: 16, border: pendingRequests.length ? "1px solid rgba(255,138,61,.4)" : "1px solid #e2e8f0" }}>
+        <CoachRequestsInbox
+          pendingRequests={pendingRequests}
+          requestsBusyId={requestsBusyId}
+          loading={loadingRequests}
+          onAccept={(r) => updateCoachRequestStatus(r, "accepted")}
+          onReject={(r) => updateCoachRequestStatus(r, "rejected")}
+          emptyText="Cuando un atleta pida entrenador, la solicitud aparece aquí para que no tengas que ir a Configuración."
+        />
       </div>
 
       {planLimitWarning ? (
