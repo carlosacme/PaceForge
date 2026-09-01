@@ -11,8 +11,17 @@ import { BRAND_NAME, ANDROID_PACKAGE_ID, resendSignupConfirmation, ensureOwnProf
 /** Tipos de OTP por correo que acepta verifyOtp; cualquier otro cae a "email". */
 const EMAIL_OTP_TYPES = new Set(["signup", "invite", "magiclink", "recovery", "email_change", "email"]);
 
-/** Estos flujos siguen siendo solo enlace; el codigo de 6 digitos es de signup. */
+/** Estos flujos siguen siendo solo enlace; el codigo de signup es otro modo. */
 const LINK_ONLY_TYPES = new Set(["recovery", "email_change", "invite"]);
+
+/**
+ * GoTrue (GOTRUE_MAILER_OTP_LENGTH): 6–10. Dashboard → Authentication →
+ * Providers → Email. Este proyecto genera 8 (confirmado en correo real);
+ * el input acepta el rango entero para no truncar si el setting cambia.
+ */
+const EMAIL_OTP_MIN_LENGTH = 6;
+const EMAIL_OTP_MAX_LENGTH = 10;
+const EMAIL_OTP_DISPLAY_LENGTH = 8;
 
 /**
  * Abre la APK instalada desde el navegador de Android.
@@ -133,7 +142,7 @@ const inputStyle = {
 };
 
 /**
- * Pantalla de confirmacion de correo: enlace (token_hash) o codigo de 6 digitos.
+ * Pantalla de confirmacion de correo: enlace (token_hash) o codigo OTP.
  *
  * El enlace aterriza aqui (nuestro dominio) y se canjea con verifyOtp, pero
  * SOLO tras un clic: un GET de precarga (iOS, Gmail, Safe Links) no debe
@@ -334,8 +343,8 @@ export default function ConfirmEmailScreen() {
       setErrorMsg("Escribe tu correo.");
       return;
     }
-    if (token.length !== 6) {
-      setErrorMsg("Escribe el código de 6 dígitos que te enviamos.");
+    if (token.length < EMAIL_OTP_MIN_LENGTH || token.length > EMAIL_OTP_MAX_LENGTH) {
+      setErrorMsg(`Escribe el código de ${EMAIL_OTP_DISPLAY_LENGTH} dígitos que te enviamos.`);
       return;
     }
 
@@ -528,7 +537,7 @@ export default function ConfirmEmailScreen() {
               Confirma tu correo
             </h1>
             <p style={{ margin: "0 0 18px", color: "#64748b", fontSize: ".84em", lineHeight: 1.55 }}>
-              Te enviamos un código de 6 dígitos y un enlace. Escríbelo aquí, o pulsa el botón del correo.
+              Te enviamos un código de {EMAIL_OTP_DISPLAY_LENGTH} dígitos y un enlace. Escríbelo aquí, o pulsa el botón del correo.
             </p>
             {errorBanner}
             <form
@@ -551,19 +560,19 @@ export default function ConfirmEmailScreen() {
                 disabled={resending}
                 style={inputStyle}
               />
-              <div style={fieldLabel}>Código de 6 dígitos</div>
+              <div style={fieldLabel}>Código de {EMAIL_OTP_DISPLAY_LENGTH} dígitos</div>
               <input
                 type="text"
                 inputMode="numeric"
                 autoComplete="one-time-code"
                 pattern="[0-9]*"
-                maxLength={6}
+                maxLength={EMAIL_OTP_MAX_LENGTH}
                 value={otpCode}
                 onChange={(e) => {
-                  setOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6));
+                  setOtpCode(e.target.value.replace(/\D/g, "").slice(0, EMAIL_OTP_MAX_LENGTH));
                   if (errorMsg) setErrorMsg("");
                 }}
-                placeholder="000000"
+                placeholder={"0".repeat(EMAIL_OTP_DISPLAY_LENGTH)}
                 disabled={resending}
                 style={{ ...inputStyle, letterSpacing: "0.28em", fontWeight: 700, fontSize: "1.15em" }}
               />
