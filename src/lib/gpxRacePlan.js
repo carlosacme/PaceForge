@@ -233,8 +233,17 @@ export function buildGpxRaceStructure(segments, vdot, zoneId = "M") {
   });
 }
 
+/**
+ * grade_pct solo cuenta si es un number finito.
+ * Number(null) y Number("") dan 0, y Number.isFinite(0) es true — eso
+ * activaba Minetti en bloques sin pendiente.
+ */
+function isExplicitGradePct(value) {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
 export function structureHasGradePct(structure) {
-  return (Array.isArray(structure) ? structure : []).some((s) => Number.isFinite(Number(s?.grade_pct)));
+  return (Array.isArray(structure) ? structure : []).some((s) => isExplicitGradePct(s?.grade_pct));
 }
 
 export function raceZoneFromStructure(structure, fallback = "M") {
@@ -249,8 +258,8 @@ export function applyGradeAdjustedPacesToStructure(structure, vdot, zoneId) {
   const base = basePaceSecsForRaceZone(vdot, zone);
   if (base == null) return Array.isArray(structure) ? structure : [];
   return (Array.isArray(structure) ? structure : []).map((s) => {
-    if (!Number.isFinite(Number(s?.grade_pct))) return s;
-    const adj = gradeAdjustedPaceSecs(base, Number(s.grade_pct));
+    if (!isExplicitGradePct(s?.grade_pct)) return s;
+    const adj = gradeAdjustedPaceSecs(base, s.grade_pct);
     if (adj == null) return s;
     const paceStr = fmtPace(adj);
     return {

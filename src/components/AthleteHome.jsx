@@ -18,41 +18,16 @@ import AthleteRpeModal from "./AthleteHome/AthleteRpeModal";
 import AthleteMedalToast from "./AthleteHome/AthleteMedalToast";
 import {
   formatLocalYMD,
-  calendarCellToIsoYmd,
   normalizeAthlete,
   getRaceCountdownText,
-  achievementJoinMeta,
   computeAchievementProgress,
   loadAthleteAchievementSnapshot,
   evaluateAndAwardAthleteAchievements,
-  clampWorkoutRpe,
   normalizeWorkoutRow,
   resolveCoachUserIdFromPublicCode,
   resolveDefaultCoachUserId,
   sendChatPushNotification,
   registerFcmToken,
-  normalizeWorkoutStructure,
-  emptyWorkoutStructureRow,
-  workoutStructureToEditableRows,
-  editableRowsToWorkoutStructure,
-  normalizeLibraryRow,
-  libraryRowToBuilderWorkout,
-  challengeHasOpenTarget,
-  challengeValueLabel,
-  challengeProgressLabel,
-  challengeProgressOpenText,
-  formatChallengeMetricValue,
-  challengeUnitByType,
-  computeWorkoutDayStreak,
-  computeChallengeProgressForAthlete,
-  getNextRaceCountdown,
-  normalizeRaceRow,
-  extractJsonFromAnthropicText,
-  RACE_DISTANCE_PRESETS,
-  raceDistanceToFormFields,
-  TAB_KEY_LIBRARY,
-  CHALLENGE_TYPE_OPTIONS,
-  normalizeChallengeType,
 } from "./shared/appShared";
 
 /** Campos reales de public.workouts que AthleteHome / normalizeWorkoutRow leen.
@@ -366,60 +341,7 @@ export default function AthleteHome({ profile }) {
     return () => { cancelled = true; };
   }, [profileUserId, notifyPush, refreshWorkouts]);
 
-  const [races, setRaces] = useState([]);
-  useEffect(() => {
-    if (!athleteInfo?.id) { setRaces([]); return; }
-    let cancelled = false;
-    (async () => {
-      const { data, error } = await supabase.from("races").select("*").eq("athlete_id", athleteInfo.id).order("date", { ascending: true });
-      if (cancelled) return;
-      if (error) { console.error("Error cargando carreras (atleta):", error); setRaces([]); return; }
-      setRaces((data || []).map(normalizeRaceRow));
-    })();
-    return () => { cancelled = true; };
-  }, [athleteInfo?.id]);
-
-  const racesByDate = useMemo(() => {
-    const m = {};
-    for (const r of races) {
-      const k = r.date;
-      if (!k) continue;
-      if (!m[k]) m[k] = [];
-      m[k].push(r);
-    }
-    return m;
-  }, [races]);
-
-  const athleteTodayYmd = calendarCellToIsoYmd(new Date());
-  const nextRaceCountdownAthlete = useMemo(() => getNextRaceCountdown(races, athleteTodayYmd), [races, athleteTodayYmd]);
-
-
   const workoutsAchSyncKey = useMemo(() => (workouts || []).map((w) => `${w.id}:${w.done ? 1 : 0}:${w.rpe ?? ""}`).join("|"), [workouts]);
-
-  const saveWorkoutRpe = async (w, rawVal) => {
-    if (!w.done) return;
-    const rpe = clampWorkoutRpe(rawVal);
-    if (rpe == null) return;
-    setWorkouts((prev) => prev.map((x) => (x.id === w.id ? { ...x, rpe } : x)));
-    const { error } = await supabase.from("workouts").update({ rpe }).eq("id", w.id);
-    if (error) {
-      console.error("Error guardando RPE:", error);
-      setWorkouts((prev) => prev.map((x) => (x.id === w.id ? { ...x, rpe: w.rpe } : x)));
-      setMessage(`Error guardando RPE: ${error.message}`);
-      return;
-    }
-    if (athleteInfo?.id) {
-      const { newAwards, snapshot, progress } = await evaluateAndAwardAthleteAchievements(athleteInfo.id);
-      setAchievementsCatalog(snapshot.achievements || []);
-      setEarnedAchievements(snapshot.earned || []);
-      setAchProgress(progress);
-      if (newAwards.length > 0) {
-        const first = achievementJoinMeta(newAwards[0]);
-        setMedalToast(`¡Nueva medalla desbloqueada! 🎉 ${first?.icon || ""} ${first?.name || ""}`.trim());
-        setTimeout(() => setMedalToast(""), 4200);
-      }
-    }
-  };
 
   const hasPremiumAccess = useMemo(() => {
     const isAthleteOfAdminCoach = athleteInfo?.coach_id === "b5c9e44a-6695-4800-99bd-f19b05d2f66f";
