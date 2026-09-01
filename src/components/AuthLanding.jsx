@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "../lib/supabase";
-import { CONFIRM_EMAIL_PATH } from "../lib/authRoutes";
+import { CONFIRM_EMAIL_PATH, goToSignupConfirmScreen } from "../lib/authRoutes";
 import {
   BRAND_NAME,
   styles,
@@ -276,8 +276,8 @@ export default function AuthLanding({
               })()
             : null;
 
-        // Forzar aterrizaje en /auth/confirm (token_hash), no depender solo
-        // de Site URL / plantilla de Supabase.
+        // Forzar aterrizaje en /auth/confirm (codigo o token_hash), no depender
+        // solo de Site URL / plantilla de Supabase.
         const origin = typeof window !== "undefined" ? window.location.origin : "";
         const { data, error } = await (async () => {
           try {
@@ -336,13 +336,7 @@ export default function AuthLanding({
             localStorage.removeItem("raf_athlete_progress_tab");
             localStorage.removeItem("raf_lastView");
           }
-          setAuthInfo(
-            `Cuenta creada. Te enviamos un correo de confirmación a ${emailNorm}: ábrelo antes de iniciar sesión ` +
-            "(mira también la carpeta de spam).",
-          );
-          setAuthCanResend(true);
-          setAuthMode("login");
-          setAuthLandingStep("login");
+          goToSignupConfirmScreen(emailNorm);
           return;
         }
 
@@ -456,16 +450,8 @@ export default function AuthLanding({
           localStorage.removeItem("raf_athlete_progress_tab");
           localStorage.removeItem("raf_lastView");
         }
-        setAuthInfo(
-          `Cuenta creada. Te enviamos un correo de confirmación a ${emailNorm}: ábrelo antes de iniciar sesión ` +
-          "(mira también la carpeta de spam).",
-        );
-        setAuthCanResend(true);
-        setAuthMode("login");
-        setAuthLandingStep("login");
-        setAuthRole("");
-        setAuthName("");
-        setAuthCoachCode("");
+        goToSignupConfirmScreen(emailNorm);
+        return;
       }
     } finally {
       setAuthSubmitting(false);

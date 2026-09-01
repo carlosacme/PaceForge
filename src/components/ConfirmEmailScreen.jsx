@@ -1,10 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Capacitor } from "@capacitor/core";
 import { supabase } from "../lib/supabase";
+import {
+  clearPendingConfirmEmail,
+  readStashedConfirmEmail,
+  stashPendingConfirmEmail,
+} from "../lib/authRoutes";
 import { BRAND_NAME, ANDROID_PACKAGE_ID, resendSignupConfirmation, ensureOwnProfile, acceptPendingInvitationIfAny } from "./shared/appShared";
 
 /** Tipos de OTP por correo que acepta verifyOtp; cualquier otro cae a "email". */
 const EMAIL_OTP_TYPES = new Set(["signup", "invite", "magiclink", "recovery", "email_change", "email"]);
+
+/** Estos flujos siguen siendo solo enlace; el codigo de 6 digitos es de signup. */
+const LINK_ONLY_TYPES = new Set(["recovery", "email_change", "invite"]);
 
 /**
  * Abre la APK instalada desde el navegador de Android.
@@ -82,6 +90,12 @@ function isConsumedOtpError(error) {
   );
 }
 
+function isRateLimitError(error) {
+  const code = String(error?.code || "").toLowerCase();
+  const msg = String(error?.message || "").toLowerCase();
+  return code.includes("rate_limit") || msg.includes("rate limit");
+}
+
 async function getConfirmedUser() {
   const { data } = await supabase.auth.getUser();
   const user = data?.user;
@@ -90,21 +104,56 @@ async function getConfirmedUser() {
 }
 
 /**
- * Pantalla de confirmacion de correo con token_hash.
+ * El codigo de signup: type "signup" (el del correo actual). Si GoTrue lo
+ * rechaza por type, un solo reintento con "email" (deprecacion en docs nuevas).
+ */
+async function verifySignupCode({ email, token }) {
+  const first = await supabase.auth.verifyOtp({ email, token, type: "signup" });
+  if (!first.error) return first;
+  console.warn("[confirm] verifyOtp signup:", first.error);
+  if (isRateLimitError(first.error)) return first;
+  const retry = await supabase.auth.verifyOtp({ email, token, type: "email" });
+  if (!retry.error) return retry;
+  console.warn("[confirm] verifyOtp email fallback:", retry.error);
+  return first;
+}
+
+const inputStyle = {
+  width: "100%",
+  boxSizing: "border-box",
+  background: "#fff",
+  border: "1px solid #e2e8f0",
+  borderRadius: 8,
+  padding: "11px 12px",
+  color: "#0f172a",
+  fontFamily: "inherit",
+  fontSize: ".9em",
+  outline: "none",
+  marginBottom: 12,
+};
+
+/**
+ * Pantalla de confirmacion de correo: enlace (token_hash) o codigo de 6 digitos.
  *
  * El enlace aterriza aqui (nuestro dominio) y se canjea con verifyOtp, pero
  * SOLO tras un clic: un GET de precarga (iOS, Gmail, Safe Links) no debe
  * gastar el token de un solo uso. Si el token ya se consumo y aun asi hay
  * sesion confirmada, se trata como exito y se crea la ficha (ensureOwnProfile).
+ *
+ * Sin token_hash (tras el registro o al abrir /auth/confirm a mano) el mismo
+ * finishConfirmed corre despues de verifyOtp({ email, token, type: "signup" }).
  */
 export default function ConfirmEmailScreen() {
   const [status, setStatus] = useState("loading"); // loading | idle | verifying | success | error
   const [errorMsg, setErrorMsg] = useState("");
   const [email, setEmail] = useState("");
+  const [otpCode, setOtpCode] = useState("");
   const [resendMsg, setResendMsg] = useState("");
   const [resendOk, setResendOk] = useState(false);
   const [resending, setResending] = useState(false);
   const [linkType, setLinkType] = useState("email");
+  const [hasTokenHash, setHasTokenHash] = useState(false);
+  const [verifyingKind, setVerifyingKind] = useState("link"); // link | code
   const native = Capacitor.isNativePlatform();
   const linkRef = useRef({ urlError: null, tokenHash: "", type: "email" });
   const inFlightRef = useRef(false);
@@ -112,6 +161,7 @@ export default function ConfirmEmailScreen() {
   const finishConfirmed = useCallback(
     async (user, type) => {
       try {
+        clearPendingConfirmEmail();
         let pending = null;
         try {
           const raw = localStorage.getItem("raf_pending_profile");
@@ -168,18 +218,35 @@ export default function ConfirmEmailScreen() {
     [finishConfirmed],
   );
 
-  const showConsumedError = useCallback(() => {
+  const failVerify = useCallback((kind) => {
     setErrorMsg(
-      "El enlace no es válido, ya se usó o caducó. Pide uno nuevo y ábrelo cuanto antes. " +
-      "Si ya habías confirmado tu correo, entra con tu contraseña.",
+      kind === "code"
+        ? "El código no es válido o caducó. Pide uno nuevo e inténtalo de nuevo. " +
+          "Si ya habías confirmado tu correo, entra con tu contraseña."
+        : "El enlace no es válido, ya se usó o caducó. Pide uno nuevo y ábrelo cuanto antes. " +
+          "Si ya habías confirmado tu correo, entra con tu contraseña.",
     );
-    setStatus("error");
+    setStatus(kind === "code" ? "idle" : "error");
   }, []);
+
+  const applyVerifiedUser = useCallback(
+    async (type, kind) => {
+      const { data: userData } = await supabase.auth.getUser();
+      const user = userData?.user;
+      if (!user) {
+        failVerify(kind);
+        return;
+      }
+      await finishConfirmed(user, type);
+    },
+    [failVerify, finishConfirmed],
+  );
 
   useEffect(() => {
     const link = readConfirmLink();
     linkRef.current = link;
     setLinkType(link.type);
+    setHasTokenHash(Boolean(link.tokenHash));
     const { urlError, tokenHash, type } = link;
 
     (async () => {
@@ -203,8 +270,14 @@ export default function ConfirmEmailScreen() {
 
       if (!tokenHash) {
         if (await resolveFromExistingSession(type)) return;
-        setErrorMsg("Este enlace está incompleto. Ábrelo directamente desde el correo que te enviamos.");
-        setStatus("error");
+        if (LINK_ONLY_TYPES.has(type)) {
+          setErrorMsg("Este enlace está incompleto. Ábrelo directamente desde el correo que te enviamos.");
+          setStatus("error");
+          return;
+        }
+        const prefill = readStashedConfirmEmail();
+        if (prefill) setEmail(prefill);
+        setStatus("idle");
         return;
       }
 
@@ -212,7 +285,7 @@ export default function ConfirmEmailScreen() {
     })();
   }, [resolveFromExistingSession]);
 
-  const handleConfirmClick = async () => {
+  const handleConfirmLink = async () => {
     if (inFlightRef.current) return;
     const { tokenHash, type } = linkRef.current;
     if (!tokenHash) {
@@ -222,6 +295,7 @@ export default function ConfirmEmailScreen() {
     }
 
     inFlightRef.current = true;
+    setVerifyingKind("link");
     setStatus("verifying");
     setErrorMsg("");
 
@@ -230,7 +304,7 @@ export default function ConfirmEmailScreen() {
       // debe volver a llamar verifyOtp.
       if (readOtpLock(tokenHash)) {
         if (await resolveFromExistingSession(type)) return;
-        showConsumedError();
+        failVerify("link");
         return;
       }
 
@@ -242,17 +316,47 @@ export default function ConfirmEmailScreen() {
         if (isConsumedOtpError(error) && (await resolveFromExistingSession(type))) {
           return;
         }
-        showConsumedError();
+        failVerify("link");
         return;
       }
 
-      const { data: userData } = await supabase.auth.getUser();
-      const user = userData?.user;
-      if (!user) {
-        showConsumedError();
+      await applyVerifiedUser(type, "link");
+    } finally {
+      inFlightRef.current = false;
+    }
+  };
+
+  const handleConfirmCode = async () => {
+    if (inFlightRef.current) return;
+    const em = String(email || "").trim().toLowerCase();
+    const token = String(otpCode || "").replace(/\D/g, "");
+    if (!em) {
+      setErrorMsg("Escribe tu correo.");
+      return;
+    }
+    if (token.length !== 6) {
+      setErrorMsg("Escribe el código de 6 dígitos que te enviamos.");
+      return;
+    }
+
+    stashPendingConfirmEmail(em);
+    inFlightRef.current = true;
+    setVerifyingKind("code");
+    setStatus("verifying");
+    setErrorMsg("");
+
+    try {
+      const { error } = await verifySignupCode({ email: em, token });
+      if (error) {
+        console.warn("[confirm] verifyOtp code:", error);
+        if (isConsumedOtpError(error) && (await resolveFromExistingSession("signup"))) {
+          return;
+        }
+        failVerify("code");
         return;
       }
-      await finishConfirmed(user, type);
+
+      await applyVerifiedUser("signup", "code");
     } finally {
       inFlightRef.current = false;
     }
@@ -264,6 +368,7 @@ export default function ConfirmEmailScreen() {
     const res = await resendSignupConfirmation(email);
     setResendOk(res.ok);
     setResendMsg(res.message);
+    if (res.ok) setOtpCode("");
     setResending(false);
   };
 
@@ -316,6 +421,49 @@ export default function ConfirmEmailScreen() {
     cursor: "pointer",
   };
 
+  const fieldLabel = {
+    fontSize: ".72em",
+    color: "#64748b",
+    marginBottom: 6,
+    fontWeight: 600,
+  };
+
+  const resendBanner = resendMsg ? (
+    <div
+      style={{
+        background: resendOk ? "rgba(34,197,94,.12)" : "#fef2f2",
+        border: `1px solid ${resendOk ? "rgba(34,197,94,.4)" : "#fecaca"}`,
+        color: resendOk ? "#166534" : "#b91c1c",
+        fontWeight: 600,
+        fontSize: ".78em",
+        lineHeight: 1.5,
+        borderRadius: 8,
+        padding: "9px 12px",
+        marginBottom: 12,
+      }}
+    >
+      {resendMsg}
+    </div>
+  ) : null;
+
+  const errorBanner = errorMsg ? (
+    <div
+      style={{
+        background: "#fef2f2",
+        border: "1px solid #fecaca",
+        color: "#b91c1c",
+        borderRadius: 10,
+        padding: "10px 12px",
+        fontSize: ".8em",
+        fontWeight: 600,
+        lineHeight: 1.55,
+        margin: "0 0 16px",
+      }}
+    >
+      {errorMsg}
+    </div>
+  ) : null;
+
   return (
     <div
       style={{
@@ -347,13 +495,15 @@ export default function ConfirmEmailScreen() {
             </h1>
             <p style={{ margin: 0, color: "#64748b", fontSize: ".84em", lineHeight: 1.55 }}>
               {status === "verifying"
-                ? "Un segundo, estamos validando el enlace."
+                ? (verifyingKind === "code"
+                  ? "Un segundo, estamos validando el código."
+                  : "Un segundo, estamos validando el enlace.")
                 : "Un segundo."}
             </p>
           </>
         ) : null}
 
-        {status === "idle" ? (
+        {status === "idle" && hasTokenHash ? (
           <>
             <h1 style={{ margin: "0 0 8px", fontSize: "1.18em", fontWeight: 900, color: "#0f172a", letterSpacing: "-0.02em" }}>
               {linkType === "recovery" ? "Restablecer contraseña" : "Confirma tu correo"}
@@ -363,8 +513,77 @@ export default function ConfirmEmailScreen() {
                 ? "Pulsa el botón para continuar. Así el enlace no se gasta solo al abrir el correo."
                 : "Pulsa el botón para activar tu cuenta. Así el enlace no se gasta solo al abrir el correo."}
             </p>
-            <button type="button" onClick={handleConfirmClick} style={primaryBtn}>
+            <button type="button" onClick={handleConfirmLink} style={primaryBtn}>
               {confirmButtonLabel}
+            </button>
+            <button type="button" onClick={() => window.location.replace("/")} style={secondaryBtn}>
+              Ir a iniciar sesión
+            </button>
+          </>
+        ) : null}
+
+        {status === "idle" && !hasTokenHash ? (
+          <>
+            <h1 style={{ margin: "0 0 8px", fontSize: "1.18em", fontWeight: 900, color: "#0f172a", letterSpacing: "-0.02em" }}>
+              Confirma tu correo
+            </h1>
+            <p style={{ margin: "0 0 18px", color: "#64748b", fontSize: ".84em", lineHeight: 1.55 }}>
+              Te enviamos un código de 6 dígitos y un enlace. Escríbelo aquí, o pulsa el botón del correo.
+            </p>
+            {errorBanner}
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleConfirmCode();
+              }}
+            >
+              <div style={fieldLabel}>Tu correo</div>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  if (resendMsg) setResendMsg("");
+                  if (errorMsg) setErrorMsg("");
+                }}
+                placeholder="correo@ejemplo.com"
+                autoComplete="email"
+                disabled={resending}
+                style={inputStyle}
+              />
+              <div style={fieldLabel}>Código de 6 dígitos</div>
+              <input
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                pattern="[0-9]*"
+                maxLength={6}
+                value={otpCode}
+                onChange={(e) => {
+                  setOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6));
+                  if (errorMsg) setErrorMsg("");
+                }}
+                placeholder="000000"
+                disabled={resending}
+                style={{ ...inputStyle, letterSpacing: "0.28em", fontWeight: 700, fontSize: "1.15em" }}
+              />
+              <button type="submit" style={primaryBtn}>
+                Confirmar
+              </button>
+            </form>
+            {resendBanner}
+            <button
+              type="button"
+              onClick={handleResend}
+              disabled={resending}
+              style={{
+                ...secondaryBtn,
+                background: resending ? "#e2e8f0" : secondaryBtn.background,
+                color: resending ? "#334155" : secondaryBtn.color,
+                cursor: resending ? "not-allowed" : "pointer",
+              }}
+            >
+              {resending ? "Enviando…" : "Reenviar correo de confirmación"}
             </button>
             <button type="button" onClick={() => window.location.replace("/")} style={secondaryBtn}>
               Ir a iniciar sesión
@@ -409,24 +628,10 @@ export default function ConfirmEmailScreen() {
             <h1 style={{ margin: "0 0 8px", fontSize: "1.18em", fontWeight: 900, color: "#0f172a", letterSpacing: "-0.02em" }}>
               No pudimos confirmar tu correo
             </h1>
-            <div
-              style={{
-                background: "#fef2f2",
-                border: "1px solid #fecaca",
-                color: "#b91c1c",
-                borderRadius: 10,
-                padding: "10px 12px",
-                fontSize: ".8em",
-                fontWeight: 600,
-                lineHeight: 1.55,
-                margin: "0 0 16px",
-              }}
-            >
-              {errorMsg}
-            </div>
+            {errorBanner}
 
-            <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6, fontWeight: 600 }}>
-              Tu correo, para enviarte otro enlace
+            <div style={fieldLabel}>
+              Tu correo, para enviarte otro código y enlace
             </div>
             <input
               type="email"
@@ -438,37 +643,9 @@ export default function ConfirmEmailScreen() {
               placeholder="correo@ejemplo.com"
               autoComplete="email"
               disabled={resending}
-              style={{
-                width: "100%",
-                boxSizing: "border-box",
-                background: "#fff",
-                border: "1px solid #e2e8f0",
-                borderRadius: 8,
-                padding: "11px 12px",
-                color: "#0f172a",
-                fontFamily: "inherit",
-                fontSize: ".9em",
-                outline: "none",
-                marginBottom: 12,
-              }}
+              style={inputStyle}
             />
-            {resendMsg ? (
-              <div
-                style={{
-                  background: resendOk ? "rgba(34,197,94,.12)" : "#fef2f2",
-                  border: `1px solid ${resendOk ? "rgba(34,197,94,.4)" : "#fecaca"}`,
-                  color: resendOk ? "#166534" : "#b91c1c",
-                  fontWeight: 600,
-                  fontSize: ".78em",
-                  lineHeight: 1.5,
-                  borderRadius: 8,
-                  padding: "9px 12px",
-                  marginBottom: 12,
-                }}
-              >
-                {resendMsg}
-              </div>
-            ) : null}
+            {resendBanner}
             <button
               type="button"
               onClick={handleResend}

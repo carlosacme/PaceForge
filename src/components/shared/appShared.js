@@ -1670,7 +1670,7 @@ export const resendSignupConfirmation = async (rawEmail) => {
     return {
       ok: true,
       alreadyConfirmed: false,
-      message: `Te reenviamos el correo de confirmación a ${email}. Revisa también la carpeta de spam.`,
+      message: `Te reenviamos el código y el enlace de confirmación a ${email}. Revisa también la carpeta de spam.`,
     };
   } catch (err) {
     console.error("[auth] resend signup:", err);
