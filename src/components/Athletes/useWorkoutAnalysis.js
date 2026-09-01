@@ -84,6 +84,10 @@ export function useWorkoutAnalysis({
         }),
       });
       const data = await response.json();
+      if (!response.ok) {
+        notify?.(data?.error || "No se pudo analizar.");
+        return;
+      }
       if (data?.analysis) {
         if (data.cached) {
           console.log("[ai-cache] coach hit", w.id);

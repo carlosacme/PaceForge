@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { requireUser, getWorkoutIfAllowed, jsonError, adminHeaders } from "../lib/apiAuth.js";
+import { assertGenerateBudget } from "../lib/aiBudget.js";
 import { readStructure } from "../src/lib/workoutStructure.js";
 import { compareBlocks } from "../src/lib/blockComparison.js";
 
@@ -408,6 +409,9 @@ export default async function handler(req, res) {
         skippedLookup: true,
       }));
     }
+    // Hit de caché no gasta cupo. El briefing lo pide el atleta: no exigir coach.
+    const briefingBlocked = await assertGenerateBudget(res, user, { requireCoach: false });
+    if (briefingBlocked) return briefingBlocked;
     const result = withTruncationGuard(
       await callClaude(apiKey, briefingPrompt, MAX_TOKENS.briefing),
     );
@@ -544,6 +548,9 @@ Responde en 3 párrafos cortos (sin markdown, sin asteriscos), cada uno de 2-4 f
       }));
     }
 
+    const analyzeBlocked = await assertGenerateBudget(res, user);
+    if (analyzeBlocked) return analyzeBlocked;
+
     const result = withTruncationGuard(
       await callClaude(apiKey, prompt, MAX_TOKENS.analyze),
     );
@@ -630,6 +637,9 @@ IMPORTANTE: Responde ÚNICAMENTE con el siguiente JSON, sin texto antes ni despu
 Si no hay cambios necesarios: {"signal":"bien","summary":"El atleta está en buen estado, no se requieren ajustes.","adjustments":[]}
 
 Los valores de signal válidos son exactamente: fatiga_alta, fatiga_media, bien, descarga_necesaria, puede_progresar`;
+
+    const adjustBlocked = await assertGenerateBudget(res, user);
+    if (adjustBlocked) return adjustBlocked;
 
     const result = withTruncationGuard(
       await callClaude(apiKey, prompt, MAX_TOKENS.adjust),
