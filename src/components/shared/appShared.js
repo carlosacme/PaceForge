@@ -1085,6 +1085,8 @@ export const normalizeLibraryRow = (row) => {
     created_at: row.created_at ?? null,
     intensity: row.intensity != null ? String(row.intensity) : "",
     notes: row.notes != null ? String(row.notes) : "",
+    is_fitness_test:
+      row.is_fitness_test === true ? true : row.is_fitness_test === false ? false : null,
   };
 };
 
@@ -1095,6 +1097,8 @@ export const libraryRowToBuilderWorkout = (row) => ({
   duration_min: row.duration_min,
   description: row.description || "",
   structure: Array.isArray(row.structure) ? row.structure : [],
+  is_fitness_test:
+    row.is_fitness_test === true ? true : row.is_fitness_test === false ? false : null,
 });
 
 

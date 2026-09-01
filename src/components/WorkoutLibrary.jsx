@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { supabase } from "../lib/supabase";
-import { enrichStructureWithPaces, rescaleStructureToVdot, stripTestTimeGoalFromDescription, stripTestTimeGoalsFromStructure } from "../lib/enrichPace";
+import { enrichStructureWithPaces, isTestWorkoutTitle, rescaleStructureToVdot, stripTestTimeGoalFromDescription, stripTestTimeGoalsFromStructure } from "../lib/enrichPace";
 import { PLAN_CALIBRATION_VDOT, progressionDelta } from "../lib/vdot";
 import {
   structureHasGradePct,
@@ -281,6 +281,22 @@ function WorkoutLibrary({
     notify("Eliminado de la biblioteca");
   };
 
+  const setFitnessTestFlag = async (row, next) => {
+    if (!coachUserId || !row?.id) return;
+    const prevFlag = row.is_fitness_test;
+    setItems((prev) => prev.map((x) => (x.id === row.id ? { ...x, is_fitness_test: next } : x)));
+    const { error } = await supabase
+      .from("workout_library")
+      .update({ is_fitness_test: next })
+      .eq("id", row.id)
+      .eq("coach_id", coachUserId);
+    if (error) {
+      console.error(error);
+      setItems((prev) => prev.map((x) => (x.id === row.id ? { ...x, is_fitness_test: prevFlag } : x)));
+      notify(`No se pudo actualizar el flag TEST: ${error.message}`);
+    }
+  };
+
   const openFitFilePicker = () => {
     if (!coachUserId || fitImporting || fitImportSaving) return;
     if (fitInputRef.current) {
@@ -382,6 +398,9 @@ function WorkoutLibrary({
         duration_min: Number.isFinite(Number(w.duration_min)) ? Math.max(0, Math.round(Number(w.duration_min))) : 0,
         description: baseDescription || importSourceDescription,
         structure: structureRowsForFitImportInsert(w.structure),
+        is_fitness_test:
+          w.is_fitness_test === true
+          || (w.is_fitness_test !== false && isTestWorkoutTitle(w.title)),
       };
     });
     setFitImportSaving(true);
@@ -512,6 +531,7 @@ function WorkoutLibrary({
               targetVdot,
               a.fc_max,
             ),
+        row.is_fitness_test,
       );
       const durationFromGpx = structureHasGradePct(rawStructure)
         ? estimateDurationMinFromStructure(structure)
@@ -523,7 +543,11 @@ function WorkoutLibrary({
         type: row.type,
         total_km: Number(row.total_km) || 0,
         duration_min: durationFromGpx || Number(row.duration_min) || 0,
-        description: stripTestTimeGoalFromDescription(assignedTitle, row.description || ""),
+        description: stripTestTimeGoalFromDescription(
+          assignedTitle,
+          row.description || "",
+          row.is_fitness_test,
+        ),
         structure,
         // Con que VDOT quedaron escritos estos ritmos. Sin este dato no se pueden
         // recalcular despues: un ritmo absoluto no dice a que zona pertenece.
@@ -602,6 +626,9 @@ function WorkoutLibrary({
       duration_min: Number.isFinite(Number(row.duration_min)) ? Math.round(Number(row.duration_min)) : 0,
       description: row.description != null ? String(row.description) : "",
       structure,
+      is_fitness_test:
+        row.is_fitness_test === true
+        || (row.is_fitness_test !== false && isTestWorkoutTitle(row.title)),
     };
     if (row.intensity) ins.intensity = String(row.intensity);
     if (row.notes) ins.notes = String(row.notes);
@@ -898,6 +925,22 @@ function WorkoutLibrary({
                     >
                       {wt.label}
                     </span>
+                    {row.is_fitness_test ? (
+                      <span
+                        style={{
+                          fontSize: ".65em",
+                          fontWeight: 800,
+                          letterSpacing: ".06em",
+                          color: "#b45309",
+                          border: "1px solid #fde68a",
+                          background: "#fffbeb",
+                          borderRadius: 6,
+                          padding: "3px 8px",
+                        }}
+                      >
+                        TEST
+                      </span>
+                    ) : null}
                   </div>
                   <div style={{ fontSize: ".78em", color: "#64748b", marginBottom: 6 }}>{row.description}</div>
                   <div style={{ fontSize: ".75em", color: "#94a3b8" }}>
@@ -908,6 +951,14 @@ function WorkoutLibrary({
                       </span>
                     )}
                   </div>
+                  <label style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 8, fontSize: ".72em", color: "#475569", cursor: "pointer", fontWeight: 600 }}>
+                    <input
+                      type="checkbox"
+                      checked={row.is_fitness_test === true}
+                      onChange={(e) => setFitnessTestFlag(row, e.target.checked)}
+                    />
+                    TEST de esfuerzo (sin objetivo de tiempo)
+                  </label>
                 </div>
                 <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
                   <button
@@ -1157,6 +1208,17 @@ function WorkoutLibrary({
                       style={{ width: "100%", boxSizing: "border-box", border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit", fontSize: ".8em", resize: "vertical" }}
                     />
                   </div>
+                  <label style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 8, fontSize: ".76em", color: "#475569", cursor: "pointer", fontWeight: 600 }}>
+                    <input
+                      type="checkbox"
+                      checked={
+                        w.is_fitness_test === true
+                        || (w.is_fitness_test == null && isTestWorkoutTitle(w.title))
+                      }
+                      onChange={(e) => updateFitDraft(w.id, { is_fitness_test: e.target.checked })}
+                    />
+                    TEST de esfuerzo (sin objetivo de tiempo)
+                  </label>
                   <div style={{ marginTop: 10 }}>
                     <div style={{ fontSize: ".72em", fontWeight: 800, color: "#475569", marginBottom: 6 }}>ESTRUCTURA</div>
                     <div style={{ overflowX: "auto", border: "1px solid #e2e8f0", borderRadius: 8 }}>
