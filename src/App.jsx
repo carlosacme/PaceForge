@@ -407,6 +407,34 @@ export default function App() {
         return prof;
       };
 
+      const healMissingAthleteRow = async (prof) => {
+        if (!prof || String(prof.role || "").toLowerCase() !== "athlete") return;
+        const uid = prof.user_id || session.user.id;
+        const { data: athleteRow, error: athleteErr } = await supabase
+          .from("athletes")
+          .select("id")
+          .eq("user_id", uid)
+          .maybeSingle();
+        if (athleteErr) {
+          console.warn("healMissingAthleteRow select:", athleteErr);
+          return;
+        }
+        if (athleteRow) return;
+        const displayName =
+          (typeof prof.name === "string" && prof.name.trim()) ||
+          (typeof session.user.user_metadata?.full_name === "string" && session.user.user_metadata.full_name.trim()) ||
+          (session.user.email ? session.user.email.split("@")[0] : "") ||
+          "Usuario";
+        const healedAthlete = await ensureOwnProfile({
+          name: displayName,
+          role: "athlete",
+          coach_id: prof.coach_id ?? session.user.user_metadata?.coach_id ?? null,
+        });
+        if (!healedAthlete.ok) {
+          console.warn("ensureOwnProfile (ficha atleta ausente):", healedAthlete.reason);
+        }
+      };
+
       if (data == null) {
         // Perfil huérfano: auth existe pero create-profile no corrió (p.ej.
         // registro sin sesion hasta confirmar correo). Reintentar desde
@@ -447,6 +475,7 @@ export default function App() {
           if (again) {
             await processPendingStaffInvite(again);
             await acceptPendingInvitationIfAny();
+            await healMissingAthleteRow(again);
             cacheAndSetProfile(await syncCoachPlanIfNeeded(again));
             setProfileLoading(false);
             return;
@@ -458,6 +487,7 @@ export default function App() {
         setProfileLoading(false);
         return;
       }
+      await healMissingAthleteRow(data);
       await processPendingStaffInvite(data);
       await acceptPendingInvitationIfAny();
 
