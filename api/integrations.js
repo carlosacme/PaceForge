@@ -298,6 +298,38 @@ function matchBulkResponse(events, r) {
 }
 
 /**
+ * workouts no guarda is_fitness_test ni ningún library_id/source_workout_id.
+ * Lo reconstruimos por título exacto (case-insensitive) contra plantillas
+ * flagged del coach: mismo criterio que MarketplaceHub/Plan2Weeks (true solo
+ * si el origen estaba flagged; undefined deja el regex del título).
+ *
+ * Limitación conocida: si el coach renombra al asignar (assignTitle) y el
+ * título ya no calza la plantilla ni /TEST\s*\d*K/i, el flag queda undefined
+ * y el fallback de medición no corre. No hay FK estable que amarrar; una
+ * columna source en workouts sería el arreglo de fondo, fuera de este parche.
+ */
+async function loadFitnessTestTitleSet(coachIds) {
+  const ids = [...new Set((coachIds || []).filter(Boolean))];
+  const set = new Set();
+  if (!ids.length) return set;
+  const filter = ids.length === 1
+    ? `coach_id=eq.${ids[0]}`
+    : `coach_id=in.(${ids.join(",")})`;
+  const rows = await sb(`workout_library?${filter}&is_fitness_test=eq.true&select=title`);
+  for (const r of rows || []) {
+    const t = String(r.title || "").trim().toLowerCase();
+    if (t) set.add(t);
+  }
+  return set;
+}
+
+function fitnessTestFlagForTitle(title, flaggedTitles) {
+  const key = String(title || "").trim().toLowerCase();
+  if (key && flaggedTitles.has(key)) return true;
+  return undefined;
+}
+
+/**
  * Empuja una lista de workouts a intervals.icu en UNA sola llamada.
  *
  * events/bulk?upsert=true crea los que no existen y ACTUALIZA los que ya
@@ -314,10 +346,15 @@ async function pushWorkouts(conn, workouts, vdot) {
 
   // Sin fecha no hay sitio en el calendario: no ocupan hueco en el lote.
   const sendable = workouts.filter((w) => w.scheduled_date);
+  const flaggedTitles = await loadFitnessTestTitleSet(sendable.map((w) => w.coach_id));
   const events = sendable.map((w) =>
     buildIntervalsEvent({
       ...w,
-      structure: stripTestTimeGoalsFromStructure(w.title, readStructure(w)),
+      structure: stripTestTimeGoalsFromStructure(
+        w.title,
+        readStructure(w),
+        fitnessTestFlagForTitle(w.title, flaggedTitles),
+      ),
     }, vdot),
   );
 
@@ -877,6 +914,7 @@ async function resyncPacesAfterEvaluation(athleteId) {
   const actualizados = [];
   let sinOrigen = 0;
   let sinCambio = 0;
+  const flaggedTitles = await loadFitnessTestTitleSet((enVentana || []).map((w) => w.coach_id));
 
   for (const w of enVentana) {
     const origen = Number(w.generated_with_vdot);
@@ -888,6 +926,7 @@ async function resyncPacesAfterEvaluation(athleteId) {
     const despues = stripTestTimeGoalsFromStructure(
       w.title,
       rescaleStructureToVdot(antes, target, origen),
+      fitnessTestFlagForTitle(w.title, flaggedTitles),
     );
     if (JSON.stringify(antes) === JSON.stringify(despues)) { sinCambio += 1; continue; }
 
