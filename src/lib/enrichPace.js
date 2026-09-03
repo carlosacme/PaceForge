@@ -153,6 +153,31 @@ export function isTestMeasurementBlock(block, title = "") {
   return testKm != null && Number.isFinite(blockKm) && Math.abs(blockKm - testKm) < 0.05;
 }
 
+/** Parse a numeric duration in minutes from various field shapes. */
+function parseDurationMin(block) {
+  // Prefer numeric duration_min if present
+  const dm = Number(block?.duration_min);
+  if (Number.isFinite(dm) && dm > 0) return dm;
+  // Parse string like "12 min", "12min", "12:00"
+  const raw = String(block?.duration ?? "").trim();
+  const mMin = raw.match(/^(\d+(?:\.\d+)?)\s*min/i);
+  if (mMin) return Number(mMin[1]);
+  const mColon = raw.match(/^(\d+):(\d{2})$/);
+  if (mColon) return Number(mColon[1]) + Number(mColon[2]) / 60;
+  return 0;
+}
+
+/** Parse numeric distance in km from various field shapes. */
+function parseDistanceKm(block) {
+  const dk = Number(String(block?.distance_km ?? "").replace(",", "."));
+  if (Number.isFinite(dk) && dk > 0) return dk;
+  // Parse string like "2.4 km", "2.4km"
+  const raw = String(block?.distance ?? "").trim();
+  const m = raw.match(/^(\d+(?:[.,]\d+)?)\s*km/i);
+  if (m) return Number(m[1].replace(",", "."));
+  return 0;
+}
+
 function clearPrescribedPace(block) {
   const next = { ...block, target_pace: "" };
   if ("pace" in next) next.pace = "";
@@ -187,6 +212,8 @@ export function stripTestTimeGoalFromDescription(title, description, isFitnessTe
 export function stripTestTimeGoalsFromStructure(title, structure, isFitnessTest) {
   const arr = Array.isArray(structure) ? structure : [];
   if (!isTestWorkoutTitle(title, isFitnessTest)) return arr;
+
+  // --- First pass: standard detection (all-out keyword + title-distance match) ---
   const out = arr.map((b) => {
     if (!b) return b;
     const description = b.description
@@ -194,28 +221,77 @@ export function stripTestTimeGoalsFromStructure(title, structure, isFitnessTest)
       : b.description;
     const next = description !== b.description ? { ...b, description } : b;
     const match = isTestMeasurementBlock(next, title);
-    const cleared = match ? clearPrescribedPace(next) : next;
-    return { next: cleared, match, before: next };
+    return { next, match, before: next };
   });
-  const clearedAPace = out.some(({ match, before }) => {
+
+  const anyStandardMatch = out.some(({ match }) => match);
+
+  // --- Fallback: is_fitness_test===true but no block matched standard criteria ---
+  if (!anyStandardMatch && isFitnessTest === true) {
+    const candidates = out
+      .map((entry, idx) => ({ ...entry, idx }))
+      .filter(({ before }) => {
+        const label = String(before?.block_type || before?.phase || "");
+        return !TEST_PRESCRIPTION_RE.test(label);
+      });
+
+    if (candidates.length > 0) {
+      const scored = candidates.map((c) => ({
+        ...c,
+        km: parseDistanceKm(c.before),
+        min: parseDurationMin(c.before),
+      }));
+      const biggest = scored.reduce((best, cur) =>
+        cur.km > best.km || (cur.km === best.km && cur.min > best.min) ? cur : best
+      );
+
+      // Guard: if the "winner" has no distance AND no duration, don't guess
+      if (biggest.km > 0 || biggest.min > 0) {
+        out[biggest.idx].match = true;
+        console.warn(
+          "[test-open-pace:fallback]",
+          JSON.stringify({
+            title,
+            reason: "is_fitness_test=true, no all-out/title-distance match; using largest non-prescription block",
+            block: {
+              idx: biggest.idx,
+              phase: biggest.before?.phase || "",
+              block_type: biggest.before?.block_type || "",
+              distance_km: biggest.km,
+              duration_min: biggest.min,
+              pace: biggest.before?.target_pace ?? biggest.before?.pace ?? "",
+            },
+          })
+        );
+      }
+    }
+  }
+
+  // --- Apply pace clearing for all matched blocks ---
+  const result = out.map(({ next, match, before }) => {
+    const cleared = match ? clearPrescribedPace(next) : next;
+    return { next: cleared, match, before };
+  });
+
+  const clearedAPace = result.some(({ match, before }) => {
     const pace = String(before?.target_pace ?? before?.pace ?? "").trim();
     return match && pace !== "";
   });
   if (clearedAPace) {
     console.log("[test-open-pace]", JSON.stringify({
       title,
-      blocks: out.map(({ next, match, before }) => ({
+      blocks: result.map(({ next, match, before }) => ({
         block_type: before?.block_type || "",
         phase: before?.phase || "",
         description: before?.description || "",
         distance_km: before?.distance_km ?? "",
         match,
         paceBefore: before?.target_pace ?? before?.pace ?? "",
-        paceAfter: next?.target_pace ?? "",
+        paceAfter: next?.target_pace ?? next?.pace ?? "",
       })),
     }));
   }
-  return out.map(({ next }) => next);
+  return result.map(({ next }) => next);
 }
 
 /** Quita "m:ss/km" o "m:ss-m:ss/km" de un texto libre. Deja el resto. */
