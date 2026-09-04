@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import WorkoutDetailBreakdown from "../WorkoutDetailBreakdown";
+import WorkoutDetailSheet from "../shared/WorkoutDetailSheet";
+import { useWorkoutRegistro } from "../Athletes/useWorkoutRegistro";
 import {
   calendarCellToIsoYmd,
   getMonthGrid,
@@ -30,6 +31,7 @@ export default function AthleteOwnCalendar({
     return { y: n.getFullYear(), m: n.getMonth() };
   });
   const [athleteCalendarCtxMenu, setAthleteCalendarCtxMenu] = useState(null);
+  const [detailWorkoutId, setDetailWorkoutId] = useState(null);
   const athleteCalendarCtxMenuRef = useRef(null);
 
   const workoutsByDate = useMemo(() => {
@@ -58,7 +60,10 @@ export default function AthleteOwnCalendar({
     () => (ctxMenuWorkoutId ? (workouts || []).find((x) => String(x.id) === String(ctxMenuWorkoutId)) || null : null),
     [workouts, ctxMenuWorkoutId],
   );
-  const ctxMenuView = athleteCalendarCtxMenu?.view || "actions";
+  const detailSheetWorkout = useMemo(
+    () => (detailWorkoutId ? (workouts || []).find((x) => String(x.id) === String(detailWorkoutId)) || null : null),
+    [workouts, detailWorkoutId],
+  );
 
   const athleteLatestVdot = useMemo(() => {
     const rows = evaluations || [];
@@ -67,6 +72,18 @@ export default function AthleteOwnCalendar({
     const v = Number(last?.vdot);
     return Number.isFinite(v) && v > 0 ? v : 42.5;
   }, [evaluations]);
+
+  const { setRegistroModal, registroLapsLoading, registroBlocks } = useWorkoutRegistro({
+    athleteVdot: athleteLatestVdot,
+  });
+
+  useEffect(() => {
+    setRegistroModal(detailSheetWorkout);
+  }, [detailSheetWorkout, setRegistroModal]);
+
+  const closeWorkoutDetailSheet = () => {
+    setDetailWorkoutId(null);
+  };
 
   const openAthleteWorkoutMenu = (e, w) => {
     e.preventDefault();
@@ -82,17 +99,10 @@ export default function AthleteOwnCalendar({
   const openAthleteWorkoutDetail = (e) => {
     e.preventDefault();
     e.stopPropagation();
-    setAthleteCalendarCtxMenu((prev) => {
-      if (!prev) return prev;
-      const pad = 8;
-      const mw = Math.min(typeof window !== "undefined" ? window.innerWidth * 0.92 : 320, 340);
-      const mh = Math.min(typeof window !== "undefined" ? window.innerHeight * 0.7 : 400, 420);
-      const vw = typeof window !== "undefined" ? window.innerWidth : 800;
-      const vh = typeof window !== "undefined" ? window.innerHeight : 600;
-      const x = Math.max(pad, Math.min(prev.x, vw - mw - pad));
-      const y = Math.max(pad, Math.min(prev.y, vh - mh - pad));
-      return { ...prev, view: "detail", x, y };
-    });
+    const w = ctxMenuAthleteWorkout;
+    closeAthleteCalendarCtxMenu();
+    if (!w) return;
+    setDetailWorkoutId(w.id);
   };
 
   const ctxMenuListenerKey = athleteCalendarCtxMenu
@@ -204,101 +214,60 @@ export default function AthleteOwnCalendar({
             left: athleteCalendarCtxMenu.x,
             top: athleteCalendarCtxMenu.y,
             zIndex: 10002,
-            minWidth: ctxMenuView === "detail" ? 260 : 240,
-            width: ctxMenuView === "detail" ? "min(92vw, 340px)" : undefined,
+            minWidth: 240,
             maxWidth: "min(92vw, 340px)",
-            maxHeight: ctxMenuView === "detail" ? "min(70vh, 420px)" : undefined,
-            overflowY: ctxMenuView === "detail" ? "auto" : "visible",
             background: "#ffffff",
             borderRadius: 10,
             boxShadow: "0 10px 40px rgba(15,23,42,.2)",
             border: "1px solid #e2e8f0",
-            padding: ctxMenuView === "detail" ? 12 : 6,
+            padding: 6,
           }}
         >
-          {ctxMenuView === "detail" ? (
-            <>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 8 }}>
-                <button
-                  type="button"
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setAthleteCalendarCtxMenu((prev) => (prev ? { ...prev, view: "actions" } : prev));
-                  }}
-                  style={{
-                    background: "transparent",
-                    border: "none",
-                    color: "#64748b",
-                    fontWeight: 700,
-                    cursor: "pointer",
-                    fontFamily: "inherit",
-                    fontSize: ".78em",
-                    padding: "4px 0",
-                  }}
-                >
-                  ← Menú
-                </button>
-                <button
-                  type="button"
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={(e) => { e.stopPropagation(); closeAthleteCalendarCtxMenu(); }}
-                  style={{
-                    background: "transparent",
-                    border: "none",
-                    color: "#94a3b8",
-                    fontWeight: 700,
-                    cursor: "pointer",
-                    fontFamily: "inherit",
-                    fontSize: ".78em",
-                    padding: "4px 0",
-                  }}
-                >
-                  Cerrar
-                </button>
-              </div>
-              <WorkoutDetailBreakdown workout={ctxMenuAthleteWorkout} vdot={athleteLatestVdot} />
-            </>
-          ) : (
-            <>
-              <button
-                type="button"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={(e) => { e.stopPropagation(); const row = ctxMenuAthleteWorkout; closeAthleteCalendarCtxMenu(); void onToggleDone(row); }}
-                style={{ display: "block", width: "100%", textAlign: "left", background: "transparent", border: "none", borderRadius: 8, padding: "10px 12px", color: "#0f172a", fontWeight: 600, cursor: "pointer", fontFamily: "inherit", fontSize: ".82em" }}
-              >
-                {ctxMenuAthleteWorkout.done ? "✓ Marcar pendiente" : "✓ Marcar hecho"}
-              </button>
-              {!ctxMenuAthleteWorkout.done && (
-                <button
-                  type="button"
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={(e) => { e.stopPropagation(); onOpenNot100(ctxMenuAthleteWorkout); closeAthleteCalendarCtxMenu(); }}
-                  style={{ display: "block", width: "100%", textAlign: "left", background: "transparent", border: "none", borderRadius: 8, padding: "10px 12px", color: "#ff8a3d", fontWeight: 600, cursor: "pointer", fontFamily: "inherit", fontSize: ".82em" }}
-                >
-                  😓 No estoy al 100%
-                </button>
-              )}
-              <button
-                type="button"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={openAthleteWorkoutDetail}
-                style={{ display: "block", width: "100%", textAlign: "left", background: "transparent", border: "none", borderRadius: 8, padding: "10px 12px", color: "#0d1f38", fontWeight: 600, cursor: "pointer", fontFamily: "inherit", fontSize: ".82em" }}
-              >
-                📋 Ver detalle
-              </button>
-              <button
-                type="button"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={(e) => { e.stopPropagation(); onOpenBriefing(ctxMenuAthleteWorkout); closeAthleteCalendarCtxMenu(); }}
-                style={{ display: "block", width: "100%", textAlign: "left", background: "transparent", border: "none", borderRadius: 8, padding: "10px 12px", color: "#6366f1", fontWeight: 600, cursor: "pointer", fontFamily: "inherit", fontSize: ".82em" }}
-              >
-                ⚡ Briefing IA
-              </button>
-            </>
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={(e) => { e.stopPropagation(); const row = ctxMenuAthleteWorkout; closeAthleteCalendarCtxMenu(); void onToggleDone(row); }}
+            style={{ display: "block", width: "100%", textAlign: "left", background: "transparent", border: "none", borderRadius: 8, padding: "10px 12px", color: "#0f172a", fontWeight: 600, cursor: "pointer", fontFamily: "inherit", fontSize: ".82em" }}
+          >
+            {ctxMenuAthleteWorkout.done ? "✓ Marcar pendiente" : "✓ Marcar hecho"}
+          </button>
+          {!ctxMenuAthleteWorkout.done && (
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={(e) => { e.stopPropagation(); onOpenNot100(ctxMenuAthleteWorkout); closeAthleteCalendarCtxMenu(); }}
+              style={{ display: "block", width: "100%", textAlign: "left", background: "transparent", border: "none", borderRadius: 8, padding: "10px 12px", color: "#ff8a3d", fontWeight: 600, cursor: "pointer", fontFamily: "inherit", fontSize: ".82em" }}
+            >
+              😓 No estoy al 100%
+            </button>
           )}
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={openAthleteWorkoutDetail}
+            style={{ display: "block", width: "100%", textAlign: "left", background: "transparent", border: "none", borderRadius: 8, padding: "10px 12px", color: "#0d1f38", fontWeight: 600, cursor: "pointer", fontFamily: "inherit", fontSize: ".82em" }}
+          >
+            📋 Ver detalle
+          </button>
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={(e) => { e.stopPropagation(); onOpenBriefing(ctxMenuAthleteWorkout); closeAthleteCalendarCtxMenu(); }}
+            style={{ display: "block", width: "100%", textAlign: "left", background: "transparent", border: "none", borderRadius: 8, padding: "10px 12px", color: "#6366f1", fontWeight: 600, cursor: "pointer", fontFamily: "inherit", fontSize: ".82em" }}
+          >
+            ⚡ Briefing IA
+          </button>
         </div>
       ) : null}
+
+      <WorkoutDetailSheet
+        workout={detailSheetWorkout}
+        vdot={athleteLatestVdot}
+        onClose={closeWorkoutDetailSheet}
+        canEditPlan={false}
+        registroLapsLoading={registroLapsLoading}
+        registroBlocks={registroBlocks}
+      />
     </>
   );
 }

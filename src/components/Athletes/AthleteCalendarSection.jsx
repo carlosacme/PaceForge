@@ -1,6 +1,6 @@
 import React from "react";
-import WorkoutDetailBreakdown from "../WorkoutDetailBreakdown";
 import WorkoutStructureTable from "../shared/WorkoutStructureTable";
+import WorkoutDetailSheet from "../shared/WorkoutDetailSheet";
 import {
   WORKOUT_TYPES,
   WORKOUT_BLOCK_TYPES,
@@ -35,7 +35,6 @@ export default function AthleteCalendarSection({
   calendarDragRef,
   releaseCalendarDrag,
   calendarCtxMenu,
-  setCalendarCtxMenu,
   calendarCtxMenuRef,
   workoutPanel,
   workoutFormSaving,
@@ -59,6 +58,8 @@ export default function AthleteCalendarSection({
   toggleWorkoutDone,
   closeCalendarCtxMenu,
   ctxMenuWorkout,
+  detailSheetWorkout,
+  closeWorkoutDetailSheet,
   panelWorkout,
   openCalendarWorkoutMenu,
   openCalendarWorkoutDetail,
@@ -330,137 +331,121 @@ export default function AthleteCalendarSection({
             left: calendarCtxMenu.x,
             top: calendarCtxMenu.y,
             zIndex: 300,
-            minWidth: (calendarCtxMenu.view || "actions") === "detail" ? 260 : 240,
-            width: (calendarCtxMenu.view || "actions") === "detail" ? "min(92vw, 340px)" : undefined,
+            minWidth: 240,
             maxWidth: "min(92vw, 340px)",
-            maxHeight: (calendarCtxMenu.view || "actions") === "detail" ? "min(70vh, 420px)" : undefined,
-            overflowY: (calendarCtxMenu.view || "actions") === "detail" ? "auto" : "visible",
             background: "#ffffff",
             borderRadius: 10,
             boxShadow: "0 10px 40px rgba(15,23,42,.2)",
             border: "1px solid #e2e8f0",
-            padding: (calendarCtxMenu.view || "actions") === "detail" ? 12 : 6,
+            padding: 6,
           }}
         >
-          {(calendarCtxMenu.view || "actions") === "detail" ? (
-            <>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 8 }}>
-                <button
-                  type="button"
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setCalendarCtxMenu((prev) => (prev ? { ...prev, view: "actions" } : prev));
-                  }}
-                  style={{ background: "transparent", border: "none", color: "#64748b", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".78em", padding: "4px 0" }}
-                >
-                  ← Menú
-                </button>
-                <button
-                  type="button"
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={(e) => { e.stopPropagation(); closeCalendarCtxMenu(); }}
-                  style={{ background: "transparent", border: "none", color: "#94a3b8", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".78em", padding: "4px 0" }}
-                >
-                  Cerrar
-                </button>
-              </div>
-              <WorkoutDetailBreakdown workout={ctxMenuWorkout} vdot={athleteVdot || 42.5} />
-            </>
-          ) : (
-            <>
-              {[
-                {
-                  label: ctxMenuWorkout.done ? "✓ Marcar pendiente" : "✓ Marcar hecho",
-                  onClick: () => {
-                    toggleWorkoutDone(ctxMenuWorkout);
-                    closeCalendarCtxMenu();
+          {[
+            {
+              label: ctxMenuWorkout.done ? "✓ Marcar pendiente" : "✓ Marcar hecho",
+              onClick: () => {
+                toggleWorkoutDone(ctxMenuWorkout);
+                closeCalendarCtxMenu();
+              },
+            },
+            {
+              label: "📋 Ver detalle",
+              onClick: null,
+            },
+            ...(ctxMenuWorkout.done
+              ? [
+                  {
+                    label: "📊 Ver registro",
+                    onClick: () => {
+                      onOpenRegistro(ctxMenuWorkout);
+                      closeCalendarCtxMenu();
+                    },
                   },
-                },
-                {
-                  label: "📋 Ver detalle",
-                  onClick: null,
-                },
-                ...(ctxMenuWorkout.done
-                  ? [
-                      {
-                        label: "📊 Ver registro",
-                        onClick: () => {
-                          onOpenRegistro(ctxMenuWorkout);
-                          closeCalendarCtxMenu();
+                  {
+                    label: coachWorkoutAnalysisLoading[ctxMenuWorkout.id]
+                      ? "🤖 Analizando…"
+                      : "🤖 Analizar IA",
+                    disabled: Boolean(coachWorkoutAnalysisLoading[ctxMenuWorkout.id]),
+                    onClick: () => {
+                      void onAnalyze(ctxMenuWorkout, athleteName);
+                    },
+                  },
+                  ...(coachWorkoutAnalysis[ctxMenuWorkout.id]
+                    ? [
+                        {
+                          label: "📄 Ver análisis",
+                          onClick: () => {
+                            onOpenAnalysis(ctxMenuWorkout);
+                            closeCalendarCtxMenu();
+                          },
                         },
-                      },
-                      {
-                        label: coachWorkoutAnalysisLoading[ctxMenuWorkout.id]
-                          ? "🤖 Analizando…"
-                          : "🤖 Analizar IA",
-                        disabled: Boolean(coachWorkoutAnalysisLoading[ctxMenuWorkout.id]),
-                        onClick: () => {
-                          void onAnalyze(ctxMenuWorkout, athleteName);
-                        },
-                      },
-                      ...(coachWorkoutAnalysis[ctxMenuWorkout.id]
-                        ? [
-                            {
-                              label: "📄 Ver análisis",
-                              onClick: () => {
-                                onOpenAnalysis(ctxMenuWorkout);
-                                closeCalendarCtxMenu();
-                              },
-                            },
-                          ]
-                        : []),
-                    ]
-                  : []),
-                {
-                  label: "✏️ Editar",
-                  onClick: () => openWorkoutEditPanel(ctxMenuWorkout),
-                },
-                {
-                  label: "📅 Mover a otra fecha",
-                  onClick: () => openWorkoutMovePanel(ctxMenuWorkout),
-                },
-                {
-                  label: "🗑 Eliminar",
-                  danger: true,
-                  onClick: () => deleteCalendarWorkout(ctxMenuWorkout),
-                },
-              ].map((item, i) => (
-                <button
-                  key={i}
-                  type="button"
-                  disabled={item.disabled}
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (item.disabled) return;
-                    if (item.label === "📋 Ver detalle") {
-                      openCalendarWorkoutDetail(e);
-                      return;
-                    }
-                    item.onClick?.();
-                  }}
-                  style={{
-                    display: "block",
-                    width: "100%",
-                    textAlign: "left",
-                    background: "transparent",
-                    border: "none",
-                    borderRadius: 8,
-                    padding: "10px 12px",
-                    color: item.disabled ? "#94a3b8" : item.danger ? "#b91c1c" : "#0f172a",
-                    fontWeight: 600,
-                    cursor: item.disabled ? "not-allowed" : "pointer",
-                    fontFamily: "inherit",
-                    fontSize: ".82em",
-                  }}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </>
-          )}
+                      ]
+                    : []),
+                ]
+              : []),
+            {
+              label: "✏️ Editar",
+              onClick: () => openWorkoutEditPanel(ctxMenuWorkout),
+            },
+            {
+              label: "📅 Mover a otra fecha",
+              onClick: () => openWorkoutMovePanel(ctxMenuWorkout),
+            },
+            {
+              label: "🗑 Eliminar",
+              danger: true,
+              onClick: () => deleteCalendarWorkout(ctxMenuWorkout),
+            },
+          ].map((item, i) => (
+            <button
+              key={i}
+              type="button"
+              disabled={item.disabled}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (item.disabled) return;
+                if (item.label === "📋 Ver detalle") {
+                  openCalendarWorkoutDetail(e);
+                  return;
+                }
+                item.onClick?.();
+              }}
+              style={{
+                display: "block",
+                width: "100%",
+                textAlign: "left",
+                background: "transparent",
+                border: "none",
+                borderRadius: 8,
+                padding: "10px 12px",
+                color: item.disabled ? "#94a3b8" : item.danger ? "#b91c1c" : "#0f172a",
+                fontWeight: 600,
+                cursor: item.disabled ? "not-allowed" : "pointer",
+                fontFamily: "inherit",
+                fontSize: ".82em",
+              }}
+            >
+              {item.label}
+            </button>
+          ))}
         </div>
+      ) : null}
+
+      {showOverlays && detailSheetWorkout ? (
+        <WorkoutDetailSheet
+          workout={detailSheetWorkout}
+          vdot={athleteVdot || 42.5}
+          onClose={closeWorkoutDetailSheet}
+          canEditPlan
+          onEdit={(w) => {
+            closeWorkoutDetailSheet();
+            openWorkoutEditPanel(w);
+          }}
+          onDelete={(w) => {
+            void deleteCalendarWorkout(w);
+          }}
+        />
       ) : null}
 
       {showOverlays && workoutPanel && panelWorkout ? (
