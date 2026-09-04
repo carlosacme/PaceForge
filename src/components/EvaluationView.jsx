@@ -151,6 +151,8 @@ export default function EvaluationView({ athletes, currentUserId, notify, athlet
   const [saving, setSaving] = useState(false);
   const [history, setHistory] = useState([]);
   const [openHistoryId, setOpenHistoryId] = useState(null);
+  const [deletingEvalId, setDeletingEvalId] = useState(null);
+  const canDeleteEvaluations = !athleteOnlyId && Boolean(currentUserId);
 
   const methodDescription =
     tab === "race"
@@ -380,6 +382,45 @@ export default function EvaluationView({ athletes, currentUserId, notify, athlet
 
     setSaving(false);
     setResultsPersisted(true);
+    loadHistory();
+  };
+
+  /**
+   * Borra una fila del historial. No dispara vdot-resync: el gráfico y el
+   * "+0.4 vs tu evaluación anterior" se recalculan en memoria al recargar.
+   * Si es la más reciente, se avisa de que los ritmos del plan no se tocan.
+   */
+  const deleteEvaluation = async (row, isLatest) => {
+    if (!canDeleteEvaluations) return;
+    if (!row?.id) return;
+    const vdotLabel = Number(row.vdot || 0).toFixed(2);
+    const lines = [
+      `¿Eliminar esta evaluación (VDOT ${vdotLabel})? Esta acción no se puede deshacer.`,
+    ];
+    if (isLatest) {
+      lines.push(
+        "Esta es la evaluación más reciente. El VDOT del plan NO se recalculará: los ritmos de los entrenos futuros se quedan como están.",
+      );
+    }
+    if (!window.confirm(lines.join("\n\n"))) return;
+    setDeletingEvalId(row.id);
+    const { data, error } = await supabase
+      .from("athlete_evaluations")
+      .delete()
+      .eq("id", row.id)
+      .select("id");
+    setDeletingEvalId(null);
+    if (error) {
+      console.error("delete evaluation", error);
+      notify?.(`No se pudo eliminar: ${error.message}`);
+      return;
+    }
+    if (!(data || []).length) {
+      notify?.("No se eliminó la evaluación (no tienes permiso sobre esa fila)");
+      return;
+    }
+    if (openHistoryId === row.id) setOpenHistoryId(null);
+    notify?.("Evaluación eliminada");
     loadHistory();
   };
 
@@ -701,26 +742,64 @@ export default function EvaluationView({ athletes, currentUserId, notify, athlet
         ) : (
           history.map((h, historyIdx) => (
             <div key={h.id} style={{ border: "1px solid #e2e8f0", borderRadius: 10, marginBottom: 8, overflow: "hidden" }}>
-              <button
-                type="button"
-                onClick={() => setOpenHistoryId((prev) => (prev === h.id ? null : h.id))}
+              <div
                 style={{
-                  width: "100%",
-                  textAlign: "left",
-                  padding: "10px 12px",
-                  border: "none",
-                  background: "#f8fafc",
-                  fontFamily: "inherit",
-                  cursor: "pointer",
                   display: "flex",
-                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "10px 12px",
+                  background: "#f8fafc",
                 }}
               >
-                <span style={{ color: "#0f172a", fontWeight: 700 }}>
-                  {new Date(h.created_at).toLocaleString("es")} · {String(h.method || "").toUpperCase()} · VDOT {Number(h.vdot || 0).toFixed(2)}
-                </span>
-                <span style={{ color: "#64748b" }}>{openHistoryId === h.id ? "▲" : "▼"}</span>
-              </button>
+                <button
+                  type="button"
+                  onClick={() => setOpenHistoryId((prev) => (prev === h.id ? null : h.id))}
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    textAlign: "left",
+                    padding: 0,
+                    border: "none",
+                    background: "transparent",
+                    fontFamily: "inherit",
+                    cursor: "pointer",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    gap: 8,
+                  }}
+                >
+                  <span style={{ color: "#0f172a", fontWeight: 700 }}>
+                    {new Date(h.created_at).toLocaleString("es")} · {String(h.method || "").toUpperCase()} · VDOT {Number(h.vdot || 0).toFixed(2)}
+                  </span>
+                  <span style={{ color: "#64748b", flexShrink: 0 }}>{openHistoryId === h.id ? "▲" : "▼"}</span>
+                </button>
+                {canDeleteEvaluations ? (
+                  <button
+                    type="button"
+                    disabled={deletingEvalId === h.id}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void deleteEvaluation(h, historyIdx === 0);
+                    }}
+                    title="Eliminar esta evaluación"
+                    style={{
+                      flexShrink: 0,
+                      background: "#fff",
+                      border: "1px solid #fecaca",
+                      borderRadius: 8,
+                      padding: "6px 10px",
+                      color: deletingEvalId === h.id ? "#94a3b8" : "#b91c1c",
+                      fontWeight: 700,
+                      cursor: deletingEvalId === h.id ? "not-allowed" : "pointer",
+                      fontFamily: "inherit",
+                      fontSize: ".72em",
+                    }}
+                  >
+                    {deletingEvalId === h.id ? "…" : "🗑"}
+                  </button>
+                ) : null}
+              </div>
               {openHistoryId === h.id && (
                 <div style={{ padding: "10px 12px", background: "#fff" }}>
                   <div style={{ fontSize: ".78em", color: "#64748b", marginBottom: 10 }}>

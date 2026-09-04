@@ -33,6 +33,7 @@ export function useAthleteCalendar({
   const calendarDragRef = useRef(false);
   const [calendarCtxMenu, setCalendarCtxMenu] = useState(null);
   const calendarCtxMenuRef = useRef(null);
+  const [detailWorkoutId, setDetailWorkoutId] = useState(null);
   const [workoutPanel, setWorkoutPanel] = useState(null);
   const [workoutFormSaving, setWorkoutFormSaving] = useState(false);
   const [workoutEditForm, setWorkoutEditForm] = useState({
@@ -115,6 +116,11 @@ export function useAthleteCalendar({
     [workouts, calendarCtxMenu],
   );
 
+  const detailSheetWorkout = useMemo(
+    () => (detailWorkoutId ? workouts.find((x) => String(x.id) === String(detailWorkoutId)) || null : null),
+    [workouts, detailWorkoutId],
+  );
+
   const panelWorkout = useMemo(
     () => (workoutPanel ? workouts.find((x) => String(x.id) === String(workoutPanel.workoutId)) || null : null),
     [workouts, workoutPanel],
@@ -163,20 +169,14 @@ export function useAthleteCalendar({
     setCalendarCtxMenu({ x, y, workoutId: w.id, view: "actions" });
   };
 
+  const closeWorkoutDetailSheet = () => setDetailWorkoutId(null);
+
   const openCalendarWorkoutDetail = (e) => {
     e.preventDefault();
     e.stopPropagation();
-    setCalendarCtxMenu((prev) => {
-      if (!prev) return prev;
-      const pad = 8;
-      const mw = Math.min(typeof window !== "undefined" ? window.innerWidth * 0.92 : 320, 340);
-      const mh = Math.min(typeof window !== "undefined" ? window.innerHeight * 0.7 : 400, 420);
-      const vw = typeof window !== "undefined" ? window.innerWidth : 800;
-      const vh = typeof window !== "undefined" ? window.innerHeight : 600;
-      const x = Math.max(pad, Math.min(prev.x, vw - mw - pad));
-      const y = Math.max(pad, Math.min(prev.y, vh - mh - pad));
-      return { ...prev, view: "detail", x, y };
-    });
+    const id = ctxMenuWorkout?.id;
+    closeCalendarCtxMenu();
+    if (id) setDetailWorkoutId(id);
   };
 
   const openWorkoutEditPanel = (w) => {
@@ -286,6 +286,7 @@ export function useAthleteCalendar({
     if (!window.confirm("¿Eliminar este workout? Esta acción no se puede deshacer.")) return;
     closeCalendarCtxMenu();
     closeWorkoutPanel();
+    closeWorkoutDetailSheet();
     const id = w.id;
     setWorkoutFormSaving(true);
     const prev = workouts;
@@ -445,6 +446,8 @@ export function useAthleteCalendar({
     toggleWorkoutDone,
     closeCalendarCtxMenu,
     ctxMenuWorkout,
+    detailSheetWorkout,
+    closeWorkoutDetailSheet,
     panelWorkout,
     openCalendarWorkoutMenu,
     openCalendarWorkoutDetail,
