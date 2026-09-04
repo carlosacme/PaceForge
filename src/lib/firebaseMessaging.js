@@ -29,12 +29,26 @@ export async function initMessaging() {
 
 const VAPID_KEY = "BNqJM5D8RqCSeSXTcnU3dkye1fjPvAYcb7P4R1erlQpscPuU4VFmeJ0LSJL0jTh-POI7byyPPxDevIaWFt23DLM";
 
+/** `serviceWorker.ready` no resuelve si el SW falló (p. ej. webview embebido). */
+async function readyServiceWorker(timeoutMs = 2500) {
+  if (typeof navigator === "undefined" || !navigator.serviceWorker) return null;
+  try {
+    return await Promise.race([
+      navigator.serviceWorker.ready,
+      new Promise((resolve) => setTimeout(() => resolve(null), timeoutMs)),
+    ]);
+  } catch {
+    return null;
+  }
+}
+
 export const requestNotificationPermission = async () => {
   const m = await initMessaging();
   if (!m) return null;
   const permission = await Notification.requestPermission();
   if (permission === "granted") {
-    const reg = await navigator.serviceWorker.ready;
+    const reg = await readyServiceWorker();
+    if (!reg) return null;
     const token = await getToken(m, {
       vapidKey: VAPID_KEY,
       serviceWorkerRegistration: reg,
@@ -50,7 +64,8 @@ export async function refreshFcmTokenIfGranted() {
   if (Notification.permission !== "granted") return null;
   const m = await initMessaging();
   if (!m) return null;
-  const reg = await navigator.serviceWorker.ready;
+  const reg = await readyServiceWorker();
+  if (!reg) return null;
   return getToken(m, {
     vapidKey: VAPID_KEY,
     serviceWorkerRegistration: reg,
