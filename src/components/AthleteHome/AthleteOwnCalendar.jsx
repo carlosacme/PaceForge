@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import WorkoutDetailSheet from "../shared/WorkoutDetailSheet";
+import WorkoutRegistroModal from "../Athletes/WorkoutRegistroModal";
 import { useWorkoutRegistro } from "../Athletes/useWorkoutRegistro";
 import {
   calendarCellToIsoYmd,
@@ -73,22 +74,32 @@ export default function AthleteOwnCalendar({
     return Number.isFinite(v) && v > 0 ? v : 42.5;
   }, [evaluations]);
 
-  const { setRegistroModal, registroLapsLoading, registroBlocks } = useWorkoutRegistro({
+  const {
+    registroModal,
+    setRegistroModal,
+    registroLapsLoading,
+    registroBlocks,
+  } = useWorkoutRegistro({
     athleteVdot: athleteLatestVdot,
   });
-
-  useEffect(() => {
-    setRegistroModal(detailSheetWorkout);
-  }, [detailSheetWorkout, setRegistroModal]);
 
   const closeWorkoutDetailSheet = () => {
     setDetailWorkoutId(null);
   };
 
+  const openAthleteWorkoutRegistro = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const w = ctxMenuAthleteWorkout;
+    closeAthleteCalendarCtxMenu();
+    if (!w?.done) return;
+    setRegistroModal(w);
+  };
+
   const openAthleteWorkoutMenu = (e, w) => {
     e.preventDefault();
     e.stopPropagation();
-    const pad = 8; const mw = 280; const mh = 160;
+    const pad = 8; const mw = 280; const mh = w.done ? 240 : 200;
     const vw = typeof window !== "undefined" ? window.innerWidth : 800;
     const vh = typeof window !== "undefined" ? window.innerHeight : 600;
     const x = Math.max(pad, Math.min(e.clientX, vw - mw - pad));
@@ -249,6 +260,16 @@ export default function AthleteOwnCalendar({
           >
             📋 Ver detalle
           </button>
+          {ctxMenuAthleteWorkout.done ? (
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={openAthleteWorkoutRegistro}
+              style={{ display: "block", width: "100%", textAlign: "left", background: "transparent", border: "none", borderRadius: 8, padding: "10px 12px", color: "#0d1f38", fontWeight: 600, cursor: "pointer", fontFamily: "inherit", fontSize: ".82em" }}
+            >
+              📊 Ver registro
+            </button>
+          ) : null}
           <button
             type="button"
             onMouseDown={(e) => e.preventDefault()}
@@ -265,8 +286,13 @@ export default function AthleteOwnCalendar({
         vdot={athleteLatestVdot}
         onClose={closeWorkoutDetailSheet}
         canEditPlan={false}
+      />
+      <WorkoutRegistroModal
+        workout={registroModal}
+        athleteVdot={athleteLatestVdot}
         registroLapsLoading={registroLapsLoading}
         registroBlocks={registroBlocks}
+        onClose={() => setRegistroModal(null)}
       />
     </>
   );

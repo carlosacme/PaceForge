@@ -256,7 +256,10 @@ export default function AthleteHome({ profile }) {
       setLoading(false);
       return;
     }
-    if (prevProfileUserIdRef.current === profileUserId) return;
+    if (prevProfileUserIdRef.current === profileUserId) {
+      setLoading(false);
+      return;
+    }
     let cancelled = false;
     const markInitialLoadFinished = () => { if (!cancelled) prevProfileUserIdRef.current = profileUserId; };
     const load = async () => {
@@ -295,15 +298,6 @@ export default function AthleteHome({ profile }) {
       if (authData?.user?.id) {
         const { error: linkErr } = await supabase.from("athletes").update({ user_id: authData.user.id }).eq("id", athleteRow.id);
         if (linkErr) console.warn("[AthleteHome] link user_id:", linkErr);
-        // El backend limpia el token de otros perfiles antes de asignarlo. En
-        // la APK el token sale del plugin nativo: la Notification API del web
-        // no existe dentro del WebView.
-        if (Capacitor.isNativePlatform()) {
-          await registerNativePush({ notify: notifyPush });
-        } else {
-          const tok = await refreshFcmTokenIfGranted();
-          if (tok) await registerFcmToken(tok);
-        }
       }
       const [wOut, eRes] = await Promise.all([
         refreshWorkouts(athleteRow.id),
@@ -336,6 +330,21 @@ export default function AthleteHome({ profile }) {
       }
       setLoading(false);
       markInitialLoadFinished();
+      // Push en segundo plano: registrar el token no debe retrasar el calendario.
+      if (authData?.user?.id) {
+        void (async () => {
+          try {
+            if (Capacitor.isNativePlatform()) {
+              await registerNativePush({ notify: notifyPush });
+            } else {
+              const tok = await refreshFcmTokenIfGranted();
+              if (tok) await registerFcmToken(tok);
+            }
+          } catch (e) {
+            console.warn("[AthleteHome] push token:", e);
+          }
+        })();
+      }
     };
     load();
     return () => { cancelled = true; };
