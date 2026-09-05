@@ -14,8 +14,12 @@ export default function AthleteChatPanel({
   const chatScrollRef = useRef(null);
 
   useEffect(() => {
-    if (!chatScrollRef.current) return;
-    chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+    const el = chatScrollRef.current;
+    if (!el) return undefined;
+    const id = requestAnimationFrame(() => {
+      el.scrollTop = el.scrollHeight;
+    });
+    return () => cancelAnimationFrame(id);
   }, [chatMessages]);
 
   return (

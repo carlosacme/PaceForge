@@ -19,9 +19,14 @@ export default function AthleteChatSheet({
   const chatScrollRef = useRef(null);
 
   useEffect(() => {
-    if (!chatScrollRef.current) return;
-    chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
-  }, [chatMessages]);
+    if (!open) return undefined;
+    const el = chatScrollRef.current;
+    if (!el) return undefined;
+    const id = requestAnimationFrame(() => {
+      el.scrollTop = el.scrollHeight;
+    });
+    return () => cancelAnimationFrame(id);
+  }, [open, chatMessages]);
 
   if (!open) return null;
 
