@@ -143,7 +143,7 @@ export function useAthleteChat({
         toUserId: athleteUserId,
         title: "Nuevo mensaje de tu coach",
         body,
-        data: { type: "athlete_chat" },
+        data: { type: "athlete_chat", athlete_id: athleteId },
         logLabel: "chat coach→atleta",
       })
         .then((r) => {

@@ -23,13 +23,13 @@ test("lee type desde data, con fallback al top-level", () => {
   assert.equal(notificationPushType(null), "");
 });
 
-test("deja solo las de chat y no toca entrenos ni racha", () => {
+test("deja solo tags chat: y no toca FCM auto-tag ni el aggregate", () => {
   const delivered = [
-    { id: "1", data: { type: "athlete_chat" } },
-    { id: "2", data: { type: "coach_workout_completed" } },
-    { id: "3", data: { type: "coach_chat", athlete_id: "abc" } },
-    { id: "4", data: { type: "athlete_streak" } },
-    { id: "5", data: {} },
+    { id: "1", tag: "chat:85:aaa", data: { "android.title": "Hola" } },
+    { id: "2", tag: "FCM-Notification:77824858", data: { "android.title": "Entreno" } },
+    { id: "3", tag: "chat:85:bbb", data: { "android.title": "Otro" } },
+    { id: "4", tag: "0|com.runningapexflow.app|g:Aggregate_NormalNotificationSection", data: {} },
+    { id: "5", tag: null, data: { type: "athlete_chat" } },
   ];
   const chat = filterDeliveredChatNotifications(delivered);
   assert.deepEqual(chat.map((n) => n.id), ["1", "3"]);
@@ -41,11 +41,11 @@ test("lista vacia o invalida no rompe", () => {
   assert.deepEqual(filterDeliveredChatNotifications(undefined), []);
 });
 
-test("extras de bandeja FCM (sin data.type) no coinciden con athlete_chat", () => {
+test("bandeja FCM sin tag chat: no coincide aunque data.type viniera (no viene)", () => {
   const tray = [
     {
       id: 0,
-      tag: null,
+      tag: "FCM-Notification:77824858",
       data: { "android.title": "Nuevo mensaje", "android.text": "Hola", "android.showWhen": true },
     },
   ];

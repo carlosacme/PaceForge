@@ -3,13 +3,11 @@
  *
  * Al tocar UNA notificacion de chat hay que quitar las demas de chat, no
  * cancelAll: los avisos de entreno/racha tienen que seguir en la bandeja.
- * El filtro vive aqui para poder testearlo sin el plugin de Capacitor.
+ * data.type NO llega en getDeliveredNotifications (confirmado en debug_log);
+ * el tag `chat:…` si: FCM lo deja en notification.tag.
  */
-export const CHAT_PUSH_TYPES = ["athlete_chat", "coach_chat"];
-
-export function isChatPushType(type) {
-  return CHAT_PUSH_TYPES.includes(String(type || ""));
-}
+export { CHAT_TRAY_TAG_PREFIX, isChatPushType, isChatTrayTag } from "../../lib/chatNotificationTag.js";
+import { isChatTrayTag } from "../../lib/chatNotificationTag.js";
 
 export function notificationPushType(notification) {
   if (!notification || typeof notification !== "object") return "";
@@ -20,7 +18,7 @@ export function notificationPushType(notification) {
 
 export function filterDeliveredChatNotifications(notifications) {
   return (Array.isArray(notifications) ? notifications : []).filter((n) =>
-    isChatPushType(notificationPushType(n)),
+    isChatTrayTag(n?.tag),
   );
 }
 
