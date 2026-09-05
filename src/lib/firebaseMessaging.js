@@ -1,5 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { getMessaging, getToken, deleteToken, onMessage, isSupported } from "firebase/messaging";
+import { readyServiceWorker } from "./readyServiceWorker.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyD1HwMxCRP-dmmyA89EJ3z22HXXaAVm6jo",
@@ -34,7 +35,8 @@ export const requestNotificationPermission = async () => {
   if (!m) return null;
   const permission = await Notification.requestPermission();
   if (permission === "granted") {
-    const reg = await navigator.serviceWorker.ready;
+    const reg = await readyServiceWorker();
+    if (!reg) return null;
     const token = await getToken(m, {
       vapidKey: VAPID_KEY,
       serviceWorkerRegistration: reg,
@@ -50,7 +52,8 @@ export async function refreshFcmTokenIfGranted() {
   if (Notification.permission !== "granted") return null;
   const m = await initMessaging();
   if (!m) return null;
-  const reg = await navigator.serviceWorker.ready;
+  const reg = await readyServiceWorker();
+  if (!reg) return null;
   return getToken(m, {
     vapidKey: VAPID_KEY,
     serviceWorkerRegistration: reg,
