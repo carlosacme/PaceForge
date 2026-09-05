@@ -1738,15 +1738,30 @@ export const passwordUpdateErrorText = (error) => {
  * En cuanto la migracion este aplicada este camino no se recorre nunca; se puede
  * borrar entonces.
  */
+/** Id de workout_library (bigint), o null si el origen no trae uno (IA / GPX). */
+export const asLibraryId = (value) => {
+  if (value == null || value === "") return null;
+  const n = typeof value === "number" ? value : Number(String(value).trim());
+  if (!Number.isInteger(n) || n <= 0) return null;
+  return n;
+};
+
 export const insertAssignedWorkouts = async (rows) => {
   const { error } = await supabase.from("workouts").insert(rows);
   if (!error) return { error: null };
-  const falta = error.code === "PGRST204" || /generated_with_vdot/i.test(error.message || "");
-  if (!falta) return { error };
-  console.warn("[workouts] generated_with_vdot no existe todavía (falta migración 0062); se asigna sin él");
+  const faltaVdot = error.code === "PGRST204" || /generated_with_vdot/i.test(error.message || "");
+  const faltaLibrary = /library_id/i.test(error.message || "");
+  if (!faltaVdot && !faltaLibrary) return { error };
+  if (faltaVdot) {
+    console.warn("[workouts] generated_with_vdot no existe todavía (falta migración 0062); se asigna sin él");
+  }
+  if (faltaLibrary) {
+    console.warn("[workouts] library_id no existe todavía; se asigna sin él");
+  }
   const limpios = rows.map((r) => {
     const copia = { ...r };
-    delete copia.generated_with_vdot;
+    if (faltaVdot) delete copia.generated_with_vdot;
+    if (faltaLibrary) delete copia.library_id;
     return copia;
   });
   return await supabase.from("workouts").insert(limpios);

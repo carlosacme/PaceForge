@@ -8,6 +8,7 @@ import {
   formatLocalYMD,
   addDays,
   insertAssignedWorkouts,
+  asLibraryId,
 } from "./shared/appShared";
 import { readStructure } from "../lib/workoutStructure";
 import { enrichStructureWithPaces, stripTestTimeGoalFromDescription, stripTestTimeGoalsFromStructure } from "../lib/enrichPace";
@@ -325,6 +326,7 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
           // Con que VDOT quedaron escritos estos ritmos, para poder recalcularlos
           // cuando el atleta vuelva a evaluarse.
           generated_with_vdot: Number(athleteVdot) || null,
+          library_id: asLibraryId(w.library_id) || asLibraryId(w.id),
         };
       });
       const { error: insertErr } = await insertAssignedWorkouts(rows);

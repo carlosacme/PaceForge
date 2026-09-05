@@ -303,30 +303,40 @@ function matchBulkResponse(events, r) {
  * flagged del coach: mismo criterio que MarketplaceHub/Plan2Weeks (true solo
  * si el origen estaba flagged; undefined deja el regex del título).
  *
- * Limitación conocida: si el coach renombra al asignar (assignTitle) y el
- * título ya no calza la plantilla ni /TEST\s*\d*K/i, el flag queda undefined
- * y el fallback de medición no corre. No hay FK estable que amarrar; una
- * columna source en workouts sería el arreglo de fondo, fuera de este parche.
+ * Si el workout tiene library_id, ese id manda (aunque el coach haya
+ * renombrado al asignar). Sin library_id se cae al titulo, que falla si
+ * assignTitle ya no calza la plantilla ni /TEST\\s*\\d*K/i.
  */
-async function loadFitnessTestTitleSet(coachIds) {
+async function loadFitnessTestLookup(coachIds) {
   const ids = [...new Set((coachIds || []).filter(Boolean))];
-  const set = new Set();
-  if (!ids.length) return set;
+  const byLibraryId = new Set();
+  const titles = new Set();
+  if (!ids.length) return { byLibraryId, titles };
   const filter = ids.length === 1
     ? `coach_id=eq.${ids[0]}`
     : `coach_id=in.(${ids.join(",")})`;
-  const rows = await sb(`workout_library?${filter}&is_fitness_test=eq.true&select=title`);
+  const rows = await sb(`workout_library?${filter}&is_fitness_test=eq.true&select=id,title`);
   for (const r of rows || []) {
+    if (r.id) byLibraryId.add(String(r.id));
     const t = String(r.title || "").trim().toLowerCase();
-    if (t) set.add(t);
+    if (t) titles.add(t);
   }
-  return set;
+  return { byLibraryId, titles };
 }
 
 function fitnessTestFlagForTitle(title, flaggedTitles) {
   const key = String(title || "").trim().toLowerCase();
   if (key && flaggedTitles.has(key)) return true;
   return undefined;
+}
+
+/** library_id manda; el título solo si la fila aun no tiene plantilla. */
+function fitnessTestFlagForWorkout(w, lookup) {
+  const libId = w?.library_id != null && String(w.library_id).trim() !== ""
+    ? String(w.library_id)
+    : "";
+  if (libId) return lookup.byLibraryId.has(libId) ? true : undefined;
+  return fitnessTestFlagForTitle(w?.title, lookup.titles);
 }
 
 /**
@@ -346,14 +356,14 @@ async function pushWorkouts(conn, workouts, vdot) {
 
   // Sin fecha no hay sitio en el calendario: no ocupan hueco en el lote.
   const sendable = workouts.filter((w) => w.scheduled_date);
-  const flaggedTitles = await loadFitnessTestTitleSet(sendable.map((w) => w.coach_id));
+  const fitnessLookup = await loadFitnessTestLookup(sendable.map((w) => w.coach_id));
   const events = sendable.map((w) =>
     buildIntervalsEvent({
       ...w,
       structure: stripTestTimeGoalsFromStructure(
         w.title,
         readStructure(w),
-        fitnessTestFlagForTitle(w.title, flaggedTitles),
+        fitnessTestFlagForWorkout(w, fitnessLookup),
       ),
     }, vdot),
   );
@@ -914,7 +924,7 @@ async function resyncPacesAfterEvaluation(athleteId) {
   const actualizados = [];
   let sinOrigen = 0;
   let sinCambio = 0;
-  const flaggedTitles = await loadFitnessTestTitleSet((enVentana || []).map((w) => w.coach_id));
+  const fitnessLookup = await loadFitnessTestLookup((enVentana || []).map((w) => w.coach_id));
 
   for (const w of enVentana) {
     const origen = Number(w.generated_with_vdot);
@@ -926,7 +936,7 @@ async function resyncPacesAfterEvaluation(athleteId) {
     const despues = stripTestTimeGoalsFromStructure(
       w.title,
       rescaleStructureToVdot(antes, target, origen),
-      fitnessTestFlagForTitle(w.title, flaggedTitles),
+      fitnessTestFlagForWorkout(w, fitnessLookup),
     );
     if (JSON.stringify(antes) === JSON.stringify(despues)) { sinCambio += 1; continue; }
 

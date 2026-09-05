@@ -552,6 +552,7 @@ function WorkoutLibrary({
         // Con que VDOT quedaron escritos estos ritmos. Sin este dato no se pueden
         // recalcular despues: un ritmo absoluto no dice a que zona pertenece.
         generated_with_vdot: Number(targetVdot) || null,
+        library_id: row.id,
         done: false,
         scheduled_date: assignDate,
       };
