@@ -188,6 +188,25 @@ export async function registerFcmTokenDetailed(token) {
   return { ok: true, status: 200, verified: true };
 }
 
+const PUSH_CLIENT_FETCH_MS = 8000;
+
+async function logClientPushError({ fromUserId, toUserId, title, data, error }) {
+  if (!fromUserId || !toUserId) return;
+  try {
+    const { error: insertErr } = await supabase.from("push_deliveries").insert({
+      from_user_id: fromUserId,
+      to_user_id: toUserId,
+      kind: data && typeof data === "object" ? String(data.type || "") || null : null,
+      title: title ? String(title).slice(0, 120) : null,
+      status: "client_error",
+      reason: error ? String(error).slice(0, 300) : null,
+    });
+    if (insertErr) console.warn("[push-log] client_error no se pudo registrar:", insertErr.message);
+  } catch (e) {
+    console.warn("[push-log] client_error no se pudo registrar:", e?.message || e);
+  }
+}
+
 /**
  * Manda una push al otro lado de la conversacion.
  *
@@ -195,14 +214,19 @@ export async function registerFcmTokenDetailed(token) {
  * destinatario no tiene push activo, o su token ya caduco) no es un error de
  * red, pero quien escribe merece saber que su mensaje no va a sonar en el otro
  * telefono. El envio nunca debe romper el flujo que lo llama.
+ * Si el fetch no llega al servidor (red / timeout 8s), escribe client_error
+ * en push_deliveries; el caller sigue pudiendo ignorar el Promise.
  *
  * @returns {Promise<{sent: boolean, reason?: string, error?: string}>}
  */
 export async function sendChatPushNotification({ toUserId, title, body, data = null, logLabel = "chat push" }) {
   if (!toUserId || typeof window === "undefined") return { sent: false, reason: "sin destinatario" };
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) return { sent: false, reason: "sin sesion" };
+  const fromUserId = session.user?.id || null;
+  const ac = typeof AbortController !== "undefined" ? new AbortController() : null;
+  const timer = ac ? setTimeout(() => ac.abort(), PUSH_CLIENT_FETCH_MS) : null;
   try {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session?.access_token) return { sent: false, reason: "sin sesion" };
     const res = await fetch("/api/send-push", {
       method: "POST",
       headers: {
@@ -215,6 +239,7 @@ export async function sendChatPushNotification({ toUserId, title, body, data = n
         body: pushBodySnippet(body),
         data: data && typeof data === "object" ? data : undefined,
       }),
+      signal: ac?.signal,
     });
     if (!res.ok) {
       const text = await res.text().catch(() => "");
@@ -225,8 +250,12 @@ export async function sendChatPushNotification({ toUserId, title, body, data = n
     if (json.sent === false) console.warn(`[${logLabel}] no se envio: ${json.reason || "sin motivo"}`);
     return { sent: json.sent !== false, reason: json.reason };
   } catch (e) {
+    const err = e?.name === "AbortError" ? "timeout 8s" : String(e?.message || e);
     console.warn(`[${logLabel}] /api/send-push error`, e);
-    return { sent: false, error: String(e?.message || e) };
+    await logClientPushError({ fromUserId, toUserId, title, data, error: err });
+    return { sent: false, error: err };
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }
 
