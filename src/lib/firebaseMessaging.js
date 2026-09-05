@@ -1,5 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { getMessaging, getToken, deleteToken, onMessage, isSupported } from "firebase/messaging";
+import { readyServiceWorker } from "./readyServiceWorker.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyD1HwMxCRP-dmmyA89EJ3z22HXXaAVm6jo",
@@ -28,19 +29,6 @@ export async function initMessaging() {
 }
 
 const VAPID_KEY = "BNqJM5D8RqCSeSXTcnU3dkye1fjPvAYcb7P4R1erlQpscPuU4VFmeJ0LSJL0jTh-POI7byyPPxDevIaWFt23DLM";
-
-/** `serviceWorker.ready` no resuelve si el SW falló (p. ej. webview embebido). */
-async function readyServiceWorker(timeoutMs = 2500) {
-  if (typeof navigator === "undefined" || !navigator.serviceWorker) return null;
-  try {
-    return await Promise.race([
-      navigator.serviceWorker.ready,
-      new Promise((resolve) => setTimeout(() => resolve(null), timeoutMs)),
-    ]);
-  } catch {
-    return null;
-  }
-}
 
 export const requestNotificationPermission = async () => {
   const m = await initMessaging();
