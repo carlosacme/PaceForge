@@ -6,6 +6,7 @@ import {
   filterDeliveredChatNotifications,
   isChatPushType,
 } from "./chatPushNotifications";
+import { supabase } from "./supabase";
 
 /**
  * Push nativo para la APK.
@@ -168,6 +169,26 @@ const notify = (msg) => {
   if (notifyHandler) notifyHandler(`Notificaciones: ${msg}`);
 };
 
+/** TEMP: log que no depende del arbol de React ni de un toast visible. */
+const writeDebugLog = async (source, payload) => {
+  try {
+    const { data: auth } = await supabase.auth.getUser();
+    const userId = auth?.user?.id;
+    if (!userId) {
+      console.warn("[push-nativo] debug_log sin sesion", source);
+      return;
+    }
+    const { error } = await supabase.from("debug_log").insert({
+      user_id: userId,
+      source,
+      payload,
+    });
+    if (error) console.warn("[push-nativo] debug_log insert", error);
+  } catch (e) {
+    console.warn("[push-nativo] debug_log", e);
+  }
+};
+
 /** Paso que va bien. Solo se enseña si la build lleva los avisos completos. */
 const reportStep = (msg) => {
   console.log("[push-nativo]", msg);
@@ -260,22 +281,24 @@ const clearDeliveredChatNotifications = async (tapType) => {
     const list = delivered?.notifications || [];
     const described = describeDeliveredNotifications(list);
     const chatOnes = filterDeliveredChatNotifications(list);
-    // TEMP: toast en la APK. Julio no tiene consola; el return vacio de antes
-    // no dejaba rastro. Quitar cuando confirmemos el shape de la bandeja.
-    const keyPreview = described
-      .map((d) => `t=${d.type || "-"} k=${d.dataKeys.slice(0, 5).join("|") || "(sin data)"}`)
-      .join(" · ") || "ninguna";
-    notify(
-      `TEMP bandeja tap=${tapType || "?"} n=${list.length} match=${chatOnes.length} ${keyPreview}`,
-    );
-    console.log("[push-nativo] TEMP bandeja", { tapType, delivered: described, match: chatOnes.length });
+    const payload = {
+      tap: tapType || "?",
+      n: list.length,
+      match: chatOnes.length,
+      keys: described.map((d) => d.dataKeys),
+      types: described.map((d) => d.type || ""),
+      ids: described.map((d) => d.id),
+      tags: described.map((d) => d.tag),
+    };
+    await writeDebugLog("chat_tray", payload);
+    console.log("[push-nativo] TEMP bandeja", payload);
     if (chatOnes.length === 0) return;
     await PushNotifications.removeDeliveredNotifications({ notifications: chatOnes });
     console.log("[push-nativo] bandeja de chat limpiada", chatOnes.length);
   } catch (e) {
     const reason = String(e?.message || e);
     console.warn("[push-nativo] no se pudieron limpiar notificaciones de chat", e);
-    notify(`TEMP bandeja ERROR: ${reason}`);
+    await writeDebugLog("chat_tray_error", { tap: tapType || "?", error: reason });
   }
 };
 
