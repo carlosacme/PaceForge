@@ -1,6 +1,7 @@
 import { Capacitor } from "@capacitor/core";
 import { PushNotifications } from "@capacitor/push-notifications";
 import { registerFcmTokenDetailed, readOwnFcmToken, readOwnDeviceTokens } from "./fcmClient";
+import { filterDeliveredChatNotifications, isChatPushType } from "./chatPushNotifications";
 
 /**
  * Push nativo para la APK.
@@ -245,6 +246,22 @@ const ensureChannels = () => {
   return channelsPromise;
 };
 
+/**
+ * Quita de la bandeja solo las notificaciones de chat ya entregadas.
+ * No usa cancelAll ni tag de envio: los avisos de entreno/racha se quedan.
+ */
+const clearDeliveredChatNotifications = async () => {
+  try {
+    const delivered = await PushNotifications.getDeliveredNotifications();
+    const chatOnes = filterDeliveredChatNotifications(delivered?.notifications);
+    if (chatOnes.length === 0) return;
+    await PushNotifications.removeDeliveredNotifications({ notifications: chatOnes });
+    console.log("[push-nativo] bandeja de chat limpiada", chatOnes.length);
+  } catch (e) {
+    console.warn("[push-nativo] no se pudieron limpiar notificaciones de chat", e);
+  }
+};
+
 const attachListeners = async () => {
   await PushNotifications.addListener("registration", async (token) => {
     const value = token?.value;
@@ -272,9 +289,14 @@ const attachListeners = async () => {
   // El usuario toco la notificacion. El destino viaja en `data` (type,
   // athlete_id, workout_id) tal como lo mando send-push; se guarda y lo recoge
   // la vista, que es la unica que sabe navegar y puede no existir todavia.
+  // Si es chat, tambien se limpian las demas de chat en la bandeja: siguen
+  // llegando sueltas (sin tag de envio), pero al abrir una el hilo ya las cubre.
   await PushNotifications.addListener("pushNotificationActionPerformed", (action) => {
     const data = action?.notification?.data;
     console.log("[push-nativo] notificacion abierta", data);
+    if (isChatPushType(data?.type)) {
+      void clearDeliveredChatNotifications();
+    }
     if (!data || !data.type) return;
     pendingDeepLink = { ...data };
     for (const cb of deepLinkSubscribers) {
