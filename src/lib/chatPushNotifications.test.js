@@ -4,6 +4,7 @@ import {
   isChatPushType,
   notificationPushType,
   filterDeliveredChatNotifications,
+  describeDeliveredNotifications,
 } from "./chatPushNotifications.js";
 
 test("solo athlete_chat y coach_chat son chat", () => {
@@ -38,4 +39,21 @@ test("lista vacia o invalida no rompe", () => {
   assert.deepEqual(filterDeliveredChatNotifications([]), []);
   assert.deepEqual(filterDeliveredChatNotifications(null), []);
   assert.deepEqual(filterDeliveredChatNotifications(undefined), []);
+});
+
+test("extras de bandeja FCM (sin data.type) no coinciden con athlete_chat", () => {
+  const tray = [
+    {
+      id: 0,
+      tag: null,
+      data: { "android.title": "Nuevo mensaje", "android.text": "Hola", "android.showWhen": true },
+    },
+  ];
+  assert.equal(notificationPushType(tray[0]), "");
+  assert.deepEqual(filterDeliveredChatNotifications(tray), []);
+  assert.deepEqual(describeDeliveredNotifications(tray)[0].dataKeys, [
+    "android.title",
+    "android.text",
+    "android.showWhen",
+  ]);
 });

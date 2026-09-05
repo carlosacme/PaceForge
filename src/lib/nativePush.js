@@ -1,7 +1,11 @@
 import { Capacitor } from "@capacitor/core";
 import { PushNotifications } from "@capacitor/push-notifications";
 import { registerFcmTokenDetailed, readOwnFcmToken, readOwnDeviceTokens } from "./fcmClient";
-import { filterDeliveredChatNotifications, isChatPushType } from "./chatPushNotifications";
+import {
+  describeDeliveredNotifications,
+  filterDeliveredChatNotifications,
+  isChatPushType,
+} from "./chatPushNotifications";
 
 /**
  * Push nativo para la APK.
@@ -250,15 +254,28 @@ const ensureChannels = () => {
  * Quita de la bandeja solo las notificaciones de chat ya entregadas.
  * No usa cancelAll ni tag de envio: los avisos de entreno/racha se quedan.
  */
-const clearDeliveredChatNotifications = async () => {
+const clearDeliveredChatNotifications = async (tapType) => {
   try {
     const delivered = await PushNotifications.getDeliveredNotifications();
-    const chatOnes = filterDeliveredChatNotifications(delivered?.notifications);
+    const list = delivered?.notifications || [];
+    const described = describeDeliveredNotifications(list);
+    const chatOnes = filterDeliveredChatNotifications(list);
+    // TEMP: toast en la APK. Julio no tiene consola; el return vacio de antes
+    // no dejaba rastro. Quitar cuando confirmemos el shape de la bandeja.
+    const keyPreview = described
+      .map((d) => `t=${d.type || "-"} k=${d.dataKeys.slice(0, 5).join("|") || "(sin data)"}`)
+      .join(" · ") || "ninguna";
+    notify(
+      `TEMP bandeja tap=${tapType || "?"} n=${list.length} match=${chatOnes.length} ${keyPreview}`,
+    );
+    console.log("[push-nativo] TEMP bandeja", { tapType, delivered: described, match: chatOnes.length });
     if (chatOnes.length === 0) return;
     await PushNotifications.removeDeliveredNotifications({ notifications: chatOnes });
     console.log("[push-nativo] bandeja de chat limpiada", chatOnes.length);
   } catch (e) {
+    const reason = String(e?.message || e);
     console.warn("[push-nativo] no se pudieron limpiar notificaciones de chat", e);
+    notify(`TEMP bandeja ERROR: ${reason}`);
   }
 };
 
@@ -295,7 +312,7 @@ const attachListeners = async () => {
     const data = action?.notification?.data;
     console.log("[push-nativo] notificacion abierta", data);
     if (isChatPushType(data?.type)) {
-      void clearDeliveredChatNotifications();
+      void clearDeliveredChatNotifications(data.type);
     }
     if (!data || !data.type) return;
     pendingDeepLink = { ...data };

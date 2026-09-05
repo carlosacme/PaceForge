@@ -23,3 +23,19 @@ export function filterDeliveredChatNotifications(notifications) {
     isChatPushType(notificationPushType(n)),
   );
 }
+
+/** Resumen para logs: el tap trae data.type; la bandeja de FCM suele no. */
+export function describeDeliveredNotifications(notifications) {
+  const list = Array.isArray(notifications) ? notifications : [];
+  return list.map((n, i) => {
+    const data = n?.data && typeof n.data === "object" ? n.data : {};
+    const keys = Object.keys(data);
+    return {
+      i,
+      id: n?.id ?? null,
+      tag: n?.tag ?? null,
+      type: notificationPushType(n) || "",
+      dataKeys: keys,
+    };
+  });
+}
