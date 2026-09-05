@@ -4,7 +4,7 @@ import { formatMessageTimestamp } from "../shared/appShared";
 /**
  * Sheet a pantalla completa del chat atleta→coach.
  * z-index 9989 (bajo el nav 9999); paddingBottom 94 deja el input usable.
- * Burbujas: coach a la derecha (mismo JSX que antes; no reusar AthleteChatPanel).
+ * Burbujas: propias (sender_role athlete) a la derecha en verde; las del coach a la izquierda en blanco.
  */
 export default function AthleteChatSheet({
   open,
@@ -41,26 +41,24 @@ export default function AthleteChatSheet({
                 <div style={{ color: "#64748b", fontSize: ".8em", textAlign: "center", padding: "12px 0" }}>Sin mensajes aún</div>
               ) : (
                 chatMessages.map((m) => {
-                  const isCoach = m.sender_role === "coach";
+                  const isMine = m.sender_role === "athlete";
                   return (
                     <div
                       key={m.id}
                       style={{
-                        alignSelf: isCoach ? "flex-end" : "flex-start",
+                        alignSelf: isMine ? "flex-end" : "flex-start",
                         maxWidth: "88%",
                         padding: "8px 12px",
                         borderRadius: 10,
-                        background: isCoach
-                          ? "linear-gradient(135deg, rgba(180,83,9,.85), rgba(255,138,61,.75))"
-                          : "#eff6ff",
-                        border: `1px solid ${isCoach ? "rgba(255,138,61,.5)" : "rgba(59,130,246,.35)"}`,
-                        color: isCoach ? "#f8fafc" : "#0f172a",
+                        background: isMine ? "#dcf8c6" : "#ffffff",
+                        border: `1px solid ${isMine ? "rgba(37,211,102,.45)" : "#e2e8f0"}`,
+                        color: "#0f172a",
                         fontSize: ".82em",
                         lineHeight: 1.45,
                       }}
                     >
                       <div>{m.body}</div>
-                      <div style={{ fontSize: ".65em", color: isCoach ? "rgba(255,255,255,.85)" : "#64748b", marginTop: 6 }}>
+                      <div style={{ fontSize: ".65em", color: isMine ? "#3f6212" : "#64748b", marginTop: 6 }}>
                         {formatMessageTimestamp(m.created_at)}
                       </div>
                     </div>
