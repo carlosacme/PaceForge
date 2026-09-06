@@ -107,48 +107,10 @@ export default function FormaFatigaPanel({ workouts, loadingWorkouts }) {
           </div>
         </div>
       ) : null}
-      <div style={{ fontSize: ".78em", color: "#64748b", marginBottom: 12, lineHeight: 1.45 }}>
-        Basado en sesiones completadas con RPE: carga aguda = promedio (RPE × km) últimos 7 días; carga crónica = promedio (RPE × km) últimos 28 días; forma = crónica − aguda.
-      </div>
       {loadingWorkouts ? (
         <div style={{ color: "#64748b", fontSize: ".85em", padding: "12px 0" }}>Cargando datos…</div>
       ) : (
         <>
-          <div
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 10,
-              marginBottom: 14,
-              padding: "10px 14px",
-              borderRadius: 10,
-              border: "1px solid #e2e8f0",
-              background: "#f8fafc",
-              fontSize: ".88em",
-              fontWeight: 700,
-              color:
-                formaFatigaStatus.kind === "forma"
-                  ? "#22c55e"
-                  : formaFatigaStatus.kind === "fatiga"
-                    ? "#f87171"
-                    : formaFatigaStatus.kind === "fresco"
-                      ? "#facc15"
-                      : "#94a3b8",
-            }}
-          >
-            Estado actual: {formaFatigaStatus.label}
-          </div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 14, marginBottom: 14, fontSize: ".72em", color: "#94a3b8" }}>
-            <span>
-              <span style={{ color: "#ef4444", fontWeight: 700 }}>—</span> Carga aguda (7 d)
-            </span>
-            <span>
-              <span style={{ color: "#3b82f6", fontWeight: 700 }}>—</span> Carga crónica (28 d)
-            </span>
-            <span>
-              <span style={{ color: "#22c55e", fontWeight: 700 }}>—</span> Forma (crónica − aguda)
-            </span>
-          </div>
           <FormaFatigaLineChart chronological={formaFatigaChronological} />
           <div style={{ fontSize: ".72em", letterSpacing: ".12em", color: "#475569", textTransform: "uppercase", marginTop: 18, marginBottom: 8 }}>
             Resumen últimas 4 semanas

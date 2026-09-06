@@ -1,5 +1,14 @@
 import React from "react";
 
+const CHART_HELP =
+  "Basado en sesiones completadas con RPE: carga aguda = promedio (RPE × km) últimos 7 días; carga crónica = promedio (RPE × km) últimos 28 días; forma = crónica − aguda.";
+
+const LEGEND = [
+  { color: "#ef4444", label: "Últimos 7 días" },
+  { color: "#3b82f6", label: "Últimas 4 semanas" },
+  { color: "#22c55e", label: "Forma" },
+];
+
 /** Gráfico de líneas (SVG + estilos inline, sin librerías de gráficos). */
 export default function FormaFatigaLineChart({ chronological }) {
   const n = chronological.length;
@@ -31,10 +40,47 @@ export default function FormaFatigaLineChart({ chronological }) {
       .join(" ");
 
   return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 10 }}>
+        <div style={{ fontSize: ".72em", color: "#475569", textTransform: "uppercase", letterSpacing: ".13em" }}>
+          Tendencia
+        </div>
+        <span
+          title={CHART_HELP}
+          aria-label={CHART_HELP}
+          style={{
+            width: 22,
+            height: 22,
+            borderRadius: 99,
+            border: "1px solid #cbd5e1",
+            color: "#64748b",
+            fontSize: ".72em",
+            fontWeight: 800,
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            cursor: "help",
+            background: "#fff",
+            flexShrink: 0,
+          }}
+        >
+          ?
+        </span>
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 14, marginBottom: 12, fontSize: ".78em", color: "#64748b" }}>
+        {LEGEND.map((item) => (
+          <span key={item.label} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+            <span aria-hidden="true" style={{ color: item.color, fontWeight: 800, letterSpacing: -1 }}>
+              ——
+            </span>
+            {item.label}
+          </span>
+        ))}
+      </div>
     <svg
       viewBox={`0 0 ${W} ${H}`}
       role="img"
-      aria-label="Carga aguda, crónica y forma en las últimas 8 semanas"
+      aria-label="Últimos 7 días, últimas 4 semanas y forma en las últimas 8 semanas"
       style={{ width: "100%", maxWidth: 520, height: "auto", display: "block" }}
     >
       <rect x={0} y={0} width={W} height={H} fill="#f8fafc" rx={8} />
@@ -67,5 +113,6 @@ export default function FormaFatigaLineChart({ chronological }) {
         </text>
       ))}
     </svg>
+    </div>
   );
 }

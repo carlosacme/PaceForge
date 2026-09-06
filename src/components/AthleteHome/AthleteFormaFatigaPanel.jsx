@@ -53,7 +53,6 @@ export default function AthleteFormaFatigaPanel({
         />
       </div>
       <div style={{ ...cardStyle }}>
-        <div style={{ fontSize: ".72em", marginBottom: 8, color: "#475569", textTransform: "uppercase", letterSpacing: ".13em" }}>RPE × km (tendencia)</div>
         <FormaFatigaLineChart chronological={formaFatigaChronological} />
       </div>
     </div>
