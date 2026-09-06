@@ -418,8 +418,8 @@ export default function App() {
             .maybeSingle();
           if (again && shellRoleOf(again)) {
             cacheAndSetProfile(again);
-            await runProfileSideEffects(again);
             setProfileLoading(false);
+            void runProfileSideEffects(again);
             return;
           }
         } else {
@@ -464,15 +464,15 @@ export default function App() {
           setProfileLoading(false);
         } else {
           cacheAndSetProfile(saved);
-          await runProfileSideEffects(saved);
           setProfileLoading(false);
+          void runProfileSideEffects(saved);
         }
         return;
       }
 
       cacheAndSetProfile(data);
-      await runProfileSideEffects(data);
       setProfileLoading(false);
+      void runProfileSideEffects(data);
     };
 
     loadProfile();
