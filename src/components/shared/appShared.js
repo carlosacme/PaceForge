@@ -1835,12 +1835,12 @@ export async function sendPaceUpdatePushToAthlete({ athleteUserId, testLabel, pr
   });
 }
 
-export async function sendWorkoutAssignmentPushToAthlete({ athleteUserId, workoutTitle, scheduledDate }) {
+export async function sendWorkoutAssignmentPushToAthlete({ athleteUserId, workoutTitle, scheduledDate, body }) {
   if (!athleteUserId) return;
   await sendChatPushNotification({
     toUserId: athleteUserId,
     title: "🏃 Nuevo entrenamiento asignado",
-    body: `${workoutTitle || "Entrenamiento"} programado para el ${scheduledDate || "día asignado"}`,
+    body: body || `${workoutTitle || "Entrenamiento"} programado para el ${scheduledDate || "día asignado"}`,
     data: { type: "athlete_calendar" },
     logLabel: "workout coach→athlete",
   });

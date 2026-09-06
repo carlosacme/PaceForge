@@ -11,6 +11,7 @@ import {
 import {
   TAB_KEY_LIBRARY,
   formatLocalYMD,
+  addDays,
   normalizeLibraryRow,
   getMarketplacePlanWorkoutRows,
   WORKOUT_TYPES,
@@ -70,6 +71,10 @@ function WorkoutLibrary({
   const [assignVdotByAthlete, setAssignVdotByAthlete] = useState({});
   const [assignDeltaByAthlete, setAssignDeltaByAthlete] = useState({});
   const [assignVdotLoading, setAssignVdotLoading] = useState(false);
+  const [libraryMultiSelect, setLibraryMultiSelect] = useState(false);
+  const [librarySelectedIds, setLibrarySelectedIds] = useState([]);
+  const [assigningBatchRows, setAssigningBatchRows] = useState(null);
+  const [batchDatesById, setBatchDatesById] = useState({});
   const [globalCopyingId, setGlobalCopyingId] = useState(null);
   const [marketplacePlansForAdmin, setMarketplacePlansForAdmin] = useState([]);
   const [marketplacePlansAdminLoading, setMarketplacePlansAdminLoading] = useState(false);
@@ -277,6 +282,7 @@ function WorkoutLibrary({
       notify(`Error al eliminar: ${error.message}`);
       return;
     }
+    setLibrarySelectedIds((prev) => prev.filter((x) => x !== String(id)));
     setItems((prev) => prev.filter((x) => x.id !== id));
     notify("Eliminado de la biblioteca");
   };
@@ -436,7 +442,7 @@ function WorkoutLibrary({
   // (no una por atleta) y delta sugerido prellenado, para poder mostrar el VDOT
   // objetivo antes de asignar y dejar que el coach lo ajuste.
   useEffect(() => {
-    if (!assigningWorkoutRow) return undefined;
+    if (!assigningWorkoutRow && !assigningBatchRows) return undefined;
     const ids = athleteIdsKey ? athleteIdsKey.split(",") : [];
     if (!ids.length) return undefined;
     let cancelado = false;
@@ -465,7 +471,7 @@ function WorkoutLibrary({
     return () => {
       cancelado = true;
     };
-  }, [assigningWorkoutRow, athleteIdsKey]);
+  }, [assigningWorkoutRow, assigningBatchRows, athleteIdsKey]);
 
   const assignVdotFor = (a) => assignVdotByAthlete[a?.id] ?? null;
 
@@ -485,6 +491,78 @@ function WorkoutLibrary({
     if (!vdot) return null;
     const objetivo = vdot + (assignDeltaFor(a) ?? 0);
     return objetivo > 0 ? objetivo : vdot;
+  };
+
+  const buildAssignedRow = (row, athlete, scheduledDate, assignedTitle) => {
+    const targetVdot = assignTargetVdotFor(athlete);
+    // Planes GPX: grade_pct → Minetti con el VDOT del atleta (no rescale de biblioteca).
+    const rawStructure = Array.isArray(row.structure) ? row.structure : [];
+    const structure = stripTestTimeGoalsFromStructure(
+      assignedTitle,
+      structureHasGradePct(rawStructure)
+        ? applyGradeAdjustedPacesToStructure(
+            rawStructure,
+            targetVdot,
+            raceZoneFromStructure(rawStructure, "M"),
+          )
+        : enrichStructureWithPaces(
+            rescaleStructureToVdot(rawStructure, targetVdot),
+            targetVdot,
+            athlete.fc_max,
+          ),
+      row.is_fitness_test,
+    );
+    const durationFromGpx = structureHasGradePct(rawStructure)
+      ? estimateDurationMinFromStructure(structure)
+      : null;
+    return {
+      athlete_id: athlete.id,
+      coach_id: coachUserId,
+      title: assignedTitle,
+      type: row.type,
+      total_km: Number(row.total_km) || 0,
+      duration_min: durationFromGpx || Number(row.duration_min) || 0,
+      description: stripTestTimeGoalFromDescription(
+        assignedTitle,
+        row.description || "",
+        row.is_fitness_test,
+      ),
+      structure,
+      generated_with_vdot: Number(targetVdot) || null,
+      library_id: row.id,
+      done: false,
+      scheduled_date: scheduledDate,
+    };
+  };
+
+  const exitLibraryMultiSelect = () => {
+    setLibraryMultiSelect(false);
+    setLibrarySelectedIds([]);
+  };
+
+  const toggleLibrarySelected = (id) => {
+    const key = String(id);
+    setLibrarySelectedIds((prev) =>
+      prev.includes(key) ? prev.filter((x) => x !== key) : [...prev, key],
+    );
+  };
+
+  const openLibraryBatchAssign = () => {
+    const rows = librarySelectedIds
+      .map((id) => items.find((r) => String(r.id) === String(id)))
+      .filter(Boolean);
+    if (!rows.length) {
+      notify("Selecciona al menos un workout");
+      return;
+    }
+    const start = new Date();
+    const dates = {};
+    rows.forEach((r, i) => {
+      dates[String(r.id)] = formatLocalYMD(addDays(start, i));
+    });
+    setBatchDatesById(dates);
+    setAssignSelectedAthleteIds([]);
+    setAssigningBatchRows(rows);
   };
 
   const assignDirectly = async (row) => {
@@ -511,52 +589,7 @@ function WorkoutLibrary({
       (row.title && String(row.title).trim()) ||
       "Entreno";
     setAssignSaving(true);
-    const payload = athleteRows.map((a) => {
-      // El VDOT ya esta en estado desde que se abrio el modal, con el delta que el
-      // coach haya podido ajustar.
-      const targetVdot = assignTargetVdotFor(a);
-      // Planes GPX: cada bloque trae grade_pct → recalcular Minetti con el VDOT
-      // del atleta (no rescale de biblioteca, que borraría el ajuste de pendiente).
-      const rawStructure = Array.isArray(row.structure) ? row.structure : [];
-      const structure = stripTestTimeGoalsFromStructure(
-        assignedTitle,
-        structureHasGradePct(rawStructure)
-          ? applyGradeAdjustedPacesToStructure(
-              rawStructure,
-              targetVdot,
-              raceZoneFromStructure(rawStructure, "M"),
-            )
-          : enrichStructureWithPaces(
-              rescaleStructureToVdot(rawStructure, targetVdot),
-              targetVdot,
-              a.fc_max,
-            ),
-        row.is_fitness_test,
-      );
-      const durationFromGpx = structureHasGradePct(rawStructure)
-        ? estimateDurationMinFromStructure(structure)
-        : null;
-      return {
-        athlete_id: a.id,
-        coach_id: coachUserId,
-        title: assignedTitle,
-        type: row.type,
-        total_km: Number(row.total_km) || 0,
-        duration_min: durationFromGpx || Number(row.duration_min) || 0,
-        description: stripTestTimeGoalFromDescription(
-          assignedTitle,
-          row.description || "",
-          row.is_fitness_test,
-        ),
-        structure,
-        // Con que VDOT quedaron escritos estos ritmos. Sin este dato no se pueden
-        // recalcular despues: un ritmo absoluto no dice a que zona pertenece.
-        generated_with_vdot: Number(targetVdot) || null,
-        library_id: row.id,
-        done: false,
-        scheduled_date: assignDate,
-      };
-    });
+    const payload = athleteRows.map((a) => buildAssignedRow(row, a, assignDate, assignedTitle));
     const { error } = await insertAssignedWorkouts(payload);
     setAssignSaving(false);
     if (error) {
@@ -577,6 +610,63 @@ function WorkoutLibrary({
     setAssigningWorkoutRow(null);
     setAssignSelectedAthleteIds([]);
     setAssignTitle("");
+  };
+
+  const assignLibraryBatch = async () => {
+    if (!coachUserId) return;
+    const rows = assigningBatchRows || [];
+    if (assignVdotLoading) {
+      notify("Espera, estamos leyendo el VDOT de los atletas");
+      return;
+    }
+    if (!Array.isArray(assignSelectedAthleteIds) || assignSelectedAthleteIds.length === 0) {
+      notify("Selecciona al menos un atleta");
+      return;
+    }
+    if (rows.some((r) => !batchDatesById[String(r.id)])) {
+      notify("Pon una fecha a cada workout");
+      return;
+    }
+    const athleteRows = (athletes || []).filter((a) => assignSelectedAthleteIds.includes(String(a.id)));
+    if (athleteRows.length === 0) {
+      notify("No se encontraron atletas seleccionados.");
+      return;
+    }
+    setAssignSaving(true);
+    const payload = [];
+    for (const row of rows) {
+      const scheduledDate = batchDatesById[String(row.id)];
+      const assignedTitle = (row.title && String(row.title).trim()) || "Entreno";
+      for (const a of athleteRows) {
+        payload.push(buildAssignedRow(row, a, scheduledDate, assignedTitle));
+      }
+    }
+    const { error } = await insertAssignedWorkouts(payload);
+    setAssignSaving(false);
+    if (error) {
+      console.error(error);
+      notify(`Error al asignar: ${error.message}`);
+      return;
+    }
+    const n = rows.length;
+    const pushBody = n === 1
+      ? `${rows[0].title || "Entrenamiento"} programado para el ${batchDatesById[String(rows[0].id)] || "día asignado"}`
+      : `${n} entrenos asignados`;
+    await Promise.all(
+      athleteRows.map((a) =>
+        sendWorkoutAssignmentPushToAthlete({
+          athleteUserId: a?.user_id,
+          workoutTitle: n === 1 ? (rows[0].title || "Entrenamiento") : `${n} entrenos asignados`,
+          scheduledDate: batchDatesById[String(rows[0].id)],
+          body: pushBody,
+        }),
+      ),
+    );
+    notify(`${n} workout${n === 1 ? "" : "s"} asignado${n === 1 ? "" : "s"} a ${athleteRows.length} atleta${athleteRows.length === 1 ? "" : "s"}`);
+    setAssigningBatchRows(null);
+    setBatchDatesById({});
+    setAssignSelectedAthleteIds([]);
+    exitLibraryMultiSelect();
   };
 
   const globalGrouped = useMemo(() => {
@@ -684,24 +774,53 @@ function WorkoutLibrary({
         <input ref={fitInputRef} type="file" accept=".fit,.json" multiple onChange={onFitFilesSelected} style={{ display: "none" }} />
         <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 10 }}>
           <div style={{ fontSize: ".72em", color: "#64748b" }}>Buscar por nombre o tipo</div>
-          <button
-            type="button"
-            onClick={openFitFilePicker}
-            disabled={!coachUserId || fitImporting || fitImportSaving}
-            style={{
-              border: "1px solid #bfdbfe",
-              background: fitImporting || fitImportSaving ? "#e2e8f0" : "#eff6ff",
-              color: fitImporting || fitImportSaving ? "#64748b" : "#1d4ed8",
-              borderRadius: 8,
-              padding: "8px 12px",
-              fontWeight: 800,
-              cursor: !coachUserId || fitImporting || fitImportSaving ? "not-allowed" : "pointer",
-              fontFamily: "inherit",
-              fontSize: ".78em",
-            }}
-          >
-            {fitImporting ? "Leyendo…" : "📂 Importar .fit/.json"}
-          </button>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {activeTab === "mine" && coachUserId ? (
+              <button
+                type="button"
+                onClick={() => {
+                  if (libraryMultiSelect) {
+                    exitLibraryMultiSelect();
+                    return;
+                  }
+                  setAssigningWorkoutRow(null);
+                  setAssignTitle("");
+                  setLibraryMultiSelect(true);
+                }}
+                style={{
+                  border: libraryMultiSelect ? "1px solid #fecaca" : "1px solid #bfdbfe",
+                  background: libraryMultiSelect ? "#fef2f2" : "#eff6ff",
+                  color: libraryMultiSelect ? "#b91c1c" : "#1d4ed8",
+                  borderRadius: 8,
+                  padding: "8px 12px",
+                  fontWeight: 800,
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                  fontSize: ".78em",
+                }}
+              >
+                {libraryMultiSelect ? "Cancelar selección" : "Seleccionar varios"}
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={openFitFilePicker}
+              disabled={!coachUserId || fitImporting || fitImportSaving}
+              style={{
+                border: "1px solid #bfdbfe",
+                background: fitImporting || fitImportSaving ? "#e2e8f0" : "#eff6ff",
+                color: fitImporting || fitImportSaving ? "#64748b" : "#1d4ed8",
+                borderRadius: 8,
+                padding: "8px 12px",
+                fontWeight: 800,
+                cursor: !coachUserId || fitImporting || fitImportSaving ? "not-allowed" : "pointer",
+                fontFamily: "inherit",
+                fontSize: ".78em",
+              }}
+            >
+              {fitImporting ? "Leyendo…" : "📂 Importar .fit/.json"}
+            </button>
+          </div>
         </div>
         <input
           value={search}
@@ -893,9 +1012,10 @@ function WorkoutLibrary({
             : "Ningún resultado para tu búsqueda."}
         </div>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12, paddingBottom: libraryMultiSelect ? 88 : 0 }}>
           {filtered.map((row) => {
             const wt = WORKOUT_TYPES.find((t) => t.id === row.type) || WORKOUT_TYPES[0];
+            const selected = librarySelectedIds.includes(String(row.id));
             return (
               <div
                 key={row.id}
@@ -907,9 +1027,20 @@ function WorkoutLibrary({
                   alignItems: "flex-start",
                   justifyContent: "space-between",
                   gap: 14,
-                  border: "1px solid #e2e8f0",
+                  border: libraryMultiSelect && selected ? "1px solid #93c5fd" : "1px solid #e2e8f0",
+                  ...(libraryMultiSelect && selected ? { background: "#f8fbff" } : {}),
                 }}
               >
+                {libraryMultiSelect ? (
+                  <label style={{ display: "flex", alignItems: "center", paddingTop: 4, cursor: "pointer", flexShrink: 0 }}>
+                    <input
+                      type="checkbox"
+                      checked={selected}
+                      onChange={() => toggleLibrarySelected(row.id)}
+                      aria-label={`Seleccionar ${row.title || "workout"}`}
+                    />
+                  </label>
+                ) : null}
                 <div style={{ flex: "1 1 220px", minWidth: 0 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8, flexWrap: "wrap" }}>
                     <span style={{ fontSize: "1.05em", fontWeight: 700, color: "#0f172a" }}>{row.title}</span>
@@ -981,20 +1112,22 @@ function WorkoutLibrary({
                   </button>
                   <button
                     type="button"
+                    disabled={libraryMultiSelect}
                     onClick={() => {
+                      if (libraryMultiSelect) return;
                       setAssigningWorkoutRow(row);
                       setAssignTitle(row.title || "");
                       setAssignDate(formatLocalYMD(new Date()));
                       setAssignSelectedAthleteIds([]);
                     }}
                     style={{
-                      background: "rgba(59,130,246,.12)",
-                      border: "1px solid rgba(59,130,246,.35)",
+                      background: libraryMultiSelect ? "#f1f5f9" : "rgba(59,130,246,.12)",
+                      border: `1px solid ${libraryMultiSelect ? "#e2e8f0" : "rgba(59,130,246,.35)"}`,
                       borderRadius: 8,
                       padding: "8px 12px",
-                      color: "#1d4ed8",
+                      color: libraryMultiSelect ? "#94a3b8" : "#1d4ed8",
                       fontWeight: 700,
-                      cursor: "pointer",
+                      cursor: libraryMultiSelect ? "not-allowed" : "pointer",
                       fontFamily: "inherit",
                       fontSize: ".78em",
                     }}
@@ -1141,6 +1274,147 @@ function WorkoutLibrary({
                 {assignSaving ? "Asignando…" : assignVdotLoading ? "Leyendo VDOT…" : "Asignar a seleccionados"}
               </button>
             </div>
+          </div>
+        </div>
+      ) : null}
+      {assigningBatchRows ? (
+        <div style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ ...S.card, width: "100%", maxWidth: 560, margin: 0, maxHeight: "90vh", overflowY: "auto" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <div style={{ fontSize: ".95em", fontWeight: 900, color: "#0f172a" }}>📋 Asignar seleccionados</div>
+              <button
+                type="button"
+                onClick={() => { setAssigningBatchRows(null); setBatchDatesById({}); }}
+                disabled={assignSaving}
+                style={{ border: "1px solid #e2e8f0", background: "#fff", borderRadius: 8, padding: "6px 10px", cursor: assignSaving ? "not-allowed" : "pointer", fontFamily: "inherit" }}
+              >
+                ✕
+              </button>
+            </div>
+            <div style={{ fontSize: ".78em", color: "#64748b", marginBottom: 10 }}>
+              {assigningBatchRows.length} workout{assigningBatchRows.length === 1 ? "" : "s"} · mismos atletas, fecha por entreno
+            </div>
+            <div style={{ marginBottom: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button type="button" onClick={() => setAssignSelectedAthleteIds((athletes || []).map((a) => String(a.id)))} style={{ border: "1px solid #bfdbfe", background: "#eff6ff", color: "#1d4ed8", borderRadius: 8, padding: "6px 10px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".76em" }}>
+                Seleccionar todos
+              </button>
+              <button type="button" onClick={() => setAssignSelectedAthleteIds([])} style={{ border: "1px solid #e2e8f0", background: "#fff", color: "#475569", borderRadius: 8, padding: "6px 10px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".76em" }}>
+                Deseleccionar todos
+              </button>
+            </div>
+            <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6, lineHeight: 1.45 }}>
+              Los ritmos de la biblioteca están escritos a VDOT {PLAN_CALIBRATION_VDOT}. Al asignar se recalculan al
+              VDOT de cada atleta más un delta de progresión, que puedes ajustar. El delta vale para todo el lote.
+            </div>
+            <div style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: 10, maxHeight: 180, overflowY: "auto", marginBottom: 14 }}>
+              {(athletes || []).map((a) => {
+                const checked = assignSelectedAthleteIds.includes(String(a.id));
+                const vdot = assignVdotFor(a);
+                const targetVdot = assignTargetVdotFor(a);
+                return (
+                  <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 2px", fontSize: ".82em", color: "#0f172a" }}>
+                    <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", flex: 1, minWidth: 0 }}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() =>
+                          setAssignSelectedAthleteIds((prev) =>
+                            prev.includes(String(a.id)) ? prev.filter((x) => x !== String(a.id)) : [...prev, String(a.id)],
+                          )
+                        }
+                      />
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name}</span>
+                    </label>
+                    {checked && assignVdotLoading ? (
+                      <span style={{ fontSize: ".9em", color: "#94a3b8" }}>leyendo VDOT…</span>
+                    ) : null}
+                    {checked && !assignVdotLoading && vdot ? (
+                      <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: ".9em", color: "#64748b", flexShrink: 0 }}>
+                        <span>VDOT {vdot.toFixed(1)}</span>
+                        <span>+</span>
+                        <input
+                          type="number"
+                          step="0.5"
+                          value={assignDeltaByAthlete[a.id] ?? String(progressionDelta(vdot) ?? 0)}
+                          onChange={(e) => setAssignDeltaByAthlete((prev) => ({ ...prev, [a.id]: e.target.value }))}
+                          title="Delta de progresión sobre su VDOT actual"
+                          style={{ width: 52, border: "1px solid #e2e8f0", borderRadius: 6, padding: "3px 5px", fontFamily: "inherit", fontSize: "1em", textAlign: "center" }}
+                        />
+                        <span>
+                          → <b style={{ color: "#b45309" }}>{targetVdot != null ? targetVdot.toFixed(1) : "—"}</b>
+                        </span>
+                      </span>
+                    ) : null}
+                    {checked && !assignVdotLoading && !vdot ? (
+                      <span style={{ fontSize: ".9em", color: "#b45309", flexShrink: 0 }}>sin VDOT · ritmos del plan</span>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Fecha de cada workout (sugeridas en días seguidos; puedes cambiarlas)</div>
+            <div style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: 10, marginBottom: 14, display: "flex", flexDirection: "column", gap: 8 }}>
+              {assigningBatchRows.map((row) => {
+                const wt = WORKOUT_TYPES.find((t) => t.id === row.type) || WORKOUT_TYPES[0];
+                return (
+                  <div key={row.id} style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                    <div style={{ flex: "1 1 180px", minWidth: 0 }}>
+                      <div style={{ fontSize: ".84em", fontWeight: 700, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.title}</div>
+                      <div style={{ fontSize: ".7em", color: "#64748b" }}>{wt.label} · {row.total_km || 0} km</div>
+                    </div>
+                    <input
+                      type="date"
+                      value={batchDatesById[String(row.id)] || ""}
+                      onChange={(e) => setBatchDatesById((prev) => ({ ...prev, [String(row.id)]: e.target.value }))}
+                      disabled={assignSaving}
+                      style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: ".82em" }}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <button
+                type="button"
+                onClick={() => { setAssigningBatchRows(null); setBatchDatesById({}); }}
+                disabled={assignSaving}
+                style={{ border: "1px solid #e2e8f0", background: "#fff", borderRadius: 8, padding: "8px 12px", color: "#475569", cursor: assignSaving ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 700 }}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={assignLibraryBatch}
+                disabled={assignSaving || assignVdotLoading}
+                style={{ border: "none", background: assignSaving || assignVdotLoading ? "#cbd5e1" : "linear-gradient(135deg,#e86f28,#ff8a3d)", borderRadius: 8, padding: "8px 12px", color: "#fff", cursor: assignSaving || assignVdotLoading ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 800 }}
+              >
+                {assignSaving ? "Asignando…" : assignVdotLoading ? "Leyendo VDOT…" : "Asignar a seleccionados"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {libraryMultiSelect && activeTab === "mine" && !assigningBatchRows ? (
+        <div style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 280, background: "#fff", borderTop: "1px solid #e2e8f0", boxShadow: "0 -8px 24px rgba(15,23,42,.08)", padding: "12px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+          <div style={{ fontSize: ".86em", fontWeight: 800, color: "#0f172a" }}>
+            {librarySelectedIds.length} seleccionado{librarySelectedIds.length === 1 ? "" : "s"}
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button
+              type="button"
+              onClick={exitLibraryMultiSelect}
+              style={{ border: "1px solid #e2e8f0", background: "#fff", borderRadius: 8, padding: "8px 12px", color: "#475569", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".82em" }}
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={openLibraryBatchAssign}
+              disabled={librarySelectedIds.length === 0}
+              style={{ border: "none", background: librarySelectedIds.length === 0 ? "#cbd5e1" : "linear-gradient(135deg,#e86f28,#ff8a3d)", borderRadius: 8, padding: "8px 12px", color: "#fff", fontWeight: 800, cursor: librarySelectedIds.length === 0 ? "not-allowed" : "pointer", fontFamily: "inherit", fontSize: ".82em" }}
+            >
+              Asignar seleccionados
+            </button>
           </div>
         </div>
       ) : null}
