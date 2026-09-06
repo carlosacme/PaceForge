@@ -1,4 +1,4 @@
-import React, { Suspense } from "react";
+import React, { Suspense, useState, useEffect } from "react";
 import AdminPanel from "./Admin";
 import Dashboard from "./Dashboard";
 import InstallAppButton from "./InstallAppButton";
@@ -20,6 +20,12 @@ const Plan2Weeks = React.lazy(() => import("./Plan2Weeks"));
 const Builder = React.lazy(() => import("./Builder"));
 const EvaluationView = React.lazy(() => import("./EvaluationView"));
 const GpxRacePlan = React.lazy(() => import("./GpxRacePlan"));
+
+/** Evita desmontar una vista ya visitada: el switch `view === x &&` reseteaba
+ * loading y volvía a pedir datos (parpadeo Market / Biblioteca-Dashboard lentos). */
+function keepViewStyle(active) {
+  return { display: active ? "contents" : "none" };
+}
 
 /**
  * Shell visual del coach: sidebar, main (switch de vistas), bottom nav,
@@ -96,6 +102,17 @@ export default function CoachChrome({
   const showCoachPlanPickerScreen =
     profile?.role === "coach" && !isProfilesAdmin && (coachPlanBlockedUi || coachPlanPickerVoluntary);
 
+  const [seenViews, setSeenViews] = useState(() => new Set());
+  useEffect(() => {
+    setSeenViews((prev) => {
+      if (prev.has(view)) return prev;
+      const next = new Set(prev);
+      next.add(view);
+      return next;
+    });
+  }, [view]);
+  const keep = (id) => view === id || seenViews.has(id);
+
   const trialBannerDays =
     profile?.role === "coach" ? coachTrialDaysRemainingFromStart(profile) : null;
   const showTrialBanner =
@@ -106,7 +123,6 @@ export default function CoachChrome({
     !coachPlanBlockedUi;
 
   return (
-    <Suspense fallback={<div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh" }}><p>Cargando...</p></div>}>
       <div style={S.root}>
         {notification && <div style={S.notification}>✓ {notification}</div>}
         <InviteModal
@@ -243,27 +259,29 @@ export default function CoachChrome({
             </div>
           ) : (
             <>
-              {view === "dashboard" && (
-                <Dashboard
-                  athletes={athletes}
-                  coachUserId={session?.user?.id ?? null}
-                  onSelect={(a) => {
-                    setSelectedAthlete(a);
-                    setView("athletes");
-                    setShowAddAthleteForm(false);
-                  }}
-                  onRequestAddAthlete={() => setInviteModalOpen(true)}
-                  showAddAthleteForm={showAddAthleteForm}
-                  planLimitWarning={planLimitWarning}
-                  onGoToPlans={() => setCoachPlanPickerVoluntary(true)}
-                  onDismissPlanLimitWarning={() => setPlanLimitWarning("")}
-                  newAthlete={newAthlete}
-                  onChangeNewAthleteField={updateNewAthleteField}
-                  onSaveNewAthlete={saveNewAthlete}
-                  onCancelAddAthlete={cancelAddAthleteForm}
-                  notify={notify}
-                  onReloadAthletes={loadAthletes}
-                />
+              {keep("dashboard") && (
+                <div style={keepViewStyle(view === "dashboard")}>
+                  <Dashboard
+                    athletes={athletes}
+                    coachUserId={session?.user?.id ?? null}
+                    onSelect={(a) => {
+                      setSelectedAthlete(a);
+                      setView("athletes");
+                      setShowAddAthleteForm(false);
+                    }}
+                    onRequestAddAthlete={() => setInviteModalOpen(true)}
+                    showAddAthleteForm={showAddAthleteForm}
+                    planLimitWarning={planLimitWarning}
+                    onGoToPlans={() => setCoachPlanPickerVoluntary(true)}
+                    onDismissPlanLimitWarning={() => setPlanLimitWarning("")}
+                    newAthlete={newAthlete}
+                    onChangeNewAthleteField={updateNewAthleteField}
+                    onSaveNewAthlete={saveNewAthlete}
+                    onCancelAddAthlete={cancelAddAthleteForm}
+                    notify={notify}
+                    onReloadAthletes={loadAthletes}
+                  />
+                </div>
               )}
               {(view === "athletes" || view === "evaluation" || view === "challenges") && (
                 <>
@@ -301,31 +319,35 @@ export default function CoachChrome({
                     </Suspense>
                   )}
                   {view === "challenges" && (
-                    <ChallengesHub
-                      profileRole={profile?.role ?? ""}
-                      currentUserId={sessionUserId || null}
-                      athleteId={null}
-                      workouts={[]}
-                      coachAthletes={athletes}
-                      notify={notify}
-                      styles={styles}
-                    />
+                    <Suspense fallback={<div style={{ padding: 24, color: "#64748b" }}>Cargando retos…</div>}>
+                      <ChallengesHub
+                        profileRole={profile?.role ?? ""}
+                        currentUserId={sessionUserId || null}
+                        athleteId={null}
+                        workouts={[]}
+                        coachAthletes={athletes}
+                        notify={notify}
+                        styles={styles}
+                      />
+                    </Suspense>
                   )}
                 </>
               )}
               {view === "settings" && (
-                <CoachSettings
-                  coachUserId={session?.user?.id ?? null}
-                  sessionEmail={session?.user?.email ?? ""}
-                  profileName={profile?.name ?? ""}
-                  athletes={athletes}
-                  setAthletes={setAthletes}
-                  notify={notify}
-                  onReloadAthletes={loadAthletes}
-                  onSignOut={handleSignOut}
-                  styles={styles}
-                  isStaff={Boolean(profile?.is_staff || staffParentCoachId)}
-                />
+                <Suspense fallback={<div style={{ padding: 24, color: "#64748b" }}>Cargando ajustes…</div>}>
+                  <CoachSettings
+                    coachUserId={session?.user?.id ?? null}
+                    sessionEmail={session?.user?.email ?? ""}
+                    profileName={profile?.name ?? ""}
+                    athletes={athletes}
+                    setAthletes={setAthletes}
+                    notify={notify}
+                    onReloadAthletes={loadAthletes}
+                    onSignOut={handleSignOut}
+                    styles={styles}
+                    isStaff={Boolean(profile?.is_staff || staffParentCoachId)}
+                  />
+                </Suspense>
               )}
               {view === "admin" && isProfilesAdmin && (
                 <AdminPanel notify={notify} adminUserId={PLATFORM_ADMIN_USER_ID} />
@@ -338,77 +360,91 @@ export default function CoachChrome({
                     <button type="button" onClick={() => selectTrainingTab("carrera_gpx")} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", background: view === "carrera_gpx" ? "rgba(220,38,38,.12)" : "#fff", color: view === "carrera_gpx" ? "#b91c1c" : "#334155", fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>⛰ Carrera GPX</button>
                   </div>
                   {(view === "plan12" || view === "training") && (
-                    <Plan2Weeks
-                      athletes={athletes}
-                      notify={notify}
-                      coachUserId={session?.user?.id ?? null}
-                      coachPlan={String(profile?.subscription_plan || "Basico")}
-                      profileRole={profile?.role ?? ""}
-                      onGoToPlans={() => setCoachPlanPickerVoluntary(true)}
-                      onPlanAssigned={bumpWorkoutsRefresh}
-                    />
+                    <Suspense fallback={<div style={{ padding: 24, color: "#64748b" }}>Cargando plan…</div>}>
+                      <Plan2Weeks
+                        athletes={athletes}
+                        notify={notify}
+                        coachUserId={session?.user?.id ?? null}
+                        coachPlan={String(profile?.subscription_plan || "Basico")}
+                        profileRole={profile?.role ?? ""}
+                        onGoToPlans={() => setCoachPlanPickerVoluntary(true)}
+                        onPlanAssigned={bumpWorkoutsRefresh}
+                      />
+                    </Suspense>
                   )}
                   {view === "builder" && (
-                    <Builder
-                      athletes={athletes}
-                      aiPrompt={aiPrompt}
-                      setAiPrompt={setAiPrompt}
-                      aiWorkout={aiWorkout}
-                      setAiWorkout={setAiWorkout}
-                      aiLoading={aiLoading}
-                      setAiLoading={setAiLoading}
-                      notify={notify}
-                      coachUserId={session?.user?.id ?? null}
-                      coachPlan={String(profile?.subscription_plan || "Basico")}
-                      profileRole={profile?.role ?? ""}
-                      onGoToPlans={() => setCoachPlanPickerVoluntary(true)}
-                      onWorkoutAssigned={bumpWorkoutsRefresh}
-                      onSavedToLibrary={bumpLibraryRefresh}
-                    />
+                    <Suspense fallback={<div style={{ padding: 24, color: "#64748b" }}>Cargando generador…</div>}>
+                      <Builder
+                        athletes={athletes}
+                        aiPrompt={aiPrompt}
+                        setAiPrompt={setAiPrompt}
+                        aiWorkout={aiWorkout}
+                        setAiWorkout={setAiWorkout}
+                        aiLoading={aiLoading}
+                        setAiLoading={setAiLoading}
+                        notify={notify}
+                        coachUserId={session?.user?.id ?? null}
+                        coachPlan={String(profile?.subscription_plan || "Basico")}
+                        profileRole={profile?.role ?? ""}
+                        onGoToPlans={() => setCoachPlanPickerVoluntary(true)}
+                        onWorkoutAssigned={bumpWorkoutsRefresh}
+                        onSavedToLibrary={bumpLibraryRefresh}
+                      />
+                    </Suspense>
                   )}
                   {view === "carrera_gpx" && (
-                    <GpxRacePlan
-                      athletes={athletes}
-                      coachUserId={session?.user?.id ?? null}
-                      notify={notify}
-                      onSavedToLibrary={bumpLibraryRefresh}
-                      onWorkoutAssigned={bumpWorkoutsRefresh}
-                    />
+                    <Suspense fallback={<div style={{ padding: 24, color: "#64748b" }}>Cargando GPX…</div>}>
+                      <GpxRacePlan
+                        athletes={athletes}
+                        coachUserId={session?.user?.id ?? null}
+                        notify={notify}
+                        onSavedToLibrary={bumpLibraryRefresh}
+                        onWorkoutAssigned={bumpWorkoutsRefresh}
+                      />
+                    </Suspense>
                   )}
                 </>
               )}
-              {view === "library" && (
-                <WorkoutLibrary
-                  coachUserId={sessionUserId || null}
-                  libraryRefresh={libraryRefresh}
-                  athletes={athletes}
-                  profileRole={profile?.role ?? ""}
-                  adminLibraryOwnerId={PLATFORM_ADMIN_USER_ID}
-                  parentCoachId={staffParentCoachId || null}
-                  onUseWorkout={useLibraryWorkout}
-                  onCopiedGlobalToLibrary={bumpLibraryRefresh}
-                  onOpenAdminMarketplaceDraft={() => setView("admin")}
-                  onAfterLibraryImportSuccess={() => {
-                    setView("library");
-                    try {
-                      if (typeof window !== "undefined") localStorage.setItem("raf_lastView", "library");
-                    } catch {
-                      /* ignore */
-                    }
-                    bumpLibraryRefresh();
-                  }}
-                  notify={notify}
-                  styles={styles}
-                />
+              {keep("library") && (
+                <div style={keepViewStyle(view === "library")}>
+                  <Suspense fallback={<div style={{ padding: 24, color: "#64748b" }}>Cargando biblioteca…</div>}>
+                    <WorkoutLibrary
+                      coachUserId={sessionUserId || null}
+                      libraryRefresh={libraryRefresh}
+                      athletes={athletes}
+                      profileRole={profile?.role ?? ""}
+                      adminLibraryOwnerId={PLATFORM_ADMIN_USER_ID}
+                      parentCoachId={staffParentCoachId || null}
+                      onUseWorkout={useLibraryWorkout}
+                      onCopiedGlobalToLibrary={bumpLibraryRefresh}
+                      onOpenAdminMarketplaceDraft={() => setView("admin")}
+                      onAfterLibraryImportSuccess={() => {
+                        setView("library");
+                        try {
+                          if (typeof window !== "undefined") localStorage.setItem("raf_lastView", "library");
+                        } catch {
+                          /* ignore */
+                        }
+                        bumpLibraryRefresh();
+                      }}
+                      notify={notify}
+                      styles={styles}
+                    />
+                  </Suspense>
+                </div>
               )}
-              {view === "marketplace" && (
-                <MarketplaceHub
-                  profileRole={profile?.role ?? ""}
-                  currentUserId={sessionUserId || null}
-                  coachUserId={sessionUserId || null}
-                  notify={notify}
-                  styles={styles}
-                />
+              {keep("marketplace") && (
+                <div style={keepViewStyle(view === "marketplace")}>
+                  <Suspense fallback={<div style={{ padding: 24, color: "#64748b" }}>Cargando marketplace…</div>}>
+                    <MarketplaceHub
+                      profileRole={profile?.role ?? ""}
+                      currentUserId={sessionUserId || null}
+                      coachUserId={sessionUserId || null}
+                      notify={notify}
+                      styles={styles}
+                    />
+                  </Suspense>
+                </div>
               )}
             </>
           )}
@@ -447,6 +483,5 @@ export default function CoachChrome({
           notify={notify}
         />
       </div>
-    </Suspense>
   );
 }
