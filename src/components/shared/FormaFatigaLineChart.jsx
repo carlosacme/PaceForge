@@ -1,16 +1,73 @@
-import React from "react";
+import React, { useId } from "react";
 
 const CHART_HELP =
   "Basado en sesiones completadas con RPE: carga aguda = promedio (RPE × km) últimos 7 días; carga crónica = promedio (RPE × km) últimos 28 días; forma = crónica − aguda.";
 
+const COLOR_ACUTE = "#ef4444";
+const COLOR_CHRONIC = "#3b82f6";
+const COLOR_FORMA = "#22c55e";
+
 const LEGEND = [
-  { color: "#ef4444", label: "Últimos 7 días" },
-  { color: "#3b82f6", label: "Últimas 4 semanas" },
-  { color: "#22c55e", label: "Forma" },
+  { color: COLOR_ACUTE, label: "Últimos 7 días" },
+  { color: COLOR_CHRONIC, label: "Últimas 4 semanas" },
+  { color: COLOR_FORMA, label: "Forma" },
 ];
+
+/** Path cúbico monotone (Fritsch–Carlson). Pasa por cada punto; no inventa picos. */
+function monotonePath(points) {
+  const n = points.length;
+  if (n === 0) return "";
+  if (n === 1) return `M ${points[0].x} ${points[0].y}`;
+  if (n === 2) return `M ${points[0].x} ${points[0].y} L ${points[1].x} ${points[1].y}`;
+
+  const dx = [];
+  const dy = [];
+  const slope = [];
+  for (let i = 0; i < n - 1; i += 1) {
+    dx[i] = points[i + 1].x - points[i].x;
+    dy[i] = points[i + 1].y - points[i].y;
+    slope[i] = dx[i] === 0 ? 0 : dy[i] / dx[i];
+  }
+
+  const tan = [];
+  tan[0] = slope[0];
+  tan[n - 1] = slope[n - 2];
+  for (let i = 1; i < n - 1; i += 1) {
+    tan[i] = slope[i - 1] * slope[i] <= 0 ? 0 : (slope[i - 1] + slope[i]) / 2;
+  }
+
+  for (let i = 0; i < n - 1; i += 1) {
+    if (Math.abs(slope[i]) < 1e-12) {
+      tan[i] = 0;
+      tan[i + 1] = 0;
+      continue;
+    }
+    const a = tan[i] / slope[i];
+    const b = tan[i + 1] / slope[i];
+    const s = a * a + b * b;
+    if (s > 9) {
+      const f = 3 / Math.sqrt(s);
+      tan[i] = f * a * slope[i];
+      tan[i + 1] = f * b * slope[i];
+    }
+  }
+
+  let d = `M ${points[0].x} ${points[0].y}`;
+  for (let i = 0; i < n - 1; i += 1) {
+    const p0 = points[i];
+    const p1 = points[i + 1];
+    const c1x = p0.x + dx[i] / 3;
+    const c1y = p0.y + (tan[i] * dx[i]) / 3;
+    const c2x = p1.x - dx[i] / 3;
+    const c2y = p1.y - (tan[i + 1] * dx[i]) / 3;
+    d += ` C ${c1x} ${c1y} ${c2x} ${c2y} ${p1.x} ${p1.y}`;
+  }
+  return d;
+}
 
 /** Gráfico de líneas (SVG + estilos inline, sin librerías de gráficos). */
 export default function FormaFatigaLineChart({ chronological }) {
+  const fillId = useId().replace(/:/g, "");
   const n = chronological.length;
   const W = 360;
   const H = 160;
@@ -31,13 +88,20 @@ export default function FormaFatigaLineChart({ chronological }) {
   const span = maxV - minV || 1;
   const toY = (v) => padT + innerH - ((v - minV) / span) * innerH;
 
-  const linePoints = (key) =>
-    chronological
-      .map((p, idx) => {
-        const v = p[key] ?? 0;
-        return `${xs[idx]},${toY(v)}`;
-      })
-      .join(" ");
+  const seriesPoints = (key) =>
+    chronological.map((p, idx) => ({ x: xs[idx], y: toY(p[key] ?? 0) }));
+
+  const acutePts = seriesPoints("acute");
+  const chronicPts = seriesPoints("chronic");
+  const formaPts = seriesPoints("forma");
+  const acutePath = monotonePath(acutePts);
+  const chronicPath = monotonePath(chronicPts);
+  const formaPath = monotonePath(formaPts);
+  const yZero = toY(0);
+  const formaFill =
+    formaPts.length >= 2
+      ? `${formaPath} L ${formaPts[formaPts.length - 1].x} ${yZero} L ${formaPts[0].x} ${yZero} Z`
+      : "";
 
   return (
     <div>
@@ -83,22 +147,41 @@ export default function FormaFatigaLineChart({ chronological }) {
       aria-label="Últimos 7 días, últimas 4 semanas y forma en las últimas 8 semanas"
       style={{ width: "100%", maxWidth: 520, height: "auto", display: "block" }}
     >
+      <defs>
+        <linearGradient id={fillId} gradientUnits="userSpaceOnUse" x1="0" y1={padT} x2="0" y2={padT + innerH}>
+          <stop offset="0%" stopColor={COLOR_FORMA} stopOpacity="0.18" />
+          <stop offset="100%" stopColor={COLOR_FORMA} stopOpacity="0" />
+        </linearGradient>
+      </defs>
       <rect x={0} y={0} width={W} height={H} fill="#f8fafc" rx={8} />
       {[0, 0.25, 0.5, 0.75, 1].map((t) => {
         const y = padT + innerH * (1 - t);
         const gv = minV + span * t;
         return (
           <g key={t}>
-            <line x1={padL} y1={y} x2={W - padR} y2={y} stroke="rgba(148,163,184,.15)" strokeWidth={1} />
+            <line x1={padL} y1={y} x2={W - padR} y2={y} stroke="rgba(148,163,184,.07)" strokeWidth={1} />
             <text x={4} y={y + 4} fill="#64748b" fontSize={9} fontFamily="system-ui,sans-serif">
               {gv.toFixed(0)}
             </text>
           </g>
         );
       })}
-      <polyline fill="none" stroke="#ef4444" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" points={linePoints("acute")} />
-      <polyline fill="none" stroke="#3b82f6" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" points={linePoints("chronic")} />
-      <polyline fill="none" stroke="#22c55e" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" points={linePoints("forma")} />
+      {formaFill ? <path d={formaFill} fill={`url(#${fillId})`} /> : null}
+      <path d={chronicPath} fill="none" stroke={COLOR_CHRONIC} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+      <path d={acutePath} fill="none" stroke={COLOR_ACUTE} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+      <path d={formaPath} fill="none" stroke={COLOR_FORMA} strokeWidth={2.25} strokeLinejoin="round" strokeLinecap="round" />
+      {[
+        { pts: chronicPts, color: COLOR_CHRONIC, key: "chronic" },
+        { pts: acutePts, color: COLOR_ACUTE, key: "acute" },
+        { pts: formaPts, color: COLOR_FORMA, key: "forma" },
+      ].map((series) =>
+        series.pts.map((pt, idx) => (
+          <g key={`${series.key}-${idx}`}>
+            <circle cx={pt.x} cy={pt.y} r={4} fill="#fff" />
+            <circle cx={pt.x} cy={pt.y} r={2.6} fill={series.color} />
+          </g>
+        ))
+      )}
       {chronological.map((p, idx) => (
         <text
           key={p.i}
