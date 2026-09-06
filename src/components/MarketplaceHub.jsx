@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { supabase } from "../lib/supabase";
 import {
   formatCopInt,
@@ -35,7 +35,7 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
   const [coachLibraryRows, setCoachLibraryRows] = useState([]);
   const [loadingLibrary, setLoadingLibrary] = useState(false);
   const [confirmedSalesList, setConfirmedSalesList] = useState([]);
-  const [loadingConfirmedSales, setLoadingConfirmedSales] = useState(false);
+  const [loadingConfirmedSales, setLoadingConfirmedSales] = useState(() => isCoach || isAdmin);
   const [editingMarketplacePlanId, setEditingMarketplacePlanId] = useState(null);
   const [editingPlanSnapshot, setEditingPlanSnapshot] = useState(null);
   const [planForm, setPlanForm] = useState({
@@ -123,6 +123,9 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
   // Ventas ya cobradas. El coach no confirma pagos: solo ve lo que Wompi (o el
   // admin, para transferencias) dio por bueno. Las columnas buyer_name y
   // plan_title no existen en la tabla, hay que resolverlas por join.
+  const plansRef = useRef(plans);
+  plansRef.current = plans;
+
   const loadConfirmedSales = useCallback(async () => {
     if (!isCoach && !isAdmin) { setConfirmedSalesList([]); setLoadingConfirmedSales(false); return; }
     setLoadingConfirmedSales(true);
@@ -139,7 +142,7 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
     if (!isAdmin) {
       const uid = coachUserId || currentUserId;
       if (!uid) { setConfirmedSalesList([]); setLoadingConfirmedSales(false); return; }
-      const myPlanIds = new Set((plans || []).filter((p) => String(p.coach_user_id || "") === String(uid)).map((p) => String(p.id)));
+      const myPlanIds = new Set((plansRef.current || []).filter((p) => String(p.coach_user_id || "") === String(uid)).map((p) => String(p.id)));
       rows = rows.filter((row) => myPlanIds.has(String(row.plan_id || "")));
     }
     const buyerIds = [...new Set(rows.map((r) => r.buyer_user_id).filter(Boolean))];
@@ -158,7 +161,7 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
       plan_display: titleByPlan[String(row.plan_id)] || String(row.plan_id || ""),
     })));
     setLoadingConfirmedSales(false);
-  }, [isCoach, isAdmin, coachUserId, currentUserId, plans]);
+  }, [isCoach, isAdmin, coachUserId, currentUserId]);
 
   // Volumen declarado en la ultima evaluacion del atleta (weekly_km_declared).
   // Si no hay evaluacion se usa el del perfil, y si tampoco hay se deja en null
@@ -203,7 +206,17 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
   }, [isAthlete, currentUserId]);
 
   useEffect(() => { loadPurchasedPlans(); }, [loadPurchasedPlans]);
-  useEffect(() => { loadConfirmedSales(); }, [loadConfirmedSales]);
+  useEffect(() => {
+    if (!isCoach && !isAdmin) {
+      setConfirmedSalesList([]);
+      setLoadingConfirmedSales(false);
+      return;
+    }
+    // Esperar a que loadMarketplace termine: si corremos con plans=[],
+    // el filtro deja la lista vacia y al llenar plans se refetch + parpadeo.
+    if (loadingPlans) return;
+    void loadConfirmedSales();
+  }, [isCoach, isAdmin, loadingPlans, loadConfirmedSales]);
   useEffect(() => { if (!showPublishModal || !isCoach) return; loadCoachLibrary(); }, [showPublishModal, isCoach, loadCoachLibrary]);
 
   const plansVisible = useMemo(() => {
