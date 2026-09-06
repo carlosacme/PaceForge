@@ -93,6 +93,7 @@ export default function CoachChrome({
   dismissPushInvite,
   // auth
   handleSignOut,
+  signingOut = false,
 }) {
   const S = styles;
   const sessionUserId = session?.user?.id ?? "";
@@ -172,6 +173,7 @@ export default function CoachChrome({
             <button
               type="button"
               onClick={handleSignOut}
+              disabled={signingOut}
               style={{
                 marginTop: 10,
                 width: "100%",
@@ -180,13 +182,13 @@ export default function CoachChrome({
                 borderRadius: 8,
                 padding: "9px 10px",
                 color: "#dc2626",
-                cursor: "pointer",
+                cursor: signingOut ? "wait" : "pointer",
                 fontFamily: "inherit",
                 fontSize: ".78em",
                 fontWeight: 700,
               }}
             >
-              Cerrar sesión
+              {signingOut ? "Cerrando sesión…" : "Cerrar sesión"}
             </button>
           </div>
         </aside>
@@ -344,6 +346,7 @@ export default function CoachChrome({
                     notify={notify}
                     onReloadAthletes={loadAthletes}
                     onSignOut={handleSignOut}
+                    signingOut={signingOut}
                     styles={styles}
                     isStaff={Boolean(profile?.is_staff || staffParentCoachId)}
                   />

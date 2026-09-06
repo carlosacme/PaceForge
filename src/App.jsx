@@ -11,8 +11,8 @@ import {
 } from "./components/shared/appShared";
 import { isConfirmEmailRoute } from "./lib/authRoutes";
 import { initNativeAppLinks, consumePendingAppLink, subscribeAppLink, applyAppLink } from "./lib/nativeAppLinks";
+import AuthLanding from "./components/AuthLanding";
 
-const AuthLanding = React.lazy(() => import("./components/AuthLanding"));
 const AthleteHome = React.lazy(() => import("./components/AthleteHome"));
 const CoachApp = React.lazy(() => import("./CoachApp"));
 const ConfirmEmailScreen = React.lazy(() => import("./components/ConfirmEmailScreen"));
@@ -579,15 +579,13 @@ export default function App() {
 
   if (!session) {
     return (
-      <Suspense fallback={<ShellFallback title="Cargando..." />}>
-        <AuthLanding
-          notify={notify}
-          resolveCoachIdByCode={resolveCoachIdByCode}
-          onLoginSuccess={onLoginSuccess}
-          onAthleteProfileDraft={setProfile}
-          openRequest={authLandingOpenRequest}
-        />
-      </Suspense>
+      <AuthLanding
+        notify={notify}
+        resolveCoachIdByCode={resolveCoachIdByCode}
+        onLoginSuccess={onLoginSuccess}
+        onAthleteProfileDraft={setProfile}
+        openRequest={authLandingOpenRequest}
+      />
     );
   }
 

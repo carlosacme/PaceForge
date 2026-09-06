@@ -6,7 +6,7 @@ import ChangePasswordSection from "./ChangePasswordSection";
 import CoachRequestsInbox from "./CoachRequestsInbox";
 import { useCoachRequests } from "../hooks/useCoachRequests";
 
-function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAthletes, notify, onSignOut, styles, isStaff = false, onReloadAthletes }) {
+function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAthletes, notify, onSignOut, signingOut = false, styles, isStaff = false, onReloadAthletes }) {
   const S = styles;
   const athletesRef = useRef(athletes);
   const isDirtyRef = useRef(false);
@@ -818,6 +818,7 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
         <button
           type="button"
           onClick={onSignOut}
+          disabled={signingOut}
           style={{
             width: "100%",
             padding: "12px 16px",
@@ -826,12 +827,12 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
             background: "#fef2f2",
             color: "#dc2626",
             fontWeight: 800,
-            cursor: "pointer",
+            cursor: signingOut ? "wait" : "pointer",
             fontFamily: "inherit",
             fontSize: ".9em",
           }}
         >
-          Cerrar sesión
+          {signingOut ? "Cerrando sesión…" : "Cerrar sesión"}
         </button>
       </div>
     </div>
