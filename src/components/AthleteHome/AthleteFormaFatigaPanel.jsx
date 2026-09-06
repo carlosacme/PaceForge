@@ -1,6 +1,7 @@
 import React, { useMemo } from "react";
 import FormaFatigaLineChart from "../shared/FormaFatigaLineChart";
 import CargaSemanaHero from "../shared/CargaSemanaHero";
+import KmSemanaBars from "../shared/KmSemanaBars";
 import {
   computeFormaFatigaWeeklyPoints,
   computeGarminLoadMetricsFromWorkouts,
@@ -11,8 +12,8 @@ import {
  * Perfil -> Forma del atleta.
  *
  * 0 estados propios: deriva de `workouts`. Paywall propio (Premium Atleta).
- * Subset vs el FormaFatigaPanel del coach: sin el número ACWR, sin barras
- * semanales, sin tabla 4 semanas, sin spinner de loadingWorkouts. El label
+ * Subset vs el FormaFatigaPanel del coach: sin el número ACWR, sin tabla
+ * de 4 semanas, sin spinner de loadingWorkouts. Barras = weekBarsOldestFirst. El label
  * (Óptimo / Desentrenado / Precaución / Sobreentrenado) usa las mismas bandas
  * que el coach. No fusionar con el bloque RPE.
  */
@@ -51,6 +52,9 @@ export default function AthleteFormaFatigaPanel({
           metrics={garminLoadMetrics}
           formaFatigaStatus={formaFatigaStatus}
         />
+      </div>
+      <div style={{ ...cardStyle }}>
+        <KmSemanaBars metrics={garminLoadMetrics} />
       </div>
       <div style={{ ...cardStyle }}>
         <FormaFatigaLineChart chronological={formaFatigaChronological} />
