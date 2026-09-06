@@ -1,5 +1,6 @@
 import React, { useMemo } from "react";
 import FormaFatigaLineChart from "../shared/FormaFatigaLineChart";
+import CargaSemanaHero from "../shared/CargaSemanaHero";
 import {
   computeFormaFatigaWeeklyPoints,
   computeGarminLoadMetricsFromWorkouts,
@@ -28,25 +29,13 @@ export default function FormaFatigaPanel({ workouts, loadingWorkouts }) {
       </div>
       {!loadingWorkouts ? (
         <div style={{ ...S.card, marginBottom: 16 }}>
-          <div style={{ fontSize: ".72em", marginBottom: 12, color: "#475569", textTransform: "uppercase", letterSpacing: ".13em" }}>
-            Carga por volumen (completados · 4 semanas)
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(168px, 1fr))", gap: 12 }}>
-            <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: "14px 12px", background: "#fafafa" }}>
-              <div style={{ fontSize: ".72em", color: "#64748b", fontWeight: 700, marginBottom: 6 }}>ACWR (riesgo de carga)</div>
-              <div style={{ fontSize: "1.2em", fontWeight: 900, color: coachGarminLoadMetrics.statusColor }}>{coachGarminLoadMetrics.statusLabel}</div>
-              <div style={{ fontSize: ".7em", color: "#64748b", marginTop: 8, lineHeight: 1.45 }}>
-                Aguda 7d / crónica 4 sem. Informativo: no cambia el plan. Seguro 0.8–1.3 · precaución 1.3–1.5 · riesgo &gt; 1.5
-              </div>
-            </div>
-            <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: "14px 12px", background: "#fafafa" }}>
-              <div style={{ fontSize: ".72em", color: "#64748b", fontWeight: 700, marginBottom: 6 }}>Carga aguda (7 días)</div>
-              <div style={{ fontSize: "1.35em", fontWeight: 900, color: coachGarminLoadMetrics.COLOR_ORANGE, fontFamily: "monospace" }}>{coachGarminLoadMetrics.acuteKm.toFixed(1)} km</div>
-            </div>
-            <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: "14px 12px", background: "#fafafa" }}>
-              <div style={{ fontSize: ".72em", color: "#64748b", fontWeight: 700, marginBottom: 6 }}>Carga crónica (prom. semanal)</div>
-              <div style={{ fontSize: "1.35em", fontWeight: 900, color: coachGarminLoadMetrics.COLOR_ORANGE, fontFamily: "monospace" }}>{coachGarminLoadMetrics.chronicWeeklyAvgKm.toFixed(1)} km/sem</div>
-            </div>
+          <CargaSemanaHero
+            title="¿Cómo va esta semana?"
+            secondPerson={false}
+            metrics={coachGarminLoadMetrics}
+            formaFatigaStatus={formaFatigaStatus}
+          />
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(168px, 1fr))", gap: 12, marginTop: 12 }}>
             <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: "14px 12px", background: "#fafafa", gridColumn: "1 / -1", minWidth: 0 }}>
               <div style={{ fontSize: ".72em", color: "#64748b", fontWeight: 700, marginBottom: 6 }}>Ratio carga aguda / crónica (ACWR)</div>
               <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
