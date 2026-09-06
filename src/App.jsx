@@ -1,36 +1,22 @@
-import React, { useState, useEffect, useMemo, useCallback, Suspense } from "react";
+import React, { useState, useEffect, useCallback, Suspense } from "react";
 import { supabase } from "./lib/supabase";
 import { useAppResumeRefresh } from "./hooks/useAppResumeRefresh";
-import { useCoachPushDeepLinks } from "./hooks/useCoachPushDeepLinks";
-import { useBuilderLibraryBridge } from "./hooks/useBuilderLibraryBridge";
-import { useCoachAthletes } from "./hooks/useCoachAthletes";
-import { useCoachNavigation } from "./hooks/useCoachNavigation";
-import CoachChrome from "./components/CoachChrome";
 import {
   COACH_PROFILE_TRIAL_DAYS,
-  unregisterOwnDeviceToken,
   ensureOwnProfile,
   acceptPendingInvitationIfAny,
   isAuthLockContentionError,
   withAuthLockRetry,
   styles,
 } from "./components/shared/appShared";
-import {
-  clearFcmToken,
-} from "./firebase.js";
-import { Capacitor } from "@capacitor/core";
-import {
-  clearNativePush,
-} from "./lib/nativePush";
-import ResetPasswordScreen from "./components/ResetPasswordScreen";
-import ConfirmEmailScreen from "./components/ConfirmEmailScreen";
-import AuthLanding from "./components/AuthLanding";
 import { isConfirmEmailRoute } from "./lib/authRoutes";
 import { initNativeAppLinks, consumePendingAppLink, subscribeAppLink, applyAppLink } from "./lib/nativeAppLinks";
+
+const AuthLanding = React.lazy(() => import("./components/AuthLanding"));
 const AthleteHome = React.lazy(() => import("./components/AthleteHome"));
-
-
-
+const CoachApp = React.lazy(() => import("./CoachApp"));
+const ConfirmEmailScreen = React.lazy(() => import("./components/ConfirmEmailScreen"));
+const ResetPasswordScreen = React.lazy(() => import("./components/ResetPasswordScreen"));
 
 /** Marca de "estamos restableciendo la contraseña", para sobrevivir a un refresco. */
 const RAF_PASSWORD_RECOVERY_KEY = "raf_password_recovery";
@@ -74,6 +60,23 @@ if (PASSWORD_RECOVERY_IN_URL && typeof sessionStorage !== "undefined") {
   }
 }
 
+function ShellFallback({ title }) {
+  return (
+    <div style={styles.root}>
+      <main style={{ ...styles.page, display: "flex", alignItems: "center", justifyContent: "center", width: "100%" }}>
+        <h1 style={styles.pageTitle}>{title}</h1>
+      </main>
+    </div>
+  );
+}
+
+/** Rol con UI propia. Sin esto, un role vacio caia en CoachApp (la carrera del atleta). */
+function shellRoleOf(profile) {
+  const role = String(profile?.role || "").trim().toLowerCase();
+  if (role === "athlete" || role === "coach" || role === "admin") return role;
+  return null;
+}
+
 export default function App() {
   const [notification, setNotification] = useState(null);
   const [session, setSession] = useState(null);
@@ -100,104 +103,11 @@ export default function App() {
     } catch { return null; }
   });
   const [profileLoading, setProfileLoading] = useState(false);
-  const [inviteModalOpen, setInviteModalOpen] = useState(false);
-  const [coachPlanPickerVoluntary, setCoachPlanPickerVoluntary] = useState(false);
 
   const notify = useCallback((msg) => {
     setNotification(msg);
     setTimeout(() => setNotification(null), 3000);
   }, []);
-
-  const {
-    athletes,
-    setAthletes,
-    loadingAthletes,
-    selectedAthlete,
-    setSelectedAthlete,
-    workoutsRefresh,
-    bumpWorkoutsRefresh,
-    pendingRegistroWorkoutId,
-    setPendingRegistroWorkoutId,
-    showAddAthleteForm,
-    setShowAddAthleteForm,
-    newAthlete,
-    updateNewAthleteField,
-    planLimitWarning,
-    setPlanLimitWarning,
-    staffParentCoachId,
-    loadAthletes,
-    saveNewAthlete,
-    cancelAddAthleteForm,
-    handleDeleteAthlete,
-    onAthleteWorkoutsDoneSync,
-    onAthleteFcSync,
-    clearSelectedOnSignOut,
-  } = useCoachAthletes({ session, authLoading, notify, profile });
-
-  const closeAddAthleteForm = useCallback(() => {
-    setShowAddAthleteForm(false);
-  }, [setShowAddAthleteForm]);
-
-  /**
-   * Diseño setView: el estado vive en useCoachNavigation (llamado desde App),
-   * no dentro del JSX de CoachChrome. Así App puede pasar setView /
-   * setViewRestored a useBuilderLibraryBridge y useCoachPushDeepLinks en el
-   * mismo nivel de hooks (sin Context ni forward-ref).
-   */
-  const {
-    view,
-    setView,
-    setViewRestored,
-    coachNavItems,
-    goCoachView,
-    selectAthletesTab,
-    selectTrainingTab,
-  } = useCoachNavigation({
-    session,
-    profile,
-    onCloseAddAthleteForm: closeAddAthleteForm,
-  });
-
-  const {
-    aiPrompt,
-    setAiPrompt,
-    aiWorkout,
-    setAiWorkout,
-    aiLoading,
-    setAiLoading,
-    libraryRefresh,
-    bumpLibraryRefresh,
-    useLibraryWorkout,
-  } = useBuilderLibraryBridge({ setView, notify });
-
-  const {
-    syncFcmTokenToProfile,
-    showPushInvite,
-    dismissPushInvite,
-    refreshNativePushPermission,
-    setNativePushPermission,
-  } = useCoachPushDeepLinks({
-    session,
-    authLoading,
-    profile,
-    athletes,
-    notify,
-    setView,
-    setSelectedAthlete,
-    setViewRestored,
-    setPendingRegistroWorkoutId,
-  });
-
-  const S = styles;
-
-  const coachCodeFromId = useCallback((userId) => String(userId || "").replace(/-/g, "").slice(0, 8).toUpperCase(), []);
-
-  /** Código que el atleta puede ingresar al registrarse (coincide con `profiles.coach_id` o derivado del user_id). */
-  const inviteCoachPublicCode = useMemo(() => {
-    const raw = String(profile?.coach_id || "").trim();
-    if (raw && !raw.includes("-")) return raw.toUpperCase();
-    return coachCodeFromId(session?.user?.id);
-  }, [profile?.coach_id, session?.user?.id, coachCodeFromId]);
 
   const resolveCoachIdByCode = useCallback(async (codeInput) => {
     const codigoIngresado = String(codeInput || "").trim().toUpperCase();
@@ -205,6 +115,24 @@ export default function App() {
     const { data, error } = await supabase.rpc("find_coach_by_code", { code: codigoIngresado });
     if (error) { console.error("resolveCoachIdByCode:", error); return null; }
     return data || null;
+  }, []);
+
+  const onLoginSuccess = useCallback(async () => {
+    const { registerPushAfterLogin } = await import("./lib/registerPushAfterLogin");
+    await registerPushAfterLogin(notify);
+  }, [notify]);
+
+  // Solapa la descarga/transform del chunk de rol con getSession + perfil.
+  // Sin esto, el coach espera el CoachApp (y "Cargando atletas") en serie.
+  useEffect(() => {
+    try {
+      const cached = JSON.parse(localStorage.getItem("raf_cached_profile") || "null");
+      const role = String(cached?.role || "").toLowerCase();
+      if (role === "coach" || role === "admin") void import("./CoachApp");
+      else if (role === "athlete") void import("./components/AthleteHome");
+    } catch {
+      /* ignore */
+    }
   }, []);
 
   // App Links de la APK: el enlace del correo llega por intent y el WebView
@@ -266,10 +194,10 @@ export default function App() {
       }
       setSession(nextSession ?? null);
       if (nextSession?.user && typeof window !== "undefined" && window.posthog) {
-  window.posthog.identify(nextSession.user.id, {
-    email: nextSession.user.email,
-  });
-}
+        window.posthog.identify(nextSession.user.id, {
+          email: nextSession.user.email,
+        });
+      }
     });
 
     return () => {
@@ -289,6 +217,10 @@ export default function App() {
 
     const loadProfile = async () => {
       if (!session?.user) {
+        // Durante el bootstrap, session empieza en null. No borrar el perfil
+        // cacheado: si lo hacemos, el primer paint con sesion y profile=null
+        // monta CoachApp y el atleta descarga el shell de coach.
+        if (authLoading) return;
         setProfile(null);
         try { localStorage.removeItem("raf_cached_profile"); } catch {}
         return;
@@ -435,6 +367,18 @@ export default function App() {
         }
       };
 
+      const runProfileSideEffects = async (prof) => {
+        try {
+          await healMissingAthleteRow(prof);
+          await processPendingStaffInvite(prof);
+          await acceptPendingInvitationIfAny();
+          const synced = await syncCoachPlanIfNeeded(prof);
+          if (synced && synced.plan_status !== prof.plan_status) cacheAndSetProfile(synced);
+        } catch (e) {
+          console.warn("profile side effects:", e);
+        }
+      };
+
       if (data == null) {
         // Perfil huérfano: auth existe pero create-profile no corrió (p.ej.
         // registro sin sesion hasta confirmar correo). Reintentar desde
@@ -472,11 +416,9 @@ export default function App() {
             .select("*")
             .eq("user_id", u.id)
             .maybeSingle();
-          if (again) {
-            await processPendingStaffInvite(again);
-            await acceptPendingInvitationIfAny();
-            await healMissingAthleteRow(again);
-            cacheAndSetProfile(await syncCoachPlanIfNeeded(again));
+          if (again && shellRoleOf(again)) {
+            cacheAndSetProfile(again);
+            await runProfileSideEffects(again);
             setProfileLoading(false);
             return;
           }
@@ -487,9 +429,6 @@ export default function App() {
         setProfileLoading(false);
         return;
       }
-      await healMissingAthleteRow(data);
-      await processPendingStaffInvite(data);
-      await acceptPendingInvitationIfAny();
 
       const roleMissing = data.role == null || String(data.role).trim() === "";
       if (roleMissing) {
@@ -521,18 +460,23 @@ export default function App() {
             status: upErr.status,
             fullError: upErr,
           });
-          cacheAndSetProfile(data ?? null);
+          // Sin rol conocido no pintamos shell: seguiria siendo la carrera atleta→coach.
+          setProfileLoading(false);
         } else {
-          cacheAndSetProfile(await syncCoachPlanIfNeeded(saved));
+          cacheAndSetProfile(saved);
+          await runProfileSideEffects(saved);
+          setProfileLoading(false);
         }
-      } else {
-        cacheAndSetProfile(await syncCoachPlanIfNeeded(data));
+        return;
       }
+
+      cacheAndSetProfile(data);
+      await runProfileSideEffects(data);
       setProfileLoading(false);
     };
 
     loadProfile();
-  }, [session]);
+  }, [session, authLoading]);
 
   // Al volver a la app: invalidar raf_cached_profile releiendo profiles.
   // Silencioso (sin profileLoading) para no parpadear la UI.
@@ -565,66 +509,11 @@ export default function App() {
     }
   }, [session?.user?.id]);
 
-  // Perfil siempre; coaches tambien lista + km/badges via workoutsRefresh.
-  // AthleteHome hace su propio resume (ficha/workouts/intervals) sin duplicar profiles.
+  // Perfil siempre. La lista de atletas / workouts del coach se refresca
+  // dentro de CoachApp para no arrastrar esos hooks al bundle del atleta.
   useAppResumeRefresh(() => {
     void refreshProfileSilent();
-    if (profile && profile.role !== "athlete") {
-      void loadAthletes({ silent: true });
-      bumpWorkoutsRefresh();
-    }
   }, Boolean(session?.user?.id));
-
-const handleSignOut = async () => {
-  if (typeof window !== "undefined" && window.posthog) window.posthog.reset();
-    // Retirar el token de push de ESTE dispositivo ANTES de salir, para que el
-    // proximo usuario no herede las notificaciones del que se va. Los otros
-    // dispositivos del coach siguen recibiendo. Nunca debe impedir el logout si
-    // algo falla.
-    try {
-      await unregisterOwnDeviceToken();
-      const uid = session?.user?.id;
-      if (uid) {
-        const { data: cleared, error: fcmErr } = await supabase
-          .from("profiles")
-          .update({ fcm_token: null })
-          .eq("user_id", uid)
-          .select("user_id");
-        if (fcmErr) {
-          console.warn("[FCM] no se pudo limpiar fcm_token en logout:", fcmErr.message);
-        } else if (!(cleared || []).length) {
-          console.warn("[FCM] fcm_token no se actualizó (0 filas) en logout");
-        }
-      }
-      if (Capacitor.isNativePlatform()) await clearNativePush();
-      else await clearFcmToken();
-      setNativePushPermission(null);
-    } catch (e) {
-      console.warn("[FCM] limpieza en logout:", e);
-    }
-    const { error } = await supabase.auth.signOut();
-    if (error) {
-      console.error("Error al cerrar sesión:", error);
-      alert(`Error al cerrar sesión: ${error.message}`);
-    }
-    if (typeof localStorage !== "undefined") {
-      localStorage.removeItem("raf_lastView");
-      localStorage.removeItem("raf_tab_atletas");
-      localStorage.removeItem("raf_tab_entrenamientos");
-      localStorage.removeItem("raf_tab_biblioteca");
-      localStorage.removeItem("raf_tab_crear_workout");
-      localStorage.removeItem("raf_athlete_tab");          // ← ESTA ES LA CLAVE CORRECTA (era "raf_athlete_nav_tab")
-      localStorage.removeItem("raf_athlete_eval_open");    // ← agregar también
-      localStorage.removeItem("raf_athlete_profile_tab");
-      localStorage.removeItem("raf_athlete_progress_tab");
-      localStorage.removeItem("raf_admin_tab");
-      localStorage.removeItem("raf_plan2_athlete");
-      localStorage.removeItem("raf_admin_plan_draft");
-      localStorage.removeItem("raf_push_invite_dismissed");
-    }
-    setView("dashboard");
-    clearSelectedOnSignOut();
-  };
 
   /**
    * Cierra el flujo de restablecimiento.
@@ -665,112 +554,65 @@ const handleSignOut = async () => {
   // El enlace del correo aterriza en /auth/confirm: canjear el token antes de
   // cualquier otra pantalla, tambien con sesion previa en el navegador.
   if (CONFIRM_EMAIL_ROUTE) {
-    return <ConfirmEmailScreen />;
+    return (
+      <Suspense fallback={<ShellFallback title="Cargando…" />}>
+        <ConfirmEmailScreen />
+      </Suspense>
+    );
   }
 
   // Igual con el enlace de restablecimiento: el formulario va delante de la app.
   if (passwordRecovery) {
     return (
-      <ResetPasswordScreen
-        onDone={(msg) => closePasswordRecovery(msg)}
-        onCancel={() => closePasswordRecovery("")}
-      />
+      <Suspense fallback={<ShellFallback title="Cargando…" />}>
+        <ResetPasswordScreen
+          onDone={(msg) => closePasswordRecovery(msg)}
+          onCancel={() => closePasswordRecovery("")}
+        />
+      </Suspense>
     );
   }
 
   if (authLoading) {
-    return (
-      <div style={S.root}>
-        <main style={{ ...S.page, display: "flex", alignItems: "center", justifyContent: "center", width: "100%" }}>
-          <h1 style={S.pageTitle}>Cargando sesión...</h1>
-        </main>
-      </div>
-    );
+    return <ShellFallback title="Cargando sesión..." />;
   }
 
   if (!session) {
     return (
-      <AuthLanding
-        notify={notify}
-        resolveCoachIdByCode={resolveCoachIdByCode}
-        onLoginSuccess={syncFcmTokenToProfile}
-        onAthleteProfileDraft={setProfile}
-        openRequest={authLandingOpenRequest}
-      />
+      <Suspense fallback={<ShellFallback title="Cargando..." />}>
+        <AuthLanding
+          notify={notify}
+          resolveCoachIdByCode={resolveCoachIdByCode}
+          onLoginSuccess={onLoginSuccess}
+          onAthleteProfileDraft={setProfile}
+          openRequest={authLandingOpenRequest}
+        />
+      </Suspense>
     );
   }
 
-  if (profileLoading) {
-    return (
-      <div style={S.root}>
-        <main style={{ ...S.page, display: "flex", alignItems: "center", justifyContent: "center", width: "100%" }}>
-          <h1 style={S.pageTitle}>Cargando perfil...</h1>
-        </main>
-      </div>
-    );
+  const shellRole = shellRoleOf(profile);
+  if (profileLoading || !shellRole) {
+    return <ShellFallback title="Cargando perfil..." />;
   }
 
-  if (profile && profile.role === "athlete") {
+  if (shellRole === "athlete") {
     return (
-      <Suspense fallback={<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh"}}><p>Cargando...</p></div>}>
+      <Suspense fallback={<ShellFallback title="Cargando..." />}>
         <AthleteHome profile={profile} />
       </Suspense>
     );
   }
 
   return (
-    <CoachChrome
-      notification={notification}
-      session={session}
-      profile={profile}
-      notify={notify}
-      view={view}
-      setView={setView}
-      coachNavItems={coachNavItems}
-      goCoachView={goCoachView}
-      selectAthletesTab={selectAthletesTab}
-      selectTrainingTab={selectTrainingTab}
-      inviteModalOpen={inviteModalOpen}
-      setInviteModalOpen={setInviteModalOpen}
-      inviteCoachPublicCode={inviteCoachPublicCode}
-      coachPlanPickerVoluntary={coachPlanPickerVoluntary}
-      setCoachPlanPickerVoluntary={setCoachPlanPickerVoluntary}
-      athletes={athletes}
-      setAthletes={setAthletes}
-      loadingAthletes={loadingAthletes}
-      selectedAthlete={selectedAthlete}
-      setSelectedAthlete={setSelectedAthlete}
-      workoutsRefresh={workoutsRefresh}
-      bumpWorkoutsRefresh={bumpWorkoutsRefresh}
-      pendingRegistroWorkoutId={pendingRegistroWorkoutId}
-      setPendingRegistroWorkoutId={setPendingRegistroWorkoutId}
-      showAddAthleteForm={showAddAthleteForm}
-      setShowAddAthleteForm={setShowAddAthleteForm}
-      newAthlete={newAthlete}
-      updateNewAthleteField={updateNewAthleteField}
-      planLimitWarning={planLimitWarning}
-      setPlanLimitWarning={setPlanLimitWarning}
-      staffParentCoachId={staffParentCoachId}
-      saveNewAthlete={saveNewAthlete}
-      loadAthletes={loadAthletes}
-      cancelAddAthleteForm={cancelAddAthleteForm}
-      handleDeleteAthlete={handleDeleteAthlete}
-      onAthleteWorkoutsDoneSync={onAthleteWorkoutsDoneSync}
-      onAthleteFcSync={onAthleteFcSync}
-      aiPrompt={aiPrompt}
-      setAiPrompt={setAiPrompt}
-      aiWorkout={aiWorkout}
-      setAiWorkout={setAiWorkout}
-      aiLoading={aiLoading}
-      setAiLoading={setAiLoading}
-      libraryRefresh={libraryRefresh}
-      bumpLibraryRefresh={bumpLibraryRefresh}
-      useLibraryWorkout={useLibraryWorkout}
-      showPushInvite={showPushInvite}
-      syncFcmTokenToProfile={syncFcmTokenToProfile}
-      refreshNativePushPermission={refreshNativePushPermission}
-      dismissPushInvite={dismissPushInvite}
-      handleSignOut={handleSignOut}
-    />
+    <Suspense fallback={<ShellFallback title="Cargando..." />}>
+      <CoachApp
+        session={session}
+        profile={profile}
+        notify={notify}
+        notification={notification}
+        authLoading={authLoading}
+      />
+    </Suspense>
   );
 }

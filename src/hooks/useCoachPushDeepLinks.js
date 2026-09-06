@@ -18,7 +18,8 @@ import {
 /**
  * Push/FCM (web + nativo) + deep links coach_* desde notificación / URL.
  *
- * Expone `syncFcmTokenToProfile` para AuthLanding.onLoginSuccess y el banner.
+ * Expone `syncFcmTokenToProfile` para el banner de push del coach.
+ * El login (cualquier rol) registra token via `registerPushAfterLogin`.
  * No incluye App Links de auth (`nativeAppLinks`) — tubería distinta.
  *
  * @param {{
