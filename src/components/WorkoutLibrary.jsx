@@ -75,6 +75,8 @@ function WorkoutLibrary({
   const [librarySelectedIds, setLibrarySelectedIds] = useState([]);
   const [assigningBatchRows, setAssigningBatchRows] = useState(null);
   const [batchDatesById, setBatchDatesById] = useState({});
+  // Nombre por fila, solo esta asignación (no muta workout_library).
+  const [batchTitlesById, setBatchTitlesById] = useState({});
   const [globalCopyingId, setGlobalCopyingId] = useState(null);
   const [marketplacePlansForAdmin, setMarketplacePlansForAdmin] = useState([]);
   const [marketplacePlansAdminLoading, setMarketplacePlansAdminLoading] = useState(false);
@@ -557,10 +559,13 @@ function WorkoutLibrary({
     }
     const start = new Date();
     const dates = {};
+    const titles = {};
     rows.forEach((r, i) => {
       dates[String(r.id)] = formatLocalYMD(addDays(start, i));
+      titles[String(r.id)] = (r.title && String(r.title).trim()) || "";
     });
     setBatchDatesById(dates);
+    setBatchTitlesById(titles);
     setAssignSelectedAthleteIds([]);
     setAssigningBatchRows(rows);
   };
@@ -636,7 +641,10 @@ function WorkoutLibrary({
     const payload = [];
     for (const row of rows) {
       const scheduledDate = batchDatesById[String(row.id)];
-      const assignedTitle = (row.title && String(row.title).trim()) || "Entreno";
+      const assignedTitle =
+        (batchTitlesById[String(row.id)] || "").trim() ||
+        (row.title && String(row.title).trim()) ||
+        "Entreno";
       for (const a of athleteRows) {
         payload.push(buildAssignedRow(row, a, scheduledDate, assignedTitle));
       }
@@ -649,14 +657,18 @@ function WorkoutLibrary({
       return;
     }
     const n = rows.length;
+    const firstTitle =
+      (batchTitlesById[String(rows[0].id)] || "").trim() ||
+      rows[0].title ||
+      "Entrenamiento";
     const pushBody = n === 1
-      ? `${rows[0].title || "Entrenamiento"} programado para el ${batchDatesById[String(rows[0].id)] || "día asignado"}`
+      ? `${firstTitle} programado para el ${batchDatesById[String(rows[0].id)] || "día asignado"}`
       : `${n} entrenos asignados`;
     await Promise.all(
       athleteRows.map((a) =>
         sendWorkoutAssignmentPushToAthlete({
           athleteUserId: a?.user_id,
-          workoutTitle: n === 1 ? (rows[0].title || "Entrenamiento") : `${n} entrenos asignados`,
+          workoutTitle: n === 1 ? firstTitle : `${n} entrenos asignados`,
           scheduledDate: batchDatesById[String(rows[0].id)],
           body: pushBody,
         }),
@@ -665,6 +677,7 @@ function WorkoutLibrary({
     notify(`${n} workout${n === 1 ? "" : "s"} asignado${n === 1 ? "" : "s"} a ${athleteRows.length} atleta${athleteRows.length === 1 ? "" : "s"}`);
     setAssigningBatchRows(null);
     setBatchDatesById({});
+    setBatchTitlesById({});
     setAssignSelectedAthleteIds([]);
     exitLibraryMultiSelect();
   };
@@ -1284,7 +1297,7 @@ function WorkoutLibrary({
               <div style={{ fontSize: ".95em", fontWeight: 900, color: "#0f172a" }}>📋 Asignar seleccionados</div>
               <button
                 type="button"
-                onClick={() => { setAssigningBatchRows(null); setBatchDatesById({}); }}
+                onClick={() => { setAssigningBatchRows(null); setBatchDatesById({}); setBatchTitlesById({}); }}
                 disabled={assignSaving}
                 style={{ border: "1px solid #e2e8f0", background: "#fff", borderRadius: 8, padding: "6px 10px", cursor: assignSaving ? "not-allowed" : "pointer", fontFamily: "inherit" }}
               >
@@ -1292,7 +1305,7 @@ function WorkoutLibrary({
               </button>
             </div>
             <div style={{ fontSize: ".78em", color: "#64748b", marginBottom: 10 }}>
-              {assigningBatchRows.length} workout{assigningBatchRows.length === 1 ? "" : "s"} · mismos atletas, fecha por entreno
+              {assigningBatchRows.length} workout{assigningBatchRows.length === 1 ? "" : "s"} · mismos atletas, fecha y nombre por entreno
             </div>
             <div style={{ marginBottom: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
               <button type="button" onClick={() => setAssignSelectedAthleteIds((athletes || []).map((a) => String(a.id)))} style={{ border: "1px solid #bfdbfe", background: "#eff6ff", color: "#1d4ed8", borderRadius: 8, padding: "6px 10px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: ".76em" }}>
@@ -1352,23 +1365,34 @@ function WorkoutLibrary({
                 );
               })}
             </div>
-            <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Fecha de cada workout (sugeridas en días seguidos; puedes cambiarlas)</div>
-            <div style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: 10, marginBottom: 14, display: "flex", flexDirection: "column", gap: 8 }}>
+            <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Nombre y fecha de cada workout</div>
+            <div style={{ fontSize: ".68em", color: "#94a3b8", marginBottom: 8, lineHeight: 1.4 }}>
+              Estos nombres son los que verán los atletas seleccionados (y en el reloj). La biblioteca no cambia.
+            </div>
+            <div style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: 10, marginBottom: 14, display: "flex", flexDirection: "column", gap: 10 }}>
               {assigningBatchRows.map((row) => {
                 const wt = WORKOUT_TYPES.find((t) => t.id === row.type) || WORKOUT_TYPES[0];
                 return (
-                  <div key={row.id} style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                    <div style={{ flex: "1 1 180px", minWidth: 0 }}>
-                      <div style={{ fontSize: ".84em", fontWeight: 700, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.title}</div>
-                      <div style={{ fontSize: ".7em", color: "#64748b" }}>{wt.label} · {row.total_km || 0} km</div>
+                  <div key={row.id} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    <div style={{ fontSize: ".7em", color: "#64748b" }}>{wt.label} · {row.total_km || 0} km</div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                      <input
+                        type="text"
+                        value={batchTitlesById[String(row.id)] ?? ""}
+                        onChange={(e) => setBatchTitlesById((prev) => ({ ...prev, [String(row.id)]: e.target.value }))}
+                        placeholder={row.title || "Entreno"}
+                        disabled={assignSaving}
+                        aria-label={`Nombre del workout ${row.title || row.id}`}
+                        style={{ flex: "1 1 180px", minWidth: 0, border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: ".84em", color: "#0f172a", boxSizing: "border-box" }}
+                      />
+                      <input
+                        type="date"
+                        value={batchDatesById[String(row.id)] || ""}
+                        onChange={(e) => setBatchDatesById((prev) => ({ ...prev, [String(row.id)]: e.target.value }))}
+                        disabled={assignSaving}
+                        style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: ".82em" }}
+                      />
                     </div>
-                    <input
-                      type="date"
-                      value={batchDatesById[String(row.id)] || ""}
-                      onChange={(e) => setBatchDatesById((prev) => ({ ...prev, [String(row.id)]: e.target.value }))}
-                      disabled={assignSaving}
-                      style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: ".82em" }}
-                    />
                   </div>
                 );
               })}
@@ -1376,7 +1400,7 @@ function WorkoutLibrary({
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
               <button
                 type="button"
-                onClick={() => { setAssigningBatchRows(null); setBatchDatesById({}); }}
+                onClick={() => { setAssigningBatchRows(null); setBatchDatesById({}); setBatchTitlesById({}); }}
                 disabled={assignSaving}
                 style={{ border: "1px solid #e2e8f0", background: "#fff", borderRadius: 8, padding: "8px 12px", color: "#475569", cursor: assignSaving ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 700 }}
               >
