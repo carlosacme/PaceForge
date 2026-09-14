@@ -556,48 +556,68 @@ export default async function handler(req, res) {
   const { to_user_id, title, body, data: pushData } = req.body || {};
   if (!to_user_id) return res.status(400).json({ error: "Falta to_user_id" });
 
-  const user = await requireUser(req);
-  if (!user) return jsonError(res, 401, "No autenticado");
+  // try/catch exterior: excepciones ANTES del loop de FCM (areRelated/sbGet,
+  // pushTargets, etc.) antes salían como 500 de Vercel sin fila en
+  // push_deliveries. sendToAllDevices no relanza fallos por token; su camino
+  // feliz y su log por dispositivo no se tocan.
+  let fromUserId = null;
+  let kind = pushData && pushData.type ? String(pushData.type) : null;
+  try {
+    const user = await requireUser(req);
+    if (!user) return jsonError(res, 401, "No autenticado");
+    fromUserId = user.id;
 
-  const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
-  if (!raw) return res.status(500).json({ error: "FIREBASE_SERVICE_ACCOUNT no configurada" });
+    const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
+    if (!raw) return res.status(500).json({ error: "FIREBASE_SERVICE_ACCOUNT no configurada" });
 
-  if (!(await areRelated(user.id, to_user_id))) {
-    return jsonError(res, 403, "Sin relación con el destinatario");
-  }
-  const kind = pushData && pushData.type ? String(pushData.type) : null;
-  const targets = await pushTargets(to_user_id);
-  if (!targets.length) {
-    await logDelivery({ fromUserId: user.id, toUserId: to_user_id, kind, title, status: "no_token" });
-    return res.status(200).json({ ok: true, sent: false, reason: "sin token" });
-  }
+    if (!(await areRelated(user.id, to_user_id))) {
+      return jsonError(res, 403, "Sin relación con el destinatario");
+    }
+    const targets = await pushTargets(to_user_id);
+    if (!targets.length) {
+      await logDelivery({ fromUserId: user.id, toUserId: to_user_id, kind, title, status: "no_token" });
+      return res.status(200).json({ ok: true, sent: false, reason: "sin token" });
+    }
 
-  const outcome = await sendToAllDevices({
-    targets,
-    toUserId: to_user_id,
-    fromUserId: user.id,
-    kind,
-    title,
-    body,
-    pushData,
-  });
-
-  if (outcome.delivered > 0) {
-    return res.status(200).json({
-      ok: true,
-      sent: true,
-      devices: outcome.devices,
-      delivered: outcome.delivered,
+    const outcome = await sendToAllDevices({
+      targets,
+      toUserId: to_user_id,
+      fromUserId: user.id,
+      kind,
+      title,
+      body,
+      pushData,
     });
+
+    if (outcome.delivered > 0) {
+      return res.status(200).json({
+        ok: true,
+        sent: true,
+        devices: outcome.devices,
+        delivered: outcome.delivered,
+      });
+    }
+    if (outcome.dead >= outcome.devices) {
+      return res.status(200).json({ ok: true, sent: false, reason: "token caducado", code: outcome.lastCode });
+    }
+    console.error("send-push:", outcome.lastError);
+    const status = outcome.lastError?.data ? 502 : 500;
+    return res.status(status).json({
+      error: outcome.lastError?.message || "Error enviando push",
+      code: outcome.lastCode,
+      devices: outcome.devices,
+    });
+  } catch (e) {
+    const reason = String(e?.message || e).slice(0, 300);
+    console.error("[send-push] excepción no capturada:", reason);
+    await logDelivery({
+      fromUserId,
+      toUserId: to_user_id,
+      kind,
+      title,
+      status: "error",
+      reason: reason || "excepción en /api/send-push",
+    });
+    return res.status(500).json({ error: "Error interno enviando push" });
   }
-  if (outcome.dead >= outcome.devices) {
-    return res.status(200).json({ ok: true, sent: false, reason: "token caducado", code: outcome.lastCode });
-  }
-  console.error("send-push:", outcome.lastError);
-  const status = outcome.lastError?.data ? 502 : 500;
-  return res.status(status).json({
-    error: outcome.lastError?.message || "Error enviando push",
-    code: outcome.lastCode,
-    devices: outcome.devices,
-  });
 }
