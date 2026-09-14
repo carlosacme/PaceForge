@@ -261,6 +261,7 @@ export async function sendChatPushNotification({ toUserId, title, body, data = n
 
 /** Deep-link / data.type al avisar al coach que el atleta terminó un entreno. */
 export const COACH_WORKOUT_COMPLETED_TYPE = "coach_workout_completed";
+export const COACH_WATCH_SYNC_MISS_TYPE = "coach_watch_sync_miss";
 
 /**
  * Notifica al coach (best effort) tras marcar un workout done.

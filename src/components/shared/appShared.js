@@ -8,6 +8,7 @@ import {
   readOwnFcmToken,
   sendChatPushNotification,
   COACH_WORKOUT_COMPLETED_TYPE,
+  COACH_WATCH_SYNC_MISS_TYPE,
   notifyCoachWorkoutCompletedFromClient,
   PUSH_INACTIVE_REASONS,
 } from "../../lib/fcmClient";
@@ -38,6 +39,7 @@ export {
   readOwnFcmToken,
   sendChatPushNotification,
   COACH_WORKOUT_COMPLETED_TYPE,
+  COACH_WATCH_SYNC_MISS_TYPE,
   notifyCoachWorkoutCompletedFromClient,
   PUSH_INACTIVE_REASONS,
 };

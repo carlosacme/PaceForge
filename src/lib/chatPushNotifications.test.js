@@ -11,6 +11,7 @@ test("solo athlete_chat y coach_chat son chat", () => {
   assert.equal(isChatPushType("athlete_chat"), true);
   assert.equal(isChatPushType("coach_chat"), true);
   assert.equal(isChatPushType("coach_workout_completed"), false);
+  assert.equal(isChatPushType("coach_watch_sync_miss"), false);
   assert.equal(isChatPushType("athlete_workout_reminder"), false);
   assert.equal(isChatPushType(""), false);
   assert.equal(isChatPushType(undefined), false);

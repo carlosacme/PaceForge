@@ -191,6 +191,7 @@ export function useCoachPushDeepLinks({
     if (type === "coach_workout_completed" && data?.workout_id) {
       setPendingRegistroWorkoutId(String(data.workout_id));
     }
+    // coach_watch_sync_miss: mismo destino (ficha del atleta), sin abrir registro.
     return true;
   }, [athletes, setView, setViewRestored, setSelectedAthlete, setPendingRegistroWorkoutId]);
 

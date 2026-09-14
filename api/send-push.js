@@ -27,6 +27,7 @@ import {
   loadPushTargetsByUser,
   sentKindUserIds,
 } from "../lib/pushCronQuery.js";
+import { runWatchSyncBackfill } from "../lib/watchSyncBackfill.js";
 
 const STREAK_KIND = "streak_risk";
 const WEEKLY_KIND = "weekly_summary";
@@ -488,6 +489,52 @@ async function handleWeeklySummary(req, res) {
   });
 }
 
+async function handleWatchSyncBackfill(req, res) {
+  const dry = isDryRun(req);
+  const today = cronDate(req);
+  const query = {
+    action: req.query?.action ?? null,
+    dry: req.query?.dry ?? null,
+    as_of: req.query?.as_of ?? null,
+  };
+
+  try {
+    const { supabase, error: cfgError } = adminClient();
+    if (!supabase) {
+      return writeJson(res, dry ? 200 : 500, {
+        ok: false,
+        dry,
+        date: today,
+        error: cfgError || "Missing config",
+        debug: { handler: "watch-sync", ...cronRuntimeDebug(), query },
+      });
+    }
+    const result = await runWatchSyncBackfill({ supabase, todayYmd: today, dry });
+    return writeJson(res, 200, {
+      ...result,
+      debug: {
+        handler: "watch-sync",
+        ...cronRuntimeDebug(),
+        query,
+        cotDate: today,
+        silentErrors: result.silentErrors,
+      },
+    });
+  } catch (e) {
+    console.error("[watch-sync]", e);
+    if (dry) {
+      return writeJson(res, 200, {
+        ok: false,
+        dry: true,
+        date: today,
+        error: String(e?.message || e),
+        debug: { handler: "watch-sync", ...cronRuntimeDebug(), query },
+      });
+    }
+    return res.status(500).json({ error: "Error interno del cron de watch-sync" });
+  }
+}
+
 export default async function handler(req, res) {
   if (req.method === "GET" && req.query.action === "remind") {
     if (!requireCron(req, res)) return;
@@ -497,6 +544,11 @@ export default async function handler(req, res) {
   if (req.method === "GET" && req.query.action === "weekly-summary") {
     if (!requireCron(req, res)) return;
     return handleWeeklySummary(req, res);
+  }
+
+  if (req.method === "GET" && req.query.action === "watch-sync") {
+    if (!requireCron(req, res)) return;
+    return handleWatchSyncBackfill(req, res);
   }
 
   if (req.method !== "POST") return res.status(405).end();

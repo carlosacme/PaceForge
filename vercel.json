@@ -10,7 +10,8 @@
   ],
   "crons": [
     { "path": "/api/send-push?action=remind", "schedule": "0 12 * * *" },
-    { "path": "/api/send-push?action=weekly-summary", "schedule": "0 13 * * 1" }
+    { "path": "/api/send-push?action=weekly-summary", "schedule": "0 13 * * 1" },
+    { "path": "/api/send-push?action=watch-sync", "schedule": "0 13 * * *" }
   ],
   "headers": [
     { "source": "/sw.js", "headers": [{ "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }] },
