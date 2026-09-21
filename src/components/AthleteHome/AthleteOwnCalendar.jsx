@@ -4,6 +4,7 @@ import WorkoutRegistroModal from "../Athletes/WorkoutRegistroModal";
 import { useWorkoutRegistro } from "../Athletes/useWorkoutRegistro";
 import {
   calendarCellToIsoYmd,
+  formatLocalYMD,
   getMonthGrid,
   cellIsInViewMonth,
   DAYS,
@@ -50,6 +51,7 @@ export default function AthleteOwnCalendar({
     () => getMonthGrid(calendarViewMonth.y, calendarViewMonth.m),
     [calendarViewMonth.y, calendarViewMonth.m],
   );
+  const todayYmd = formatLocalYMD(new Date());
   const calendarMonthLabel = useMemo(
     () => new Date(calendarViewMonth.y, calendarViewMonth.m, 1).toLocaleDateString("es-CO", { month: "long", year: "numeric" }),
     [calendarViewMonth.y, calendarViewMonth.m],
@@ -154,9 +156,15 @@ export default function AthleteOwnCalendar({
               const dayWorkouts = workoutsByDate[ymd] || [];
               const inViewMonth = cellIsInViewMonth(cellDate, calendarViewMonth.y, calendarViewMonth.m);
               const hasDoneWorkout = dayWorkouts.some((w) => w.done);
+              const isToday = ymd === todayYmd;
+              const cellBackground = hasDoneWorkout
+                ? "rgba(34,197,94,.08)"
+                : isToday
+                  ? "rgba(255,138,61,.08)"
+                  : "#fff";
               return (
-                <div key={i} style={{ minHeight: 72, minWidth: 0, maxWidth: "100%", boxSizing: "border-box", overflow: "hidden", border: "1px solid #e2e8f0", borderRadius: 6, padding: "3px 2px", opacity: inViewMonth ? 1 : 0.42, background: hasDoneWorkout ? "rgba(34,197,94,.08)" : "#fff", display: "flex", flexDirection: "column", gap: 2 }}>
-                  <div style={{ fontSize: ".62em", color: inViewMonth ? "#475569" : "#94a3b8", textAlign: "center", fontWeight: 600 }}>{cellDate.getDate()}</div>
+                <div key={i} style={{ minHeight: 72, minWidth: 0, maxWidth: "100%", boxSizing: "border-box", overflow: "hidden", border: "1px solid #e2e8f0", borderRadius: 6, padding: "3px 2px", opacity: inViewMonth ? 1 : 0.42, background: cellBackground, boxShadow: isToday ? "inset 0 0 0 2px #ff8a3d" : undefined, display: "flex", flexDirection: "column", gap: 2 }}>
+                  <div style={{ fontSize: ".62em", color: isToday ? "#e86f28" : inViewMonth ? "#475569" : "#94a3b8", textAlign: "center", fontWeight: isToday ? 800 : 600 }}>{cellDate.getDate()}</div>
                   {dayWorkouts.slice(0, 2).map((w) => {
                     const wt = WORKOUT_TYPES.find((t) => t.id === w.type) || WORKOUT_TYPES[0];
                     const kmNum = Number(w.total_km);
