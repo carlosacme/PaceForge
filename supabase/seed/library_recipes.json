@@ -1,21 +1,142 @@
 [
   {
-    "seed_key": "interval-8x400-r",
-    "title": "8x400m R",
-    "type": "interval",
-    "category": "Intervalos",
-    "description": "Calentamiento E + 8 repeticiones de 400 m a ritmo R con 90 s de trote E + enfriamiento.",
+    "seed_key": "easy-30min-e",
+    "title": "Rodaje suave 30 min",
+    "type": "easy",
+    "category": "Fácil",
+    "description": "Rodaje regenerativo en zona E.",
     "blocks": [
-      { "block_type": "Calentamiento", "duration_min": 15, "zone": "E", "description": "WU E" },
       {
-        "block_type": "Intervalo",
-        "reps": 8,
-        "distance_km": 0.4,
-        "name": "400m",
-        "zone": "R",
-        "recover": { "duration_min": "90 sec", "zone": "E" }
-      },
-      { "block_type": "Enfriamiento", "duration_min": 10, "zone": "E", "description": "CD E" }
+        "block_type": "Rodaje",
+        "zone": "E",
+        "duration_min": 30
+      }
+    ]
+  },
+  {
+    "seed_key": "easy-35min-e",
+    "title": "Rodaje suave 35 min",
+    "type": "easy",
+    "category": "Fácil",
+    "description": "Rodaje continuo en zona E.",
+    "blocks": [
+      {
+        "block_type": "Rodaje",
+        "zone": "E",
+        "duration_min": 35
+      }
+    ]
+  },
+  {
+    "seed_key": "easy-40min-e",
+    "title": "Rodaje suave 40 min",
+    "type": "easy",
+    "category": "Fácil",
+    "description": "Rodaje continuo en zona E.",
+    "blocks": [
+      {
+        "block_type": "Rodaje",
+        "zone": "E",
+        "duration_min": 40
+      }
+    ]
+  },
+  {
+    "seed_key": "easy-45min-e",
+    "title": "Rodaje suave 45 min",
+    "type": "easy",
+    "category": "Fácil",
+    "description": "Rodaje continuo en zona E.",
+    "blocks": [
+      {
+        "block_type": "Rodaje",
+        "zone": "E",
+        "duration_min": 45
+      }
+    ]
+  },
+  {
+    "seed_key": "easy-50min-e",
+    "title": "Rodaje suave 50 min",
+    "type": "easy",
+    "category": "Fácil",
+    "description": "Rodaje continuo en zona E.",
+    "blocks": [
+      {
+        "block_type": "Rodaje",
+        "zone": "E",
+        "duration_min": 50
+      }
+    ]
+  },
+  {
+    "seed_key": "easy-60min-e",
+    "title": "Rodaje suave 60 min",
+    "type": "easy",
+    "category": "Fácil",
+    "description": "Rodaje continuo en zona E.",
+    "blocks": [
+      {
+        "block_type": "Rodaje",
+        "zone": "E",
+        "duration_min": 60
+      }
+    ]
+  },
+  {
+    "seed_key": "easy-5k-e",
+    "title": "Rodaje suave 5 km",
+    "type": "easy",
+    "category": "Fácil",
+    "description": "Rodaje corto en zona E.",
+    "blocks": [
+      {
+        "block_type": "Rodaje",
+        "zone": "E",
+        "distance_km": 5
+      }
+    ]
+  },
+  {
+    "seed_key": "easy-8k-e",
+    "title": "Rodaje suave 8 km",
+    "type": "easy",
+    "category": "Fácil",
+    "description": "Rodaje en zona E.",
+    "blocks": [
+      {
+        "block_type": "Rodaje",
+        "zone": "E",
+        "distance_km": 8
+      }
+    ]
+  },
+  {
+    "seed_key": "easy-10k-e",
+    "title": "Rodaje suave 10 km",
+    "type": "easy",
+    "category": "Fácil",
+    "description": "Rodaje en zona E.",
+    "blocks": [
+      {
+        "block_type": "Rodaje",
+        "zone": "E",
+        "distance_km": 10
+      }
+    ]
+  },
+  {
+    "seed_key": "easy-12k-e",
+    "title": "Rodaje suave 12 km",
+    "type": "easy",
+    "category": "Fácil",
+    "description": "Rodaje en zona E.",
+    "blocks": [
+      {
+        "block_type": "Rodaje",
+        "zone": "E",
+        "distance_km": 12
+      }
     ]
   },
   {
@@ -25,10 +146,655 @@
     "category": "Largos",
     "description": "Rodaje largo en E con los últimos 5 km a ritmo maratón.",
     "blocks": [
-      { "block_type": "Calentamiento", "duration_min": 10, "zone": "E" },
-      { "block_type": "Rodaje", "distance_km": 15, "zone": "E", "description": "Largo E" },
-      { "block_type": "Rodaje", "distance_km": 5, "zone": "M", "name": "Últimos 5 km M", "description": "Cierre M" },
-      { "block_type": "Enfriamiento", "duration_min": 10, "zone": "E" }
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Calentamiento"
+      },
+      {
+        "block_type": "Rodaje",
+        "zone": "E",
+        "distance_km": 15
+      },
+      {
+        "block_type": "Rodaje",
+        "zone": "M",
+        "distance_km": 5,
+        "description": "Últimos 5 km M"
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "long-12k-e",
+    "title": "Largo suave 12 km",
+    "type": "long",
+    "category": "Largos",
+    "description": "Rodaje largo completo en zona E, semana de descarga.",
+    "blocks": [
+      {
+        "block_type": "Rodaje",
+        "zone": "E",
+        "distance_km": 12
+      }
+    ]
+  },
+  {
+    "seed_key": "long-16k-e",
+    "title": "Largo suave 16 km",
+    "type": "long",
+    "category": "Largos",
+    "description": "Rodaje largo completo en zona E.",
+    "blocks": [
+      {
+        "block_type": "Rodaje",
+        "zone": "E",
+        "distance_km": 16
+      }
+    ]
+  },
+  {
+    "seed_key": "long-18k-progresivo",
+    "title": "Largo 18 km progresivo E-M-T",
+    "type": "long",
+    "category": "Largos",
+    "description": "Progresión de intensidad: E, luego M, cierre en T.",
+    "blocks": [
+      {
+        "block_type": "Rodaje",
+        "zone": "E",
+        "distance_km": 10
+      },
+      {
+        "block_type": "Rodaje",
+        "zone": "M",
+        "distance_km": 5,
+        "description": "Bloque M"
+      },
+      {
+        "block_type": "Rodaje",
+        "zone": "T",
+        "distance_km": 3,
+        "description": "Cierre T"
+      }
+    ]
+  },
+  {
+    "seed_key": "long-22k-m",
+    "title": "Largo 22 km + 6 km M",
+    "type": "long",
+    "category": "Largos",
+    "description": "Rodaje largo con cierre a ritmo maratón.",
+    "blocks": [
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Calentamiento"
+      },
+      {
+        "block_type": "Rodaje",
+        "zone": "E",
+        "distance_km": 16
+      },
+      {
+        "block_type": "Rodaje",
+        "zone": "M",
+        "distance_km": 6,
+        "description": "Cierre M"
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "long-24k-m",
+    "title": "Largo 24 km + 8 km M",
+    "type": "long",
+    "category": "Largos",
+    "description": "Rodaje largo específico de maratón.",
+    "blocks": [
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Calentamiento"
+      },
+      {
+        "block_type": "Rodaje",
+        "zone": "E",
+        "distance_km": 16
+      },
+      {
+        "block_type": "Rodaje",
+        "zone": "M",
+        "distance_km": 8,
+        "description": "Cierre M"
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 5,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "long-26k-m",
+    "title": "Largo 26 km + 8 km M",
+    "type": "long",
+    "category": "Largos",
+    "description": "Rodaje largo más exigente, bloque final a ritmo maratón.",
+    "blocks": [
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Calentamiento"
+      },
+      {
+        "block_type": "Rodaje",
+        "zone": "E",
+        "distance_km": 18
+      },
+      {
+        "block_type": "Rodaje",
+        "zone": "M",
+        "distance_km": 8,
+        "description": "Cierre M"
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 5,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "long-15k-t-finish",
+    "title": "Largo 15 km + 3 km T",
+    "type": "long",
+    "category": "Largos",
+    "description": "Rodaje largo corto con cierre a ritmo umbral.",
+    "blocks": [
+      {
+        "block_type": "Rodaje",
+        "zone": "E",
+        "distance_km": 12
+      },
+      {
+        "block_type": "Rodaje",
+        "zone": "T",
+        "distance_km": 3,
+        "description": "Cierre T"
+      }
+    ]
+  },
+  {
+    "seed_key": "long-20k-doble-m",
+    "title": "Largo 20 km con 2 bloques M",
+    "type": "long",
+    "category": "Largos",
+    "description": "Dos bloques a ritmo maratón separados por tramo en E.",
+    "blocks": [
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Calentamiento"
+      },
+      {
+        "block_type": "Rodaje",
+        "zone": "M",
+        "distance_km": 4,
+        "description": "Bloque M 1"
+      },
+      {
+        "block_type": "Rodaje",
+        "zone": "E",
+        "distance_km": 6
+      },
+      {
+        "block_type": "Rodaje",
+        "zone": "M",
+        "distance_km": 4,
+        "description": "Bloque M 2"
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "long-19k-surges",
+    "title": "Largo 19 km con progresiones cortas",
+    "type": "long",
+    "category": "Largos",
+    "description": "Rodaje largo con 4 surges cortos a ritmo I intercalados.",
+    "blocks": [
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Calentamiento"
+      },
+      {
+        "block_type": "Intervalo",
+        "reps": 4,
+        "duration_min": 2,
+        "zone": "I",
+        "name": "surge",
+        "recover": {
+          "duration_min": 3,
+          "zone": "E"
+        }
+      },
+      {
+        "block_type": "Rodaje",
+        "zone": "E",
+        "distance_km": 13
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "interval-8x400-r",
+    "title": "8x400m R",
+    "type": "interval",
+    "category": "Intervalos",
+    "description": "Calentamiento E + 8 repeticiones de 400 m a ritmo R con recuperación E + enfriamiento.",
+    "blocks": [
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 15,
+        "zone": "E",
+        "description": "Calentamiento"
+      },
+      {
+        "block_type": "Intervalo",
+        "reps": 8,
+        "distance_km": 0.4,
+        "zone": "R",
+        "name": "400m",
+        "recover": {
+          "duration_min": "90 sec",
+          "zone": "E"
+        }
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "interval-6x800-i",
+    "title": "6x800m I",
+    "type": "interval",
+    "category": "Intervalos",
+    "description": "Calentamiento E + 6 repeticiones de 800 m a ritmo I.",
+    "blocks": [
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 15,
+        "zone": "E",
+        "description": "Calentamiento"
+      },
+      {
+        "block_type": "Intervalo",
+        "reps": 6,
+        "distance_km": 0.8,
+        "zone": "I",
+        "name": "800m",
+        "recover": {
+          "duration_min": 3,
+          "zone": "E"
+        }
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "interval-5x1000-i",
+    "title": "5x1000m I",
+    "type": "interval",
+    "category": "Intervalos",
+    "description": "Calentamiento E + 5 repeticiones de 1000 m a ritmo I.",
+    "blocks": [
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 15,
+        "zone": "E",
+        "description": "Calentamiento"
+      },
+      {
+        "block_type": "Intervalo",
+        "reps": 5,
+        "distance_km": 1.0,
+        "zone": "I",
+        "name": "1000m",
+        "recover": {
+          "duration_min": 3,
+          "zone": "E"
+        }
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "interval-10x200-r",
+    "title": "10x200m R",
+    "type": "interval",
+    "category": "Intervalos",
+    "description": "Series cortas de velocidad a ritmo R.",
+    "blocks": [
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 15,
+        "zone": "E",
+        "description": "Calentamiento"
+      },
+      {
+        "block_type": "Intervalo",
+        "reps": 10,
+        "distance_km": 0.2,
+        "zone": "R",
+        "name": "200m",
+        "recover": {
+          "duration_min": "60 sec",
+          "zone": "E"
+        }
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "interval-4x1000-i",
+    "title": "4x1000m I",
+    "type": "interval",
+    "category": "Intervalos",
+    "description": "Series largas a ritmo I, recuperación amplia.",
+    "blocks": [
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 15,
+        "zone": "E",
+        "description": "Calentamiento"
+      },
+      {
+        "block_type": "Intervalo",
+        "reps": 4,
+        "distance_km": 1.0,
+        "zone": "I",
+        "name": "1000m",
+        "recover": {
+          "duration_min": 4,
+          "zone": "E"
+        }
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "interval-12x300-r",
+    "title": "12x300m R",
+    "type": "interval",
+    "category": "Intervalos",
+    "description": "Series cortas de velocidad, volumen alto.",
+    "blocks": [
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 15,
+        "zone": "E",
+        "description": "Calentamiento"
+      },
+      {
+        "block_type": "Intervalo",
+        "reps": 12,
+        "distance_km": 0.3,
+        "zone": "R",
+        "name": "300m",
+        "recover": {
+          "duration_min": "75 sec",
+          "zone": "E"
+        }
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "interval-6x600-i",
+    "title": "6x600m I",
+    "type": "interval",
+    "category": "Intervalos",
+    "description": "Series medias a ritmo I.",
+    "blocks": [
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 15,
+        "zone": "E",
+        "description": "Calentamiento"
+      },
+      {
+        "block_type": "Intervalo",
+        "reps": 6,
+        "distance_km": 0.6,
+        "zone": "I",
+        "name": "600m",
+        "recover": {
+          "duration_min": "150 sec",
+          "zone": "E"
+        }
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "interval-3x1600-t",
+    "title": "3x1600m T",
+    "type": "interval",
+    "category": "Intervalos",
+    "description": "Repeticiones largas a ritmo umbral, recuperación corta trotada.",
+    "blocks": [
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 15,
+        "zone": "E",
+        "description": "Calentamiento"
+      },
+      {
+        "block_type": "Intervalo",
+        "reps": 3,
+        "distance_km": 1.6,
+        "zone": "T",
+        "name": "1600m",
+        "recover": {
+          "duration_min": 2,
+          "zone": "E"
+        }
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "interval-16x200-r",
+    "title": "16x200m R",
+    "type": "interval",
+    "category": "Intervalos",
+    "description": "Series cortas de velocidad, volumen alto de repeticiones.",
+    "blocks": [
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 15,
+        "zone": "E",
+        "description": "Calentamiento"
+      },
+      {
+        "block_type": "Intervalo",
+        "reps": 16,
+        "distance_km": 0.2,
+        "zone": "R",
+        "name": "200m",
+        "recover": {
+          "duration_min": "60 sec",
+          "zone": "E"
+        }
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "interval-piramide-200-800-i",
+    "title": "Pirámide 200-400-600-800-600-400-200 I",
+    "type": "interval",
+    "category": "Intervalos",
+    "description": "Pirámide de distancias crecientes y decrecientes a ritmo I, con recuperación trotada entre cada tramo.",
+    "blocks": [
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 15,
+        "zone": "E",
+        "description": "Calentamiento"
+      },
+      {
+        "block_type": "Intervalo",
+        "distance_km": 0.2,
+        "name": "200m",
+        "zone": "I"
+      },
+      {
+        "block_type": "Recuperación",
+        "duration_min": "60 sec",
+        "zone": "E"
+      },
+      {
+        "block_type": "Intervalo",
+        "distance_km": 0.4,
+        "name": "400m",
+        "zone": "I"
+      },
+      {
+        "block_type": "Recuperación",
+        "duration_min": "90 sec",
+        "zone": "E"
+      },
+      {
+        "block_type": "Intervalo",
+        "distance_km": 0.6,
+        "name": "600m",
+        "zone": "I"
+      },
+      {
+        "block_type": "Recuperación",
+        "duration_min": 2,
+        "zone": "E"
+      },
+      {
+        "block_type": "Intervalo",
+        "distance_km": 0.8,
+        "name": "800m",
+        "zone": "I"
+      },
+      {
+        "block_type": "Recuperación",
+        "duration_min": 2,
+        "zone": "E"
+      },
+      {
+        "block_type": "Intervalo",
+        "distance_km": 0.6,
+        "name": "600m",
+        "zone": "I"
+      },
+      {
+        "block_type": "Recuperación",
+        "duration_min": "90 sec",
+        "zone": "E"
+      },
+      {
+        "block_type": "Intervalo",
+        "distance_km": 0.4,
+        "name": "400m",
+        "zone": "I"
+      },
+      {
+        "block_type": "Recuperación",
+        "duration_min": "60 sec",
+        "zone": "E"
+      },
+      {
+        "block_type": "Intervalo",
+        "distance_km": 0.2,
+        "name": "200m",
+        "zone": "I"
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
     ]
   },
   {
@@ -36,11 +802,1643 @@
     "title": "Tempo 20 min T",
     "type": "tempo",
     "category": "Tempo",
-    "description": "Bloque continuo de umbral entre calentamiento y enfriamiento E.",
+    "description": "Bloque continuo de umbral entre calentamiento y enfriamiento.",
     "blocks": [
-      { "block_type": "Calentamiento", "duration_min": 15, "zone": "E" },
-      { "block_type": "Intervalo", "duration_min": 20, "zone": "T", "description": "Tempo T" },
-      { "block_type": "Enfriamiento", "duration_min": 10, "zone": "E" }
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 15,
+        "zone": "E",
+        "description": "Calentamiento"
+      },
+      {
+        "block_type": "Intervalo",
+        "duration_min": 20,
+        "zone": "T",
+        "description": "Tempo T"
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "tempo-15min-t",
+    "title": "Tempo 15 min T",
+    "type": "tempo",
+    "category": "Tempo",
+    "description": "Bloque corto de umbral, ideal para iniciar el mesociclo.",
+    "blocks": [
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 15,
+        "zone": "E",
+        "description": "Calentamiento"
+      },
+      {
+        "block_type": "Intervalo",
+        "duration_min": 15,
+        "zone": "T",
+        "description": "Tempo T"
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "tempo-25min-t",
+    "title": "Tempo 25 min T",
+    "type": "tempo",
+    "category": "Tempo",
+    "description": "Bloque continuo de umbral, mayor duración.",
+    "blocks": [
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 15,
+        "zone": "E",
+        "description": "Calentamiento"
+      },
+      {
+        "block_type": "Intervalo",
+        "duration_min": 25,
+        "zone": "T",
+        "description": "Tempo T"
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "tempo-30min-t",
+    "title": "Tempo 30 min T",
+    "type": "tempo",
+    "category": "Tempo",
+    "description": "Bloque largo de umbral para atletas avanzados.",
+    "blocks": [
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 15,
+        "zone": "E",
+        "description": "Calentamiento"
+      },
+      {
+        "block_type": "Intervalo",
+        "duration_min": 30,
+        "zone": "T",
+        "description": "Tempo T"
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "tempo-35min-t",
+    "title": "Tempo 35 min T",
+    "type": "tempo",
+    "category": "Tempo",
+    "description": "Bloque muy largo de umbral, fase específica.",
+    "blocks": [
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 15,
+        "zone": "E",
+        "description": "Calentamiento"
+      },
+      {
+        "block_type": "Intervalo",
+        "duration_min": 35,
+        "zone": "T",
+        "description": "Tempo T"
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "tempo-2x15-t",
+    "title": "Tempo cortado 2x15 min T",
+    "type": "tempo",
+    "category": "Tempo",
+    "description": "Dos bloques de umbral separados por trote corto de recuperación.",
+    "blocks": [
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 15,
+        "zone": "E",
+        "description": "Calentamiento"
+      },
+      {
+        "block_type": "Intervalo",
+        "reps": 2,
+        "duration_min": 15,
+        "zone": "T",
+        "name": "Tempo T",
+        "recover": {
+          "duration_min": 3,
+          "zone": "E"
+        }
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "tempo-3x10-t",
+    "title": "Tempo cortado 3x10 min T",
+    "type": "tempo",
+    "category": "Tempo",
+    "description": "Tres bloques de umbral con recuperación corta trotada.",
+    "blocks": [
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 15,
+        "zone": "E",
+        "description": "Calentamiento"
+      },
+      {
+        "block_type": "Intervalo",
+        "reps": 3,
+        "duration_min": 10,
+        "zone": "T",
+        "name": "Tempo T",
+        "recover": {
+          "duration_min": 2,
+          "zone": "E"
+        }
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "tempo-2x20-t",
+    "title": "Tempo cortado 2x20 min T",
+    "type": "tempo",
+    "category": "Tempo",
+    "description": "Dos bloques largos de umbral, sesión exigente.",
+    "blocks": [
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 15,
+        "zone": "E",
+        "description": "Calentamiento"
+      },
+      {
+        "block_type": "Intervalo",
+        "reps": 2,
+        "duration_min": 20,
+        "zone": "T",
+        "name": "Tempo T",
+        "recover": {
+          "duration_min": 3,
+          "zone": "E"
+        }
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "tempo-8k-t",
+    "title": "Tempo 8 km T",
+    "type": "tempo",
+    "category": "Tempo",
+    "description": "Bloque de umbral medido por distancia.",
+    "blocks": [
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 15,
+        "zone": "E",
+        "description": "Calentamiento"
+      },
+      {
+        "block_type": "Intervalo",
+        "distance_km": 8,
+        "zone": "T",
+        "description": "Tempo T"
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "tempo-10k-t",
+    "title": "Tempo 10 km T",
+    "type": "tempo",
+    "category": "Tempo",
+    "description": "Bloque largo de umbral medido por distancia.",
+    "blocks": [
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 15,
+        "zone": "E",
+        "description": "Calentamiento"
+      },
+      {
+        "block_type": "Intervalo",
+        "distance_km": 10,
+        "zone": "T",
+        "description": "Tempo T"
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "fartlek-10x1-1-i",
+    "title": "Fartlek 10x(1'/1') I",
+    "type": "interval",
+    "category": "Fartlek",
+    "description": "Diez cambios de ritmo de 1 minuto a I con 1 minuto trote suave.",
+    "blocks": [
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Calentamiento"
+      },
+      {
+        "block_type": "Intervalo",
+        "reps": 10,
+        "duration_min": 1,
+        "zone": "I",
+        "name": "fartlek",
+        "recover": {
+          "duration_min": 1,
+          "zone": "E"
+        }
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "fartlek-8x2-2-i",
+    "title": "Fartlek 8x(2'/2') I",
+    "type": "interval",
+    "category": "Fartlek",
+    "description": "Ocho cambios de ritmo de 2 minutos a I con 2 minutos trote suave.",
+    "blocks": [
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Calentamiento"
+      },
+      {
+        "block_type": "Intervalo",
+        "reps": 8,
+        "duration_min": 2,
+        "zone": "I",
+        "name": "fartlek",
+        "recover": {
+          "duration_min": 2,
+          "zone": "E"
+        }
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "fartlek-6x3-2-t",
+    "title": "Fartlek 6x(3'/2') T",
+    "type": "interval",
+    "category": "Fartlek",
+    "description": "Seis bloques de 3 minutos a ritmo T con 2 minutos trote suave.",
+    "blocks": [
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Calentamiento"
+      },
+      {
+        "block_type": "Intervalo",
+        "reps": 6,
+        "duration_min": 3,
+        "zone": "T",
+        "name": "fartlek",
+        "recover": {
+          "duration_min": 2,
+          "zone": "E"
+        }
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "fartlek-12x30-30-r",
+    "title": "Fartlek 12x(30''/30'') R",
+    "type": "interval",
+    "category": "Fartlek",
+    "description": "Doce cambios cortos y rápidos a ritmo R con igual tiempo de trote suave.",
+    "blocks": [
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Calentamiento"
+      },
+      {
+        "block_type": "Intervalo",
+        "reps": 12,
+        "duration_min": "30 sec",
+        "zone": "R",
+        "name": "fartlek",
+        "recover": {
+          "duration_min": "30 sec",
+          "zone": "E"
+        }
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "fartlek-8x1-2-i",
+    "title": "Fartlek 8x(1'/2') I",
+    "type": "interval",
+    "category": "Fartlek",
+    "description": "Ocho bloques cortos a ritmo I con recuperación amplia.",
+    "blocks": [
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Calentamiento"
+      },
+      {
+        "block_type": "Intervalo",
+        "reps": 8,
+        "duration_min": 1,
+        "zone": "I",
+        "name": "fartlek",
+        "recover": {
+          "duration_min": 2,
+          "zone": "E"
+        }
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "fartlek-5x4-3-t",
+    "title": "Fartlek 5x(4'/3') T",
+    "type": "interval",
+    "category": "Fartlek",
+    "description": "Cinco bloques largos a ritmo T con recuperación trotada.",
+    "blocks": [
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Calentamiento"
+      },
+      {
+        "block_type": "Intervalo",
+        "reps": 5,
+        "duration_min": 4,
+        "zone": "T",
+        "name": "fartlek",
+        "recover": {
+          "duration_min": 3,
+          "zone": "E"
+        }
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "fartlek-16x20-40-r",
+    "title": "Fartlek 16x(20''/40'') R",
+    "type": "interval",
+    "category": "Fartlek",
+    "description": "Dieciséis cambios muy cortos a ritmo R con recuperación amplia.",
+    "blocks": [
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Calentamiento"
+      },
+      {
+        "block_type": "Intervalo",
+        "reps": 16,
+        "duration_min": "20 sec",
+        "zone": "R",
+        "name": "fartlek",
+        "recover": {
+          "duration_min": "40 sec",
+          "zone": "E"
+        }
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "fartlek-10x2-1-i",
+    "title": "Fartlek 10x(2'/1') I",
+    "type": "interval",
+    "category": "Fartlek",
+    "description": "Diez bloques a ritmo I con recuperación corta, sesión exigente.",
+    "blocks": [
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Calentamiento"
+      },
+      {
+        "block_type": "Intervalo",
+        "reps": 10,
+        "duration_min": 2,
+        "zone": "I",
+        "name": "fartlek",
+        "recover": {
+          "duration_min": 1,
+          "zone": "E"
+        }
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "fartlek-4x5-3-t",
+    "title": "Fartlek 4x(5'/3') T",
+    "type": "interval",
+    "category": "Fartlek",
+    "description": "Cuatro bloques largos a ritmo T, fartlek estructurado.",
+    "blocks": [
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Calentamiento"
+      },
+      {
+        "block_type": "Intervalo",
+        "reps": 4,
+        "duration_min": 5,
+        "zone": "T",
+        "name": "fartlek",
+        "recover": {
+          "duration_min": 3,
+          "zone": "E"
+        }
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "fartlek-piramide-1-4-1-i",
+    "title": "Fartlek pirámide 1-2-3-4-3-2-1 min I",
+    "type": "interval",
+    "category": "Fartlek",
+    "description": "Pirámide de tiempos crecientes y decrecientes a ritmo I con trote suave entre bloques.",
+    "blocks": [
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Calentamiento"
+      },
+      {
+        "block_type": "Intervalo",
+        "duration_min": 1,
+        "zone": "I",
+        "name": "1 min"
+      },
+      {
+        "block_type": "Recuperación",
+        "duration_min": 1,
+        "zone": "E"
+      },
+      {
+        "block_type": "Intervalo",
+        "duration_min": 2,
+        "zone": "I",
+        "name": "2 min"
+      },
+      {
+        "block_type": "Recuperación",
+        "duration_min": 1,
+        "zone": "E"
+      },
+      {
+        "block_type": "Intervalo",
+        "duration_min": 3,
+        "zone": "I",
+        "name": "3 min"
+      },
+      {
+        "block_type": "Recuperación",
+        "duration_min": 2,
+        "zone": "E"
+      },
+      {
+        "block_type": "Intervalo",
+        "duration_min": 4,
+        "zone": "I",
+        "name": "4 min"
+      },
+      {
+        "block_type": "Recuperación",
+        "duration_min": 2,
+        "zone": "E"
+      },
+      {
+        "block_type": "Intervalo",
+        "duration_min": 3,
+        "zone": "I",
+        "name": "3 min"
+      },
+      {
+        "block_type": "Recuperación",
+        "duration_min": 1,
+        "zone": "E"
+      },
+      {
+        "block_type": "Intervalo",
+        "duration_min": 2,
+        "zone": "I",
+        "name": "2 min"
+      },
+      {
+        "block_type": "Recuperación",
+        "duration_min": 1,
+        "zone": "E"
+      },
+      {
+        "block_type": "Intervalo",
+        "duration_min": 1,
+        "zone": "I",
+        "name": "1 min"
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "progresivo-10k-e-m",
+    "title": "Progresivo 10 km E-M",
+    "type": "long",
+    "category": "Progresivos",
+    "description": "Primera mitad en E, segunda mitad a ritmo M.",
+    "blocks": [
+      {
+        "block_type": "Rodaje",
+        "zone": "E",
+        "distance_km": 5
+      },
+      {
+        "block_type": "Rodaje",
+        "zone": "M",
+        "distance_km": 5,
+        "description": "Cierre M"
+      }
+    ]
+  },
+  {
+    "seed_key": "progresivo-12k-e-m-t",
+    "title": "Progresivo 12 km E-M-T",
+    "type": "long",
+    "category": "Progresivos",
+    "description": "Progresión en tres tercios: E, M y T.",
+    "blocks": [
+      {
+        "block_type": "Rodaje",
+        "zone": "E",
+        "distance_km": 4
+      },
+      {
+        "block_type": "Rodaje",
+        "zone": "M",
+        "distance_km": 4
+      },
+      {
+        "block_type": "Rodaje",
+        "zone": "T",
+        "distance_km": 4,
+        "description": "Cierre T"
+      }
+    ]
+  },
+  {
+    "seed_key": "progresivo-8k-e-t",
+    "title": "Progresivo 8 km E-T",
+    "type": "long",
+    "category": "Progresivos",
+    "description": "Progresión corta con cierre a ritmo umbral.",
+    "blocks": [
+      {
+        "block_type": "Rodaje",
+        "zone": "E",
+        "distance_km": 5
+      },
+      {
+        "block_type": "Rodaje",
+        "zone": "T",
+        "distance_km": 3,
+        "description": "Cierre T"
+      }
+    ]
+  },
+  {
+    "seed_key": "progresivo-14k-e-m",
+    "title": "Progresivo 14 km E-M",
+    "type": "long",
+    "category": "Progresivos",
+    "description": "Progresión larga con cierre a ritmo maratón.",
+    "blocks": [
+      {
+        "block_type": "Rodaje",
+        "zone": "E",
+        "distance_km": 8
+      },
+      {
+        "block_type": "Rodaje",
+        "zone": "M",
+        "distance_km": 6,
+        "description": "Cierre M"
+      }
+    ]
+  },
+  {
+    "seed_key": "progresivo-16k-e-m-t",
+    "title": "Progresivo 16 km E-M-T",
+    "type": "long",
+    "category": "Progresivos",
+    "description": "Progresión larga en tres tramos de intensidad creciente.",
+    "blocks": [
+      {
+        "block_type": "Rodaje",
+        "zone": "E",
+        "distance_km": 8
+      },
+      {
+        "block_type": "Rodaje",
+        "zone": "M",
+        "distance_km": 5
+      },
+      {
+        "block_type": "Rodaje",
+        "zone": "T",
+        "distance_km": 3,
+        "description": "Cierre T"
+      }
+    ]
+  },
+  {
+    "seed_key": "progresivo-6k-m-t",
+    "title": "Progresivo 6 km M-T",
+    "type": "long",
+    "category": "Progresivos",
+    "description": "Progresión corta y rápida, sin bloque en E.",
+    "blocks": [
+      {
+        "block_type": "Rodaje",
+        "zone": "M",
+        "distance_km": 3
+      },
+      {
+        "block_type": "Rodaje",
+        "zone": "T",
+        "distance_km": 3,
+        "description": "Cierre T"
+      }
+    ]
+  },
+  {
+    "seed_key": "progresivo-18k-e-m",
+    "title": "Progresivo 18 km E-M",
+    "type": "long",
+    "category": "Progresivos",
+    "description": "Progresión larga específica de maratón.",
+    "blocks": [
+      {
+        "block_type": "Rodaje",
+        "zone": "E",
+        "distance_km": 10
+      },
+      {
+        "block_type": "Rodaje",
+        "zone": "M",
+        "distance_km": 8,
+        "description": "Cierre M"
+      }
+    ]
+  },
+  {
+    "seed_key": "progresivo-9k-e-m-i",
+    "title": "Progresivo 9 km E-M-I",
+    "type": "long",
+    "category": "Progresivos",
+    "description": "Progresión con cierre exigente a ritmo I.",
+    "blocks": [
+      {
+        "block_type": "Rodaje",
+        "zone": "E",
+        "distance_km": 5
+      },
+      {
+        "block_type": "Rodaje",
+        "zone": "M",
+        "distance_km": 3
+      },
+      {
+        "block_type": "Rodaje",
+        "zone": "I",
+        "distance_km": 1,
+        "description": "Cierre I"
+      }
+    ]
+  },
+  {
+    "seed_key": "progresivo-20k-e-m-t",
+    "title": "Progresivo 20 km E-M-T",
+    "type": "long",
+    "category": "Progresivos",
+    "description": "Progresión larga en tres tramos, fase específica de maratón.",
+    "blocks": [
+      {
+        "block_type": "Rodaje",
+        "zone": "E",
+        "distance_km": 10
+      },
+      {
+        "block_type": "Rodaje",
+        "zone": "M",
+        "distance_km": 7
+      },
+      {
+        "block_type": "Rodaje",
+        "zone": "T",
+        "distance_km": 3,
+        "description": "Cierre T"
+      }
+    ]
+  },
+  {
+    "seed_key": "progresivo-7k-t-i",
+    "title": "Progresivo 7 km T-I",
+    "type": "long",
+    "category": "Progresivos",
+    "description": "Progresión corta y muy exigente, sin bloque en E.",
+    "blocks": [
+      {
+        "block_type": "Rodaje",
+        "zone": "T",
+        "distance_km": 5
+      },
+      {
+        "block_type": "Rodaje",
+        "zone": "I",
+        "distance_km": 2,
+        "description": "Cierre I"
+      }
+    ]
+  },
+  {
+    "seed_key": "hills-8x45s-r",
+    "title": "8x45s cuesta R",
+    "type": "interval",
+    "category": "Cuestas",
+    "description": "Repeticiones en cuesta a R con trote de bajada.",
+    "blocks": [
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 15,
+        "zone": "E",
+        "description": "Calentamiento"
+      },
+      {
+        "block_type": "Cuesta",
+        "reps": 8,
+        "duration_min": "45 sec",
+        "zone": "R",
+        "name": "cuesta",
+        "recover": {
+          "duration_min": "90 sec",
+          "zone": "E"
+        }
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "hills-6x60s-r",
+    "title": "6x60s cuesta R",
+    "type": "interval",
+    "category": "Cuestas",
+    "description": "Repeticiones en cuesta más largas a R.",
+    "blocks": [
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 15,
+        "zone": "E",
+        "description": "Calentamiento"
+      },
+      {
+        "block_type": "Cuesta",
+        "reps": 6,
+        "duration_min": 1,
+        "zone": "R",
+        "name": "cuesta",
+        "recover": {
+          "duration_min": 2,
+          "zone": "E"
+        }
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "hills-10x30s-r",
+    "title": "10x30s cuesta R",
+    "type": "interval",
+    "category": "Cuestas",
+    "description": "Repeticiones cortas en cuesta, volumen alto.",
+    "blocks": [
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 15,
+        "zone": "E",
+        "description": "Calentamiento"
+      },
+      {
+        "block_type": "Cuesta",
+        "reps": 10,
+        "duration_min": "30 sec",
+        "zone": "R",
+        "name": "cuesta",
+        "recover": {
+          "duration_min": "60 sec",
+          "zone": "E"
+        }
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "hills-5x90s-i",
+    "title": "5x90s cuesta I",
+    "type": "interval",
+    "category": "Cuestas",
+    "description": "Repeticiones largas en cuesta a ritmo I.",
+    "blocks": [
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 15,
+        "zone": "E",
+        "description": "Calentamiento"
+      },
+      {
+        "block_type": "Cuesta",
+        "reps": 5,
+        "duration_min": "90 sec",
+        "zone": "I",
+        "name": "cuesta",
+        "recover": {
+          "duration_min": 3,
+          "zone": "E"
+        }
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "hills-12x20s-r",
+    "title": "12x20s cuesta R",
+    "type": "interval",
+    "category": "Cuestas",
+    "description": "Repeticiones muy cortas y explosivas en cuesta.",
+    "blocks": [
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 15,
+        "zone": "E",
+        "description": "Calentamiento"
+      },
+      {
+        "block_type": "Cuesta",
+        "reps": 12,
+        "duration_min": "20 sec",
+        "zone": "R",
+        "name": "cuesta",
+        "recover": {
+          "duration_min": "50 sec",
+          "zone": "E"
+        }
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "hills-6x2min-i",
+    "title": "6x2min cuesta I",
+    "type": "interval",
+    "category": "Cuestas",
+    "description": "Repeticiones largas en cuesta, sesión exigente.",
+    "blocks": [
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 15,
+        "zone": "E",
+        "description": "Calentamiento"
+      },
+      {
+        "block_type": "Cuesta",
+        "reps": 6,
+        "duration_min": 2,
+        "zone": "I",
+        "name": "cuesta",
+        "recover": {
+          "duration_min": 3,
+          "zone": "E"
+        }
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "hills-8x60s-r",
+    "title": "8x60s cuesta R",
+    "type": "interval",
+    "category": "Cuestas",
+    "description": "Repeticiones en cuesta a R con recuperación amplia.",
+    "blocks": [
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 15,
+        "zone": "E",
+        "description": "Calentamiento"
+      },
+      {
+        "block_type": "Cuesta",
+        "reps": 8,
+        "duration_min": 1,
+        "zone": "R",
+        "name": "cuesta",
+        "recover": {
+          "duration_min": 2,
+          "zone": "E"
+        }
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "hills-4x3min-t",
+    "title": "4x3min cuesta T",
+    "type": "interval",
+    "category": "Cuestas",
+    "description": "Repeticiones largas en cuesta a ritmo umbral.",
+    "blocks": [
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 15,
+        "zone": "E",
+        "description": "Calentamiento"
+      },
+      {
+        "block_type": "Cuesta",
+        "reps": 4,
+        "duration_min": 3,
+        "zone": "T",
+        "name": "cuesta",
+        "recover": {
+          "duration_min": 3,
+          "zone": "E"
+        }
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "hills-10x45s-r",
+    "title": "10x45s cuesta R",
+    "type": "interval",
+    "category": "Cuestas",
+    "description": "Repeticiones en cuesta, volumen medio-alto.",
+    "blocks": [
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 15,
+        "zone": "E",
+        "description": "Calentamiento"
+      },
+      {
+        "block_type": "Cuesta",
+        "reps": 10,
+        "duration_min": "45 sec",
+        "zone": "R",
+        "name": "cuesta",
+        "recover": {
+          "duration_min": "90 sec",
+          "zone": "E"
+        }
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "hills-6x90s-r",
+    "title": "6x90s cuesta R",
+    "type": "interval",
+    "category": "Cuestas",
+    "description": "Repeticiones largas en cuesta a ritmo R.",
+    "blocks": [
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 15,
+        "zone": "E",
+        "description": "Calentamiento"
+      },
+      {
+        "block_type": "Cuesta",
+        "reps": 6,
+        "duration_min": "90 sec",
+        "zone": "R",
+        "name": "cuesta",
+        "recover": {
+          "duration_min": 2,
+          "zone": "E"
+        }
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "strides-6x20s-r",
+    "title": "Rodaje + 6x20s strides",
+    "type": "easy",
+    "category": "Strides y técnica",
+    "description": "Rodaje suave con 6 progresiones cortas al final.",
+    "blocks": [
+      {
+        "block_type": "Rodaje",
+        "zone": "E",
+        "duration_min": 30
+      },
+      {
+        "block_type": "Intervalo",
+        "reps": 6,
+        "duration_min": "20 sec",
+        "zone": "R",
+        "name": "stride",
+        "recover": {
+          "duration_min": "40 sec",
+          "zone": "E"
+        }
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 5,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "strides-8x20s-r",
+    "title": "Rodaje + 8x20s strides",
+    "type": "easy",
+    "category": "Strides y técnica",
+    "description": "Rodaje suave con 8 progresiones cortas al final.",
+    "blocks": [
+      {
+        "block_type": "Rodaje",
+        "zone": "E",
+        "duration_min": 35
+      },
+      {
+        "block_type": "Intervalo",
+        "reps": 8,
+        "duration_min": "20 sec",
+        "zone": "R",
+        "name": "stride",
+        "recover": {
+          "duration_min": "40 sec",
+          "zone": "E"
+        }
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 5,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "strides-4x100m-r",
+    "title": "Rodaje + 4x100m strides",
+    "type": "easy",
+    "category": "Strides y técnica",
+    "description": "Rodaje suave con 4 progresiones cortas medidas en distancia.",
+    "blocks": [
+      {
+        "block_type": "Rodaje",
+        "zone": "E",
+        "duration_min": 25
+      },
+      {
+        "block_type": "Intervalo",
+        "reps": 4,
+        "distance_km": 0.1,
+        "zone": "R",
+        "name": "stride",
+        "recover": {
+          "duration_min": "60 sec",
+          "zone": "E"
+        }
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 5,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "strides-6x100m-r",
+    "title": "Rodaje + 6x100m strides",
+    "type": "easy",
+    "category": "Strides y técnica",
+    "description": "Rodaje suave con 6 progresiones cortas medidas en distancia.",
+    "blocks": [
+      {
+        "block_type": "Rodaje",
+        "zone": "E",
+        "duration_min": 30
+      },
+      {
+        "block_type": "Intervalo",
+        "reps": 6,
+        "distance_km": 0.1,
+        "zone": "R",
+        "name": "stride",
+        "recover": {
+          "duration_min": "60 sec",
+          "zone": "E"
+        }
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 5,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "strides-8x100m-r",
+    "title": "Rodaje + 8x100m strides",
+    "type": "easy",
+    "category": "Strides y técnica",
+    "description": "Rodaje suave con 8 progresiones cortas medidas en distancia.",
+    "blocks": [
+      {
+        "block_type": "Rodaje",
+        "zone": "E",
+        "duration_min": 35
+      },
+      {
+        "block_type": "Intervalo",
+        "reps": 8,
+        "distance_km": 0.1,
+        "zone": "R",
+        "name": "stride",
+        "recover": {
+          "duration_min": "60 sec",
+          "zone": "E"
+        }
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 5,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "strides-10x15s-r",
+    "title": "Rodaje + 10x15s strides",
+    "type": "easy",
+    "category": "Strides y técnica",
+    "description": "Rodaje suave con 10 progresiones muy cortas.",
+    "blocks": [
+      {
+        "block_type": "Rodaje",
+        "zone": "E",
+        "duration_min": 35
+      },
+      {
+        "block_type": "Intervalo",
+        "reps": 10,
+        "duration_min": "15 sec",
+        "zone": "R",
+        "name": "stride",
+        "recover": {
+          "duration_min": "45 sec",
+          "zone": "E"
+        }
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 5,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "strides-5x30s-r",
+    "title": "Rodaje + 5x30s strides",
+    "type": "easy",
+    "category": "Strides y técnica",
+    "description": "Rodaje suave con 5 progresiones de 30 segundos.",
+    "blocks": [
+      {
+        "block_type": "Rodaje",
+        "zone": "E",
+        "duration_min": 30
+      },
+      {
+        "block_type": "Intervalo",
+        "reps": 5,
+        "duration_min": "30 sec",
+        "zone": "R",
+        "name": "stride",
+        "recover": {
+          "duration_min": "60 sec",
+          "zone": "E"
+        }
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 5,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "strides-12x15s-r",
+    "title": "Rodaje + 12x15s strides",
+    "type": "easy",
+    "category": "Strides y técnica",
+    "description": "Rodaje suave con 12 progresiones muy cortas, volumen alto.",
+    "blocks": [
+      {
+        "block_type": "Rodaje",
+        "zone": "E",
+        "duration_min": 40
+      },
+      {
+        "block_type": "Intervalo",
+        "reps": 12,
+        "duration_min": "15 sec",
+        "zone": "R",
+        "name": "stride",
+        "recover": {
+          "duration_min": "45 sec",
+          "zone": "E"
+        }
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 5,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "tecnica-drills-a",
+    "title": "Rodaje + técnica de carrera A",
+    "type": "easy",
+    "category": "Strides y técnica",
+    "description": "Rodaje suave con bloque de ejercicios técnicos (skipping, talones, tijeras).",
+    "blocks": [
+      {
+        "block_type": "Rodaje",
+        "zone": "E",
+        "duration_min": 25
+      },
+      {
+        "block_type": "Técnica",
+        "duration_min": 15,
+        "description": "Skipping bajo, skipping alto, talones a glúteo, tijeras — 3 series de cada uno"
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 5,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "tecnica-drills-b",
+    "title": "Rodaje + técnica de carrera B",
+    "type": "easy",
+    "category": "Strides y técnica",
+    "description": "Rodaje suave con bloque de ejercicios técnicos y coordinación.",
+    "blocks": [
+      {
+        "block_type": "Rodaje",
+        "zone": "E",
+        "duration_min": 25
+      },
+      {
+        "block_type": "Técnica",
+        "duration_min": 15,
+        "description": "Escalera de coordinación, saltos laterales, carioca, strides progresivos"
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 5,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "recuperacion-15min-e",
+    "title": "Trote de recuperación 15 min",
+    "type": "easy",
+    "category": "Recuperación",
+    "description": "Trote muy suave, parte baja de la zona E.",
+    "blocks": [
+      {
+        "block_type": "Rodaje",
+        "zone": "E",
+        "duration_min": 15
+      }
+    ]
+  },
+  {
+    "seed_key": "recuperacion-20min-e",
+    "title": "Trote de recuperación 20 min",
+    "type": "easy",
+    "category": "Recuperación",
+    "description": "Trote muy suave, parte baja de la zona E.",
+    "blocks": [
+      {
+        "block_type": "Rodaje",
+        "zone": "E",
+        "duration_min": 20
+      }
+    ]
+  },
+  {
+    "seed_key": "recuperacion-22min-e",
+    "title": "Trote de recuperación 22 min",
+    "type": "easy",
+    "category": "Recuperación",
+    "description": "Trote muy suave tras un esfuerzo exigente.",
+    "blocks": [
+      {
+        "block_type": "Rodaje",
+        "zone": "E",
+        "duration_min": 22
+      }
+    ]
+  },
+  {
+    "seed_key": "recuperacion-25min-e",
+    "title": "Trote de recuperación 25 min",
+    "type": "easy",
+    "category": "Recuperación",
+    "description": "Trote muy suave, parte baja de la zona E.",
+    "blocks": [
+      {
+        "block_type": "Rodaje",
+        "zone": "E",
+        "duration_min": 25
+      }
+    ]
+  },
+  {
+    "seed_key": "recuperacion-30min-e",
+    "title": "Trote de recuperación 30 min",
+    "type": "easy",
+    "category": "Recuperación",
+    "description": "Trote muy suave, parte baja de la zona E.",
+    "blocks": [
+      {
+        "block_type": "Rodaje",
+        "zone": "E",
+        "duration_min": 30
+      }
+    ]
+  },
+  {
+    "seed_key": "recuperacion-35min-e",
+    "title": "Trote de recuperación 35 min",
+    "type": "easy",
+    "category": "Recuperación",
+    "description": "Trote muy suave, día después de una carrera.",
+    "blocks": [
+      {
+        "block_type": "Rodaje",
+        "zone": "E",
+        "duration_min": 35
+      }
+    ]
+  },
+  {
+    "seed_key": "recuperacion-40min-e",
+    "title": "Trote de recuperación 40 min",
+    "type": "easy",
+    "category": "Recuperación",
+    "description": "Trote muy suave, parte baja de la zona E.",
+    "blocks": [
+      {
+        "block_type": "Rodaje",
+        "zone": "E",
+        "duration_min": 40
+      }
+    ]
+  },
+  {
+    "seed_key": "recuperacion-4k-e",
+    "title": "Trote de recuperación 4 km",
+    "type": "easy",
+    "category": "Recuperación",
+    "description": "Trote muy suave y corto.",
+    "blocks": [
+      {
+        "block_type": "Rodaje",
+        "zone": "E",
+        "distance_km": 4
+      }
+    ]
+  },
+  {
+    "seed_key": "recuperacion-5k-e",
+    "title": "Trote de recuperación 5 km",
+    "type": "easy",
+    "category": "Recuperación",
+    "description": "Trote muy suave y corto.",
+    "blocks": [
+      {
+        "block_type": "Rodaje",
+        "zone": "E",
+        "distance_km": 5
+      }
+    ]
+  },
+  {
+    "seed_key": "recuperacion-6k-e",
+    "title": "Trote de recuperación 6 km",
+    "type": "easy",
+    "category": "Recuperación",
+    "description": "Trote muy suave y corto.",
+    "blocks": [
+      {
+        "block_type": "Rodaje",
+        "zone": "E",
+        "distance_km": 6
+      }
     ]
   },
   {
@@ -48,14 +2446,269 @@
     "title": "TEST 5K",
     "type": "tempo",
     "category": "Tests",
-    "is_fitness_test": true,
-    "total_km": 8,
-    "duration_min": 45,
     "description": "Test de esfuerzo 5K. El bloque de medición va sin ritmo objetivo.",
+    "is_fitness_test": true,
     "blocks": [
-      { "block_type": "Calentamiento", "duration_min": 15, "zone": "E", "description": "WU E" },
-      { "block_type": "Intervalo", "distance_km": 5, "description": "5K all-out", "name": "5K all-out" },
-      { "block_type": "Enfriamiento", "duration_min": 10, "zone": "E", "description": "CD E" }
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 15,
+        "zone": "E",
+        "description": "Calentamiento"
+      },
+      {
+        "block_type": "Intervalo",
+        "distance_km": 5,
+        "description": "5K all-out"
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "test-3k",
+    "title": "TEST 3K",
+    "type": "tempo",
+    "category": "Tests",
+    "description": "Test de esfuerzo 3K. El bloque de medición va sin ritmo objetivo.",
+    "is_fitness_test": true,
+    "blocks": [
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 15,
+        "zone": "E",
+        "description": "Calentamiento"
+      },
+      {
+        "block_type": "Intervalo",
+        "distance_km": 3,
+        "description": "3K all-out"
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "test-10k",
+    "title": "TEST 10K",
+    "type": "tempo",
+    "category": "Tests",
+    "description": "Test de esfuerzo 10K. El bloque de medición va sin ritmo objetivo.",
+    "is_fitness_test": true,
+    "blocks": [
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 15,
+        "zone": "E",
+        "description": "Calentamiento"
+      },
+      {
+        "block_type": "Intervalo",
+        "distance_km": 10,
+        "description": "10K all-out"
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "test-1600m",
+    "title": "TEST 1600m (milla)",
+    "type": "tempo",
+    "category": "Tests",
+    "description": "Test de esfuerzo de una milla. El bloque de medición va sin ritmo objetivo.",
+    "is_fitness_test": true,
+    "blocks": [
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 15,
+        "zone": "E",
+        "description": "Calentamiento"
+      },
+      {
+        "block_type": "Intervalo",
+        "distance_km": 1.6,
+        "description": "1600m all-out"
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "test-2-4k",
+    "title": "TEST 2.4K",
+    "type": "tempo",
+    "category": "Tests",
+    "description": "Test de esfuerzo naval de 2.4 km. El bloque de medición va sin ritmo objetivo.",
+    "is_fitness_test": true,
+    "blocks": [
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 12,
+        "zone": "E",
+        "description": "Calentamiento"
+      },
+      {
+        "block_type": "Intervalo",
+        "distance_km": 2.4,
+        "description": "2.4K all-out"
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "test-12min-cooper",
+    "title": "TEST Cooper 12 min",
+    "type": "tempo",
+    "category": "Tests",
+    "description": "Test de Cooper: máxima distancia posible en 12 minutos. El bloque de medición va sin ritmo objetivo.",
+    "is_fitness_test": true,
+    "blocks": [
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 15,
+        "zone": "E",
+        "description": "Calentamiento"
+      },
+      {
+        "block_type": "Intervalo",
+        "duration_min": 12,
+        "description": "12 min all-out, máxima distancia"
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "test-30min",
+    "title": "TEST 30 min",
+    "type": "tempo",
+    "category": "Tests",
+    "description": "Test de esfuerzo de 30 minutos, máxima distancia posible. El bloque de medición va sin ritmo objetivo.",
+    "is_fitness_test": true,
+    "blocks": [
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 15,
+        "zone": "E",
+        "description": "Calentamiento"
+      },
+      {
+        "block_type": "Intervalo",
+        "duration_min": 30,
+        "description": "30 min all-out, máxima distancia"
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "test-400m",
+    "title": "TEST 400m",
+    "type": "tempo",
+    "category": "Tests",
+    "description": "Test de esfuerzo de 400 m. El bloque de medición va sin ritmo objetivo.",
+    "is_fitness_test": true,
+    "blocks": [
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 15,
+        "zone": "E",
+        "description": "Calentamiento"
+      },
+      {
+        "block_type": "Intervalo",
+        "distance_km": 0.4,
+        "description": "400m all-out"
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "test-1000m",
+    "title": "TEST 1000m",
+    "type": "tempo",
+    "category": "Tests",
+    "description": "Test de esfuerzo de 1000 m. El bloque de medición va sin ritmo objetivo.",
+    "is_fitness_test": true,
+    "blocks": [
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 15,
+        "zone": "E",
+        "description": "Calentamiento"
+      },
+      {
+        "block_type": "Intervalo",
+        "distance_km": 1,
+        "description": "1000m all-out"
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
+    ]
+  },
+  {
+    "seed_key": "test-2k",
+    "title": "TEST 2K",
+    "type": "tempo",
+    "category": "Tests",
+    "description": "Test de esfuerzo de 2 km. El bloque de medición va sin ritmo objetivo.",
+    "is_fitness_test": true,
+    "blocks": [
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 15,
+        "zone": "E",
+        "description": "Calentamiento"
+      },
+      {
+        "block_type": "Intervalo",
+        "distance_km": 2,
+        "description": "2K all-out"
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 10,
+        "zone": "E",
+        "description": "Enfriamiento"
+      }
     ]
   },
   {
@@ -65,9 +2718,237 @@
     "category": "Fortalecimiento",
     "description": "Fuerza general. Sin ritmos ni distancia: no se empuja al reloj.",
     "blocks": [
-      { "block_type": "Calentamiento", "duration_min": 10, "description": "Movilidad y activación" },
-      { "block_type": "Intervalo", "duration_min": 30, "description": "Sentadillas, peso muerto, 3 series x 12" },
-      { "block_type": "Enfriamiento", "duration_min": 5, "description": "Estiramientos" }
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 10,
+        "description": "Movilidad articular y activación general"
+      },
+      {
+        "block_type": "Intervalo",
+        "duration_min": 30,
+        "description": "3 bloques: estocadas, sentadillas y saltos, puentes y burpees — 10-20 reps por ejercicio"
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 5,
+        "description": "Estiramiento general"
+      }
+    ]
+  },
+  {
+    "seed_key": "strength-piernas-a",
+    "title": "Fortalecimiento piernas A",
+    "type": "recovery",
+    "category": "Fortalecimiento",
+    "description": "Fuerza de piernas para corredores. Sin ritmos ni distancia.",
+    "blocks": [
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 7,
+        "description": "Movilidad de cadera, rodilla y tobillo"
+      },
+      {
+        "block_type": "Intervalo",
+        "duration_min": 30,
+        "description": "Estocadas, sentadillas, salto a caja, puentes, sentadilla búlgara — 3 series de 10-12 reps"
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 8,
+        "description": "Estiramiento de tren inferior"
+      }
+    ]
+  },
+  {
+    "seed_key": "strength-piernas-b",
+    "title": "Fortalecimiento piernas B",
+    "type": "recovery",
+    "category": "Fortalecimiento",
+    "description": "Fuerza de piernas, énfasis en pliometría ligera. Sin ritmos ni distancia.",
+    "blocks": [
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 7,
+        "description": "Movilidad articular"
+      },
+      {
+        "block_type": "Intervalo",
+        "duration_min": 28,
+        "description": "Sentadilla de ganzo, saltos al cajón, zancadas caminando, gemelos, plancha con patada"
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 8,
+        "description": "Estiramiento de tren inferior"
+      }
+    ]
+  },
+  {
+    "seed_key": "strength-core-a",
+    "title": "Fortalecimiento core A",
+    "type": "recovery",
+    "category": "Fortalecimiento",
+    "description": "Fuerza de core para estabilidad del corredor. Sin ritmos ni distancia.",
+    "blocks": [
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 5,
+        "description": "Activación de core"
+      },
+      {
+        "block_type": "Intervalo",
+        "duration_min": 20,
+        "description": "Plancha frontal, plancha lateral, bicho muerto, abs bicicleta, puente con marcha"
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 5,
+        "description": "Estiramiento de core y espalda baja"
+      }
+    ]
+  },
+  {
+    "seed_key": "strength-core-b",
+    "title": "Fortalecimiento core B",
+    "type": "recovery",
+    "category": "Fortalecimiento",
+    "description": "Fuerza de core, circuito avanzado. Sin ritmos ni distancia.",
+    "blocks": [
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 5,
+        "description": "Activación de core"
+      },
+      {
+        "block_type": "Intervalo",
+        "duration_min": 22,
+        "description": "Plancha con toque de hombro, rodilla a codo, superman, abs oblicuos, pallof press"
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 5,
+        "description": "Estiramiento de core y espalda baja"
+      }
+    ]
+  },
+  {
+    "seed_key": "strength-tren-superior-a",
+    "title": "Fortalecimiento tren superior A",
+    "type": "recovery",
+    "category": "Fortalecimiento",
+    "description": "Postura, braceo y estabilidad de core para corredores. Sin ritmos ni distancia.",
+    "blocks": [
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 7,
+        "description": "Círculos de brazos y movilidad de hombros"
+      },
+      {
+        "block_type": "Intervalo",
+        "duration_min": 30,
+        "description": "Flexiones, remo con banda, plancha frontal, press de hombro, braceo de carrera con mancuernas"
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 5,
+        "description": "Estiramiento de tren superior"
+      }
+    ]
+  },
+  {
+    "seed_key": "strength-tren-superior-b",
+    "title": "Fortalecimiento tren superior B",
+    "type": "recovery",
+    "category": "Fortalecimiento",
+    "description": "Fuerza de tren superior, énfasis en tirón y espalda. Sin ritmos ni distancia.",
+    "blocks": [
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 7,
+        "description": "Movilidad de hombros y escápulas"
+      },
+      {
+        "block_type": "Intervalo",
+        "duration_min": 28,
+        "description": "Remo a una mano, face pull, superman, fondos en banco, curl de bíceps"
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 5,
+        "description": "Estiramiento de tren superior"
+      }
+    ]
+  },
+  {
+    "seed_key": "strength-movilidad-a",
+    "title": "Movilidad y activación A",
+    "type": "recovery",
+    "category": "Fortalecimiento",
+    "description": "Movilidad articular general, ideal antes de una sesión de calidad. Sin ritmos ni distancia.",
+    "blocks": [
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 5,
+        "description": "Respiración y activación general"
+      },
+      {
+        "block_type": "Intervalo",
+        "duration_min": 20,
+        "description": "Movilidad de cadera, tobillo, columna y hombros; activación de glúteo"
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 5,
+        "description": "Estiramiento suave"
+      }
+    ]
+  },
+  {
+    "seed_key": "strength-pliometria-a",
+    "title": "Pliometría A",
+    "type": "recovery",
+    "category": "Fortalecimiento",
+    "description": "Trabajo de potencia y reactividad. Sin ritmos ni distancia.",
+    "blocks": [
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 10,
+        "description": "Movilidad y activación, saltos suaves de preparación"
+      },
+      {
+        "block_type": "Intervalo",
+        "duration_min": 20,
+        "description": "Saltos al cajón, saltos a una pierna, skipping con vallas bajas, saltos laterales"
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 8,
+        "description": "Estiramiento y trote suave"
+      }
+    ]
+  },
+  {
+    "seed_key": "strength-circuito-full-body-a",
+    "title": "Circuito full body A",
+    "type": "recovery",
+    "category": "Fortalecimiento",
+    "description": "Circuito general de fuerza para todo el cuerpo. Sin ritmos ni distancia.",
+    "blocks": [
+      {
+        "block_type": "Calentamiento",
+        "duration_min": 8,
+        "description": "Movilidad articular general"
+      },
+      {
+        "block_type": "Intervalo",
+        "duration_min": 32,
+        "description": "Circuito: sentadillas, flexiones, remo con banda, plancha, zancadas, burpees — 3 vueltas"
+      },
+      {
+        "block_type": "Enfriamiento",
+        "duration_min": 8,
+        "description": "Estiramiento general"
+      }
     ]
   }
 ]
