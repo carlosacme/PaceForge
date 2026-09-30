@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useRef } from "react";
+import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { supabase } from "../lib/supabase";
 import { fmtPace } from "../lib/vdot";
 import {
@@ -15,6 +15,8 @@ import {
   sendWorkoutAssignmentPushToAthlete,
   styles as sharedStyles,
 } from "./shared/appShared";
+import LibraryFolderSelect from "./shared/LibraryFolderSelect";
+import { loadLibraryFolders } from "../lib/libraryApi";
 
 const DEFAULT_PREVIEW_VDOT = 45;
 
@@ -36,6 +38,8 @@ export default function GpxRacePlan({ athletes = [], coachUserId, notify, onSave
   const [assignVdotById, setAssignVdotById] = useState({});
   const [savingLibrary, setSavingLibrary] = useState(false);
   const [assignSaving, setAssignSaving] = useState(false);
+  const [libraryFolders, setLibraryFolders] = useState([]);
+  const [saveFolderId, setSaveFolderId] = useState(null);
 
   const loadVdot = useCallback(async (athleteId) => {
     if (!athleteId) {
@@ -76,6 +80,23 @@ export default function GpxRacePlan({ athletes = [], coachUserId, notify, onSave
   }, [segments, previewVdot, zoneId]);
 
   const durationMin = useMemo(() => estimateDurationMinFromStructure(structure), [structure]);
+
+  useEffect(() => {
+    if (!coachUserId) return undefined;
+    let cancelled = false;
+    loadLibraryFolders([coachUserId]).then(({ data, error }) => {
+      if (cancelled) return;
+      if (error) {
+        console.error("library_folders gpx:", error);
+        return;
+      }
+      setLibraryFolders(data || []);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [coachUserId]);
+
   const basePaceLabel = useMemo(() => {
     const s = basePaceSecsForRaceZone(previewVdot, zoneId);
     return s != null ? `${fmtPace(s)}/km` : "—";
@@ -128,6 +149,7 @@ export default function GpxRacePlan({ athletes = [], coachUserId, notify, onSave
       structure,
       coach_id: coachUserId,
       is_fitness_test: false,
+      folder_id: saveFolderId || null,
     };
     const { error } = await supabase.from("workout_library").insert(row);
     setSavingLibrary(false);
@@ -328,7 +350,8 @@ export default function GpxRacePlan({ athletes = [], coachUserId, notify, onSave
             </div>
           </div>
 
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
+            <LibraryFolderSelect folders={libraryFolders} value={saveFolderId} onChange={setSaveFolderId} />
             <button
               type="button"
               disabled={savingLibrary}

@@ -1067,12 +1067,15 @@ export const markConversationRead = async ({ coachId, athleteId, readerRole }) =
   return Array.isArray(data) ? data.length : 0;
 };
 
-export const normalizeLibraryRow = (row) => {
-  const structure = normalizeWorkoutStructure(readStructure(row));
+export const normalizeLibraryRow = (row, { structureLoaded = true } = {}) => {
   const type = row.type && WORKOUT_TYPES.some((t) => t.id === row.type) ? row.type : "easy";
   const totalKm = Number.isFinite(Number(row.total_km)) ? Number(row.total_km) : 0;
   const distKm = Number.isFinite(Number(row.distance_km)) ? Number(row.distance_km) : totalKm;
   const wtype = row.workout_type && String(row.workout_type).trim() ? String(row.workout_type).trim() : type;
+  const hasStructureCol = Object.prototype.hasOwnProperty.call(row || {}, "structure")
+    || Object.prototype.hasOwnProperty.call(row || {}, "workout_structure");
+  const loaded = structureLoaded && hasStructureCol;
+  const structure = loaded ? normalizeWorkoutStructure(readStructure(row)) : null;
   return {
     id: row.id,
     coach_id: row.coach_id,
@@ -1083,12 +1086,17 @@ export const normalizeLibraryRow = (row) => {
     distance_km: distKm,
     duration_min: Number.isFinite(Number(row.duration_min)) ? Math.round(Number(row.duration_min)) : 0,
     description: row.description || "",
-    structure: Array.isArray(structure) ? structure : [],
+    structure: loaded ? (Array.isArray(structure) ? structure : []) : null,
     created_at: row.created_at ?? null,
     intensity: row.intensity != null ? String(row.intensity) : "",
     notes: row.notes != null ? String(row.notes) : "",
     is_fitness_test:
       row.is_fitness_test === true ? true : row.is_fitness_test === false ? false : null,
+    folder_id: row.folder_id ?? null,
+    is_system: row.is_system === true,
+    category: row.category != null ? String(row.category) : "",
+    seed_key: row.seed_key != null ? String(row.seed_key) : "",
+    copied_from_id: row.copied_from_id ?? null,
   };
 };
 

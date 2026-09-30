@@ -34,6 +34,8 @@ import {
 } from "../lib/gpxRacePlan";
 import WorkoutStructureEditor from "./shared/WorkoutStructureEditor";
 import WorkoutStructureTable from "./shared/WorkoutStructureTable";
+import LibraryFolderSelect from "./shared/LibraryFolderSelect";
+import { loadLibraryFolders } from "../lib/libraryApi";
 
 function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiLoading, setAiLoading, notify, coachUserId, coachPlan, profileRole, onGoToPlans, onWorkoutAssigned, onSavedToLibrary }) {
   const S = styles;
@@ -61,6 +63,8 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
   const [loadingGenerations, setLoadingGenerations] = useState(false);
   const [generationLimitMsg, setGenerationLimitMsg] = useState("");
   const [saveAsFitnessTest, setSaveAsFitnessTest] = useState(false);
+  const [libraryFolders, setLibraryFolders] = useState([]);
+  const [saveFolderId, setSaveFolderId] = useState(null);
   const monthKey = useMemo(() => getCurrentMonthKey(), []);
   const isBasicPlan = useMemo(() => {
     const p = String(coachPlan || "").toLowerCase();
@@ -91,6 +95,22 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
   useEffect(() => {
     loadGenerationCounter();
   }, [loadGenerationCounter]);
+
+  useEffect(() => {
+    if (!coachUserId) return undefined;
+    let cancelled = false;
+    loadLibraryFolders([coachUserId]).then(({ data, error }) => {
+      if (cancelled) return;
+      if (error) {
+        console.error("library_folders builder:", error);
+        return;
+      }
+      setLibraryFolders(data || []);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [coachUserId]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -352,6 +372,7 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
       description: w.description != null ? String(w.description) : "",
       structure: Array.isArray(w.structure) ? w.structure : [],
       is_fitness_test: saveAsFitnessTest,
+      folder_id: saveFolderId || null,
     };
     setSavingLibrary(true);
     try {
@@ -570,6 +591,10 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
                 />
                 TEST de esfuerzo (sin objetivo de tiempo al asignar)
               </label>
+              <div style={{ marginTop: 12 }}>
+                <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 6 }}>Carpeta en biblioteca</div>
+                <LibraryFolderSelect folders={libraryFolders} value={saveFolderId} onChange={setSaveFolderId} />
+              </div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 16 }}>
                 <button type="button" onClick={exportGarmin} style={{ background: "rgba(22,163,74,.12)", border: "1px solid rgba(22,163,74,.3)", borderRadius: 8, padding: "8px 14px", color: "#22c55e", cursor: "pointer", fontSize: ".78em", fontFamily: "inherit", fontWeight: 600 }}>⌚ Exportar a Garmin</button>
                 <button
