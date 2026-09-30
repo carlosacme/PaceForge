@@ -1,0 +1,73 @@
+[
+  {
+    "seed_key": "interval-8x400-r",
+    "title": "8x400m R",
+    "type": "interval",
+    "category": "Intervalos",
+    "description": "Calentamiento E + 8 repeticiones de 400 m a ritmo R con 90 s de trote E + enfriamiento.",
+    "blocks": [
+      { "block_type": "Calentamiento", "duration_min": 15, "zone": "E", "description": "WU E" },
+      {
+        "block_type": "Intervalo",
+        "reps": 8,
+        "distance_km": 0.4,
+        "name": "400m",
+        "zone": "R",
+        "recover": { "duration_min": "90 sec", "zone": "E" }
+      },
+      { "block_type": "Enfriamiento", "duration_min": 10, "zone": "E", "description": "CD E" }
+    ]
+  },
+  {
+    "seed_key": "long-20k-m",
+    "title": "Largo 20 km + 5 km M",
+    "type": "long",
+    "category": "Largos",
+    "description": "Rodaje largo en E con los últimos 5 km a ritmo maratón.",
+    "blocks": [
+      { "block_type": "Calentamiento", "duration_min": 10, "zone": "E" },
+      { "block_type": "Rodaje", "distance_km": 15, "zone": "E", "description": "Largo E" },
+      { "block_type": "Rodaje", "distance_km": 5, "zone": "M", "name": "Últimos 5 km M", "description": "Cierre M" },
+      { "block_type": "Enfriamiento", "duration_min": 10, "zone": "E" }
+    ]
+  },
+  {
+    "seed_key": "tempo-20min-t",
+    "title": "Tempo 20 min T",
+    "type": "tempo",
+    "category": "Tempo",
+    "description": "Bloque continuo de umbral entre calentamiento y enfriamiento E.",
+    "blocks": [
+      { "block_type": "Calentamiento", "duration_min": 15, "zone": "E" },
+      { "block_type": "Intervalo", "duration_min": 20, "zone": "T", "description": "Tempo T" },
+      { "block_type": "Enfriamiento", "duration_min": 10, "zone": "E" }
+    ]
+  },
+  {
+    "seed_key": "test-5k",
+    "title": "TEST 5K",
+    "type": "tempo",
+    "category": "Tests",
+    "is_fitness_test": true,
+    "total_km": 8,
+    "duration_min": 45,
+    "description": "Test de esfuerzo 5K. El bloque de medición va sin ritmo objetivo.",
+    "blocks": [
+      { "block_type": "Calentamiento", "duration_min": 15, "zone": "E", "description": "WU E" },
+      { "block_type": "Intervalo", "distance_km": 5, "description": "5K all-out", "name": "5K all-out" },
+      { "block_type": "Enfriamiento", "duration_min": 10, "zone": "E", "description": "CD E" }
+    ]
+  },
+  {
+    "seed_key": "strength-gym-a",
+    "title": "Fortalecimiento A",
+    "type": "recovery",
+    "category": "Fortalecimiento",
+    "description": "Fuerza general. Sin ritmos ni distancia: no se empuja al reloj.",
+    "blocks": [
+      { "block_type": "Calentamiento", "duration_min": 10, "description": "Movilidad y activación" },
+      { "block_type": "Intervalo", "duration_min": 30, "description": "Sentadillas, peso muerto, 3 series x 12" },
+      { "block_type": "Enfriamiento", "duration_min": 5, "description": "Estiramientos" }
+    ]
+  }
+]
