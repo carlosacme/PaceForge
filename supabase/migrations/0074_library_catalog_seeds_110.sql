@@ -1,3 +1,7 @@
+-- Catálogo 110 semillas (idempotente por seed_key). Generado desde library_recipes.json.
+-- NO aplicar a prod hasta revisión. ON CONFLICT actualiza las 5 ya sembradas y inserta las 105 nuevas.
+BEGIN;
+
 -- Semillas de catálogo público (idempotente por seed_key).
 -- Generado por scripts/expand-library-recipes.js — no editar a mano.
 -- Ritmos escritos a VDOT 47.2 vía src/lib/vdot.js.
@@ -1668,3 +1672,5 @@ ON CONFLICT (seed_key) DO UPDATE SET
   is_fitness_test = EXCLUDED.is_fitness_test,
   is_system = TRUE,
   category = EXCLUDED.category;
+
+COMMIT;

@@ -36,7 +36,12 @@ test("expande 8x400 a bloques sueltos y ritmos R/E", () => {
 
 test("largo y tempo llevan ritmos que rescale puede mapear a M/T", () => {
   const longRun = expandLibraryRecipe(recipes.find((r) => r.seed_key === "long-20k-m"));
-  const mBlock = longRun.structure.find((b) => String(b.phase).includes("5 km M") || String(b.block_label || "").includes("5 km M"));
+  const mBlock = longRun.structure.find(
+    (b) =>
+      String(b.description || "").includes("5 km M") ||
+      String(b.phase || "").includes("5 km M") ||
+      String(b.block_label || "").includes("5 km M"),
+  );
   assert.ok(mBlock);
   assert.equal(paceToZone(mBlock.target_pace, PLAN_CALIBRATION_VDOT), "M");
   assert.ok(longRun.total_km >= 20);
@@ -67,4 +72,11 @@ test("fortalecimiento es recovery sin ritmos: isRunWorkout=false", () => {
 
 test("expandLibraryRecipes rechaza seed_key duplicada", () => {
   assert.throws(() => expandLibraryRecipes([recipes[0], recipes[0]]), /duplicada/);
+});
+
+test("el catálogo compacto tiene 110 seed_key únicos", () => {
+  assert.equal(recipes.length, 110);
+  const rows = expandLibraryRecipes(recipes);
+  assert.equal(rows.length, 110);
+  assert.equal(new Set(rows.map((r) => r.seed_key)).size, 110);
 });
