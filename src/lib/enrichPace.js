@@ -18,7 +18,7 @@
  */
 // Con extension: este modulo tambien se importa desde api/ (serverless), y ahi
 // manda la resolucion de Node, que no adivina la extension como Vite.
-import { pacesForVdot, fmtPace, paceToZone, PLAN_CALIBRATION_VDOT } from "./vdot.js";
+import { pacesForVdot, paceToZone, paceRangeForZone, PLAN_CALIBRATION_VDOT } from "./vdot.js";
 import { EFFORT_TO_ZONE } from "./intervals.js";
 
 // Zona FC (Z1-Z5) -> zona Daniels de ritmo (E/M/T/I).
@@ -57,16 +57,9 @@ function zoneFromHrLabel(targetHr, fcMax) {
   return null;
 }
 
-// Zona Daniels -> pace numerico "m:ss-m:ss" via pacesForVdot (misma fuente
-// que usa el envio al reloj en qualitativeToPace). Emite RANGO siempre,
-// porque el reloj necesita rango, no valor unico.
+// Zona Daniels -> pace numerico "m:ss-m:ss". Fuente unica: paceRangeForZone.
 function zoneToPaceStr(zone, vdot) {
-  const p = pacesForVdot(vdot);
-  if (!p) return null;
-  const v = p[zone];
-  if (v === undefined) return null;
-  if (Array.isArray(v)) return `${fmtPace(v[0])}-${fmtPace(v[1])}`;
-  return `${fmtPace(v + 3)}-${fmtPace(v - 3)}`; // ±3s, igual que qualitativeToPace
+  return paceRangeForZone(zone, vdot);
 }
 
 // Enriquece un structure con paces numericos. Orden de resolucion:

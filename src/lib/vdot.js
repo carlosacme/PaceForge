@@ -95,6 +95,20 @@ export function fmtPace(secs) {
 }
 
 /**
+ * Rango de ritmo "m:ss-m:ss" para una zona Daniels a un VDOT.
+ * E usa el rango lento-rápido; el resto, ±3 s alrededor del valor único
+ * (misma regla que qualitativeToPace / enrichPace).
+ */
+export function paceRangeForZone(zone, vdot) {
+  const p = pacesForVdot(vdot);
+  if (!p) return null;
+  const v = p[zone];
+  if (v === undefined) return null;
+  if (Array.isArray(v)) return `${fmtPace(v[0])}-${fmtPace(v[1])}`;
+  return `${fmtPace(v + 3)}-${fmtPace(v - 3)}`;
+}
+
+/**
  * VDOT al que estan escritos los ritmos de los workouts importados a la
  * biblioteca (los JSON del plan de 24 semanas).
  *
