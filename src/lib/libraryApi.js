@@ -3,7 +3,7 @@ import { readStructure } from "./workoutStructure";
 
 /** Columnas de listado: sin `structure` (~75 % del payload). */
 export const LIBRARY_LIST_COLUMNS =
-  "id,coach_id,title,type,workout_type,total_km,distance_km,duration_min,description,created_at,intensity,notes,is_fitness_test,folder_id,is_system,category,seed_key,copied_from_id";
+  "id,coach_id,title,type,workout_type,total_km,distance_km,duration_min,description,created_at,is_fitness_test,folder_id,is_system,category,seed_key,copied_from_id";
 
 export async function loadLibraryFolders(coachIds) {
   const ids = [...new Set((coachIds || []).filter(Boolean))];
