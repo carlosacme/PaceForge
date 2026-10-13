@@ -2,6 +2,8 @@ import React, { useMemo } from "react";
 import {
   ATHLETE_ACHIEVEMENT_DISPLAY_LIST,
   computeAthleteAchievementVisualProgress,
+  formatAchievementDate,
+  pickAchievedOnForCodes,
 } from "../shared/appShared";
 
 /**
@@ -21,15 +23,7 @@ export default function AchievementsGrid({
     () => computeAthleteAchievementVisualProgress(workouts, evaluations),
     [workouts, evaluations],
   );
-  const earnedByCode = useMemo(() => {
-    const m = {};
-    for (const row of earnedAchievements || []) {
-      const code = String(row?.achievement_code || "");
-      if (!code) continue;
-      if (!m[code]) m[code] = row?.awarded_at || null;
-    }
-    return m;
-  }, [earnedAchievements]);
+  const earnedRows = earnedAchievements || [];
 
   return (
     <div style={{ ...cardStyle }}>
@@ -39,10 +33,10 @@ export default function AchievementsGrid({
           const currentValue = Number(progress?.[a.metric] || 0);
           const progressRatio = a.target > 0 ? Math.min(1, currentValue / a.target) : 0;
           const progressPct = Math.round(progressRatio * 100);
-          const awardedAt = (a.codes || []).map((code) => earnedByCode[code]).find(Boolean) || null;
+          const achievedOn = pickAchievedOnForCodes(earnedRows, a.codes || []);
           const earnedByProgress = currentValue >= a.target;
-          const earned = Boolean(awardedAt || earnedByProgress);
-          const formattedDate = awardedAt ? new Date(awardedAt).toLocaleDateString("es-CO") : "Sin fecha registrada";
+          const earned = Boolean(achievedOn || earnedByProgress);
+          const formattedDate = formatAchievementDate(achievedOn);
           const currentLabel = a.metric === "totalKm" ? `${currentValue.toFixed(1)} / ${a.target} km` : `${Math.round(currentValue)} / ${a.target}`;
           return (
             <div key={a.id} style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: "14px 12px", background: earned ? "linear-gradient(145deg,#fffbeb,#fff7ed)" : "#f8fafc" }}>
