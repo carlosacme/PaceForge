@@ -5,8 +5,11 @@
 -- Fechas: computeAchievementDates (scheduled_date del workout que cumplió
 -- el código). Nunca now() ni earned_at.
 --
--- NO EJECUTAR hasta aprobación del listado dry-run.
--- --execute en scripts/backfill-achievement-dates.mjs sigue bloqueado.
+-- Aplicado en prod 2026-10-14: backup 40 filas + RLS/REVOKE, UPDATE
+-- RETURNING 27 filas, verificación 34 con_fecha / 6 sin_fecha.
+-- --execute en scripts/backfill-achievement-dates.mjs sigue bloqueado
+-- (el backfill se corrió a mano, no vía el flag).
+-- No volver a correr A: la tabla de backup ya existe.
 -- =============================================================================
 
 -- A) BACKUP de las 40 filas actuales + RLS (sin policies = deny all
