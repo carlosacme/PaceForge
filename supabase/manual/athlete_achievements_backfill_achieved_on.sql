@@ -1,0 +1,66 @@
+-- =============================================================================
+-- Backfill achieved_on — PRODUCCIÓN (NO es migración automática)
+-- =============================================================================
+-- Solo UPDATE de filas EXISTENTES con achieved_on IS NULL. Sin INSERT.
+-- Fechas: computeAchievementDates (scheduled_date del workout que cumplió
+-- el código). Nunca now() ni earned_at.
+--
+-- NO EJECUTAR hasta aprobación del listado dry-run.
+-- --execute en scripts/backfill-achievement-dates.mjs sigue bloqueado.
+-- =============================================================================
+
+-- A) BACKUP de las 40 filas actuales + RLS (sin policies = deny all
+--    para anon/authenticated; service_role bypass). Abortar si ya existe.
+-- CREATE TABLE public.athlete_achievements_backup_achieved_on AS
+-- SELECT * FROM public.athlete_achievements;
+--
+-- ALTER TABLE public.athlete_achievements_backup_achieved_on ENABLE ROW LEVEL SECURITY;
+-- REVOKE ALL ON TABLE public.athlete_achievements_backup_achieved_on FROM PUBLIC;
+-- REVOKE ALL ON TABLE public.athlete_achievements_backup_achieved_on FROM anon;
+-- REVOKE ALL ON TABLE public.athlete_achievements_backup_achieved_on FROM authenticated;
+
+-- B) UPDATE de las 27 filas reconstruibles (skip EARLY_BIRD, CONSISTENT,
+--    FIRST_LONG, HALF_WARRIOR). Guard de achieved_on IS NULL.
+-- UPDATE public.athlete_achievements AS aa
+-- SET achieved_on = v.achieved_on
+-- FROM (VALUES
+--   (580, DATE '2026-05-25'),  -- 79 FIRST_KM          src workout 753  2026-05-25
+--   (582, DATE '2026-05-25'),  -- 79 FIRST_WORKOUT     src workout 753  2026-05-25
+--   (581, DATE '2026-05-26'),  -- 79 KM_10             src workout 772  2026-05-26  REVIEW +4d
+--   (610, DATE '2026-09-04'),  -- 79 KM_100            src workout 1114 2026-09-04  REVIEW +12d
+--   (597, DATE '2026-07-26'),  -- 79 KM_50             src workout 811  2026-07-26
+--   (615, DATE '2026-09-10'),  -- 85 FIRST_KM          src workout 1124 2026-09-10  REVIEW -8d
+--   (616, DATE '2026-09-10'),  -- 85 FIRST_WORKOUT     src workout 1124 2026-09-10  REVIEW -8d
+--   (618, DATE '2026-09-22'),  -- 85 KM_10             src workout 1143 2026-09-22
+--   (628, DATE '2026-10-12'),  -- 85 KM_50             src workout 1165 2026-10-12
+--   (625, DATE '2026-10-06'),  -- 85 SPEED_DEMON       src workout 1175 2026-10-06
+--   (599, DATE '2026-08-16'),  -- 90 FIRST_KM          src workout 990  2026-08-16
+--   (601, DATE '2026-08-16'),  -- 90 FIRST_WORKOUT     src workout 990  2026-08-16
+--   (600, DATE '2026-08-16'),  -- 90 KM_10             src workout 990  2026-08-16
+--   (605, DATE '2026-08-19'),  -- 95 FIRST_KM          src workout 1018 2026-08-19
+--   (606, DATE '2026-08-19'),  -- 95 FIRST_WORKOUT     src workout 1018 2026-08-19
+--   (607, DATE '2026-08-22'),  -- 95 KM_10             src workout 1022 2026-08-22
+--   (619, DATE '2026-09-29'),  -- 95 KM_100            src workout 1156 2026-09-29
+--   (614, DATE '2026-08-30'),  -- 95 KM_50             src workout 1032 2026-08-30
+--   (620, DATE '2026-09-29'),  -- 95 SPEED_DEMON       src workout 1156 2026-09-29
+--   (621, DATE '2026-10-04'),  -- 96 FIRST_KM          src workout 1159 2026-10-04
+--   (622, DATE '2026-10-04'),  -- 96 FIRST_WORKOUT     src workout 1159 2026-10-04
+--   (623, DATE '2026-10-06'),  -- 96 KM_10             src workout 1177 2026-10-06
+--   (624, DATE '2026-10-06'),  -- 96 SPEED_DEMON       src workout 1177 2026-10-06
+--   (608, DATE '2026-08-22'),  -- 102 FIRST_KM         src workout 1021 2026-08-22
+--   (609, DATE '2026-08-22'),  -- 102 FIRST_WORKOUT    src workout 1021 2026-08-22
+--   (626, DATE '2026-10-11'),  -- 114 FIRST_KM         src workout 1191 2026-10-11
+--   (627, DATE '2026-10-11')   -- 114 FIRST_WORKOUT    src workout 1191 2026-10-11
+-- ) AS v(id, achieved_on)
+-- WHERE aa.id = v.id
+--   AND aa.achieved_on IS NULL
+-- RETURNING aa.id, aa.athlete_id, aa.achievement_code, aa.achieved_on;
+
+-- C) Verificación (solo lectura)
+-- SELECT
+--   count(*) AS filas,
+--   count(*) FILTER (WHERE achieved_on IS NOT NULL) AS con_fecha,
+--   count(*) FILTER (WHERE achieved_on IS NULL) AS sin_fecha
+-- FROM public.athlete_achievements;
+-- Esperado tras B: 40 / 34 / 6
+--   6 NULL = EARLY_BIRD 632, CONSISTENT 598 y 617, FIRST_LONG 588 y 602, HALF_WARRIOR 603
