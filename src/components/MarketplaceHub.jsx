@@ -11,7 +11,8 @@ import {
   asLibraryId,
 } from "./shared/appShared";
 import { readStructure } from "../lib/workoutStructure";
-import { enrichStructureWithPaces, stripTestTimeGoalFromDescription, stripTestTimeGoalsFromStructure } from "../lib/enrichPace";
+import { enrichStructureWithPaces, rescaleStructureToVdot, stripTestTimeGoalFromDescription, stripTestTimeGoalsFromStructure } from "../lib/enrichPace";
+import { PLAN_CALIBRATION_VDOT } from "../lib/vdot";
 import MarketplacePlanWorkoutsAccordion from "./shared/MarketplacePlanWorkoutsAccordion";
 import { LIBRARY_LIST_COLUMNS, hydrateLibraryRows } from "../lib/libraryApi";
 
@@ -328,7 +329,11 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
         const fitnessTestFlag = w.is_fitness_test === true ? true : undefined;
         const structure = stripTestTimeGoalsFromStructure(
           assignedTitle,
-          enrichStructureWithPaces(readStructure(w), athleteVdot, athleteFcMax),
+          rescaleStructureToVdot(
+            enrichStructureWithPaces(readStructure(w), athleteVdot, athleteFcMax),
+            athleteVdot,
+            PLAN_CALIBRATION_VDOT,
+          ),
           fitnessTestFlag,
         );
         return {

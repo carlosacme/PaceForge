@@ -45,6 +45,8 @@ function structureBlock({
     if (!pace) throw new Error(`Zona desconocida o VDOT inválido: ${zone}`);
     o.target_pace = pace;
     o.pace = pace;
+    o.target_zone = zone;
+    o.zone = zone;
   }
   if (description) o.description = description;
   return o;
