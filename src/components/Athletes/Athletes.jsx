@@ -279,6 +279,7 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, openRegistroW
     registroLaps,
     registroLapsLoading,
     registroBlocks,
+    registroComparison,
   } = useWorkoutRegistro({ athleteVdot });
 
   // Deep link coach_workout_completed: abrir "Ver registro" de ese workout.
@@ -672,6 +673,7 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, openRegistroW
         athleteVdot={athleteVdot}
         registroLapsLoading={registroLapsLoading}
         registroBlocks={registroBlocks}
+        registroComparison={registroComparison}
         onClose={() => setRegistroModal(null)}
       />
       <AthletePaymentModal

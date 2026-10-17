@@ -81,6 +81,7 @@ export default function AthleteOwnCalendar({
     setRegistroModal,
     registroLapsLoading,
     registroBlocks,
+    registroComparison,
   } = useWorkoutRegistro({
     athleteVdot: athleteLatestVdot,
   });
@@ -300,6 +301,7 @@ export default function AthleteOwnCalendar({
         athleteVdot={athleteLatestVdot}
         registroLapsLoading={registroLapsLoading}
         registroBlocks={registroBlocks}
+        registroComparison={registroComparison}
         onClose={() => setRegistroModal(null)}
       />
     </>

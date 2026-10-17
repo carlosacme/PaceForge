@@ -56,24 +56,25 @@ export function useWorkoutRegistro({ athleteVdot }) {
     };
   }, [registroModal]);
 
-  const registroBlocks = useMemo(() => {
+  const registroComparison = useMemo(() => {
     const w = registroModal;
     if (!w || !Array.isArray(registroLaps) || registroLaps.length === 0) return null;
     const structure = readStructure(w);
     if (!Array.isArray(structure) || structure.length === 0) return null;
     try {
       const generated = Number(w.generated_with_vdot);
-      const result = compareBlocks({
+      return compareBlocks({
         structure,
         laps: registroLaps,
         vdot: Number.isFinite(generated) && generated > 0 ? generated : athleteVdot,
         currentVdot: athleteVdot,
       });
-      return result?.blocks ?? result;
     } catch {
       return null;
     }
   }, [registroModal, registroLaps, athleteVdot]);
+
+  const registroBlocks = registroComparison?.blocks ?? null;
 
   return {
     registroModal,
@@ -82,5 +83,6 @@ export function useWorkoutRegistro({ athleteVdot }) {
     registroLapsLoading,
     registroLapsError,
     registroBlocks,
+    registroComparison,
   };
 }
