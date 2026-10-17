@@ -27,8 +27,11 @@ test("expande 8x400 a bloques sueltos y ritmos R/E", () => {
   assert.equal(rec.length, 7);
   assert.equal(work[0].distance_km, "0.4");
   assert.equal(work[0].target_pace, "3:46-3:40");
+  assert.equal(work[0].target_zone, "R");
+  assert.equal(work[0].zone, "R");
   assert.equal(paceToZone(work[0].target_pace, PLAN_CALIBRATION_VDOT), "R");
   assert.equal(paceToZone(rec[0].target_pace, PLAN_CALIBRATION_VDOT), "E");
+  assert.equal(rec[0].target_zone, "E");
   assert.equal(row.structure[0].block_type, "Calentamiento");
   assert.equal(row.structure.at(-1).block_type, "Enfriamiento");
   assert.equal(isRunWorkout(row, PLAN_CALIBRATION_VDOT), true);
