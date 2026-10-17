@@ -341,11 +341,14 @@ function blocksPromptSection(workout, vdot, laps) {
   if (!structure.length) return "";
   let rows = [];
   try {
-    rows = compareBlocks({
+    const generated = Number(workout?.generated_with_vdot);
+    const compared = compareBlocks({
       structure,
       laps: Array.isArray(laps) ? laps : [],
-      vdot,
+      vdot: Number.isFinite(generated) && generated > 0 ? generated : vdot,
+      currentVdot: vdot,
     });
+    rows = Array.isArray(compared) ? compared : (compared?.blocks || []);
   } catch {
     return "";
   }

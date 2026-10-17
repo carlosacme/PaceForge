@@ -62,7 +62,14 @@ export function useWorkoutRegistro({ athleteVdot }) {
     const structure = readStructure(w);
     if (!Array.isArray(structure) || structure.length === 0) return null;
     try {
-      return compareBlocks({ structure, laps: registroLaps, vdot: athleteVdot });
+      const generated = Number(w.generated_with_vdot);
+      const result = compareBlocks({
+        structure,
+        laps: registroLaps,
+        vdot: Number.isFinite(generated) && generated > 0 ? generated : athleteVdot,
+        currentVdot: athleteVdot,
+      });
+      return result?.blocks ?? result;
     } catch {
       return null;
     }

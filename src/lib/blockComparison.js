@@ -1,20 +1,20 @@
 /**
  * src/lib/blockComparison.js
  * -----------------------------------------------------------
- * Comparacion por bloque: PLAN (structure con duracion + target
- * cualitativo) vs EJECUTADO (laps de intervals.icu con moving_time,
- * distance y average_speed).
+ * Comparacion por bloque: PLAN vs vueltas reales (icu_intervals).
  *
- * - El ritmo objetivo por step se deriva del VDOT del atleta via
- *   vdot.js (fuente unica de verdad de ritmos).
- * - Los laps ejecutados se alinean a los steps del plan por TIEMPO
- *   ACUMULADO usando el punto medio del lap (opcion A).
+ * Ritmo previsto: el que el atleta recibio (VDOT del push /
+ * generated_with_vdot). Sin objetivo prescrito -> null, nunca Easy.
+ * Emparejamiento por similitud (tipo, duracion, distancia), no por
+ * posicion ni por rebanar un unico blob de tiempo.
  *
  * NO toca UI. Solo logica pura y testeable.
  * -----------------------------------------------------------
  */
 
 import { pacesForVdot } from "./vdot.js";
+
+export const UNGUIDED_MESSAGE = "no se lanzó el entreno guiado";
 
 /**
  * Mapeo de esfuerzo cualitativo -> zona Daniels (E/M/T/I/R).
@@ -44,14 +44,16 @@ export const EFFORT_TO_ZONE = {
 /**
  * Texto de esfuerzo -> zona. Busca coincidencia exacta y luego por inclusion,
  * priorizando la clave MAS LARGA/especifica (asi "half marathon" gana sobre
- * "marathon", y "800m" cubre "800m race effort"). Fallback conservador: "E".
+ * "marathon", y "800m" cubre "800m race effort").
+ * Cadena vacia / desconocida -> null (nunca inventar Easy).
  */
 export function zoneForEffort(text) {
   const t = String(text || "").toLowerCase().trim();
+  if (!t) return null;
   if (EFFORT_TO_ZONE[t]) return EFFORT_TO_ZONE[t];
   const keys = Object.keys(EFFORT_TO_ZONE).sort((a, b) => b.length - a.length);
   for (const k of keys) if (t.includes(k)) return EFFORT_TO_ZONE[k];
-  return "E"; // fallback conservador
+  return null;
 }
 
 /**
@@ -75,10 +77,25 @@ function durationToSecs(str) {
   return 0;
 }
 
+function parseDistKm(val) {
+  if (val == null || val === "") return 0;
+  const n = Number(String(val).replace(",", "."));
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+function distKmFromLabel(label) {
+  const s = String(label || "").toLowerCase();
+  const m = s.match(/(\d+(?:\.\d+)?)\s*(km|m)(?![a-z])/);
+  if (!m) return 0;
+  const n = parseFloat(m[1]);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return m[2] === "km" ? n : n / 1000;
+}
+
 /** Centro del ritmo objetivo (secs/km) para una zona, dado el vdot. */
 function centerPaceForZone(vdot, zone) {
   const p = pacesForVdot(vdot);
-  if (!p) return null;
+  if (!p || !zone) return null;
   const v = p[zone];
   if (v == null) return null;
   return Array.isArray(v) ? (v[0] + v[1]) / 2 : v;
@@ -87,13 +104,12 @@ function centerPaceForZone(vdot, zone) {
 /**
  * Ritmo numerico ya explicito -> secs/km. Acepta rango "5:00-5:10" (punto
  * medio) o valor unico "5:00". Devuelve null si no es un pace numerico
- * (etiqueta cualitativa "tempo", zona "Z4", vacio). Es la fuente PRIORITARIA:
- * desde que enrichStructureWithPaces hornea target_pace numerico, la zona ya
- * no se puede inferir del texto (zoneForEffort caeria a "E" para todos).
+ * (etiqueta cualitativa "tempo", zona "Z4", vacio).
  */
 function numericPaceToSecs(str) {
   if (str == null) return null;
   const s = String(str).trim();
+  if (!s) return null;
   const range = s.match(/(\d+):(\d{2})\s*[-–]\s*(\d+):(\d{2})/);
   if (range) {
     const a = +range[1] * 60 + +range[2];
@@ -105,153 +121,442 @@ function numericPaceToSecs(str) {
   return null;
 }
 
-/** Doble clic / glitch GPS: ~1s y pocos metros. No un sprint corto real. */
+/** Doble clic / glitch GPS: vueltas de fracciones de segundo, no un rest. */
 const GLITCH_MAX_DUR_S = 5;
-const GLITCH_MAX_DIST_M = 20;
 
 function isWatchGlitchSplit(sp) {
-  const dur = Number(sp?.dur_s) || 0;
-  const dist = Number(sp?.dist_m) || 0;
-  return dur < GLITCH_MAX_DUR_S || dist < GLITCH_MAX_DIST_M;
+  const dur = Number(sp?.dur_s ?? sp?.moving_time) || 0;
+  return dur > 0 && dur < GLITCH_MAX_DUR_S;
+}
+
+function haystackOf(s) {
+  return [s?.block_type, s?.phase, s?.name, s?.description, s?.block_label]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
 }
 
 /**
- * Compara plan vs ejecutado por step.
- *
- * Estrategia de alineacion: CONSUMO SECUENCIAL por duracion. Los laps se
- * gastan en orden para "llenar" cada step hasta cubrir su duracion planeada.
- * Un step puede componerse de VARIOS laps (util cuando el Auto Lap del reloj
- * parte un step en trozos, p.ej. el warm-up de 600s salio como 345s + 265s),
- * y un lap puede repartirse entre dos steps si cruza el limite (se asigna la
- * fraccion por tiempo, y la distancia proporcional). Esto es robusto al numero
- * de laps: da igual que el reloj marque 13, 14 o 20.
- *
- * @param {Object}   args
- * @param {Array}    args.structure  steps del plan (formato B: block_type /
- *                                    target_pace / duration_min; tambien
- *                                    acepta phase / pace / duration).
- * @param {Array}    args.laps        laps de intervals.icu (icu_intervals):
- *                                    { moving_time, distance, average_speed }.
- * @param {number}   args.vdot        VDOT del atleta (athlete_evaluations).
- * @returns {Array} un objeto por step. Campos agregados iguales que antes
- *   + splits[] aditivo (vueltas del reloj consumidas por ese step).
+ * warmup | cooldown | rest | recovery | work
+ * "Descanso" es rest (sin Δ de ritmo). "Recuperación" con trote es recovery.
  */
-export function compareBlocks({ structure, laps, vdot }) {
-  const steps = Array.isArray(structure) ? structure : [];
-  const lapList = Array.isArray(laps) ? laps : [];
+export function classifyPlanKind(step) {
+  const h = haystackOf(step);
+  if (/calent|\bwarm/.test(h)) return "warmup";
+  if (/enfri|\bcool|vuelta a la calma/.test(h)) return "cooldown";
+  if (/descanso|\brest\b/.test(h)) return "rest";
+  if (/recovery|recuperaci|trote|\bjog\b/.test(h)) return "recovery";
+  return "work";
+}
 
-  // 1) Steps del plan con su duracion en segundos.
-  const planSteps = steps.map((s) => {
-    const effort = s.target_pace ?? s.pace ?? s.intensity ?? "";
-    const zone = zoneForEffort(effort);
-    const dur = durationToSecs(s.duration_min ?? s.duration);
-    // Prioriza el pace numerico ya explicito (enriquecido) sobre la zona: si
-    // effort es "5:00-5:10" usa 305s; solo si es cualitativo ("tempo", "Z4")
-    // deriva desde la zona + vdot (compatibilidad con structures viejos).
-    const numericPace = numericPaceToSecs(effort);
-    return {
-      step_name: s.block_type || s.phase || s.name || "",
-      target_effort: effort,
-      target_zone: zone,
-      planned_pace_s: numericPace != null ? numericPace : centerPaceForZone(vdot, zone),
-      planned_dur_s: dur,
-      actual_dur_s: 0,
-      actual_dist_m: 0,
-      splits: [],
-    };
-  });
+function ratio(a, b) {
+  const x = Number(a) || 0;
+  const y = Number(b) || 0;
+  if (x <= 0 || y <= 0) return 0;
+  return Math.min(x, y) / Math.max(x, y);
+}
 
-  // 2) Cola de laps con tiempo/distancia RESTANTES (para fraccionar).
-  const queue = lapList.map((lp) => {
-    const t = Number(lp.moving_time) || 0;
-    const d = Number(lp.distance) || 0;
-    return { remT: t, remD: d, rate: t > 0 ? d / t : 0 }; // rate = m/s dentro del lap
-  });
+function vdotsDiffer(generated, current) {
+  const g = Number(generated);
+  const c = Number(current);
+  if (!Number.isFinite(g) || !Number.isFinite(c) || g <= 0 || c <= 0) return false;
+  return Math.abs(g - c) >= 0.05;
+}
 
-  // 3) Consumo secuencial: cada step toma laps (o fracciones) hasta cubrir
-  //    su planned_dur_s.
-  let qi = 0;
-  for (let si = 0; si < planSteps.length; si++) {
-    const st = planSteps[si];
-    let need = st.planned_dur_s;
-    while (need > 0 && qi < queue.length) {
-      const lap = queue[qi];
-      if (lap.remT <= 0) { qi++; continue; }
-      const take = Math.min(need, lap.remT);
-      const takeD = take * lap.rate;
-      st.actual_dur_s += take;
-      st.actual_dist_m += takeD;   // distancia proporcional al tiempo
-      st.splits.push({ lap_index: qi, dur_s: take, dist_m: takeD });
-      lap.remT -= take;
-      lap.remD -= takeD;
-      need -= take;
-      if (lap.remT <= 1e-9) qi++;            // lap agotado -> siguiente
-    }
-    // Si es el ULTIMO step y quedan laps sin consumir (ejecutado mas largo
-    // que lo planeado), volcamos el resto aqui para no perder datos.
-    if (si === planSteps.length - 1) {
-      while (qi < queue.length) {
-        const lap = queue[qi];
-        if (lap.remT > 0) {
-          st.actual_dur_s += lap.remT;
-          st.actual_dist_m += lap.remD;
-          const last = st.splits[st.splits.length - 1];
-          if (last && last.lap_index === qi) {
-            last.dur_s += lap.remT;
-            last.dist_m += lap.remD;
-          } else {
-            st.splits.push({ lap_index: qi, dur_s: lap.remT, dist_m: lap.remD });
-          }
+function plannedPaceForEffort(effort, vdot) {
+  const numeric = numericPaceToSecs(effort);
+  if (numeric != null) {
+    return { planned_pace_s: numeric, target_zone: zoneForEffort(effort), has_objective: true };
+  }
+  const zone = zoneForEffort(effort);
+  if (!zone) {
+    return { planned_pace_s: null, target_zone: null, has_objective: false };
+  }
+  return {
+    planned_pace_s: centerPaceForZone(vdot, zone),
+    target_zone: zone,
+    has_objective: true,
+  };
+}
+
+function fillKeyFor(step) {
+  if (step.kind === "rest" || step.kind === "recovery" || step.kind === "warmup" || step.kind === "cooldown") {
+    return step.planned_dur_s > 0 ? "dur_s" : "dist_m";
+  }
+  if (step.planned_dist_m > 0) return "dist_m";
+  return "dur_s";
+}
+
+function kindBonus(kind, lap) {
+  const t = String(lap.type || lap.label || "").toUpperCase();
+  if (kind === "rest" || kind === "recovery") {
+    if (t.includes("RECOVERY") || t.includes("REST")) return 0.08;
+    if (t.includes("WORK") || t.includes("INTERVAL")) return -0.08;
+  }
+  if (kind === "work") {
+    if (t.includes("WORK") || t.includes("INTERVAL")) return 0.08;
+    if (t.includes("RECOVERY") || t.includes("REST")) return -0.08;
+  }
+  if (kind === "warmup" && t.includes("WARM")) return 0.08;
+  if (kind === "cooldown" && t.includes("COOL")) return 0.08;
+  return 0;
+}
+
+const MIN_MATCH_RATIO = 0.55;
+
+/**
+ * Ventana consecutiva de laps sin usar cuya suma (dur o dist) mejor
+ * se acerca al objetivo. Prefiere monotone (desde minIndex) y, si no
+ * hay match, busca en todo lo no usado. Nunca "vuelca el resto".
+ */
+function bestWindow(laps, used, target, key, minIndex, kind) {
+  if (!(target > 0)) return null;
+
+  const search = (pool) => {
+    let best = null;
+    for (let a = 0; a < pool.length; a++) {
+      let sum = 0;
+      for (let b = a; b < pool.length; b++) {
+        sum += Number(laps[pool[b]][key]) || 0;
+        const n = b - a + 1;
+        const r = ratio(sum, target) + kindBonus(kind, laps[pool[a]]);
+        const cand = { indices: pool.slice(a, b + 1), sum, n, ratio: r };
+        if (
+          !best
+          || r > best.ratio + 1e-9
+          || (Math.abs(r - best.ratio) < 1e-9 && n < best.n)
+        ) {
+          best = cand;
         }
-        qi++;
+        if (sum >= target * 1.6 && n > 1) break;
       }
     }
+    return best;
+  };
+
+  const unusedFrom = [];
+  for (let i = 0; i < laps.length; i++) {
+    if (!used[i] && i >= minIndex) unusedFrom.push(i);
   }
+  let best = search(unusedFrom);
+  if (!best || best.ratio < MIN_MATCH_RATIO) {
+    const allUnused = [];
+    for (let i = 0; i < laps.length; i++) if (!used[i]) allUnused.push(i);
+    const alt = search(allUnused);
+    if (alt && (!best || alt.ratio > best.ratio)) best = alt;
+  }
+  if (!best || best.ratio < MIN_MATCH_RATIO) return null;
+  return best;
+}
 
-  // 4) Metricas por step. splits es aditivo: el agregado del padre no cambia.
-  return planSteps.map((st) => {
-    const actual_pace_s =
-      st.actual_dist_m > 0 ? st.actual_dur_s / (st.actual_dist_m / 1000) : null;
+function lapPaceS(dur, distM) {
+  return distM > 0 && dur > 0 ? dur / (distM / 1000) : null;
+}
 
-    const delta_s =
-      actual_pace_s != null && st.planned_pace_s != null
-        ? actual_pace_s - st.planned_pace_s
-        : null;
+function weightedHr(parts) {
+  let num = 0;
+  let den = 0;
+  for (const p of parts) {
+    const hr = Number(p.hr);
+    const w = Number(p.dur_s) || 0;
+    if (Number.isFinite(hr) && hr > 0 && w > 0) {
+      num += hr * w;
+      den += w;
+    }
+  }
+  return den > 0 ? Math.round(num / den) : null;
+}
 
-    const dur_mismatch =
-      st.planned_dur_s > 0
-        ? Math.abs(st.actual_dur_s - st.planned_dur_s) > 0.30 * st.planned_dur_s
-        : false;
+function emptyBlock(st) {
+  const durMismatch =
+    st.planned_dur_s > 0
+      ? Math.abs(0 - st.planned_dur_s) > 0.30 * st.planned_dur_s
+      : st.planned_dist_m > 0;
+  const incomplete =
+    (st.planned_dur_s > 0 && 0 < 0.5 * st.planned_dur_s)
+    || (st.planned_dist_m > 0 && 0 < 0.5 * st.planned_dist_m);
+  return {
+    step_name: st.step_name,
+    kind: st.kind,
+    target_effort: st.target_effort,
+    target_zone: st.target_zone,
+    has_objective: st.has_objective,
+    planned_pace_s: st.planned_pace_s,
+    actual_pace_s: null,
+    delta_s: null,
+    planned_dur_s: st.planned_dur_s,
+    planned_dist_m: Math.round(st.planned_dist_m),
+    actual_dur_s: 0,
+    actual_dist_m: 0,
+    actual_hr: null,
+    dur_mismatch: durMismatch,
+    incomplete,
+    no_data: true,
+    fused: false,
+    fused_label: null,
+    splits: [],
+  };
+}
 
-    const incomplete =
-      st.planned_dur_s > 0 && st.actual_dur_s < 0.5 * st.planned_dur_s;
+function finalizeBlock(st, assigned) {
+  if (!assigned.length) return emptyBlock(st);
 
-    // Solo lo que se pinta al expandir. El agregado del padre ya sumo
-    // todos los laps (glitches incluidos) arriba.
-    const splits = (st.splits || [])
-      .filter((sp) => !isWatchGlitchSplit(sp))
-      .map((sp, i) => ({
-        name: `Vuelta ${i + 1}`,
-        dur_s: Math.round(sp.dur_s),
-        dist_m: Math.round(sp.dist_m),
-        pace_s: sp.dist_m > 0 ? sp.dur_s / (sp.dist_m / 1000) : null,
-      }));
+  const actual_dur_s = assigned.reduce((a, p) => a + p.dur_s, 0);
+  const actual_dist_m = assigned.reduce((a, p) => a + p.dist_m, 0);
+  const actual_pace_s = lapPaceS(actual_dur_s, actual_dist_m);
+  const restNoDelta = st.kind === "rest";
+  const delta_s =
+    !restNoDelta
+    && st.has_objective
+    && actual_pace_s != null
+    && st.planned_pace_s != null
+      ? actual_pace_s - st.planned_pace_s
+      : null;
 
+  const dur_mismatch = st.planned_dur_s > 0
+    ? Math.abs(actual_dur_s - st.planned_dur_s) > 0.30 * st.planned_dur_s
+    : (st.planned_dist_m > 0
+      ? Math.abs(actual_dist_m - st.planned_dist_m) > 0.30 * st.planned_dist_m
+      : false);
+
+  const incomplete = st.planned_dur_s > 0
+    ? actual_dur_s < 0.5 * st.planned_dur_s
+    : (st.planned_dist_m > 0 ? actual_dist_m < 0.5 * st.planned_dist_m : false);
+
+  const realSplits = assigned.filter((sp) => !isWatchGlitchSplit(sp));
+  const fused = realSplits.length >= 2;
+  const splits = realSplits.map((sp, i) => ({
+    name: `Vuelta ${i + 1}`,
+    dur_s: Math.round(sp.dur_s),
+    dist_m: Math.round(sp.dist_m),
+    pace_s: lapPaceS(sp.dur_s, sp.dist_m),
+    hr: sp.hr ?? null,
+    lap_index: sp.lap_index,
+  }));
+
+  return {
+    step_name: st.step_name,
+    kind: st.kind,
+    target_effort: st.target_effort,
+    target_zone: st.target_zone,
+    has_objective: st.has_objective,
+    planned_pace_s: st.planned_pace_s,
+    actual_pace_s,
+    delta_s,
+    planned_dur_s: st.planned_dur_s,
+    planned_dist_m: Math.round(st.planned_dist_m),
+    actual_dur_s: Math.round(actual_dur_s),
+    actual_dist_m: Math.round(actual_dist_m),
+    actual_hr: weightedHr(assigned),
+    dur_mismatch,
+    incomplete,
+    no_data: false,
+    fused,
+    fused_label: fused ? `${realSplits.length} vueltas` : null,
+    splits,
+  };
+}
+
+function summarizeLaps(laps) {
+  const dur = laps.reduce((a, l) => a + (Number(l.dur_s) || 0), 0);
+  const dist = laps.reduce((a, l) => a + (Number(l.dist_m) || 0), 0);
+  return {
+    actual_dur_s: Math.round(dur),
+    actual_dist_m: Math.round(dist),
+    actual_pace_s: lapPaceS(dur, dist),
+    actual_hr: weightedHr(laps.map((l) => ({ dur_s: l.dur_s, hr: l.hr }))),
+  };
+}
+
+function parseKmSplits(kmSplits) {
+  if (!Array.isArray(kmSplits) || !kmSplits.length) return [];
+  return kmSplits.map((k, i) => {
+    const dur = Number(k.dur_s ?? k.moving_time) || 0;
+    const dist = Number(k.dist_m ?? k.distance) || 0;
     return {
-      step_name: st.step_name,
-      target_effort: st.target_effort,
-      target_zone: st.target_zone,
-      planned_pace_s: st.planned_pace_s,
-      actual_pace_s,
-      delta_s,
-      planned_dur_s: st.planned_dur_s,
-      actual_dur_s: Math.round(st.actual_dur_s),
-      actual_dist_m: Math.round(st.actual_dist_m),
-      dur_mismatch,
-      incomplete,
-      splits,
+      name: k.name || `km ${i + 1}`,
+      dur_s: Math.round(dur),
+      dist_m: Math.round(dist),
+      pace_s: lapPaceS(dur, dist),
+      hr: k.hr ?? k.average_heartrate ?? null,
     };
   });
+}
+
+function looksLikeKmLaps(laps) {
+  if (laps.length < 2) return false;
+  return laps.every((l) => l.dist_m >= 800 && l.dist_m <= 1200);
+}
+
+/**
+ * Compara plan vs ejecutado.
+ *
+ * @param {Object} args
+ * @param {Array}  args.structure
+ * @param {Array}  args.laps
+ * @param {number} args.vdot         VDOT del push (generated_with_vdot)
+ * @param {number} [args.currentVdot] VDOT vigente (aviso si difiere)
+ * @param {Array}  [args.kmSplits]    parciales por km (unguided / rodaje)
+ * @returns {{ mode, message, vdot_warning, summary, km_splits, blocks, extra }}
+ */
+export function compareBlocks({ structure, laps, vdot, currentVdot, kmSplits } = {}) {
+  const stepsIn = Array.isArray(structure) ? structure : [];
+  const rawLaps = Array.isArray(laps) ? laps : [];
+
+  const vdot_warning = vdotsDiffer(vdot, currentVdot)
+    ? { generated_vdot: Number(vdot), current_vdot: Number(currentVdot) }
+    : null;
+
+  const planSteps = stepsIn.map((s) => {
+    const effort = s.target_pace ?? s.pace ?? s.intensity ?? "";
+    const kind = classifyPlanKind(s);
+    const dur = durationToSecs(s.duration_min ?? s.duration);
+    let distKm = parseDistKm(s.distance_km);
+    if (!distKm && kind === "work") {
+      distKm = distKmFromLabel(s.block_type || s.phase || s.name || "");
+    }
+    const pace = plannedPaceForEffort(effort, vdot);
+    return {
+      step_name: s.block_type || s.phase || s.name || "",
+      kind,
+      target_effort: effort,
+      ...pace,
+      planned_dur_s: dur,
+      planned_dist_m: distKm * 1000,
+    };
+  });
+
+  const extra = [];
+  const usable = [];
+  rawLaps.forEach((lp, i) => {
+    const dur = Number(lp.moving_time) || 0;
+    const dist = Number(lp.distance) || 0;
+    const hr = lp.average_heartrate ?? lp.hr ?? null;
+    const row = {
+      lap_index: i,
+      dur_s: dur,
+      dist_m: dist,
+      hr,
+      type: lp.type || "",
+      label: lp.label || "",
+      pace_s: lapPaceS(dur, dist),
+    };
+    if (dur <= 0 && dist <= 0) return;
+    if (isWatchGlitchSplit(row)) {
+      extra.push({
+        reason: "glitch",
+        name: `Vuelta ${i + 1}`,
+        dur_s: Math.round(dur),
+        dist_m: Math.round(dist),
+        pace_s: row.pace_s,
+        hr,
+        lap_index: i,
+      });
+      return;
+    }
+    usable.push(row);
+  });
+
+  const summary = summarizeLaps(
+    usable.length ? usable : rawLaps.map((lp, i) => ({
+      dur_s: Number(lp.moving_time) || 0,
+      dist_m: Number(lp.distance) || 0,
+      hr: lp.average_heartrate ?? lp.hr ?? null,
+    })),
+  );
+
+  const kmFromArg = parseKmSplits(kmSplits);
+  const km_splits = kmFromArg.length
+    ? kmFromArg
+    : (looksLikeKmLaps(usable)
+      ? usable.map((l, i) => ({
+        name: `km ${i + 1}`,
+        dur_s: Math.round(l.dur_s),
+        dist_m: Math.round(l.dist_m),
+        pace_s: l.pace_s,
+        hr: l.hr,
+      }))
+      : []);
+
+  // Una sola vuelta (o menos de la mitad de los bloques) en un plan con
+  // varios pasos: el reloj no lanzo el entreno guiado. Un plan de 1-2
+  // bloques con 1 vuelta (rodaje, 3 km suelto) SI se empareja.
+  const unguided = planSteps.length >= 3 && (
+    usable.length <= 1 || usable.length < planSteps.length / 2
+  );
+
+  if (!planSteps.length) {
+    return {
+      mode: "matched",
+      message: null,
+      vdot_warning,
+      summary,
+      km_splits,
+      blocks: [],
+      extra,
+    };
+  }
+
+  if (unguided) {
+    for (const lap of usable) {
+      extra.push({
+        reason: "unmatched",
+        name: `Vuelta ${lap.lap_index + 1}`,
+        dur_s: Math.round(lap.dur_s),
+        dist_m: Math.round(lap.dist_m),
+        pace_s: lap.pace_s,
+        hr: lap.hr,
+        lap_index: lap.lap_index,
+      });
+    }
+    return {
+      mode: "unguided",
+      message: UNGUIDED_MESSAGE,
+      vdot_warning,
+      summary,
+      km_splits,
+      blocks: [],
+      extra,
+    };
+  }
+
+  const used = new Array(usable.length).fill(false);
+  let minIndex = 0;
+  const blocks = planSteps.map((st) => {
+    const key = fillKeyFor(st);
+    const target = key === "dist_m" ? st.planned_dist_m : st.planned_dur_s;
+    const win = bestWindow(usable, used, target, key, minIndex, st.kind);
+    if (!win) return emptyBlock(st);
+    const assigned = win.indices.map((idx) => {
+      used[idx] = true;
+      return usable[idx];
+    });
+    minIndex = Math.max(minIndex, win.indices[win.indices.length - 1] + 1);
+    return finalizeBlock(st, assigned);
+  });
+
+  usable.forEach((lap, i) => {
+    if (used[i]) return;
+    extra.push({
+      reason: "unmatched",
+      name: `Vuelta ${lap.lap_index + 1}`,
+      dur_s: Math.round(lap.dur_s),
+      dist_m: Math.round(lap.dist_m),
+      pace_s: lap.pace_s,
+      hr: lap.hr,
+      lap_index: lap.lap_index,
+    });
+  });
+
+  return {
+    mode: "matched",
+    message: null,
+    vdot_warning,
+    summary,
+    km_splits,
+    blocks,
+    extra,
+  };
 }
 
 /** Chevron solo si, tras tirar glitches, quedan 2+ vueltas reales. */
@@ -259,37 +564,9 @@ export function blockHasWatchSplits(block) {
   return Array.isArray(block?.splits) && block.splits.length >= 2;
 }
 
-export default compareBlocks;
+export function compareBlockRows(args) {
+  const result = compareBlocks(args);
+  return Array.isArray(result) ? result : (result.blocks || []);
+}
 
-/* ============================================================
- * TEST RAPIDO (verificable mentalmente) - CONSUMO SECUENCIAL
- * ------------------------------------------------------------
- * structure:
- *   [ { block_type: "Warm-up",  target_pace: "Easy jog",  duration_min: "10 min" },  // E, 600s
- *     { block_type: "Interval", target_pace: "5K effort", duration_min: "5 min"  } ] // I, 300s
- *
- * Caso clave: el warm-up (600s) sale PARTIDO en 2 laps por el Auto Lap del
- * reloj, y el interval en 1 lap:
- *   laps = [ { moving_time: 350, distance: 1000, average_speed: ~2.857 },  // parte 1 warm-up
- *            { moving_time: 250, distance:  800, average_speed: ~3.200 },  // parte 2 warm-up
- *            { moving_time: 300, distance: 1200, average_speed: 4.000 } ]  // interval
- *
- * Consumo secuencial:
- *   step0 (need 600): toma lap0 completo (350s,1000m) + lap1 completo
- *                     (250s,800m) = 600s, 1800m  -> queda need 0.
- *     actual_dur_s  = 600            -> dur_mismatch = false, incomplete = false
- *     actual_dist_m = 1800
- *     actual_pace_s = 600 / (1800/1000) = 333.3 s/km (5:33/km)
- *   step1 (need 300): toma lap2 completo (300s,1200m).
- *     actual_dur_s  = 300
- *     actual_dist_m = 1200
- *     actual_pace_s = 300 / 1.2 = 250 s/km (4:10/km)
- *     splits        = 2 vueltas (expandible) / 1 vuelta (sin chevron)
- *
- * Fraccionamiento: si lap0 fuera 700s/2000m y el step0 solo necesita 600s,
- * se asigna 600/700 del lap -> 600s y 2000*(600/700)=1714m al step0, y el
- * resto (100s, 286m) queda para el step1.
- *
- * Los ritmos reales (333 y 250 s/km) son verificables sin vdot; los
- * planned_pace_s dependen del vdot pasado.
- * ============================================================ */
+export default compareBlocks;
