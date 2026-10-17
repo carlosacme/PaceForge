@@ -16,7 +16,7 @@
 
 import { pacesForVdot } from "./vdot.js";
 
-export const UNGUIDED_MESSAGE = "no se lanzó el entreno guiado";
+export const UNGUIDED_MESSAGE = "No se lanzó el entreno guiado";
 
 /** Texto para la IA: no inventar comparacion por bloque. */
 export function unguidedBlocksPrompt(summary) {
