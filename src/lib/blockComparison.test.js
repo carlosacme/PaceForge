@@ -7,6 +7,7 @@ import {
   zoneForEffort,
   classifyPlanKind,
   UNGUIDED_MESSAGE,
+  unguidedBlocksPrompt,
 } from "./blockComparison.js";
 
 const VDOT_PUSH = 43.37;
@@ -278,6 +279,55 @@ test("(vii) una sola vuelta: unguided, resumen, sin Δ por bloque", () => {
     laps: [lap({ t: 1576, d: 4492 })],
     vdot: VDOT_PUSH,
   }).length, 0);
+});
+
+test("(viii) 9 vueltas de 1 km vs TEST 3K de 12 bloques: unguided, km_splits", () => {
+  const laps = Array.from({ length: 9 }, (_, i) =>
+    lap({ t: 350 + i, d: 1000 + i, hr: 140 + (i % 5) }),
+  );
+  const result = compareBlocks({
+    structure: test3kStructure(),
+    laps,
+    vdot: VDOT_PUSH,
+  });
+  assert.equal(result.mode, "unguided");
+  assert.equal(result.message, UNGUIDED_MESSAGE);
+  assert.equal(result.blocks.length, 0);
+  assert.equal(result.km_splits.length, 9);
+  assert.equal(result.km_splits[0].name, "km 1");
+  assert.ok(result.summary.actual_dist_m >= 9000);
+  const prompt = unguidedBlocksPrompt(result.summary);
+  assert.match(prompt, /no se lanzó el entreno guiado/i);
+  assert.match(prompt, /NO analices por bloque/i);
+});
+
+test("3 km en 3 vueltas de 1 km se fusiona si el resto de vueltas corresponde al plan", () => {
+  const pair = [
+    lap({ t: 60, d: 250, hr: 150, type: "WORK" }),
+    lap({ t: 60, d: 140, hr: 130, type: "RECOVERY" }),
+  ];
+  const laps = [
+    lap({ t: 900, d: 2400, hr: 128, type: "WORK" }),
+    ...pair, ...pair, ...pair, ...pair,
+    lap({ t: 180, d: 50, hr: 110, type: "RECOVERY" }),
+    lap({ t: 250, d: 1000, hr: 152, type: "WORK" }),
+    lap({ t: 248, d: 1000, hr: 155, type: "WORK" }),
+    lap({ t: 254, d: 1000, hr: 158, type: "WORK" }),
+    lap({ t: 598, d: 1820, hr: 140, type: "WORK" }),
+  ];
+  const result = compareBlocks({
+    structure: test3kStructure(),
+    laps,
+    vdot: VDOT_PUSH,
+  });
+  assert.equal(result.mode, "matched");
+  const k3 = result.blocks[10];
+  assert.equal(k3.fused, true);
+  assert.equal(k3.fused_label, "3 vueltas");
+  assert.equal(k3.actual_dist_m, 3000);
+  assert.equal(k3.splits.length, 3);
+  assert.equal(result.blocks[11].actual_dist_m, 1820);
+  assert.equal(result.blocks[11].fused, false);
 });
 
 test("fusion de auto-lap en calentamiento lleva chip 2 vueltas", () => {

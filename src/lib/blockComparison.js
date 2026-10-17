@@ -16,6 +16,18 @@ import { pacesForVdot } from "./vdot.js";
 
 export const UNGUIDED_MESSAGE = "no se lanzó el entreno guiado";
 
+/** Texto para la IA: no inventar comparacion por bloque. */
+export function unguidedBlocksPrompt(summary) {
+  const sum = summary || {};
+  const dist = sum.actual_dist_m != null ? `${sum.actual_dist_m} m` : "N/R";
+  const dur = sum.actual_dur_s != null ? `${sum.actual_dur_s} s` : "N/R";
+  return (
+    `\nPASOS: ${UNGUIDED_MESSAGE}. ` +
+    `NO analices por bloque ni inventes ritmos o resultados por intervalo; ` +
+    `el reloj no lanzó el entreno guiado. Resumen: ${dist}, ${dur}.\n`
+  );
+}
+
 /**
  * Mapeo de esfuerzo cualitativo -> zona Daniels (E/M/T/I/R).
  * Nota: aqui HM y 10K se colapsan a T a proposito (comparacion
@@ -388,6 +400,65 @@ function looksLikeKmLaps(laps) {
   return laps.every((l) => l.dist_m >= 800 && l.dist_m <= 1200);
 }
 
+function hasShortPlanBlocks(planSteps) {
+  return planSteps.some((s) =>
+    (s.planned_dur_s > 0 && s.planned_dur_s < 120)
+    || (s.planned_dist_m > 0 && s.planned_dist_m < 1000)
+  );
+}
+
+/** Rodaje / 3K suelto: 1-2 bloques largos, sin series cortas. */
+function isSimpleEndurancePlan(planSteps) {
+  if (planSteps.length === 0 || planSteps.length > 2) return false;
+  if (hasShortPlanBlocks(planSteps)) return false;
+  return planSteps.every((s) =>
+    s.kind === "warmup" || s.kind === "cooldown" || s.kind === "work"
+  );
+}
+
+/**
+ * Auto-lap de ~1 km cubre bloques por distancia (p.ej. 3 vueltas = 3 km)
+ * y no hay series de <1 km / <120 s que hayan quedado sin vuelta propia.
+ */
+function kmLapsClearlyMatchDistanceSteps(planSteps, usable) {
+  if (hasShortPlanBlocks(planSteps)) return false;
+  const distSteps = planSteps.filter((s) => s.planned_dist_m >= 800);
+  if (!distSteps.length) return false;
+  const otherLong = planSteps.filter((s) =>
+    s.planned_dist_m < 800 && s.planned_dur_s >= 120
+  );
+  if (otherLong.length) return false;
+  const plannedM = distSteps.reduce((a, s) => a + s.planned_dist_m, 0);
+  const lapM = usable.reduce((a, l) => a + l.dist_m, 0);
+  return ratio(plannedM, lapM) >= 0.7;
+}
+
+/**
+ * Auto-lap por km (todas las vueltas ~1 km) no se puede alinear a un plan
+ * con series por tiempo o bloques cortos. Excepcion: plan simple de
+ * resistencia, o las vueltas cubren solo bloques por distancia.
+ */
+function isKmAutoLapUnguided(planSteps, usable) {
+  if (!looksLikeKmLaps(usable)) return false;
+  if (isSimpleEndurancePlan(planSteps)) return false;
+  if (kmLapsClearlyMatchDistanceSteps(planSteps, usable)) return false;
+  const timeOnly = planSteps.some((s) => s.planned_dur_s > 0 && s.planned_dist_m <= 0);
+  const countsDiffer = usable.length !== planSteps.length;
+  return hasShortPlanBlocks(planSteps) || timeOnly || countsDiffer;
+}
+
+function isUnguidedSession(planSteps, usable) {
+  // Una sola vuelta (o menos de la mitad de los bloques) en un plan con
+  // varios pasos: el reloj no lanzo el entreno guiado. Un plan de 1-2
+  // bloques con 1 vuelta (rodaje, 3 km suelto) SI se empareja.
+  if (planSteps.length >= 3 && (
+    usable.length <= 1 || usable.length < planSteps.length / 2
+  )) {
+    return true;
+  }
+  return isKmAutoLapUnguided(planSteps, usable);
+}
+
 /**
  * Compara plan vs ejecutado.
  *
@@ -478,12 +549,7 @@ export function compareBlocks({ structure, laps, vdot, currentVdot, kmSplits } =
       }))
       : []);
 
-  // Una sola vuelta (o menos de la mitad de los bloques) en un plan con
-  // varios pasos: el reloj no lanzo el entreno guiado. Un plan de 1-2
-  // bloques con 1 vuelta (rodaje, 3 km suelto) SI se empareja.
-  const unguided = planSteps.length >= 3 && (
-    usable.length <= 1 || usable.length < planSteps.length / 2
-  );
+  const unguided = isUnguidedSession(planSteps, usable);
 
   if (!planSteps.length) {
     return {
