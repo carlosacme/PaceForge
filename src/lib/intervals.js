@@ -264,6 +264,24 @@ function isWarmupish(label) {
   return /activaci[oó]n|progresiv|calentamiento|warm/.test(String(label).toLowerCase());
 }
 
+export const WATCH_FAST_LABEL = "RÁPIDO";
+export const WATCH_RECOVERY_LABEL = "RECUPERACIÓN";
+
+/**
+ * Sesion con series / recuperaciones / intervalo por distancia.
+ * Un rodaje continuo NO entra: el texto ICU debe quedar igual que hoy.
+ */
+function sessionHasIntervals(norm) {
+  if (!Array.isArray(norm) || !norm.length) return false;
+  if (norm.some((s) => isRecovery(s.label))) return true;
+  if (norm.some((s) => /intervalo|repetici/i.test(String(s.label || "")))) return true;
+  const body = norm.filter((s) => {
+    const sec = sectionOf(s.label);
+    return sec !== "Warmup" && sec !== "Cooldown";
+  });
+  return body.some((s) => s.distKm != null && s.distKm > 0 && s.distKm < 8);
+}
+
 // Un bloque con distancia en el nombre ("400m") se exporta POR DISTANCIA
 // ("0.4km"): el reloj marca la vuelta al cumplir los metros, como se corren
 // los intervalos de verdad. Si no hay distancia, va por tiempo (comportamiento
@@ -272,6 +290,36 @@ const stepLine = (s) => {
   const amount = s.distKm != null ? `${s.distKm}km` : secsToIcuDuration(s.secs);
   return s.pace ? `- ${amount} ${s.pace}/km Pace` : `- ${amount}`;
 };
+
+/**
+ * Linea ICU. Con watchStepLabels:
+ *  - texto ANTES de la duracion = cue que Garmin/COROS anuncia (RÁPIDO / RECUPERACIÓN)
+ *  - intensity=rest = paso FIT rest (ICU no usa recovery:true en description)
+ *  - intensity=warmup|cooldown|active para WU / CD / trabajo
+ *  - sin Pace si el bloque no trae ritmo (TEST all-out): el reloj no alerta
+ */
+function formatIcuStep(s, labeled, role) {
+  if (!labeled) return stepLine(s);
+  const pace = s.pace;
+  let cue = "";
+  let intensity = "";
+  if (role === "warmup") {
+    intensity = "warmup";
+  } else if (role === "cooldown") {
+    intensity = "cooldown";
+  } else if (isRecovery(s.label)) {
+    cue = WATCH_RECOVERY_LABEL;
+    intensity = "rest";
+  } else {
+    cue = WATCH_FAST_LABEL;
+    intensity = "active";
+  }
+  const amount = s.distKm != null ? `${s.distKm}km` : secsToIcuDuration(s.secs);
+  const cueBit = cue ? `${cue} ` : "";
+  const paceBit = pace ? ` ${pace}/km Pace` : "";
+  const intBit = intensity ? ` intensity=${intensity}` : "";
+  return `- ${cueBit}${amount}${paceBit}${intBit}`;
+}
 
 /**
  * Agrupa pares (trabajo + recuperacion) repetidos en "Main Set Nx".
@@ -363,9 +411,13 @@ function expandRepeatBlocks(structure) {
  *
  * @param {object} workout - fila de workouts (usa structure o workout_structure)
  * @param {number} vdot    - VDOT del atleta (de athlete_evaluations.vdot)
+ * @param {object} [options]
+ * @param {boolean} [options.watchStepLabels] - etiquetas RÁPIDO/RECUPERACIÓN
+ *   e intensity= para el reloj. OFF por defecto; no cambia lo ya enviado.
  * @returns {string} texto para el campo 'description' del evento
  */
-export function toIntervalsText(workout, vdot = 42.5) {
+export function toIntervalsText(workout, vdot = 42.5, options = {}) {
+  const watchStepLabels = options === true || options?.watchStepLabels === true;
   const structure = expandRepeatBlocks(readStructure(workout));
 
   // Sin estructura: sesion simple desde duration_min
@@ -379,6 +431,8 @@ export function toIntervalsText(workout, vdot = 42.5) {
   const norm = structure.map((b) => normalizeBlock(b, vdot)).filter(Boolean);
   if (norm.length === 0) return `Sesion\n- ${workout?.duration_min || 30}m`;
 
+  const labeled = watchStepLabels && sessionHasIntervals(norm);
+
   // Separar warmup y cooldown del cuerpo principal
   let start = 0, end = norm.length;
   const head = [], tail = [];
@@ -389,18 +443,25 @@ export function toIntervalsText(workout, vdot = 42.5) {
   const body = norm.slice(start, end);
 
   const lines = [];
-  if (head.length) lines.push("", "Warmup", stepLine(head[0]));
+  if (head.length) {
+    lines.push("", "Warmup", formatIcuStep(head[0], labeled, "warmup"));
+  }
 
   for (const g of groupRepeats(body)) {
     if (g.type === "repeat") {
       lines.push("", `Main Set ${g.reps}x`);
-      for (const s of g.steps) lines.push(stepLine(s));
+      for (const s of g.steps) lines.push(formatIcuStep(s, labeled, null));
     } else {
-      lines.push("", g.step.label || "Step", stepLine(g.step));
+      const title = labeled
+        ? (isRecovery(g.step.label) ? WATCH_RECOVERY_LABEL : WATCH_FAST_LABEL)
+        : (g.step.label || "Step");
+      lines.push("", title, formatIcuStep(g.step, labeled, null));
     }
   }
 
-  if (tail.length) lines.push("", "Cooldown", stepLine(tail[0]));
+  if (tail.length) {
+    lines.push("", "Cooldown", formatIcuStep(tail[0], labeled, "cooldown"));
+  }
 
   return lines.join("\n").trim();
 }
@@ -435,7 +496,7 @@ export function buildIntervalsDeletePayload(workoutIds) {
  * external_id es lo que empareja el upsert: al reenviar el mismo workout se
  * actualiza su evento en vez de duplicarlo.
  */
-export function buildIntervalsEvent(workout, vdot = 42.5) {
+export function buildIntervalsEvent(workout, vdot = 42.5, options = {}) {
   // uid = clave del calendario; external_id = id de sync externo (el que usa
   // el upsert del bulk). Ambos con el mismo valor evita duplicados al reenviar.
   const uid = intervalsExternalId(workout.id);
@@ -446,7 +507,7 @@ export function buildIntervalsEvent(workout, vdot = 42.5) {
     name: workout.title || "Entrenamiento",
     uid,
     external_id: uid,
-    description: toIntervalsText(workout, vdot),
+    description: toIntervalsText(workout, vdot, options),
   };
 }
 

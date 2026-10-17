@@ -1,13 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { fmtPace } from "../../lib/vdot";
 import { classifyStepSection } from "../../lib/intervals";
-import { blockHasWatchSplits } from "../../lib/blockComparison";
-
-function fmtDistM(m) {
-  if (m == null || !Number.isFinite(m)) return "—";
-  if (m >= 1000) return `${(m / 1000).toFixed(2)} km`;
-  return `${Math.round(m)} m`;
-}
+import { isUnguidedComparison } from "../../lib/registroComparisonView";
+import RegistroComparison from "./RegistroComparison";
 
 const STEP_FILTERS = [
   { id: "all", label: "Todos" },
@@ -17,7 +11,6 @@ const STEP_FILTERS = [
 ];
 
 const WorkoutRouteMap = React.lazy(() => import("../WorkoutRouteMap"));
-const RegistroPaceChart = React.lazy(() => import("./RegistroPaceChart"));
 
 /**
  * Modal 📋 Registro. z-index 10010 (por encima del menú del calendario, 300).
@@ -28,23 +21,30 @@ export default function WorkoutRegistroModal({
   athleteVdot,
   registroLapsLoading,
   registroBlocks,
+  registroComparison,
   onClose,
 }) {
   const [stepFilter, setStepFilter] = useState("all");
-  const [expandedRows, setExpandedRows] = useState(() => new Set());
   useEffect(() => {
     setStepFilter("all");
-    setExpandedRows(new Set());
   }, [workout?.id]);
-  useEffect(() => {
-    setExpandedRows(new Set());
-  }, [stepFilter]);
+
+  const comparison = useMemo(() => {
+    if (registroComparison && !Array.isArray(registroComparison)) return registroComparison;
+    if (Array.isArray(registroBlocks) && registroBlocks.length) {
+      return { mode: "matched", blocks: registroBlocks, extra: [], km_splits: [] };
+    }
+    return registroComparison || null;
+  }, [registroComparison, registroBlocks]);
+
+  const unguided = isUnguidedComparison(comparison);
+  const allBlocks = comparison?.blocks || [];
 
   const filteredBlocks = useMemo(() => {
-    const rows = registroBlocks || [];
-    if (stepFilter === "all") return rows;
-    return rows.filter((b) => classifyStepSection(b.step_name) === stepFilter);
-  }, [registroBlocks, stepFilter]);
+    if (unguided) return [];
+    if (stepFilter === "all") return allBlocks;
+    return allBlocks.filter((b) => classifyStepSection(b.step_name) === stepFilter);
+  }, [allBlocks, stepFilter, unguided]);
 
   if (!workout) return null;
   const w = workout;
@@ -63,7 +63,7 @@ export default function WorkoutRegistroModal({
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.6)", zIndex: 10010, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-      <div style={{ background: "#fff", borderRadius: 16, padding: 24, maxWidth: 720, width: "100%", maxHeight: "80vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,.3)" }}>
+      <div style={{ background: "#fff", borderRadius: 16, padding: 24, maxWidth: 820, width: "100%", maxHeight: "80vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,.3)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
           <div>
             <div style={{ fontSize: ".7em", fontWeight: 800, color: "#0369a1", textTransform: "uppercase", letterSpacing: ".1em" }}>📋 Registro</div>
@@ -104,8 +104,9 @@ export default function WorkoutRegistroModal({
                   </div>
                   {registroLapsLoading ? (
                     <div style={{ color: "#64748b" }}>Cargando bloques…</div>
-                  ) : (registroBlocks && registroBlocks.length ? (
+                  ) : (unguided || allBlocks.length ? (
                     <>
+                    {!unguided ? (
                     <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
                       {STEP_FILTERS.map((f) => {
                         const selected = stepFilter === f.id;
@@ -131,100 +132,14 @@ export default function WorkoutRegistroModal({
                         );
                       })}
                     </div>
-                    {filteredBlocks.length ? (
-                    <>
-                    <React.Suspense fallback={<div style={{ height: 220, color: "#94a3b8", fontSize: ".85em" }}>Cargando gráfico…</div>}>
-                      <RegistroPaceChart blocks={filteredBlocks} />
-                    </React.Suspense>
-                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: ".9em" }}>
-                      <thead>
-                        <tr style={{ textAlign: "left", color: "#64748b", fontSize: ".85em" }}>
-                          <th style={{ padding: "4px 6px" }}>Bloque</th>
-                          <th style={{ padding: "4px 6px", textAlign: "right", whiteSpace: "nowrap" }}>Ritmo previsto</th>
-                          <th style={{ padding: "4px 6px", textAlign: "right" }}>Real</th>
-                          <th style={{ padding: "4px 6px", textAlign: "right" }}>Δ</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filteredBlocks.map((b, i) => {
-                          const faster = b.delta_s != null && b.delta_s <= 0;
-                          const deltaColor = b.delta_s == null ? "#94a3b8" : (faster ? "#16a34a" : "#ea580c");
-                          const deltaTxt = b.delta_s == null ? "—" : `${b.delta_s <= 0 ? "" : "+"}${Math.round(b.delta_s)}s`;
-                          const expandable = blockHasWatchSplits(b);
-                          const open = expandable && expandedRows.has(i);
-                          return (
-                            <React.Fragment key={i}>
-                            <tr style={{ borderTop: "1px solid #f1f5f9", opacity: b.dur_mismatch && !b.incomplete ? 0.55 : 1 }}>
-                              <td style={{ padding: "4px 6px", fontWeight: 600 }}>
-                                {expandable ? (
-                                  <button
-                                    type="button"
-                                    aria-expanded={open}
-                                    aria-label={open ? "Ocultar vueltas del reloj" : "Ver vueltas del reloj"}
-                                    onClick={() => setExpandedRows((prev) => {
-                                      const next = new Set(prev);
-                                      if (next.has(i)) next.delete(i);
-                                      else next.add(i);
-                                      return next;
-                                    })}
-                                    style={{
-                                      marginRight: 4,
-                                      padding: 0,
-                                      border: "none",
-                                      background: "transparent",
-                                      color: "#0d9488",
-                                      cursor: "pointer",
-                                      fontFamily: "inherit",
-                                      fontSize: "1em",
-                                      fontWeight: 800,
-                                      lineHeight: 1,
-                                      verticalAlign: "middle",
-                                    }}
-                                  >
-                                    {open ? "▾" : "▸"}
-                                  </button>
-                                ) : null}
-                                {b.step_name || `Bloque ${i + 1}`}
-                                {b.incomplete ? <span style={{ color: "#b45309", fontWeight: 700 }}> · no completado</span> : null}
-                                {b.dur_mismatch && !b.incomplete ? <span title="Duración muy distinta a la planeada"> ⚠️</span> : null}
-                              </td>
-                              <td style={{ padding: "4px 6px", textAlign: "right", whiteSpace: "nowrap" }}>{b.planned_pace_s != null ? `${fmtPace(b.planned_pace_s)}/km` : "—"}</td>
-                              <td style={{ padding: "4px 6px", textAlign: "right" }}>{b.actual_pace_s != null ? `${fmtPace(b.actual_pace_s)}/km` : "—"}</td>
-                              <td style={{ padding: "4px 6px", textAlign: "right", color: deltaColor, fontWeight: 700 }}>{deltaTxt}</td>
-                            </tr>
-                            {open ? (
-                              <tr>
-                                <td colSpan={4} style={{ padding: "4px 6px 10px 22px" }}>
-                                  <div style={{ fontSize: ".72em", color: "#94a3b8", fontWeight: 700, marginBottom: 4 }}>Vueltas del reloj</div>
-                                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: ".88em", color: "#475569" }}>
-                                    <thead>
-                                      <tr style={{ color: "#94a3b8", fontSize: ".9em" }}>
-                                        <th style={{ padding: "2px 4px", textAlign: "left", fontWeight: 600 }}>Vuelta</th>
-                                        <th style={{ padding: "2px 4px", textAlign: "right", fontWeight: 600 }}>Tiempo</th>
-                                        <th style={{ padding: "2px 4px", textAlign: "right", fontWeight: 600 }}>Distancia</th>
-                                        <th style={{ padding: "2px 4px", textAlign: "right", fontWeight: 600 }}>Ritmo</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody>
-                                      {(b.splits || []).map((sp, si) => (
-                                        <tr key={`${i}-${si}`}>
-                                          <td style={{ padding: "2px 4px", fontWeight: 600 }}>{sp.name}</td>
-                                          <td style={{ padding: "2px 4px", textAlign: "right", whiteSpace: "nowrap" }}>{sp.dur_s != null ? fmtPace(sp.dur_s) : "—"}</td>
-                                          <td style={{ padding: "2px 4px", textAlign: "right" }}>{fmtDistM(sp.dist_m)}</td>
-                                          <td style={{ padding: "2px 4px", textAlign: "right" }}>{sp.pace_s != null ? `${fmtPace(sp.pace_s)}/km` : "—"}</td>
-                                        </tr>
-                                      ))}
-                                    </tbody>
-                                  </table>
-                                </td>
-                              </tr>
-                            ) : null}
-                            </React.Fragment>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                    </>
+                    ) : null}
+                    {unguided || filteredBlocks.length ? (
+                      <RegistroComparison
+                        key={stepFilter}
+                        comparison={comparison}
+                        blocks={unguided ? [] : filteredBlocks}
+                        chartBlocks={unguided ? [] : filteredBlocks}
+                      />
                     ) : (
                       <div style={{ color: "#94a3b8" }}>No hay bloques de este tipo</div>
                     )}
