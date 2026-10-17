@@ -115,3 +115,42 @@ test("incompleto y extra no se etiquetan como fallo", () => {
   assert.equal(extraLabel({ reason: "glitch", name: "Vuelta 1" }), "Vuelta muy corta");
   assert.equal(extraLabel({ reason: "unmatched", name: "Vuelta 3" }), "Vuelta 3");
 });
+
+test("badge por zona real: Intervalo + E pace es RODAJE, M pace es RITMO", () => {
+  assert.equal(kindBadge({
+    kind: "work",
+    step_name: "Intervalo",
+    description: "50' E pace",
+    target_effort: "6:38-6:03",
+    target_zone: "E",
+  }).text, "RODAJE");
+  assert.equal(kindBadge({
+    kind: "work",
+    step_name: "Intervalo",
+    description: "10' M pace",
+    target_effort: "5:18-5:12",
+    target_zone: "M",
+  }).text, "RITMO");
+  assert.equal(kindBadge({
+    kind: "work",
+    step_name: "Intervalo",
+    description: "10' T pace",
+    target_zone: "T",
+  }).text, "RITMO");
+  assert.equal(kindBadge({
+    kind: "work",
+    step_name: "Intervalo",
+    description: "activación R pace",
+    target_zone: "R",
+  }).text, "RÁPIDO");
+});
+
+test("bloque no emparejado con posteriores sí emparejados: No realizado", () => {
+  const blocks = [{ no_data: true }, { no_data: false }];
+  assert.equal(blockStatusNote(blocks[0], { blocks, index: 0 }), "No realizado");
+  assert.equal(blockStatusNote(blocks[1], { blocks, index: 1 }), null);
+  assert.equal(
+    blockStatusNote({ no_data: true }, { blocks: [{ no_data: true }, { no_data: true }], index: 0 }),
+    "Sin datos del reloj",
+  );
+});

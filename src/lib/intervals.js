@@ -21,6 +21,11 @@
 
 import { pacesForVdot, fmtPace } from "./vdot.js";
 import { readStructure } from "./workoutStructure.js";
+import {
+  classifyPlanKind,
+  mergeAdjacentNormalizedSteps,
+  resolveDanielsZone,
+} from "./blockComparison.js";
 
 /**
  * Mapeo de esfuerzos cualitativos -> zona Daniels.
@@ -266,6 +271,15 @@ function isWarmupish(label) {
 
 export const WATCH_FAST_LABEL = "RÁPIDO";
 export const WATCH_RECOVERY_LABEL = "RECUPERACIÓN";
+export const WATCH_EASY_LABEL = "RODAJE";
+export const WATCH_TEMPO_LABEL = "RITMO";
+
+function watchWorkLabel(step) {
+  const zone = step?.zone || step?.target_zone;
+  if (zone === "E") return WATCH_EASY_LABEL;
+  if (zone === "M" || zone === "T") return WATCH_TEMPO_LABEL;
+  return WATCH_FAST_LABEL;
+}
 
 /**
  * Sesion con series / recuperaciones / intervalo por distancia.
@@ -307,11 +321,11 @@ function formatIcuStep(s, labeled, role) {
     intensity = "warmup";
   } else if (role === "cooldown") {
     intensity = "cooldown";
-  } else if (isRecovery(s.label)) {
+  } else if (isRecovery(s.label) || s.kind === "recovery" || s.kind === "rest") {
     cue = WATCH_RECOVERY_LABEL;
     intensity = "rest";
   } else {
-    cue = WATCH_FAST_LABEL;
+    cue = watchWorkLabel(s);
     intensity = "active";
   }
   const amount = s.distKm != null ? `${s.distKm}km` : secsToIcuDuration(s.secs);
@@ -428,10 +442,30 @@ export function toIntervalsText(workout, vdot = 42.5, options = {}) {
     return `Sesion\n- ${mins}m${pace}`;
   }
 
-  const norm = structure.map((b) => normalizeBlock(b, vdot)).filter(Boolean);
-  if (norm.length === 0) return `Sesion\n- ${workout?.duration_min || 30}m`;
+  const rawNorm = structure.map((b) => {
+    const n = normalizeBlock(b, vdot);
+    if (!n) return null;
+    const zone = resolveDanielsZone({
+      target_zone: b.target_zone,
+      text: [b.description, b.block_type, b.phase, b.target_pace, n.label].filter(Boolean).join(" "),
+      pace: n.pace || b.target_pace,
+      vdot,
+    });
+    return {
+      ...n,
+      description: String(b?.description ?? "").trim(),
+      zone,
+      target_zone: zone,
+      kind: classifyPlanKind(b),
+    };
+  }).filter(Boolean);
+  if (rawNorm.length === 0) return `Sesion\n- ${workout?.duration_min || 30}m`;
 
-  const labeled = watchStepLabels && sessionHasIntervals(norm);
+  const labeled = watchStepLabels && sessionHasIntervals(rawNorm);
+  // Fusion de pasos adyacentes del mismo objetivo: solo con el flag ON.
+  const norm = watchStepLabels
+    ? mergeAdjacentNormalizedSteps(rawNorm, vdot)
+    : rawNorm;
 
   // Separar warmup y cooldown del cuerpo principal
   let start = 0, end = norm.length;
@@ -453,7 +487,9 @@ export function toIntervalsText(workout, vdot = 42.5, options = {}) {
       for (const s of g.steps) lines.push(formatIcuStep(s, labeled, null));
     } else {
       const title = labeled
-        ? (isRecovery(g.step.label) ? WATCH_RECOVERY_LABEL : WATCH_FAST_LABEL)
+        ? (isRecovery(g.step.label) || g.step.kind === "recovery" || g.step.kind === "rest"
+          ? WATCH_RECOVERY_LABEL
+          : watchWorkLabel(g.step))
         : (g.step.label || "Step");
       lines.push("", title, formatIcuStep(g.step, labeled, null));
     }
@@ -574,12 +610,22 @@ export function getWorkoutDetailGroups(workout, vdot = 42.5) {
   for (const b of structure) {
     const n = normalizeBlock(b, vdot);
     if (!n) continue;
+    const description = String(b?.description ?? "").trim();
+    const zone = resolveDanielsZone({
+      target_zone: b.target_zone,
+      text: [description, b.block_type, b.phase, b.target_pace, n.label].filter(Boolean).join(" "),
+      pace: n.pace || b.target_pace,
+      vdot,
+    });
     steps.push({
       ...n,
       targetHr: String(b?.target_hr ?? "").trim(),
-      description: String(b?.description ?? "").trim(),
+      description,
+      zone,
+      target_zone: zone,
+      kind: classifyPlanKind(b),
     });
   }
   if (!steps.length) return { hasStructure: false, groups: [] };
-  return { hasStructure: true, groups: groupRepeats(steps) };
+  return { hasStructure: true, groups: groupRepeats(mergeAdjacentNormalizedSteps(steps, vdot)) };
 }

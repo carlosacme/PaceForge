@@ -14,7 +14,7 @@
  * -----------------------------------------------------------
  */
 
-import { pacesForVdot } from "./vdot.js";
+import { pacesForVdot, paceToZone } from "./vdot.js";
 
 export const UNGUIDED_MESSAGE = "No se lanzó el entreno guiado";
 
@@ -40,19 +40,19 @@ export function unguidedBlocksPrompt(summary) {
 export const EFFORT_TO_ZONE = {
   // Facil
   "conversational": "E", "easy jog": "E", "relaxed easy": "E",
-  "recovery": "E", "easy": "E",
+  "recovery": "E", "easy": "E", "e pace": "E", "rodaje": "E",
   // Maraton
-  "marathon": "M",
+  "marathon": "M", "m pace": "M",
   // Medio maraton -> lo tratamos como umbral (T). OJO: "half marathon" debe
   // ganarle a "marathon"; se resuelve iterando por clave mas larga primero.
-  "half marathon": "T", "hm effort": "T",
-  "threshold": "T", "tempo": "T", "10k": "T",
+  "half marathon": "T", "hm effort": "T", "hm pace": "T",
+  "threshold": "T", "tempo": "T", "10k": "T", "t pace": "T", "t10 pace": "T",
   // Umbral: "comfortably hard" = umbral (Daniels), igual que intervals.js.
   "comfortably hard": "T",
   // Intervalo / VO2max
-  "5k": "I", "3k": "I", "vo2": "I",
+  "5k": "I", "3k": "I", "vo2": "I", "i pace": "I",
   // Repeticion / velocidad
-  "mile": "R", "1500": "R", "800m": "R", "400m": "R", "sprint": "R",
+  "mile": "R", "1500": "R", "800m": "R", "400m": "R", "sprint": "R", "r pace": "R",
 };
 
 /**
@@ -61,13 +61,161 @@ export const EFFORT_TO_ZONE = {
  * "marathon", y "800m" cubre "800m race effort").
  * Cadena vacia / desconocida -> null (nunca inventar Easy).
  */
+const EXPLICIT_ZONES = new Set(["E", "M", "T", "I", "R", "HM", "T10"]);
+
+function canonicalizeZone(zone) {
+  if (zone === "HM" || zone === "T10") return "T";
+  return zone || null;
+}
+
 export function zoneForEffort(text) {
   const t = String(text || "").toLowerCase().trim();
   if (!t) return null;
-  if (EFFORT_TO_ZONE[t]) return EFFORT_TO_ZONE[t];
+  if (EFFORT_TO_ZONE[t]) return canonicalizeZone(EFFORT_TO_ZONE[t]);
+  const tagged = t.match(/\b(t10|hm|[emtir])\s*pace\b/);
+  if (tagged) return canonicalizeZone(tagged[1].toUpperCase());
   const keys = Object.keys(EFFORT_TO_ZONE).sort((a, b) => b.length - a.length);
-  for (const k of keys) if (t.includes(k)) return EFFORT_TO_ZONE[k];
+  for (const k of keys) if (t.includes(k)) return canonicalizeZone(EFFORT_TO_ZONE[k]);
+  if (/\b(rodaje|long(?:\s+run)?|tirada)\b/.test(t)) return "E";
   return null;
+}
+
+/**
+ * Zona real del paso: target_zone, texto (E pace / easy / rodaje / long)
+ * o el ritmo frente a las zonas del VDOT. No usa solo step_name.
+ */
+export function resolveDanielsZone({ target_zone, text, pace, vdot } = {}) {
+  const explicit = String(target_zone || "").trim().toUpperCase();
+  if (EXPLICIT_ZONES.has(explicit)) return canonicalizeZone(explicit);
+  const fromText = zoneForEffort(text) || zoneForEffort(pace);
+  if (fromText) return fromText;
+  if (pace && vdot) {
+    const fromPace = paceToZone(pace, vdot);
+    if (fromPace) return canonicalizeZone(fromPace);
+  }
+  return null;
+}
+
+/** "6:38-6:03/km" y "6:03-6:38" son el mismo rango. */
+export function normalizePaceRangeKey(pace) {
+  if (pace == null) return null;
+  const s = String(pace).trim();
+  if (!s) return null;
+  const range = s.match(/(\d+):(\d{2})\s*[-–]\s*(\d+):(\d{2})/);
+  if (range) {
+    const a = +range[1] * 60 + +range[2];
+    const b = +range[3] * 60 + +range[4];
+    return `${Math.min(a, b)}-${Math.max(a, b)}`;
+  }
+  const single = s.match(/(\d+):(\d{2})/);
+  if (!single) return null;
+  const t = +single[1] * 60 + +single[2];
+  return `${t}-${t}`;
+}
+
+export function measureKindOf(durS, distM) {
+  const t = Number(durS) > 0;
+  const d = Number(distM) > 0;
+  if (t && !d) return "time";
+  if (d && !t) return "distance";
+  if (t && d) return "both";
+  return "none";
+}
+
+export function combineStepLabels(a, b) {
+  const na = String(a || "").trim();
+  const nb = String(b || "").trim();
+  if (na && nb && na !== nb) return `${na} + ${nb}`;
+  return na || nb;
+}
+
+function canMergeSameTarget(a, b) {
+  if (a.kind !== "work" || b.kind !== "work") return false;
+  if (a.measure !== b.measure || a.measure === "none") return false;
+  if (!a.paceKey || !b.paceKey || a.paceKey !== b.paceKey) return false;
+  if (a.zone && b.zone && a.zone !== b.zone) return false;
+  return true;
+}
+
+export function mergeAdjacentSameTarget(items, getMeta, mergeTwo) {
+  if (!Array.isArray(items) || items.length < 2) return items;
+  const out = [];
+  for (const item of items) {
+    const prev = out[out.length - 1];
+    if (prev && canMergeSameTarget(getMeta(prev), getMeta(item))) {
+      out[out.length - 1] = mergeTwo(prev, item);
+    } else {
+      out.push(item);
+    }
+  }
+  return out;
+}
+
+function planStepDisplayName(st) {
+  return String(st.description || st.step_name || "").trim();
+}
+
+/** Fusiona work adyacentes con el mismo ritmo/zona/medida. No toca WU/CD/rest. */
+export function mergeAdjacentPlanSteps(steps) {
+  return mergeAdjacentSameTarget(
+    steps,
+    (st) => ({
+      kind: st.kind,
+      zone: st.target_zone,
+      paceKey: normalizePaceRangeKey(st.target_effort),
+      measure: measureKindOf(st.planned_dur_s, st.planned_dist_m),
+    }),
+    (a, b) => ({
+      ...a,
+      step_name: combineStepLabels(planStepDisplayName(a), planStepDisplayName(b)),
+      description: combineStepLabels(planStepDisplayName(a), planStepDisplayName(b)),
+      planned_dur_s: (Number(a.planned_dur_s) || 0) + (Number(b.planned_dur_s) || 0),
+      planned_dist_m: (Number(a.planned_dist_m) || 0) + (Number(b.planned_dist_m) || 0),
+      has_objective: !!(a.has_objective || b.has_objective),
+      target_zone: a.target_zone || b.target_zone,
+    }),
+  );
+}
+
+/** Misma fusion sobre pasos ya normalizados (vista del plan / texto ICU). */
+export function mergeAdjacentNormalizedSteps(steps, vdot) {
+  const prepared = (Array.isArray(steps) ? steps : []).map((s) => {
+    const kind = s.kind || classifyPlanKind({
+      block_type: s.label,
+      description: s.description,
+    });
+    const zone = s.zone || s.target_zone || resolveDanielsZone({
+      target_zone: s.target_zone,
+      text: [s.description, s.label].filter(Boolean).join(" "),
+      pace: s.pace,
+      vdot,
+    });
+    return { ...s, kind, zone, target_zone: zone };
+  });
+  return mergeAdjacentSameTarget(
+    prepared,
+    (s) => ({
+      kind: s.kind,
+      zone: s.zone,
+      paceKey: normalizePaceRangeKey(s.pace),
+      measure: measureKindOf(s.secs, s.distKm != null ? Number(s.distKm) * 1000 : 0),
+    }),
+    (a, b) => {
+      const bothTime = Number(a.secs) > 0 && Number(b.secs) > 0;
+      const bothDist = a.distKm != null && b.distKm != null
+        && Number(a.distKm) > 0 && Number(b.distKm) > 0;
+      const name = combineStepLabels(a.description || a.label, b.description || b.label);
+      return {
+        ...a,
+        label: name || a.label,
+        description: combineStepLabels(a.description, b.description),
+        secs: bothTime ? Number(a.secs) + Number(b.secs) : a.secs,
+        distKm: bothDist ? Number(a.distKm) + Number(b.distKm) : (bothTime ? null : a.distKm),
+        zone: a.zone || b.zone,
+        target_zone: a.zone || b.zone,
+      };
+    },
+  );
 }
 
 /**
@@ -177,20 +325,25 @@ function vdotsDiffer(generated, current) {
   return Math.abs(g - c) >= 0.05;
 }
 
-function plannedPaceForEffort(effort, vdot) {
+function plannedPaceForEffort(effort, vdot, zoneHint) {
   const numeric = numericPaceToSecs(effort);
   if (numeric != null) {
-    return { planned_pace_s: numeric, target_zone: zoneForEffort(effort), has_objective: true };
+    return {
+      planned_pace_s: numeric,
+      target_zone: zoneHint || zoneForEffort(effort),
+      has_objective: true,
+    };
   }
-  const zone = zoneForEffort(effort);
-  if (!zone) {
-    return { planned_pace_s: null, target_zone: null, has_objective: false };
+  // Solo el esfuerzo prescrito (no la descripcion "3K all-out") inventa ritmo.
+  const zoneFromEffort = zoneForEffort(effort);
+  if (zoneFromEffort) {
+    return {
+      planned_pace_s: centerPaceForZone(vdot, zoneFromEffort),
+      target_zone: zoneFromEffort,
+      has_objective: true,
+    };
   }
-  return {
-    planned_pace_s: centerPaceForZone(vdot, zone),
-    target_zone: zone,
-    has_objective: true,
-  };
+  return { planned_pace_s: null, target_zone: null, has_objective: false };
 }
 
 function fillKeyFor(step) {
@@ -409,13 +562,16 @@ function hasShortPlanBlocks(planSteps) {
   );
 }
 
-/** Rodaje / 3K suelto: 1-2 bloques largos, sin series cortas. */
+/** Rodaje / 3K suelto: 1-2 bloques largos del mismo ritmo, sin series cortas. */
 function isSimpleEndurancePlan(planSteps) {
   if (planSteps.length === 0 || planSteps.length > 2) return false;
   if (hasShortPlanBlocks(planSteps)) return false;
-  return planSteps.every((s) =>
+  if (!planSteps.every((s) =>
     s.kind === "warmup" || s.kind === "cooldown" || s.kind === "work"
-  );
+  )) return false;
+  // E luego M (long progresivo) no es un rodaje de un solo ritmo.
+  if (planSteps.length === 2 && !sameEnduranceZone(planSteps)) return false;
+  return true;
 }
 
 function looksLikeIntervalLabel(st) {
@@ -491,6 +647,8 @@ function isKmAutoLapUnguided(planSteps, usable) {
   if (!looksLikeKmLaps(usable)) return false;
   if (isSimpleEndurancePlan(planSteps)) return false;
   if (kmLapsClearlyMatchDistanceSteps(planSteps, usable)) return false;
+  // 2-3 vueltas de ~1 km que cubren WU + serie no son un auto-lap de 10-13 km.
+  if (usable.length < 8 && usable.length <= planSteps.length + 1) return false;
   const timeOnly = planSteps.some((s) => s.planned_dur_s > 0 && s.planned_dist_m <= 0);
   const countsDiffer = usable.length !== planSteps.length;
   return hasShortPlanBlocks(planSteps) || timeOnly || countsDiffer;
@@ -498,11 +656,13 @@ function isKmAutoLapUnguided(planSteps, usable) {
 
 function isUnguidedSession(planSteps, usable) {
   // Una sola vuelta (o menos de la mitad de los bloques) en un plan con
-  // varios pasos: el reloj no lanzo el entreno guiado. Un plan de 1-2
-  // bloques con 1 vuelta (rodaje, 3 km suelto) SI se empareja.
-  if (planSteps.length >= 3 && (
-    usable.length <= 1 || usable.length < planSteps.length / 2
-  )) {
+  // varios pasos distintos: el reloj no lanzo el entreno guiado.
+  // Un rodaje de 1-2 bloques del mismo ritmo con 1 vuelta SI se empareja.
+  if (
+    planSteps.length >= 2
+    && !isSimpleEndurancePlan(planSteps)
+    && (usable.length <= 1 || usable.length < planSteps.length / 2)
+  ) {
     return true;
   }
   return isKmAutoLapUnguided(planSteps, usable);
@@ -535,9 +695,18 @@ export function compareBlocks({ structure, laps, vdot, currentVdot, kmSplits } =
     if (!distKm && kind === "work") {
       distKm = distKmFromLabel(s.block_type || s.phase || s.name || "");
     }
-    const pace = plannedPaceForEffort(effort, vdot);
+    const description = String(s.description || "").trim();
+    const step_name = s.block_type || s.phase || s.name || "";
+    const zone = resolveDanielsZone({
+      target_zone: s.target_zone,
+      text: [description, step_name, s.block_label, effort].filter(Boolean).join(" "),
+      pace: effort,
+      vdot,
+    });
+    const pace = plannedPaceForEffort(effort, vdot, zone);
     return {
-      step_name: s.block_type || s.phase || s.name || "",
+      step_name,
+      description,
       kind,
       target_effort: effort,
       ...pace,
@@ -598,7 +767,7 @@ export function compareBlocks({ structure, laps, vdot, currentVdot, kmSplits } =
       }))
       : []);
 
-  const matchSteps = collapseContinuousPlan(planSteps);
+  const matchSteps = collapseContinuousPlan(mergeAdjacentPlanSteps(planSteps));
   const unguided = isUnguidedSession(matchSteps, usable);
 
   if (!planSteps.length) {
