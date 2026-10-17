@@ -299,6 +299,19 @@ export function stripEmbeddedPaceFromText(text) {
 }
 
 /**
+ * workouts.description que ve el atleta: mismo strip de TEST que ya
+ * aplicamos al guardar, más ritmos /km embebidos (VDOT de biblioteca ~47.2).
+ * No persiste. El ritmo visible es structure[].target_pace.
+ * Limpia el espacio suelto antes de ")" que deja el strip en "4x(1' + 1' )".
+ */
+export function athleteVisibleWorkoutDescription(title, description, isFitnessTest) {
+  const stripped = stripEmbeddedPaceFromText(
+    stripTestTimeGoalFromDescription(title, description, isFitnessTest),
+  );
+  return stripped.replace(/\s+([)\]])/g, "$1");
+}
+
+/**
  * Reescala los ritmos ABSOLUTOS de una estructura al VDOT objetivo del atleta.
  *
  * Los workouts importados a la biblioteca traen ritmos fijos, escritos a un VDOT

@@ -17,6 +17,7 @@ export default function WorkoutDetailSheet({
   canEditPlan = false,
   onEdit,
   onDelete,
+  stripDescriptionPaces = false,
 }) {
   useEffect(() => {
     if (!workout) return undefined;
@@ -109,7 +110,7 @@ export default function WorkoutDetailSheet({
         </div>
 
         <div style={{ padding: "12px 16px 16px", overflowY: "auto", minHeight: 0, flex: "1 1 auto" }}>
-          <WorkoutDetailBreakdown workout={w} vdot={vdot} />
+          <WorkoutDetailBreakdown workout={w} vdot={vdot} stripDescriptionPaces={stripDescriptionPaces} />
 
           {Array.isArray(structure) && structure.length > 0 ? (
             <div style={{ marginTop: 16 }}>

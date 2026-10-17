@@ -295,6 +295,7 @@ export default function AthleteOwnCalendar({
         vdot={athleteLatestVdot}
         onClose={closeWorkoutDetailSheet}
         canEditPlan={false}
+        stripDescriptionPaces
       />
       <WorkoutRegistroModal
         workout={registroModal}

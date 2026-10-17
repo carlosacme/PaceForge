@@ -1,14 +1,17 @@
 import React, { useMemo } from "react";
 import { getWorkoutDetailGroups, formatDetailStepAmount } from "../lib/intervals";
-import { stripTestTimeGoalFromDescription, stripTestTimeGoalsFromStructure } from "../lib/enrichPace";
+import { athleteVisibleWorkoutDescription, stripTestTimeGoalFromDescription, stripTestTimeGoalsFromStructure } from "../lib/enrichPace";
 import { kindBadge } from "../lib/registroComparisonView";
 
 /**
  * Desglose tipo TrainingPeaks: descripcion general + PASOS (con repeticiones
  * agrupadas vía groupRepeats). Pensado para vivir dentro del menú contextual
  * del calendario del atleta.
+ *
+ * stripDescriptionPaces: solo el calendario del atleta. El coach comparte
+ * esta hoja y debe ver workouts.description cruda (con /km de biblioteca).
  */
-export default function WorkoutDetailBreakdown({ workout, vdot = 42.5 }) {
+export default function WorkoutDetailBreakdown({ workout, vdot = 42.5, stripDescriptionPaces = false }) {
   const { hasStructure, groups } = useMemo(
     () => {
       const structure = stripTestTimeGoalsFromStructure(
@@ -20,9 +23,10 @@ export default function WorkoutDetailBreakdown({ workout, vdot = 42.5 }) {
     [workout, vdot],
   );
 
-  const generalDescription = stripTestTimeGoalFromDescription(
-    workout?.title,
-    workout?.description || "",
+  const generalDescription = (
+    stripDescriptionPaces
+      ? athleteVisibleWorkoutDescription(workout?.title, workout?.description || "")
+      : stripTestTimeGoalFromDescription(workout?.title, workout?.description || "")
   ).trim();
   const title = String(workout?.title || "Entrenamiento").trim();
   const simpleKm = workout?.total_km != null && Number(workout.total_km) > 0
