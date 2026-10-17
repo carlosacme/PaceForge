@@ -89,6 +89,17 @@ test("Cuestas: 8x(45s … + 90s …) se lee bien sin ritmos", () => {
   assert.equal(visible, "8x(45s + 90s)");
 });
 
+test("sin espacio antes del punto: I pace . Rec 1:1 → I pace. Rec 1:1", () => {
+  const raw = `4x1km I pace @ ${T_PACE}. Rec 1:1`;
+  const stripped = stripEmbeddedPaceFromText(raw);
+  assertNoEmbeddedPace("I pace period", stripped);
+  assert.equal(stripped, "4x1km I pace . Rec 1:1");
+  assert.equal(
+    athleteVisibleWorkoutDescription("Cruise Intervals", raw),
+    "4x1km I pace. Rec 1:1",
+  );
+});
+
 test("descripción sin ritmos /km queda igual", () => {
   for (const [name, text] of Object.entries(WITHOUT_PACES)) {
     assert.equal(stripEmbeddedPaceFromText(text), text, name);
