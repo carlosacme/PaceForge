@@ -48,7 +48,7 @@ import {
   userFacingError,
 } from "./shared/appShared";
 import WorkoutStructureEditor from "./shared/WorkoutStructureEditor";
-import { enrichStructureWithPaces, rescaleStructureToVdot, stripTestTimeGoalFromDescription, stripTestTimeGoalsFromStructure } from "../lib/enrichPace";
+import { enrichStructureWithPaces, stripTestTimeGoalFromDescription, stripTestTimeGoalsFromStructure } from "../lib/enrichPace";
 
 /** Metros por competencia, para validar el tiempo objetivo contra el VDOT. */
 const RACE_METERS_BY_COMPETITION = {
@@ -1037,14 +1037,10 @@ Rules: exactly 2 weeks, exactly ${daysPerWeek} workouts each week, same weekdays
         // En TEST se quita el reloj-objetivo (mismo criterio que Biblioteca).
         const structure = stripTestTimeGoalsFromStructure(
           assignedTitle,
-          rescaleStructureToVdot(
-            enrichStructureWithPaces(
-              Array.isArray(wo.structure) ? wo.structure : [],
-              vdotPaceRanges?.vdotUsed,
-              selectedAthlete.fc_max,
-            ),
+          enrichStructureWithPaces(
+            Array.isArray(wo.structure) ? wo.structure : [],
             vdotPaceRanges?.vdotUsed,
-            vdotPaceRanges?.vdotUsed,
+            selectedAthlete.fc_max,
           ),
           fitnessTestFlag,
         );
