@@ -292,12 +292,25 @@ function fitnessTestFlagForWorkout(w, lookup) {
  * Contrapartida: la respuesta no dice si cada evento se creo o se actualizo,
  * asi que la accion reportada es "upserted" para todos.
  */
+async function athleteWatchStepLabels(athleteId) {
+  if (!athleteId) return false;
+  try {
+    const rows = await sb(`athletes?id=eq.${athleteId}&select=watch_step_labels`);
+    return rows?.[0]?.watch_step_labels === true;
+  } catch (err) {
+    // Columna aun no migrada: no romper el envio; se queda el formato de siempre.
+    console.warn("[pushWorkouts] watch_step_labels no disponible:", err?.message || err);
+    return false;
+  }
+}
+
 async function pushWorkouts(conn, workouts, vdot) {
   if (!workouts?.length) return [];
 
   // Sin fecha no hay sitio en el calendario: no ocupan hueco en el lote.
   const sendable = workouts.filter((w) => w.scheduled_date);
   const fitnessLookup = await loadFitnessTestLookup(sendable.map((w) => w.coach_id));
+  const watchStepLabels = await athleteWatchStepLabels(sendable[0]?.athlete_id || workouts[0]?.athlete_id);
   const events = sendable.map((w) =>
     buildIntervalsEvent({
       ...w,
@@ -306,7 +319,7 @@ async function pushWorkouts(conn, workouts, vdot) {
         readStructure(w),
         fitnessTestFlagForWorkout(w, fitnessLookup),
       ),
-    }, vdot),
+    }, vdot, { watchStepLabels }),
   );
 
   let byExternalId = new Map();
