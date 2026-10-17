@@ -157,7 +157,7 @@ export default function RegistroComparison({ comparison, blocks: blocksProp, cha
             const delta = deltaDisplay(b);
             const expandable = showChevron && blockHasWatchSplits(b);
             const open = expandable && expandedRows.has(i);
-            const note = blockStatusNote(b);
+            const note = blockStatusNote(b, { blocks, index: i });
             const deltaColor = delta.faster == null
               ? "var(--pf-reg-muted)"
               : (delta.faster ? "#16a34a" : "#ea580c");

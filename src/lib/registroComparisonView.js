@@ -5,7 +5,7 @@
  */
 
 import { fmtPace } from "./vdot.js";
-import { UNGUIDED_MESSAGE } from "./blockComparison.js";
+import { UNGUIDED_MESSAGE, resolveDanielsZone } from "./blockComparison.js";
 
 export { UNGUIDED_MESSAGE };
 
@@ -16,6 +16,7 @@ export const KIND_BADGE = {
   recovery: { key: "recovery", text: "RECUPERACIÓN", bg: "#0f766e", fg: "#fff", darkBg: "#2dd4bf", darkFg: "#042f2e" },
   fast: { key: "fast", text: "RÁPIDO", bg: "#9f1239", fg: "#fff", darkBg: "#fb7185", darkFg: "#4c0519" },
   easy: { key: "easy", text: "RODAJE", bg: "#1d4ed8", fg: "#fff", darkBg: "#93c5fd", darkFg: "#1e3a8a" },
+  tempo: { key: "tempo", text: "RITMO", bg: "#d97706", fg: "#fff", darkBg: "#fbbf24", darkFg: "#451a03" },
 };
 
 export function fmtDistM(m) {
@@ -30,19 +31,25 @@ export function fmtDurS(s) {
   return fmtPace(Number(s));
 }
 
-function isEasyEndurance(block) {
-  if (block?.target_zone === "E") return true;
-  const name = String(block?.step_name || "").toLowerCase();
-  return /rodaje|easy|largo|long run|tirada|conversational/.test(name);
+function zoneOfBlock(block) {
+  if (!block) return null;
+  return resolveDanielsZone({
+    target_zone: block.target_zone,
+    text: [block.description, block.step_name, block.target_effort, block.label].filter(Boolean).join(" "),
+    pace: block.target_effort || block.pace,
+    vdot: block.vdot,
+  });
 }
 
-/** Etiqueta de fila para un atleta nuevo: fuerte vs trote vs WU/CD. */
+/** Etiqueta de fila: zona real (E/M/T/I/R), no el block_type Intervalo. */
 export function kindBadge(block) {
   const kind = block?.kind;
   if (kind === "warmup") return KIND_BADGE.warmup;
   if (kind === "cooldown") return KIND_BADGE.cooldown;
   if (kind === "rest" || kind === "recovery") return KIND_BADGE.recovery;
-  if (isEasyEndurance(block)) return KIND_BADGE.easy;
+  const zone = zoneOfBlock(block);
+  if (zone === "E") return KIND_BADGE.easy;
+  if (zone === "M" || zone === "T") return KIND_BADGE.tempo;
   return KIND_BADGE.fast;
 }
 
@@ -112,9 +119,16 @@ export function extraLabel(row) {
   return row?.name || "Vuelta extra";
 }
 
-export function blockStatusNote(block) {
+export function blockStatusNote(block, ctx) {
   if (!block) return null;
-  if (block.no_data) return "Sin datos del reloj";
+  if (block.no_data) {
+    const blocks = ctx?.blocks;
+    const index = ctx?.index;
+    const laterMatched = Array.isArray(blocks)
+      && Number.isInteger(index)
+      && blocks.slice(index + 1).some((b) => b && !b.no_data);
+    return laterMatched ? "No realizado" : "Sin datos del reloj";
+  }
   if (block.incomplete) return "Registro parcial";
   if (block.dur_mismatch) return "Duración distinta al plan";
   return null;

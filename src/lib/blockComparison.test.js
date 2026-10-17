@@ -9,6 +9,7 @@ import {
   UNGUIDED_MESSAGE,
   unguidedBlocksPrompt,
 } from "./blockComparison.js";
+import { kindBadge } from "./registroComparisonView.js";
 
 const VDOT_PUSH = 43.37;
 const VDOT_NOW = 40.37;
@@ -66,6 +67,11 @@ test("zoneForEffort vacio no cae a Easy", () => {
   assert.equal(zoneForEffort(""), null);
   assert.equal(zoneForEffort("   "), null);
   assert.equal(zoneForEffort("easy jog"), "E");
+  assert.equal(zoneForEffort("50' E pace"), "E");
+  assert.equal(zoneForEffort("15' E pace rápido"), "E");
+  assert.equal(zoneForEffort("10' M pace"), "M");
+  assert.equal(zoneForEffort("rodaje largo"), "E");
+  assert.equal(zoneForEffort("long run"), "E");
 });
 
 test("classifyPlanKind distingue rest de recovery con trote", () => {
@@ -440,4 +446,114 @@ test("fusion de auto-lap en calentamiento lleva chip 2 vueltas", () => {
   assert.equal(wu.actual_dur_s, 600);
   assert.equal(result.blocks[1].actual_dur_s, 300);
   assert.equal(result.blocks[1].fused, false);
+});
+
+/** Long Progresivo de Carlos: 3 Intervalo, sin target_zone, zona en la descripción. */
+function longProgresivoStructure() {
+  return [
+    { block_type: "Intervalo", description: "50' E pace", duration_min: "50", target_pace: "6:38-6:03" },
+    { block_type: "Intervalo", description: "15' E pace rápido", duration_min: "15", target_pace: "6:38-6:03" },
+    { block_type: "Intervalo", description: "10' M pace", duration_min: "10", target_pace: "5:18-5:12" },
+  ];
+}
+
+test("(a) Long Progresivo guiado 3 vueltas → 2 filas RODAJE 65' + RITMO 10' con chip 2 vueltas", () => {
+  const result = compareBlocks({
+    structure: longProgresivoStructure(),
+    laps: [
+      lap({ t: 3000, d: 7884, hr: 132 }),
+      lap({ t: 900, d: 2365, hr: 138 }),
+      lap({ t: 600, d: 1905, hr: 152 }),
+    ],
+    vdot: VDOT_PUSH,
+  });
+  assert.equal(result.mode, "matched");
+  assert.equal(result.blocks.length, 2);
+  const easy = result.blocks[0];
+  const tempo = result.blocks[1];
+  assert.equal(easy.target_zone, "E");
+  assert.equal(easy.planned_dur_s, 3900);
+  assert.equal(easy.step_name, "50' E pace + 15' E pace rápido");
+  assert.equal(easy.fused, true);
+  assert.equal(easy.fused_label, "2 vueltas");
+  assert.equal(easy.splits.length, 2);
+  assert.equal(easy.actual_dur_s, 3900);
+  assert.equal(kindBadge(easy).text, "RODAJE");
+  assert.equal(tempo.target_zone, "M");
+  assert.equal(tempo.planned_dur_s, 600);
+  assert.equal(tempo.fused, false);
+  assert.equal(tempo.actual_dur_s, 600);
+  assert.equal(kindBadge(tempo).text, "RITMO");
+});
+
+test("(b) Long Progresivo con 13 vueltas de 1 km → unguided", () => {
+  const laps = Array.from({ length: 13 }, (_, i) =>
+    lap({ t: 380 + i, d: 1000, hr: 135 }),
+  );
+  const result = compareBlocks({
+    structure: longProgresivoStructure(),
+    laps,
+    vdot: VDOT_PUSH,
+  });
+  assert.equal(result.mode, "unguided");
+  assert.equal(result.message, UNGUIDED_MESSAGE);
+  assert.equal(result.blocks.length, 0);
+  assert.equal(result.km_splits.length, 13);
+});
+
+test("(c) Long Progresivo con una sola vuelta de 13 km → unguided", () => {
+  const result = compareBlocks({
+    structure: longProgresivoStructure(),
+    laps: [lap({ t: 4940, d: 13000, hr: 140 })],
+    vdot: VDOT_PUSH,
+  });
+  assert.equal(result.mode, "unguided");
+  assert.equal(result.message, UNGUIDED_MESSAGE);
+  assert.equal(result.blocks.length, 0);
+  assert.equal(result.summary.actual_dist_m, 13000);
+});
+
+test("(d) TEST 3K y rodaje 10 km siguen igual", () => {
+  const test3k = compareBlocks({
+    structure: test3kStructure(),
+    laps: lapsOnePerBlock(),
+    vdot: VDOT_PUSH,
+  });
+  assert.equal(test3k.mode, "matched");
+  assert.equal(test3k.blocks.length, 12);
+  assert.equal(test3k.blocks[10].has_objective, false);
+  assert.equal(test3k.blocks[10].target_zone, null);
+  assert.equal(test3k.blocks[10].actual_dist_m, 3000);
+
+  const rodaje = compareBlocks({
+    structure: [{ block_type: "Rodaje", description: "Easy", distance_km: "10", target_pace: "6:24-5:49" }],
+    laps: Array.from({ length: 10 }, () => lap({ t: 360, d: 1000 })),
+    vdot: VDOT_PUSH,
+  });
+  assert.equal(rodaje.mode, "matched");
+  assert.equal(rodaje.blocks.length, 1);
+  assert.equal(rodaje.blocks[0].fused_label, "10 vueltas");
+  assert.equal(kindBadge(rodaje.blocks[0]).text, "RODAJE");
+});
+
+test("no fusiona warmup/cooldown/rest ni ritmos distintos", () => {
+  const easy = "6:24-5:49";
+  const result = compareBlocks({
+    structure: [
+      { block_type: "Calentamiento", duration_min: "10", target_pace: easy },
+      { block_type: "Rodaje", duration_min: "40", target_pace: easy },
+      { block_type: "Enfriamiento", duration_min: "10", target_pace: easy },
+    ],
+    laps: [
+      lap({ t: 600, d: 1600 }),
+      lap({ t: 2400, d: 6400 }),
+      lap({ t: 600, d: 1550 }),
+    ],
+    vdot: VDOT_PUSH,
+  });
+  assert.equal(result.mode, "matched");
+  assert.equal(result.blocks.length, 3);
+  assert.equal(result.blocks[0].kind, "warmup");
+  assert.equal(result.blocks[1].kind, "work");
+  assert.equal(result.blocks[2].kind, "cooldown");
 });

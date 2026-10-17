@@ -41,6 +41,7 @@
 .pf-reg-badge-warmup { background: #b45309; color: #fff; }
 .pf-reg-badge-cooldown { background: #334155; color: #fff; }
 .pf-reg-badge-easy { background: #1d4ed8; color: #fff; }
+.pf-reg-badge-tempo { background: #d97706; color: #fff; }
 
 @media (prefers-color-scheme: dark) {
   .pf-reg-badge-fast { background: #fb7185; color: #4c0519; }
@@ -48,6 +49,7 @@
   .pf-reg-badge-warmup { background: #fdba74; color: #431407; }
   .pf-reg-badge-cooldown { background: #94a3b8; color: #0f172a; }
   .pf-reg-badge-easy { background: #93c5fd; color: #1e3a8a; }
+  .pf-reg-badge-tempo { background: #fbbf24; color: #451a03; }
 }
 
 .pf-reg-chip {
