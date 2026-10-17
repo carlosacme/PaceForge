@@ -1,7 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { toIntervalsText, buildIntervalsEvent } from "./intervals.js";
-import { pacesForVdot, fmtPace } from "./vdot.js";
 
 const VDOT = 43.37;
 
@@ -62,11 +61,6 @@ Cooldown
 const RODAJE_TODAY = `Rodaje
 - 50m 6:24-5:49/km Pace`;
 
-function iPaceRange(vdot) {
-  const i = pacesForVdot(vdot).I;
-  return `${fmtPace(i + 3)}-${fmtPace(i - 3)}`;
-}
-
 test("TEST 3K flag OFF: texto ICU igual que hoy", () => {
   assert.equal(test3kWorkout().structure.length, 12);
   assert.equal(toIntervalsText(test3kWorkout(), VDOT), TEST_3K_TODAY);
@@ -79,8 +73,7 @@ test("rodaje continuo flag ON u OFF: texto igual que hoy", () => {
   assert.equal(toIntervalsText(rodajeWorkout(), VDOT, { watchStepLabels: true }), RODAJE_TODAY);
 });
 
-test("TEST 3K flag ON: RÁPIDO/RECUPERACIÓN, intensity=, 3 km con ritmo", () => {
-  const pace3k = iPaceRange(VDOT);
+test("TEST 3K flag ON: RÁPIDO/RECUPERACIÓN, intensity=, 3 km sin Pace", () => {
   const got = toIntervalsText(test3kWorkout(), VDOT, { watchStepLabels: true });
   const expected = `Warmup
 - 15m 6:24-5:49/km Pace intensity=warmup
@@ -93,7 +86,7 @@ RECUPERACIÓN
 - RECUPERACIÓN 3m intensity=rest
 
 RÁPIDO
-- RÁPIDO 3km ${pace3k}/km Pace intensity=active
+- RÁPIDO 3km intensity=active
 
 Cooldown
 - 10m 6:24-5:49/km Pace intensity=cooldown`;
@@ -102,7 +95,9 @@ Cooldown
   assert.match(got, /intensity=active/);
   assert.match(got, /intensity=warmup/);
   assert.match(got, /intensity=cooldown/);
-  assert.match(got, new RegExp(`RÁPIDO 3km ${pace3k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/km Pace`));
+  assert.match(got, /RÁPIDO 3km intensity=active/);
+  assert.doesNotMatch(got, /RÁPIDO 3km .*\d+:\d{2}/);
+  assert.match(got, /RÁPIDO 1m 4:02-3:56\/km Pace/);
   assert.equal(
     buildIntervalsEvent(test3kWorkout(), VDOT, { watchStepLabels: true }).description,
     expected,

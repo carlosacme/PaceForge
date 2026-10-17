@@ -292,13 +292,14 @@ function fitnessTestFlagForWorkout(w, lookup) {
  * Contrapartida: la respuesta no dice si cada evento se creo o se actualizo,
  * asi que la accion reportada es "upserted" para todos.
  */
+/** true solo si la columna existe y el atleta la tiene ON. Missing column → false. */
 async function athleteWatchStepLabels(athleteId) {
   if (!athleteId) return false;
   try {
     const rows = await sb(`athletes?id=eq.${athleteId}&select=watch_step_labels`);
     return rows?.[0]?.watch_step_labels === true;
   } catch (err) {
-    // Columna aun no migrada: no romper el envio; se queda el formato de siempre.
+    // 42703 / columna aun no migrada: el push sigue con el formato de siempre.
     console.warn("[pushWorkouts] watch_step_labels no disponible:", err?.message || err);
     return false;
   }

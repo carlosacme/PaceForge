@@ -282,15 +282,6 @@ function sessionHasIntervals(norm) {
   return body.some((s) => s.distKm != null && s.distKm > 0 && s.distKm < 8);
 }
 
-/** Ritmo de reloj para un intervalo por distancia sin target (p.ej. 3K all-out). */
-function defaultPaceForDistanceKm(km, vdot) {
-  const n = Number(km);
-  if (!Number.isFinite(n) || n <= 0) return null;
-  if (n >= 8) return qualitativeToPace("10k pace", vdot);
-  if (n >= 2) return qualitativeToPace("3k race effort", vdot);
-  return qualitativeToPace("800m race effort", vdot);
-}
-
 // Un bloque con distancia en el nombre ("400m") se exporta POR DISTANCIA
 // ("0.4km"): el reloj marca la vuelta al cumplir los metros, como se corren
 // los intervalos de verdad. Si no hay distancia, va por tiempo (comportamiento
@@ -305,10 +296,11 @@ const stepLine = (s) => {
  *  - texto ANTES de la duracion = cue que Garmin/COROS anuncia (RÁPIDO / RECUPERACIÓN)
  *  - intensity=rest = paso FIT rest (ICU no usa recovery:true en description)
  *  - intensity=warmup|cooldown|active para WU / CD / trabajo
+ *  - sin Pace si el bloque no trae ritmo (TEST all-out): el reloj no alerta
  */
-function formatIcuStep(s, vdot, labeled, role) {
+function formatIcuStep(s, labeled, role) {
   if (!labeled) return stepLine(s);
-  let pace = s.pace;
+  const pace = s.pace;
   let cue = "";
   let intensity = "";
   if (role === "warmup") {
@@ -321,9 +313,6 @@ function formatIcuStep(s, vdot, labeled, role) {
   } else {
     cue = WATCH_FAST_LABEL;
     intensity = "active";
-    if (s.distKm != null && s.distKm > 0 && !pace) {
-      pace = defaultPaceForDistanceKm(s.distKm, vdot);
-    }
   }
   const amount = s.distKm != null ? `${s.distKm}km` : secsToIcuDuration(s.secs);
   const cueBit = cue ? `${cue} ` : "";
@@ -455,23 +444,23 @@ export function toIntervalsText(workout, vdot = 42.5, options = {}) {
 
   const lines = [];
   if (head.length) {
-    lines.push("", "Warmup", formatIcuStep(head[0], vdot, labeled, "warmup"));
+    lines.push("", "Warmup", formatIcuStep(head[0], labeled, "warmup"));
   }
 
   for (const g of groupRepeats(body)) {
     if (g.type === "repeat") {
       lines.push("", `Main Set ${g.reps}x`);
-      for (const s of g.steps) lines.push(formatIcuStep(s, vdot, labeled, null));
+      for (const s of g.steps) lines.push(formatIcuStep(s, labeled, null));
     } else {
       const title = labeled
         ? (isRecovery(g.step.label) ? WATCH_RECOVERY_LABEL : WATCH_FAST_LABEL)
         : (g.step.label || "Step");
-      lines.push("", title, formatIcuStep(g.step, vdot, labeled, null));
+      lines.push("", title, formatIcuStep(g.step, labeled, null));
     }
   }
 
   if (tail.length) {
-    lines.push("", "Cooldown", formatIcuStep(tail[0], vdot, labeled, "cooldown"));
+    lines.push("", "Cooldown", formatIcuStep(tail[0], labeled, "cooldown"));
   }
 
   return lines.join("\n").trim();
