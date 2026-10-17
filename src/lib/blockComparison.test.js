@@ -201,6 +201,8 @@ test("(iv) rodaje de un ritmo: una fila, km como splits fusionados", () => {
   assert.ok(b.has_objective);
   assert.equal(Math.round(b.planned_pace_s), 367); // 6:07
   assert.equal(result.extra.length, 0);
+  assert.equal(result.km_splits.length, 8);
+  assert.equal(result.km_splits[0].name, "km 1");
 });
 
 test("(v) series con descanso caminando: rest sin Δ de ritmo", () => {
@@ -328,6 +330,95 @@ test("3 km en 3 vueltas de 1 km se fusiona si el resto de vueltas corresponde al
   assert.equal(k3.splits.length, 3);
   assert.equal(result.blocks[11].actual_dist_m, 1820);
   assert.equal(result.blocks[11].fused, false);
+});
+
+test("(ix) rodaje 10 km con 10 vueltas auto-lap: una fila + km_splits", () => {
+  const structure = [
+    { block_type: "Rodaje", description: "Easy", distance_km: "10", target_pace: "6:24-5:49" },
+  ];
+  const laps = Array.from({ length: 10 }, (_, i) =>
+    lap({ t: 355 + i, d: 1000, hr: 130 + (i % 4) }),
+  );
+  const result = compareBlocks({ structure, laps, vdot: VDOT_PUSH });
+  assert.equal(result.mode, "matched");
+  assert.equal(result.blocks.length, 1);
+  const b = result.blocks[0];
+  const actualDur = laps.reduce((a, l) => a + l.moving_time, 0);
+  assert.equal(b.actual_dist_m, 10000);
+  assert.equal(b.actual_dur_s, actualDur);
+  assert.ok(Math.abs(b.actual_pace_s - actualDur / 10) < 1e-6);
+  assert.ok(b.has_objective);
+  assert.equal(Math.round(b.planned_pace_s), 367);
+  assert.equal(b.fused, true);
+  assert.equal(b.fused_label, "10 vueltas");
+  assert.equal(result.km_splits.length, 10);
+  assert.equal(result.km_splits[0].name, "km 1");
+  assert.equal(result.km_splits[9].name, "km 10");
+  assert.equal(result.extra.length, 0);
+});
+
+test("(x) long run con 1 sola vuelta: una fila, sin fabricar km", () => {
+  const structure = [
+    { block_type: "Tirada larga", description: "Long run", duration_min: "90", target_pace: "easy jog" },
+  ];
+  const laps = [lap({ t: 5400, d: 14000, hr: 138 })];
+  const result = compareBlocks({ structure, laps, vdot: VDOT_PUSH });
+  assert.equal(result.mode, "matched");
+  assert.equal(result.blocks.length, 1);
+  const b = result.blocks[0];
+  assert.equal(b.actual_dur_s, 5400);
+  assert.equal(b.actual_dist_m, 14000);
+  assert.ok(Math.abs(b.actual_pace_s - 5400 / 14) < 1e-6);
+  assert.ok(b.has_objective);
+  assert.ok(Math.abs(b.planned_pace_s - eCenter(VDOT_PUSH)) < 0.5);
+  assert.equal(b.fused, false);
+  assert.equal(b.splits.length, 1);
+  assert.equal(result.km_splits.length, 0);
+  assert.equal(result.extra.length, 0);
+});
+
+test("(xi) rodaje warmup+main+cooldown: 3 filas, no colapsar", () => {
+  const easy = "6:24-5:49";
+  const structure = [
+    { block_type: "Calentamiento", duration_min: "10", target_pace: easy },
+    { block_type: "Rodaje", duration_min: "40", target_pace: easy },
+    { block_type: "Enfriamiento", duration_min: "10", target_pace: easy },
+  ];
+  const laps = [
+    lap({ t: 600, d: 1600, hr: 125 }),
+    lap({ t: 2400, d: 6400, hr: 135 }),
+    lap({ t: 600, d: 1550, hr: 128 }),
+  ];
+  const result = compareBlocks({ structure, laps, vdot: VDOT_PUSH });
+  assert.equal(result.mode, "matched");
+  assert.equal(result.blocks.length, 3);
+  assert.equal(result.blocks[0].kind, "warmup");
+  assert.equal(result.blocks[0].actual_dur_s, 600);
+  assert.equal(result.blocks[0].actual_dist_m, 1600);
+  assert.equal(result.blocks[1].kind, "work");
+  assert.equal(result.blocks[1].actual_dur_s, 2400);
+  assert.equal(result.blocks[1].actual_dist_m, 6400);
+  assert.equal(result.blocks[2].kind, "cooldown");
+  assert.equal(result.blocks[2].actual_dur_s, 600);
+  assert.equal(result.blocks[2].actual_dist_m, 1550);
+  assert.equal(result.blocks.every((b) => b.fused === false), true);
+  assert.equal(result.extra.length, 0);
+});
+
+test("dos rodajes Easy de la misma zona se colapsan a una fila", () => {
+  const structure = [
+    { block_type: "Rodaje", duration_min: "30", target_pace: "easy jog" },
+    { block_type: "Rodaje", duration_min: "20", target_pace: "easy jog" },
+  ];
+  const laps = Array.from({ length: 8 }, () => lap({ t: 375, d: 1000, hr: 132 }));
+  const result = compareBlocks({ structure, laps, vdot: VDOT_PUSH });
+  assert.equal(result.mode, "matched");
+  assert.equal(result.blocks.length, 1);
+  assert.equal(result.blocks[0].actual_dist_m, 8000);
+  assert.equal(result.blocks[0].actual_dur_s, 3000);
+  assert.equal(result.blocks[0].planned_dur_s, 3000);
+  assert.equal(result.km_splits.length, 8);
+  assert.equal(result.extra.length, 0);
 });
 
 test("fusion de auto-lap en calentamiento lleva chip 2 vueltas", () => {

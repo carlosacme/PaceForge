@@ -7,6 +7,8 @@
  * generated_with_vdot). Sin objetivo prescrito -> null, nunca Easy.
  * Emparejamiento por similitud (tipo, duracion, distancia), no por
  * posicion ni por rebanar un unico blob de tiempo.
+ * Rodaje / long continuo (misma zona, sin intervalos ni WU+CD) →
+ * una sola fila con totales + km_splits; no una fila por auto-lap.
  *
  * NO toca UI. Solo logica pura y testeable.
  * -----------------------------------------------------------
@@ -416,6 +418,53 @@ function isSimpleEndurancePlan(planSteps) {
   );
 }
 
+function looksLikeIntervalLabel(st) {
+  const h = `${st.step_name || ""} ${st.target_effort || ""}`.toLowerCase();
+  return /intervalo|repetici|series|\bstrides\b|\bvo2\b/.test(h);
+}
+
+/** Misma zona (o ritmos numericos parecidos). Sin zona en todos = continuo. */
+function sameEnduranceZone(planSteps) {
+  const zones = planSteps.map((s) => s.target_zone).filter(Boolean);
+  if (zones.length) return new Set(zones).size === 1;
+  const paces = planSteps.map((s) => s.planned_pace_s).filter((p) => p != null);
+  if (paces.length <= 1) return true;
+  return Math.max(...paces) - Math.min(...paces) <= 25;
+}
+
+/**
+ * Un solo paso continuo, o varios work de la misma zona sin
+ * intervalos / recuperaciones / WU+CD. WU+main+CD se deja en 3 filas.
+ */
+function isContinuousEndurancePlan(planSteps) {
+  if (!planSteps.length) return false;
+  if (planSteps.some((s) => s.kind === "rest" || s.kind === "recovery")) return false;
+  if (hasShortPlanBlocks(planSteps)) return false;
+  if (planSteps.length > 1 && planSteps.some((s) => s.kind === "warmup" || s.kind === "cooldown")) {
+    return false;
+  }
+  if (planSteps.length > 1 && planSteps.some(looksLikeIntervalLabel)) return false;
+  if (!planSteps.every((s) => s.kind === "work" || planSteps.length === 1)) return false;
+  return sameEnduranceZone(planSteps);
+}
+
+function collapseContinuousPlan(planSteps) {
+  if (!isContinuousEndurancePlan(planSteps) || planSteps.length <= 1) return planSteps;
+  const first = planSteps[0];
+  const representative = planSteps.find((s) => s.has_objective) || first;
+  const named = planSteps.find((s) => s.step_name) || first;
+  return [{
+    step_name: named.step_name,
+    kind: "work",
+    target_effort: representative.target_effort,
+    target_zone: representative.target_zone,
+    has_objective: planSteps.some((s) => s.has_objective),
+    planned_pace_s: representative.planned_pace_s,
+    planned_dur_s: planSteps.reduce((a, s) => a + (Number(s.planned_dur_s) || 0), 0),
+    planned_dist_m: planSteps.reduce((a, s) => a + (Number(s.planned_dist_m) || 0), 0),
+  }];
+}
+
 /**
  * Auto-lap de ~1 km cubre bloques por distancia (p.ej. 3 vueltas = 3 km)
  * y no hay series de <1 km / <120 s que hayan quedado sin vuelta propia.
@@ -549,7 +598,8 @@ export function compareBlocks({ structure, laps, vdot, currentVdot, kmSplits } =
       }))
       : []);
 
-  const unguided = isUnguidedSession(planSteps, usable);
+  const matchSteps = collapseContinuousPlan(planSteps);
+  const unguided = isUnguidedSession(matchSteps, usable);
 
   if (!planSteps.length) {
     return {
@@ -586,9 +636,21 @@ export function compareBlocks({ structure, laps, vdot, currentVdot, kmSplits } =
     };
   }
 
+  if (isContinuousEndurancePlan(matchSteps)) {
+    return {
+      mode: "matched",
+      message: null,
+      vdot_warning,
+      summary,
+      km_splits,
+      blocks: [finalizeBlock(matchSteps[0], usable)],
+      extra,
+    };
+  }
+
   const used = new Array(usable.length).fill(false);
   let minIndex = 0;
-  const blocks = planSteps.map((st) => {
+  const blocks = matchSteps.map((st) => {
     const key = fillKeyFor(st);
     const target = key === "dist_m" ? st.planned_dist_m : st.planned_dur_s;
     const win = bestWindow(usable, used, target, key, minIndex, st.kind);
