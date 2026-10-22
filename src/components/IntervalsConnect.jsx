@@ -45,6 +45,8 @@ export default function IntervalsConnect({ athleteId, onNotify, refreshNonce = 0
   const [manualOpen, setManualOpen] = useState(false);
   const [error, setError] = useState("");
   const [callbackMsg, setCallbackMsg] = useState(null);
+  const [watchStepLabels, setWatchStepLabels] = useState(false);
+  const [labelsBusy, setLabelsBusy] = useState(false);
   const [watchHintDismissed, setWatchHintDismissed] = useState(() => {
     if (!athleteId || typeof localStorage === "undefined") return false;
     return localStorage.getItem(watchHintStorageKey(athleteId)) === "1";
@@ -57,6 +59,42 @@ export default function IntervalsConnect({ athleteId, onNotify, refreshNonce = 0
     }
     setWatchHintDismissed(localStorage.getItem(watchHintStorageKey(athleteId)) === "1");
   }, [athleteId]);
+
+  useEffect(() => {
+    if (!athleteId) return undefined;
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from("athletes")
+        .select("watch_step_labels")
+        .eq("id", athleteId)
+        .maybeSingle();
+      if (!cancelled) setWatchStepLabels(data?.watch_step_labels === true);
+    })();
+    return () => { cancelled = true; };
+  }, [athleteId, refreshNonce]);
+
+  const saveWatchStepLabels = async (next) => {
+    if (!athleteId) return;
+    setLabelsBusy(true);
+    setWatchStepLabels(next);
+    try {
+      const { error: err } = await supabase
+        .from("athletes")
+        .update({ watch_step_labels: next })
+        .eq("id", athleteId);
+      if (err) {
+        setWatchStepLabels(!next);
+        setError(userFacingError(err) || err.message);
+        return;
+      }
+      onNotify?.(next
+        ? "Etiquetas RÁPIDO/RECUPERACIÓN activadas. El próximo envío al reloj las usará."
+        : "Etiquetas del reloj desactivadas. Los próximos envíos van con el formato anterior.");
+    } finally {
+      setLabelsBusy(false);
+    }
+  };
 
   const call = useCallback(async (body) => {
     const { data: { session } } = await supabase.auth.getSession();
@@ -300,6 +338,36 @@ export default function IntervalsConnect({ athleteId, onNotify, refreshNonce = 0
         Conecta intervals.icu para recibir los entrenamientos de tu coach
         directamente en tu Garmin o COROS, con los ritmos objetivo.
       </div>
+
+      <label style={{
+        display: "flex",
+        gap: 10,
+        alignItems: "flex-start",
+        marginBottom: 12,
+        padding: "10px 12px",
+        borderRadius: 10,
+        border: "1px solid #e2e8f0",
+        background: "#f8fafc",
+        cursor: labelsBusy ? "wait" : "pointer",
+      }}>
+        <input
+          type="checkbox"
+          checked={watchStepLabels}
+          disabled={labelsBusy || !athleteId}
+          onChange={(e) => saveWatchStepLabels(e.target.checked)}
+          style={{ marginTop: 3 }}
+        />
+        <span>
+          <span style={{ fontWeight: 800, fontSize: ".82em", color: "#0f172a", display: "block" }}>
+            Etiquetas RÁPIDO / RECUPERACIÓN en el reloj
+          </span>
+          <span style={{ fontSize: ".74em", color: "#64748b", lineHeight: 1.45 }}>
+            Apagado por defecto. Al activarlo, solo los entrenos que se envíen
+            a partir de ahora llevan el nombre en el Garmin/COROS. No cambia
+            lo que ya está en el reloj.
+          </span>
+        </span>
+      </label>
 
       {callbackMsg && (
         <div style={callbackMsg.ok ? S.okMsg : S.err}>{callbackMsg.text}</div>

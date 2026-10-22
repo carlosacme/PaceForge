@@ -18,8 +18,14 @@
  */
 // Con extension: este modulo tambien se importa desde api/ (serverless), y ahi
 // manda la resolucion de Node, que no adivina la extension como Vite.
-import { pacesForVdot, fmtPace, paceToZone, PLAN_CALIBRATION_VDOT } from "./vdot.js";
+import { pacesForVdot, paceToZone, paceRangeForZone, PLAN_CALIBRATION_VDOT } from "./vdot.js";
 import { EFFORT_TO_ZONE } from "./intervals.js";
+
+/**
+ * Rollback: true = rescale viejo (solo paceToZone con la calibración).
+ * false = zona guardada → texto (E pace / easy / rodaje / long) → paceToZone.
+ */
+export const USE_LEGACY_PACE_TO_ZONE_RESCALE = false;
 
 // Zona FC (Z1-Z5) -> zona Daniels de ritmo (E/M/T/I).
 // Z3="Aerobico tempo" mapea a M (maraton/steady), NO a T: a 70-80% FCmax
@@ -57,16 +63,9 @@ function zoneFromHrLabel(targetHr, fcMax) {
   return null;
 }
 
-// Zona Daniels -> pace numerico "m:ss-m:ss" via pacesForVdot (misma fuente
-// que usa el envio al reloj en qualitativeToPace). Emite RANGO siempre,
-// porque el reloj necesita rango, no valor unico.
+// Zona Daniels -> pace numerico "m:ss-m:ss". Fuente unica: paceRangeForZone.
 function zoneToPaceStr(zone, vdot) {
-  const p = pacesForVdot(vdot);
-  if (!p) return null;
-  const v = p[zone];
-  if (v === undefined) return null;
-  if (Array.isArray(v)) return `${fmtPace(v[0])}-${fmtPace(v[1])}`;
-  return `${fmtPace(v + 3)}-${fmtPace(v - 3)}`; // ±3s, igual que qualitativeToPace
+  return paceRangeForZone(zone, vdot);
 }
 
 // Enriquece un structure con paces numericos. Orden de resolucion:
@@ -306,6 +305,19 @@ export function stripEmbeddedPaceFromText(text) {
 }
 
 /**
+ * workouts.description que ve el atleta: mismo strip de TEST que ya
+ * aplicamos al guardar, más ritmos /km embebidos (VDOT de biblioteca ~47.2).
+ * No persiste. El ritmo visible es structure[].target_pace.
+ * Limpia el espacio suelto que deja el strip: "4x(1' + 1' )" y "I pace . Rec 1:1".
+ */
+export function athleteVisibleWorkoutDescription(title, description, isFitnessTest) {
+  const stripped = stripEmbeddedPaceFromText(
+    stripTestTimeGoalFromDescription(title, description, isFitnessTest),
+  );
+  return stripped.replace(/\s+([).,\];:])/g, "$1");
+}
+
+/**
  * Reescala los ritmos ABSOLUTOS de una estructura al VDOT objetivo del atleta.
  *
  * Los workouts importados a la biblioteca traen ritmos fijos, escritos a un VDOT
@@ -329,22 +341,70 @@ export function stripEmbeddedPaceFromText(text) {
  * swap a ciegas rompería "MARATON 3:15" o splits "4:40→4:37" (no llevan /km).
  * Un bloque que no se reescala se deja intacto, description incluida.
  */
+const RESCALE_TEXT_ZONE_RE = /\b(t10|hm|[emtir])\s*pace\b/i;
+const RESCALE_EASY_RE = /\b(easy|rodaje|long(?:\s+run)?|tirada)\b/i;
+
+function canonicalizeRescaleZone(zone) {
+  const z = String(zone || "").trim().toUpperCase();
+  if (z === "HM" || z === "T10") return "T";
+  if (z === "E" || z === "M" || z === "T" || z === "I" || z === "R") return z;
+  return null;
+}
+
+/** Texto de zona del plan: E pace / easy / rodaje / long. No mapea "recovery". */
+export function zoneFromRescaleText(block) {
+  const haystack = [block?.description, block?.block_type, block?.phase, block?.block_label, block?.step_name]
+    .filter((x) => x != null && String(x).trim() !== "")
+    .join(" ");
+  if (!haystack) return null;
+  const tagged = haystack.match(RESCALE_TEXT_ZONE_RE);
+  if (tagged) return canonicalizeRescaleZone(tagged[1]);
+  if (RESCALE_EASY_RE.test(haystack)) return "E";
+  return null;
+}
+
+/**
+ * Zona del paso para rescale: target_zone/zone → texto → paceToZone (último).
+ * Ritmos ya reescritos no se releen a 47.2 si hay zona o texto.
+ */
+export function resolveRescaleZone(block, calibrationVdot) {
+  const saved = canonicalizeRescaleZone(block?.target_zone || block?.zone);
+  if (saved) return saved;
+  const fromText = zoneFromRescaleText(block);
+  if (fromText) return fromText;
+  const rawPace = String(block?.target_pace ?? block?.pace ?? "").trim();
+  if (!rawPace) return null;
+  return canonicalizeRescaleZone(paceToZone(rawPace, calibrationVdot));
+}
+
+function applyRescaledPace(b, zone, targetVdot) {
+  const bPace = String(b?.target_pace ?? "").trim();
+  const paceStr = zoneToPaceStr(zone, targetVdot);
+  if (!paceStr) return b;
+  const next = { ...b, [bPace || !String(b?.pace ?? "").trim() ? "target_pace" : "pace"]: paceStr, target_zone: zone, zone };
+  if (next.description) next.description = stripEmbeddedPaceFromText(next.description);
+  return next;
+}
+
 export function rescaleStructureToVdot(structure, targetVdot, calibrationVdot = PLAN_CALIBRATION_VDOT) {
   const arr = Array.isArray(structure) ? structure : [];
-  if (!pacesForVdot(targetVdot)) return arr; // sin VDOT objetivo no se toca nada
+  if (!pacesForVdot(targetVdot)) return arr;
   return arr.map((b) => {
     const bPace = String(b?.target_pace ?? "").trim();
     const aPace = String(b?.pace ?? "").trim();
     const rawPace = bPace || aPace;
-    if (!rawPace) return b;
-    const zone = paceToZone(rawPace, calibrationVdot);
-    if (!zone) return b;
-    const paceStr = zoneToPaceStr(zone, targetVdot);
-    if (!paceStr) return b;
-    const next = { ...b, [bPace ? "target_pace" : "pace"]: paceStr, target_zone: zone };
-    if (next.description) {
-      next.description = stripEmbeddedPaceFromText(next.description);
+    if (USE_LEGACY_PACE_TO_ZONE_RESCALE) {
+      if (!rawPace) return b;
+      const zone = paceToZone(rawPace, calibrationVdot);
+      if (!zone) return b;
+      return applyRescaledPace(b, zone, targetVdot);
     }
-    return next;
+    const zone = resolveRescaleZone(b, calibrationVdot);
+    if (!zone) return b;
+    if (!rawPace && !canonicalizeRescaleZone(b?.target_zone || b?.zone) && !zoneFromRescaleText(b)) {
+      return b;
+    }
+    if (!rawPace) return b;
+    return applyRescaledPace(b, zone, targetVdot);
   });
 }

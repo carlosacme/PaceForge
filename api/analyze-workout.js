@@ -2,7 +2,7 @@ import crypto from "crypto";
 import { requireUser, getWorkoutIfAllowed, jsonError, adminHeaders } from "../lib/apiAuth.js";
 import { assertGenerateBudget } from "../lib/aiBudget.js";
 import { readStructure } from "../src/lib/workoutStructure.js";
-import { compareBlocks } from "../src/lib/blockComparison.js";
+import { compareBlocks, unguidedBlocksPrompt } from "../src/lib/blockComparison.js";
 
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 
@@ -11,7 +11,7 @@ const MODELS = [
 ];
 
 /** Subir invalida todo el caché de ese kind. */
-const ANALYZE_PROMPT_V = 1;
+const ANALYZE_PROMPT_V = 2;
 const BRIEFING_PROMPT_V = 1;
 
 /**
@@ -341,11 +341,17 @@ function blocksPromptSection(workout, vdot, laps) {
   if (!structure.length) return "";
   let rows = [];
   try {
-    rows = compareBlocks({
+    const generated = Number(workout?.generated_with_vdot);
+    const compared = compareBlocks({
       structure,
       laps: Array.isArray(laps) ? laps : [],
-      vdot,
+      vdot: Number.isFinite(generated) && generated > 0 ? generated : vdot,
+      currentVdot: vdot,
     });
+    if (!Array.isArray(compared) && compared?.mode === "unguided") {
+      return unguidedBlocksPrompt(compared.summary);
+    }
+    rows = Array.isArray(compared) ? compared : (compared?.blocks || []);
   } catch {
     return "";
   }

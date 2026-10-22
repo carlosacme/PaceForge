@@ -21,6 +21,11 @@
 
 import { pacesForVdot, fmtPace } from "./vdot.js";
 import { readStructure } from "./workoutStructure.js";
+import {
+  classifyPlanKind,
+  mergeAdjacentNormalizedSteps,
+  resolveDanielsZone,
+} from "./blockComparison.js";
 
 /**
  * Mapeo de esfuerzos cualitativos -> zona Daniels.
@@ -264,6 +269,33 @@ function isWarmupish(label) {
   return /activaci[oó]n|progresiv|calentamiento|warm/.test(String(label).toLowerCase());
 }
 
+export const WATCH_FAST_LABEL = "RÁPIDO";
+export const WATCH_RECOVERY_LABEL = "RECUPERACIÓN";
+export const WATCH_EASY_LABEL = "RODAJE";
+export const WATCH_TEMPO_LABEL = "RITMO";
+
+function watchWorkLabel(step) {
+  const zone = step?.zone || step?.target_zone;
+  if (zone === "E") return WATCH_EASY_LABEL;
+  if (zone === "M" || zone === "T") return WATCH_TEMPO_LABEL;
+  return WATCH_FAST_LABEL;
+}
+
+/**
+ * Sesion con series / recuperaciones / intervalo por distancia.
+ * Un rodaje continuo NO entra: el texto ICU debe quedar igual que hoy.
+ */
+function sessionHasIntervals(norm) {
+  if (!Array.isArray(norm) || !norm.length) return false;
+  if (norm.some((s) => isRecovery(s.label))) return true;
+  if (norm.some((s) => /intervalo|repetici/i.test(String(s.label || "")))) return true;
+  const body = norm.filter((s) => {
+    const sec = sectionOf(s.label);
+    return sec !== "Warmup" && sec !== "Cooldown";
+  });
+  return body.some((s) => s.distKm != null && s.distKm > 0 && s.distKm < 8);
+}
+
 // Un bloque con distancia en el nombre ("400m") se exporta POR DISTANCIA
 // ("0.4km"): el reloj marca la vuelta al cumplir los metros, como se corren
 // los intervalos de verdad. Si no hay distancia, va por tiempo (comportamiento
@@ -272,6 +304,36 @@ const stepLine = (s) => {
   const amount = s.distKm != null ? `${s.distKm}km` : secsToIcuDuration(s.secs);
   return s.pace ? `- ${amount} ${s.pace}/km Pace` : `- ${amount}`;
 };
+
+/**
+ * Linea ICU. Con watchStepLabels:
+ *  - texto ANTES de la duracion = cue que Garmin/COROS anuncia (RÁPIDO / RECUPERACIÓN)
+ *  - intensity=rest = paso FIT rest (ICU no usa recovery:true en description)
+ *  - intensity=warmup|cooldown|active para WU / CD / trabajo
+ *  - sin Pace si el bloque no trae ritmo (TEST all-out): el reloj no alerta
+ */
+function formatIcuStep(s, labeled, role) {
+  if (!labeled) return stepLine(s);
+  const pace = s.pace;
+  let cue = "";
+  let intensity = "";
+  if (role === "warmup") {
+    intensity = "warmup";
+  } else if (role === "cooldown") {
+    intensity = "cooldown";
+  } else if (isRecovery(s.label) || s.kind === "recovery" || s.kind === "rest") {
+    cue = WATCH_RECOVERY_LABEL;
+    intensity = "rest";
+  } else {
+    cue = watchWorkLabel(s);
+    intensity = "active";
+  }
+  const amount = s.distKm != null ? `${s.distKm}km` : secsToIcuDuration(s.secs);
+  const cueBit = cue ? `${cue} ` : "";
+  const paceBit = pace ? ` ${pace}/km Pace` : "";
+  const intBit = intensity ? ` intensity=${intensity}` : "";
+  return `- ${cueBit}${amount}${paceBit}${intBit}`;
+}
 
 /**
  * Agrupa pares (trabajo + recuperacion) repetidos en "Main Set Nx".
@@ -363,9 +425,13 @@ function expandRepeatBlocks(structure) {
  *
  * @param {object} workout - fila de workouts (usa structure o workout_structure)
  * @param {number} vdot    - VDOT del atleta (de athlete_evaluations.vdot)
+ * @param {object} [options]
+ * @param {boolean} [options.watchStepLabels] - etiquetas RÁPIDO/RECUPERACIÓN
+ *   e intensity= para el reloj. OFF por defecto; no cambia lo ya enviado.
  * @returns {string} texto para el campo 'description' del evento
  */
-export function toIntervalsText(workout, vdot = 42.5) {
+export function toIntervalsText(workout, vdot = 42.5, options = {}) {
+  const watchStepLabels = options === true || options?.watchStepLabels === true;
   const structure = expandRepeatBlocks(readStructure(workout));
 
   // Sin estructura: sesion simple desde duration_min
@@ -376,8 +442,30 @@ export function toIntervalsText(workout, vdot = 42.5) {
     return `Sesion\n- ${mins}m${pace}`;
   }
 
-  const norm = structure.map((b) => normalizeBlock(b, vdot)).filter(Boolean);
-  if (norm.length === 0) return `Sesion\n- ${workout?.duration_min || 30}m`;
+  const rawNorm = structure.map((b) => {
+    const n = normalizeBlock(b, vdot);
+    if (!n) return null;
+    const zone = resolveDanielsZone({
+      target_zone: b.target_zone,
+      text: [b.description, b.block_type, b.phase, b.target_pace, n.label].filter(Boolean).join(" "),
+      pace: n.pace || b.target_pace,
+      vdot,
+    });
+    return {
+      ...n,
+      description: String(b?.description ?? "").trim(),
+      zone,
+      target_zone: zone,
+      kind: classifyPlanKind(b),
+    };
+  }).filter(Boolean);
+  if (rawNorm.length === 0) return `Sesion\n- ${workout?.duration_min || 30}m`;
+
+  const labeled = watchStepLabels && sessionHasIntervals(rawNorm);
+  // Fusion de pasos adyacentes del mismo objetivo: solo con el flag ON.
+  const norm = watchStepLabels
+    ? mergeAdjacentNormalizedSteps(rawNorm, vdot)
+    : rawNorm;
 
   // Separar warmup y cooldown del cuerpo principal
   let start = 0, end = norm.length;
@@ -389,18 +477,27 @@ export function toIntervalsText(workout, vdot = 42.5) {
   const body = norm.slice(start, end);
 
   const lines = [];
-  if (head.length) lines.push("", "Warmup", stepLine(head[0]));
+  if (head.length) {
+    lines.push("", "Warmup", formatIcuStep(head[0], labeled, "warmup"));
+  }
 
   for (const g of groupRepeats(body)) {
     if (g.type === "repeat") {
       lines.push("", `Main Set ${g.reps}x`);
-      for (const s of g.steps) lines.push(stepLine(s));
+      for (const s of g.steps) lines.push(formatIcuStep(s, labeled, null));
     } else {
-      lines.push("", g.step.label || "Step", stepLine(g.step));
+      const title = labeled
+        ? (isRecovery(g.step.label) || g.step.kind === "recovery" || g.step.kind === "rest"
+          ? WATCH_RECOVERY_LABEL
+          : watchWorkLabel(g.step))
+        : (g.step.label || "Step");
+      lines.push("", title, formatIcuStep(g.step, labeled, null));
     }
   }
 
-  if (tail.length) lines.push("", "Cooldown", stepLine(tail[0]));
+  if (tail.length) {
+    lines.push("", "Cooldown", formatIcuStep(tail[0], labeled, "cooldown"));
+  }
 
   return lines.join("\n").trim();
 }
@@ -435,7 +532,7 @@ export function buildIntervalsDeletePayload(workoutIds) {
  * external_id es lo que empareja el upsert: al reenviar el mismo workout se
  * actualiza su evento en vez de duplicarlo.
  */
-export function buildIntervalsEvent(workout, vdot = 42.5) {
+export function buildIntervalsEvent(workout, vdot = 42.5, options = {}) {
   // uid = clave del calendario; external_id = id de sync externo (el que usa
   // el upsert del bulk). Ambos con el mismo valor evita duplicados al reenviar.
   const uid = intervalsExternalId(workout.id);
@@ -446,7 +543,7 @@ export function buildIntervalsEvent(workout, vdot = 42.5) {
     name: workout.title || "Entrenamiento",
     uid,
     external_id: uid,
-    description: toIntervalsText(workout, vdot),
+    description: toIntervalsText(workout, vdot, options),
   };
 }
 
@@ -513,12 +610,22 @@ export function getWorkoutDetailGroups(workout, vdot = 42.5) {
   for (const b of structure) {
     const n = normalizeBlock(b, vdot);
     if (!n) continue;
+    const description = String(b?.description ?? "").trim();
+    const zone = resolveDanielsZone({
+      target_zone: b.target_zone,
+      text: [description, b.block_type, b.phase, b.target_pace, n.label].filter(Boolean).join(" "),
+      pace: n.pace || b.target_pace,
+      vdot,
+    });
     steps.push({
       ...n,
       targetHr: String(b?.target_hr ?? "").trim(),
-      description: String(b?.description ?? "").trim(),
+      description,
+      zone,
+      target_zone: zone,
+      kind: classifyPlanKind(b),
     });
   }
   if (!steps.length) return { hasStructure: false, groups: [] };
-  return { hasStructure: true, groups: groupRepeats(steps) };
+  return { hasStructure: true, groups: groupRepeats(mergeAdjacentNormalizedSteps(steps, vdot)) };
 }

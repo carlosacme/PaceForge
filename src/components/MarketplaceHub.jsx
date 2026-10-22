@@ -11,8 +11,10 @@ import {
   asLibraryId,
 } from "./shared/appShared";
 import { readStructure } from "../lib/workoutStructure";
-import { enrichStructureWithPaces, stripTestTimeGoalFromDescription, stripTestTimeGoalsFromStructure } from "../lib/enrichPace";
+import { enrichStructureWithPaces, rescaleStructureToVdot, stripTestTimeGoalFromDescription, stripTestTimeGoalsFromStructure } from "../lib/enrichPace";
+import { PLAN_CALIBRATION_VDOT } from "../lib/vdot";
 import MarketplacePlanWorkoutsAccordion from "./shared/MarketplacePlanWorkoutsAccordion";
+import { LIBRARY_LIST_COLUMNS, hydrateLibraryRows } from "../lib/libraryApi";
 
 function toMonday(date) {
   const d = new Date(date);
@@ -91,7 +93,7 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
     if (!coachUserId) return;
     setLoadingLibrary(true);
     // Solo `structure`: la columna workout_structure se elimino en 0044.
-    const { data, error } = await supabase.from("workout_library").select("id,title,type,total_km,duration_min,description,structure,is_fitness_test").eq("coach_id", coachUserId).order("created_at", { ascending: false });
+    const { data, error } = await supabase.from("workout_library").select(LIBRARY_LIST_COLUMNS).eq("coach_id", coachUserId).eq("is_system", false).order("created_at", { ascending: false });
     setLoadingLibrary(false);
     if (error) { console.error("workout_library for marketplace:", error); setCoachLibraryRows([]); return; }
     setCoachLibraryRows(data || []);
@@ -327,7 +329,11 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
         const fitnessTestFlag = w.is_fitness_test === true ? true : undefined;
         const structure = stripTestTimeGoalsFromStructure(
           assignedTitle,
-          enrichStructureWithPaces(readStructure(w), athleteVdot, athleteFcMax),
+          rescaleStructureToVdot(
+            enrichStructureWithPaces(readStructure(w), athleteVdot, athleteFcMax),
+            athleteVdot,
+            PLAN_CALIBRATION_VDOT,
+          ),
           fitnessTestFlag,
         );
         return {
@@ -416,7 +422,9 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
     const sessionsPerWeek = Math.max(1, Math.round(Number(planForm.sessions_per_week) || 0));
     const priceCop = Math.max(0, Math.round(Number(String(planForm.price_cop).replace(/[^\d]/g, "")) || 0));
     const selectedPreview = (coachLibraryRows || []).filter((w) => planForm.preview_workouts.includes(String(w.id)));
-    const previewWorkouts = selectedPreview.map((w) => ({ id: w.id, title: w.title, type: w.type, total_km: Number(w.total_km || 0), duration_min: Number(w.duration_min || 0), description: w.description || "", structure: Array.isArray(w.structure) ? w.structure : [], is_fitness_test: w.is_fitness_test === true }));
+    const { rows: hydratedPreview, error: hydErr } = await hydrateLibraryRows(selectedPreview);
+    if (hydErr) { notify?.(hydErr.message || "No se pudo cargar la estructura de la biblioteca"); return; }
+    const previewWorkouts = hydratedPreview.map((w) => ({ id: w.id, title: w.title, type: w.type, total_km: Number(w.total_km || 0), duration_min: Number(w.duration_min || 0), description: w.description || "", structure: Array.isArray(w.structure) ? w.structure : [], is_fitness_test: w.is_fitness_test === true }));
     const fallbackPreview = editingPlanSnapshot && Array.isArray(editingPlanSnapshot.preview_workouts) ? editingPlanSnapshot.preview_workouts : [];
     const fallbackSessions = editingPlanSnapshot ? getMarketplacePlanWorkoutRows(editingPlanSnapshot) : [];
     const outPreview = previewWorkouts.length > 0 ? previewWorkouts : fallbackPreview;

@@ -1,13 +1,17 @@
 import React, { useMemo } from "react";
 import { getWorkoutDetailGroups, formatDetailStepAmount } from "../lib/intervals";
-import { stripTestTimeGoalFromDescription, stripTestTimeGoalsFromStructure } from "../lib/enrichPace";
+import { athleteVisibleWorkoutDescription, stripTestTimeGoalFromDescription, stripTestTimeGoalsFromStructure } from "../lib/enrichPace";
+import { kindBadge } from "../lib/registroComparisonView";
 
 /**
  * Desglose tipo TrainingPeaks: descripcion general + PASOS (con repeticiones
  * agrupadas vía groupRepeats). Pensado para vivir dentro del menú contextual
  * del calendario del atleta.
+ *
+ * stripDescriptionPaces: solo el calendario del atleta. El coach comparte
+ * esta hoja y debe ver workouts.description cruda (con /km de biblioteca).
  */
-export default function WorkoutDetailBreakdown({ workout, vdot = 42.5 }) {
+export default function WorkoutDetailBreakdown({ workout, vdot = 42.5, stripDescriptionPaces = false }) {
   const { hasStructure, groups } = useMemo(
     () => {
       const structure = stripTestTimeGoalsFromStructure(
@@ -19,9 +23,10 @@ export default function WorkoutDetailBreakdown({ workout, vdot = 42.5 }) {
     [workout, vdot],
   );
 
-  const generalDescription = stripTestTimeGoalFromDescription(
-    workout?.title,
-    workout?.description || "",
+  const generalDescription = (
+    stripDescriptionPaces
+      ? athleteVisibleWorkoutDescription(workout?.title, workout?.description || "")
+      : stripTestTimeGoalFromDescription(workout?.title, workout?.description || "")
   ).trim();
   const title = String(workout?.title || "Entrenamiento").trim();
   const simpleKm = workout?.total_km != null && Number(workout.total_km) > 0
@@ -39,6 +44,16 @@ export default function WorkoutDetailBreakdown({ workout, vdot = 42.5 }) {
     const pace = step?.pace ? `${step.pace} min/km` : "";
     const hr = step?.targetHr || "";
     const bits = [amount, pace ? `@ ${pace}` : "", hr].filter(Boolean);
+    const badge = kindBadge({
+      kind: step?.kind,
+      target_zone: step?.zone || step?.target_zone,
+      step_name: step?.label,
+      target_effort: step?.pace,
+      description: step?.description,
+    });
+    const title = step?.description || step?.label || "Paso";
+    const hideIntervaloRojo = /intervalo/i.test(String(step?.label || "")) && badge.key !== "fast";
+    const heading = hideIntervaloRojo ? title : (step?.label || title);
     return (
       <div
         key={`${n}-${step?.label}-${amount}`}
@@ -59,7 +74,25 @@ export default function WorkoutDetailBreakdown({ workout, vdot = 42.5 }) {
           }}
         >
           <span style={{ color: "#64748b", fontWeight: 600 }}>{n}. </span>
-          {step?.label || "Paso"}
+          {step?.kind && step.kind !== "warmup" && step.kind !== "cooldown" ? (
+            <span
+              style={{
+                display: "inline-block",
+                marginRight: 6,
+                fontSize: ".72em",
+                fontWeight: 800,
+                letterSpacing: ".06em",
+                padding: "1px 7px",
+                borderRadius: 999,
+                background: badge.bg,
+                color: badge.fg,
+                verticalAlign: "middle",
+              }}
+            >
+              {badge.text}
+            </span>
+          ) : null}
+          {heading}
         </div>
         {bits.length > 0 ? (
           <div
@@ -75,7 +108,7 @@ export default function WorkoutDetailBreakdown({ workout, vdot = 42.5 }) {
             {bits.join(" · ")}
           </div>
         ) : null}
-        {step?.description ? (
+        {step?.description && step.description !== heading ? (
           <div
             style={{
               marginTop: 3,

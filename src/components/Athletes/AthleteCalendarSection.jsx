@@ -80,6 +80,7 @@ export default function AthleteCalendarSection({
   const S = styles;
   const showGrid = part === "all" || part === "grid";
   const showOverlays = part === "all" || part === "overlays";
+  const todayYmd = formatLocalYMD(new Date());
 
   return (
     <>
@@ -173,8 +174,8 @@ export default function AthleteCalendarSection({
               const hasWorkout = dayWorkouts.length > 0;
               const hasDoneWorkout = dayWorkouts.some(w => w.done);
               const hasRace = dayRaces.length > 0;
-              const todayYmd = formatLocalYMD(new Date());
-              const isRaceToday = hasRace && ymd === todayYmd;
+              const isToday = ymd === todayYmd;
+              const isRaceToday = hasRace && isToday;
               const inViewMonth = cellIsInViewMonth(cellDate, calendarViewMonth.y, calendarViewMonth.m);
               let borderColor = "#f1f5f9";
               if (hasRace) borderColor = "rgba(255,138,61,.55)";
@@ -183,6 +184,7 @@ export default function AthleteCalendarSection({
               if (isRaceToday) cellBackground = "linear-gradient(160deg,#fffbeb 0%,#fde68a 55%,#fff7ed 100%)";
               else if (hasRace) cellBackground = "linear-gradient(145deg,#fffbeb,#ffedd5)";
               else if (hasDoneWorkout) cellBackground = "rgba(34,197,94,.08)";
+              else if (isToday) cellBackground = "rgba(255,138,61,.08)";
               else if (hasWorkout) cellBackground = "#f8fafc";
               return (
                 <div
@@ -212,10 +214,11 @@ export default function AthleteCalendarSection({
                     alignItems: "stretch",
                     gap: 2,
                     background: cellBackground,
+                    boxShadow: isToday ? "inset 0 0 0 2px #ff8a3d" : undefined,
                     opacity: inViewMonth ? 1 : 0.42,
                   }}
                 >
-                  <div style={{ fontSize: ".58em", color: inViewMonth ? "#475569" : "#94a3b8", textAlign: "center", fontWeight: 600 }}>{cellDate.getDate()}</div>
+                  <div style={{ fontSize: ".58em", color: isToday ? "#e86f28" : inViewMonth ? "#475569" : "#94a3b8", textAlign: "center", fontWeight: isToday ? 800 : 600 }}>{cellDate.getDate()}</div>
                   {dayRaces.map((race) => {
                     const pri = racePriorityMeta(race.priority);
                     return (

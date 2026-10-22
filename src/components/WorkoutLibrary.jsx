@@ -30,6 +30,17 @@ import {
   INVALID_JSON_WORKOUT_FORMAT_MSG,
 } from "../lib/fitImport";
 import MarketplacePlanWorkoutsAccordion from "./shared/MarketplacePlanWorkoutsAccordion";
+import LibraryFolderSelect from "./shared/LibraryFolderSelect";
+import {
+  LIBRARY_LIST_COLUMNS,
+  loadLibraryFolders,
+  createLibraryFolder,
+  renameLibraryFolder,
+  deleteLibraryFolder,
+  moveLibraryWorkoutsToFolder,
+  copySystemWorkoutToLibrary,
+  hydrateLibraryRows,
+} from "../lib/libraryApi";
 
 function WorkoutLibrary({
   coachUserId,
@@ -49,7 +60,7 @@ function WorkoutLibrary({
   const [libraryTab, setLibraryTab] = useState(() => {
     if (typeof window === "undefined") return "mine";
     const saved = localStorage.getItem(TAB_KEY_LIBRARY);
-    if (saved === "mine" || saved === "global" || saved === "marketplace_plans") return saved;
+    if (saved === "mine" || saved === "global" || saved === "marketplace_plans" || saved === "catalog") return saved;
     return "mine";
   });
   const [items, setItems] = useState([]);
@@ -87,27 +98,46 @@ function WorkoutLibrary({
   const [fitDrafts, setFitDrafts] = useState([]);
   const [fitImportSaving, setFitImportSaving] = useState(false);
   const fitInputRef = useRef(null);
+  const [folders, setFolders] = useState([]);
+  const [folderFilter, setFolderFilter] = useState("all"); // all | none | folder id
+  const [newFolderName, setNewFolderName] = useState("");
+  const [folderBusy, setFolderBusy] = useState(false);
+  const [renamingFolderId, setRenamingFolderId] = useState(null);
+  const [renameFolderValue, setRenameFolderValue] = useState("");
+  const [moveFolderId, setMoveFolderId] = useState("");
+  const [moveModalOpen, setMoveModalOpen] = useState(false);
+  const [movingToFolder, setMovingToFolder] = useState(false);
+  const [catalogRows, setCatalogRows] = useState([]);
+  const [catalogLoading, setCatalogLoading] = useState(false);
+  const [catalogCopyingId, setCatalogCopyingId] = useState(null);
+  const [fitFolderId, setFitFolderId] = useState(null);
 
   const load = useCallback(async () => {
     if (!coachUserId) {
       setItems([]);
+      setFolders([]);
       setLoading(false);
       return;
     }
     setLoading(true);
-    // Load own library + parent coach library if staff
     const coachIds = [coachUserId, parentCoachId].filter(Boolean);
-    const { data, error } = await supabase
-      .from("workout_library")
-      .select("*")
-      .in("coach_id", coachIds)
-      .order("created_at", { ascending: false });
+    const [{ data, error }, foldersRes] = await Promise.all([
+      supabase
+        .from("workout_library")
+        .select(LIBRARY_LIST_COLUMNS)
+        .in("coach_id", coachIds)
+        .eq("is_system", false)
+        .order("created_at", { ascending: false }),
+      loadLibraryFolders(coachIds),
+    ]);
+    if (foldersRes.error) console.error("library_folders:", foldersRes.error);
+    setFolders(foldersRes.data || []);
     if (error) {
       console.error("workout_library:", error);
       setItems([]);
       notify("Error al cargar la biblioteca");
     } else {
-      setItems((data || []).map(normalizeLibraryRow));
+      setItems((data || []).map((row) => normalizeLibraryRow(row, { structureLoaded: false })));
     }
     setLoading(false);
   }, [coachUserId, parentCoachId, notify]);
@@ -121,7 +151,7 @@ function WorkoutLibrary({
 
   useEffect(() => {
     if (isLibraryAdmin) return;
-    if (libraryTab !== "mine") setLibraryTab("mine");
+    if (libraryTab !== "mine" && libraryTab !== "catalog") setLibraryTab("mine");
   }, [isLibraryAdmin, libraryTab]);
 
   const loadGlobalAll = useCallback(async () => {
@@ -131,7 +161,11 @@ function WorkoutLibrary({
       return;
     }
     setGlobalLoading(true);
-    const { data, error } = await supabase.from("workout_library").select("*").order("created_at", { ascending: false });
+    const { data, error } = await supabase
+      .from("workout_library")
+      .select(LIBRARY_LIST_COLUMNS)
+      .eq("is_system", false)
+      .order("created_at", { ascending: false });
     if (error) {
       console.error("workout_library global:", error);
       setGlobalRows([]);
@@ -140,7 +174,7 @@ function WorkoutLibrary({
       setGlobalLoading(false);
       return;
     }
-    const rows = (data || []).map(normalizeLibraryRow);
+    const rows = (data || []).map((row) => normalizeLibraryRow(row, { structureLoaded: false }));
     setGlobalRows(rows);
     const ids = [...new Set(rows.map((r) => r.coach_id).filter(Boolean))];
     if (ids.length === 0) {
@@ -165,6 +199,32 @@ function WorkoutLibrary({
   useEffect(() => {
     if (libraryTab === "global" && isLibraryAdmin) loadGlobalAll();
   }, [libraryTab, isLibraryAdmin, loadGlobalAll, libraryRefresh]);
+
+  const loadCatalog = useCallback(async () => {
+    if (!coachUserId) {
+      setCatalogRows([]);
+      return;
+    }
+    setCatalogLoading(true);
+    const { data, error } = await supabase
+      .from("workout_library")
+      .select(LIBRARY_LIST_COLUMNS)
+      .eq("is_system", true)
+      .order("category", { ascending: true })
+      .order("title", { ascending: true });
+    if (error) {
+      console.error("workout_library catalog:", error);
+      setCatalogRows([]);
+      notify("No se pudo cargar el catálogo.");
+    } else {
+      setCatalogRows((data || []).map((row) => normalizeLibraryRow(row, { structureLoaded: false })));
+    }
+    setCatalogLoading(false);
+  }, [coachUserId, notify]);
+
+  useEffect(() => {
+    if (libraryTab === "catalog") loadCatalog();
+  }, [libraryTab, loadCatalog, libraryRefresh]);
 
   const loadMarketplacePlansAdmin = useCallback(async () => {
     if (!isLibraryAdmin) {
@@ -261,18 +321,45 @@ function WorkoutLibrary({
     loadMarketplacePlansAdmin();
   };
 
+  const ownFolders = useMemo(
+    () => (folders || []).filter((f) => String(f.coach_id) === String(coachUserId)),
+    [folders, coachUserId],
+  );
+
+  const canMutateRow = (row) =>
+    Boolean(coachUserId && row && String(row.coach_id) === String(coachUserId) && row.is_system !== true);
+
+  const ensureStructures = async (rows) => {
+    const { rows: hydrated, error } = await hydrateLibraryRows(rows);
+    if (error) {
+      notify(error.message || "No se pudo cargar la estructura del workout");
+      return null;
+    }
+    return hydrated.map((row) =>
+      Array.isArray(row.structure) ? { ...row, structure: row.structure } : { ...row, structure: [] },
+    );
+  };
+
   const filtered = useMemo(() => {
+    let list = items;
+    if (folderFilter === "none") {
+      list = list.filter((row) => row.folder_id == null);
+    } else if (folderFilter !== "all") {
+      list = list.filter((row) => String(row.folder_id) === String(folderFilter));
+    }
     const q = search.trim().toLowerCase();
-    if (!q) return items;
-    return items.filter((row) => {
+    if (!q) return list;
+    return list.filter((row) => {
       const typeLabel = (WORKOUT_TYPES.find((t) => t.id === row.type)?.label || row.type || "").toLowerCase();
+      const folderName = (folders.find((f) => String(f.id) === String(row.folder_id))?.name || "").toLowerCase();
       return (
         (row.title || "").toLowerCase().includes(q) ||
         (row.type || "").toLowerCase().includes(q) ||
-        typeLabel.includes(q)
+        typeLabel.includes(q) ||
+        folderName.includes(q)
       );
     });
-  }, [items, search]);
+  }, [items, search, folderFilter, folders]);
 
   const deleteRow = async (id) => {
     if (!coachUserId) return;
@@ -409,6 +496,7 @@ function WorkoutLibrary({
         is_fitness_test:
           w.is_fitness_test === true
           || (w.is_fitness_test !== false && isTestWorkoutTitle(w.title)),
+        folder_id: fitFolderId || null,
       };
     });
     setFitImportSaving(true);
@@ -549,7 +637,7 @@ function WorkoutLibrary({
     );
   };
 
-  const openLibraryBatchAssign = () => {
+  const openLibraryBatchAssign = async () => {
     const rows = librarySelectedIds
       .map((id) => items.find((r) => String(r.id) === String(id)))
       .filter(Boolean);
@@ -557,17 +645,110 @@ function WorkoutLibrary({
       notify("Selecciona al menos un workout");
       return;
     }
+    const hydrated = await ensureStructures(rows);
+    if (!hydrated) return;
     const start = new Date();
     const dates = {};
     const titles = {};
-    rows.forEach((r, i) => {
+    hydrated.forEach((r, i) => {
       dates[String(r.id)] = formatLocalYMD(addDays(start, i));
       titles[String(r.id)] = (r.title && String(r.title).trim()) || "";
     });
     setBatchDatesById(dates);
     setBatchTitlesById(titles);
     setAssignSelectedAthleteIds([]);
-    setAssigningBatchRows(rows);
+    setAssigningBatchRows(hydrated);
+  };
+
+  const openMoveToFolder = () => {
+    const rows = librarySelectedIds
+      .map((id) => items.find((r) => String(r.id) === String(id)))
+      .filter((row) => canMutateRow(row));
+    if (!rows.length) {
+      notify("Selecciona workouts propios para mover");
+      return;
+    }
+    setMoveFolderId("");
+    setMoveModalOpen(true);
+  };
+
+  const confirmMoveToFolder = async () => {
+    const ids = librarySelectedIds
+      .map((id) => items.find((r) => String(r.id) === String(id)))
+      .filter((row) => canMutateRow(row))
+      .map((r) => r.id);
+    if (!ids.length) {
+      notify("Selecciona workouts propios para mover");
+      return;
+    }
+    setMovingToFolder(true);
+    const folderId = moveFolderId === "" || moveFolderId == null ? null : moveFolderId;
+    const { error } = await moveLibraryWorkoutsToFolder({ ids, folderId, coachId: coachUserId });
+    setMovingToFolder(false);
+    if (error) {
+      notify(error.message || "No se pudieron mover");
+      return;
+    }
+    setItems((prev) =>
+      prev.map((x) => (ids.some((id) => String(id) === String(x.id)) ? { ...x, folder_id: folderId } : x)),
+    );
+    setMoveFolderId("");
+    setMoveModalOpen(false);
+    exitLibraryMultiSelect();
+    notify(folderId ? "Movidos a la carpeta" : "Movidos a Sin carpeta");
+  };
+
+  const createFolder = async () => {
+    if (!coachUserId) return;
+    const name = newFolderName.trim();
+    if (!name) {
+      notify("Escribe un nombre de carpeta");
+      return;
+    }
+    setFolderBusy(true);
+    const { data, error } = await createLibraryFolder(coachUserId, name);
+    setFolderBusy(false);
+    if (error) {
+      notify(error.message?.includes("library_folders_coach_name") ? "Ya existe una carpeta con ese nombre" : (error.message || "No se pudo crear"));
+      return;
+    }
+    setNewFolderName("");
+    if (data) setFolders((prev) => [...prev, data].sort((a, b) => (a.sort_order - b.sort_order) || a.name.localeCompare(b.name)));
+    notify("Carpeta creada");
+  };
+
+  const saveRenameFolder = async (folder) => {
+    const name = renameFolderValue.trim();
+    if (!name) {
+      notify("Escribe un nombre");
+      return;
+    }
+    setFolderBusy(true);
+    const { error } = await renameLibraryFolder(folder.id, coachUserId, name);
+    setFolderBusy(false);
+    if (error) {
+      notify(error.message || "No se pudo renombrar");
+      return;
+    }
+    setFolders((prev) => prev.map((f) => (String(f.id) === String(folder.id) ? { ...f, name } : f)));
+    setRenamingFolderId(null);
+    notify("Carpeta renombrada");
+  };
+
+  const removeFolder = async (folder) => {
+    setFolderBusy(true);
+    const { error } = await deleteLibraryFolder(folder.id, coachUserId);
+    setFolderBusy(false);
+    if (error) {
+      notify(error.message || "No se pudo eliminar");
+      return;
+    }
+    setItems((prev) =>
+      prev.map((x) => (String(x.folder_id) === String(folder.id) ? { ...x, folder_id: null } : x)),
+    );
+    setFolders((prev) => prev.filter((f) => String(f.id) !== String(folder.id)));
+    if (String(folderFilter) === String(folder.id)) setFolderFilter("all");
+    notify("Carpeta eliminada. Los workouts pasaron a Sin carpeta.");
   };
 
   const assignDirectly = async (row) => {
@@ -594,7 +775,12 @@ function WorkoutLibrary({
       (row.title && String(row.title).trim()) ||
       "Entreno";
     setAssignSaving(true);
-    const payload = athleteRows.map((a) => buildAssignedRow(row, a, assignDate, assignedTitle));
+    const hydrated = await ensureStructures([row]);
+    if (!hydrated?.[0]) {
+      setAssignSaving(false);
+      return;
+    }
+    const payload = athleteRows.map((a) => buildAssignedRow(hydrated[0], a, assignDate, assignedTitle));
     const { error } = await insertAssignedWorkouts(payload);
     setAssignSaving(false);
     if (error) {
@@ -638,8 +824,13 @@ function WorkoutLibrary({
       return;
     }
     setAssignSaving(true);
+    const hydrated = await ensureStructures(rows);
+    if (!hydrated) {
+      setAssignSaving(false);
+      return;
+    }
     const payload = [];
-    for (const row of rows) {
+    for (const row of hydrated) {
       const scheduledDate = batchDatesById[String(row.id)];
       const assignedTitle =
         (batchTitlesById[String(row.id)] || "").trim() ||
@@ -712,30 +903,36 @@ function WorkoutLibrary({
   const copyGlobalWorkoutToMine = async (row) => {
     if (!adminLibraryOwnerId) return;
     setGlobalCopyingId(row.id);
-    const structure = Array.isArray(row.structure) ? row.structure : [];
-    const wtype = row.workout_type || row.type;
-    const typeId = WORKOUT_TYPES.some((t) => t.id === wtype) ? wtype : WORKOUT_TYPES.some((t) => t.id === row.type) ? row.type : "easy";
-    const dist = Number.isFinite(Number(row.distance_km))
-      ? Number(row.distance_km)
-      : Number.isFinite(Number(row.total_km))
-        ? Number(row.total_km)
+    const hydrated = await ensureStructures([row]);
+    if (!hydrated?.[0]) {
+      setGlobalCopyingId(null);
+      return;
+    }
+    const source = hydrated[0];
+    const wtype = source.workout_type || source.type;
+    const typeId = WORKOUT_TYPES.some((t) => t.id === wtype) ? wtype : WORKOUT_TYPES.some((t) => t.id === source.type) ? source.type : "easy";
+    const dist = Number.isFinite(Number(source.distance_km))
+      ? Number(source.distance_km)
+      : Number.isFinite(Number(source.total_km))
+        ? Number(source.total_km)
         : 0;
     const ins = {
       coach_id: adminLibraryOwnerId,
-      title: (row.title && String(row.title).trim()) || "Entreno",
+      title: (source.title && String(source.title).trim()) || "Entreno",
       type: typeId,
       workout_type: String(wtype || typeId),
       total_km: dist,
       distance_km: dist,
-      duration_min: Number.isFinite(Number(row.duration_min)) ? Math.round(Number(row.duration_min)) : 0,
-      description: row.description != null ? String(row.description) : "",
-      structure,
+      duration_min: Number.isFinite(Number(source.duration_min)) ? Math.round(Number(source.duration_min)) : 0,
+      description: source.description != null ? String(source.description) : "",
+      structure: Array.isArray(source.structure) ? source.structure : [],
       is_fitness_test:
-        row.is_fitness_test === true
-        || (row.is_fitness_test !== false && isTestWorkoutTitle(row.title)),
+        source.is_fitness_test === true
+        || (source.is_fitness_test !== false && isTestWorkoutTitle(source.title)),
+      is_system: false,
     };
-    if (row.intensity) ins.intensity = String(row.intensity);
-    if (row.notes) ins.notes = String(row.notes);
+    if (source.intensity) ins.intensity = String(source.intensity);
+    if (source.notes) ins.notes = String(source.notes);
     const { error } = await supabase.from("workout_library").insert(ins);
     setGlobalCopyingId(null);
     if (error) {
@@ -746,6 +943,44 @@ function WorkoutLibrary({
     if (typeof onCopiedGlobalToLibrary === "function") onCopiedGlobalToLibrary();
     load();
   };
+
+  const copyCatalogWorkout = async (row) => {
+    if (!coachUserId) return;
+    setCatalogCopyingId(row.id);
+    const { error, already } = await copySystemWorkoutToLibrary({ source: row, coachId: coachUserId });
+    setCatalogCopyingId(null);
+    if (error) {
+      notify(error.message || "No se pudo copiar.");
+      return;
+    }
+    notify(already ? "Ya estaba en tu biblioteca" : "Copiado a tu biblioteca ✓");
+    if (typeof onCopiedGlobalToLibrary === "function") onCopiedGlobalToLibrary();
+    load();
+  };
+
+  const catalogGrouped = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    let list = catalogRows;
+    if (q) {
+      list = catalogRows.filter((row) => {
+        const typeLabel = (WORKOUT_TYPES.find((t) => t.id === row.type)?.label || row.type || "").toLowerCase();
+        return (
+          (row.title || "").toLowerCase().includes(q) ||
+          (row.type || "").toLowerCase().includes(q) ||
+          typeLabel.includes(q) ||
+          (row.category || "").toLowerCase().includes(q)
+        );
+      });
+    }
+    const byCat = {};
+    for (const row of list) {
+      const cat = (row.category && String(row.category).trim()) || "Sin categoría";
+      if (!byCat[cat]) byCat[cat] = [];
+      byCat[cat].push(row);
+    }
+    const categories = Object.keys(byCat).sort((a, b) => a.localeCompare(b, "es"));
+    return { byCat, categories };
+  }, [catalogRows, search]);
 
   const libTabBtn = (active) => ({
     padding: "10px 16px",
@@ -759,8 +994,11 @@ function WorkoutLibrary({
     fontFamily: "inherit",
   });
 
-  const showGlobalTab = Boolean(isLibraryAdmin);
-  const activeTab = showGlobalTab ? libraryTab : "mine";
+  const showAdminTabs = Boolean(isLibraryAdmin);
+  const activeTab =
+    !showAdminTabs && (libraryTab === "global" || libraryTab === "marketplace_plans")
+      ? "mine"
+      : libraryTab;
 
   return (
     <div style={S.page}>
@@ -769,19 +1007,24 @@ function WorkoutLibrary({
         <p style={{ color: "#475569", fontSize: ".82em", marginTop: 4 }}>
           Workouts guardados para reutilizar en el generador y asignar a atletas
         </p>
-        {showGlobalTab ? (
-          <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
             <button type="button" style={libTabBtn(activeTab === "mine")} onClick={() => setLibraryTab("mine")}>
               Mi biblioteca
             </button>
-            <button type="button" style={libTabBtn(activeTab === "global")} onClick={() => setLibraryTab("global")}>
-              📚 Todos los coaches
+            <button type="button" style={libTabBtn(activeTab === "catalog")} onClick={() => setLibraryTab("catalog")}>
+              🌱 Catálogo
             </button>
-            <button type="button" style={libTabBtn(activeTab === "marketplace_plans")} onClick={() => setLibraryTab("marketplace_plans")}>
-              📋 Planes Marketplace
-            </button>
+            {showAdminTabs ? (
+              <>
+                <button type="button" style={libTabBtn(activeTab === "global")} onClick={() => setLibraryTab("global")}>
+                  📚 Todos los coaches
+                </button>
+                <button type="button" style={libTabBtn(activeTab === "marketplace_plans")} onClick={() => setLibraryTab("marketplace_plans")}>
+                  📋 Planes Marketplace
+                </button>
+              </>
+            ) : null}
           </div>
-        ) : null}
       </div>
       <div style={{ ...S.card, marginBottom: 18 }}>
         <input ref={fitInputRef} type="file" accept=".fit,.json" multiple onChange={onFitFilesSelected} style={{ display: "none" }} />
@@ -853,10 +1096,102 @@ function WorkoutLibrary({
             boxSizing: "border-box",
           }}
         />
+        {activeTab === "mine" && coachUserId ? (
+          <div style={{ marginTop: 12 }}>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 8 }}>
+              {[
+                { id: "all", label: "Todas" },
+                { id: "none", label: "Sin carpeta" },
+                ...folders.map((f) => ({ id: String(f.id), label: f.name })),
+              ].map((chip) => {
+                const on = String(folderFilter) === String(chip.id);
+                return (
+                  <button
+                    key={chip.id}
+                    type="button"
+                    onClick={() => setFolderFilter(chip.id)}
+                    style={{
+                      border: on ? "none" : "1px solid #e2e8f0",
+                      background: on ? "linear-gradient(135deg,#6366f1,#818cf8)" : "#fff",
+                      color: on ? "#fff" : "#475569",
+                      borderRadius: 999,
+                      padding: "6px 12px",
+                      fontWeight: 800,
+                      fontSize: ".75em",
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    {chip.label}
+                  </button>
+                );
+              })}
+            </div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+              <input
+                value={newFolderName}
+                onChange={(e) => setNewFolderName(e.target.value)}
+                placeholder="Nueva carpeta"
+                disabled={folderBusy}
+                style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: ".8em", minWidth: 160 }}
+              />
+              <button
+                type="button"
+                onClick={createFolder}
+                disabled={folderBusy || !newFolderName.trim()}
+                style={{ border: "1px solid #c7d2fe", background: "#eef2ff", color: "#4338ca", borderRadius: 8, padding: "8px 12px", fontWeight: 800, fontSize: ".78em", cursor: folderBusy ? "not-allowed" : "pointer", fontFamily: "inherit" }}
+              >
+                Crear carpeta
+              </button>
+            </div>
+            {ownFolders.length ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 10 }}>
+                {ownFolders.map((f) => (
+                  <div key={f.id} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontSize: ".78em" }}>
+                    {renamingFolderId === f.id ? (
+                      <>
+                        <input
+                          value={renameFolderValue}
+                          onChange={(e) => setRenameFolderValue(e.target.value)}
+                          style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "6px 8px", fontFamily: "inherit", fontSize: "1em" }}
+                        />
+                        <button type="button" onClick={() => saveRenameFolder(f)} disabled={folderBusy} style={{ border: "none", background: "#6366f1", color: "#fff", borderRadius: 6, padding: "5px 10px", fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>
+                          Guardar
+                        </button>
+                        <button type="button" onClick={() => setRenamingFolderId(null)} style={{ border: "1px solid #e2e8f0", background: "#fff", borderRadius: 6, padding: "5px 10px", cursor: "pointer", fontFamily: "inherit" }}>
+                          Cancelar
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <span style={{ fontWeight: 700, color: "#334155" }}>{f.name}</span>
+                        <button
+                          type="button"
+                          onClick={() => { setRenamingFolderId(f.id); setRenameFolderValue(f.name); }}
+                          style={{ border: "1px solid #e2e8f0", background: "#fff", borderRadius: 6, padding: "4px 8px", cursor: "pointer", fontFamily: "inherit", fontSize: ".92em" }}
+                        >
+                          Renombrar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => removeFolder(f)}
+                          disabled={folderBusy}
+                          style={{ border: "1px solid #fecaca", background: "#fef2f2", color: "#b91c1c", borderRadius: 6, padding: "4px 8px", cursor: folderBusy ? "not-allowed" : "pointer", fontFamily: "inherit", fontSize: ".92em" }}
+                        >
+                          Eliminar
+                        </button>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
       </div>
       {!coachUserId ? (
         <div style={{ color: "#64748b", fontSize: ".9em" }}>Inicia sesión para ver tu biblioteca.</div>
-      ) : activeTab === "marketplace_plans" && showGlobalTab ? (
+      ) : activeTab === "marketplace_plans" && showAdminTabs ? (
         marketplacePlansAdminLoading ? (
           <div style={{ color: "#64748b", fontSize: ".9em" }}>Cargando planes del marketplace…</div>
         ) : marketplacePlansForAdmin.length === 0 ? (
@@ -937,7 +1272,7 @@ function WorkoutLibrary({
             })}
           </div>
         )
-      ) : activeTab === "global" && showGlobalTab ? (
+      ) : activeTab === "global" && showAdminTabs ? (
         globalLoading ? (
           <div style={{ color: "#64748b", fontSize: ".9em" }}>Cargando todos los coaches…</div>
         ) : globalRows.length === 0 ? (
@@ -1016,6 +1351,73 @@ function WorkoutLibrary({
             ))}
           </div>
         )
+      ) : activeTab === "catalog" ? (
+        catalogLoading ? (
+          <div style={{ color: "#64748b", fontSize: ".9em" }}>Cargando catálogo…</div>
+        ) : catalogRows.length === 0 ? (
+          <div style={{ ...S.card, color: "#64748b", fontSize: ".9em" }}>Aún no hay entrenos semilla en el catálogo.</div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+            {catalogGrouped.categories.map((cat) => (
+              <div key={cat}>
+                <div style={{ fontSize: ".78em", fontWeight: 800, color: "#475569", marginBottom: 10, letterSpacing: ".04em" }}>
+                  {cat}
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {catalogGrouped.byCat[cat].map((row) => {
+                    const wt = WORKOUT_TYPES.find((t) => t.id === row.type) || WORKOUT_TYPES[0];
+                    const already = items.some((x) => String(x.copied_from_id) === String(row.id));
+                    return (
+                      <div
+                        key={row.id}
+                        style={{
+                          ...S.card,
+                          margin: 0,
+                          padding: 14,
+                          display: "flex",
+                          flexWrap: "wrap",
+                          justifyContent: "space-between",
+                          gap: 12,
+                          alignItems: "center",
+                          border: "1px solid #e2e8f0",
+                        }}
+                      >
+                        <div style={{ flex: "1 1 220px", minWidth: 0 }}>
+                          <div style={{ fontWeight: 700, color: "#0f172a" }}>{row.title}</div>
+                          <div style={{ fontSize: ".75em", color: "#64748b", lineHeight: 1.45 }}>
+                            {wt.label} · {row.duration_min} min · {row.total_km} km
+                            {row.is_fitness_test ? " · TEST" : ""}
+                          </div>
+                          {row.description ? (
+                            <div style={{ fontSize: ".75em", color: "#94a3b8", marginTop: 4 }}>{row.description}</div>
+                          ) : null}
+                        </div>
+                        <button
+                          type="button"
+                          disabled={catalogCopyingId === row.id || already}
+                          onClick={() => copyCatalogWorkout(row)}
+                          style={{
+                            padding: "8px 12px",
+                            borderRadius: 8,
+                            border: "none",
+                            background: already || catalogCopyingId === row.id ? "#e2e8f0" : "linear-gradient(135deg,#6366f1,#818cf8)",
+                            color: already || catalogCopyingId === row.id ? "#64748b" : "#fff",
+                            fontWeight: 700,
+                            fontSize: ".78em",
+                            cursor: already || catalogCopyingId === row.id ? "not-allowed" : "pointer",
+                            fontFamily: "inherit",
+                          }}
+                        >
+                          {already ? "Ya en tu biblioteca" : catalogCopyingId === row.id ? "Copiando…" : "➕ Copiar a mi biblioteca"}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        )
       ) : loading ? (
         <div style={{ color: "#64748b", fontSize: ".9em" }}>Cargando biblioteca…</div>
       ) : filtered.length === 0 ? (
@@ -1070,6 +1472,11 @@ function WorkoutLibrary({
                     >
                       {wt.label}
                     </span>
+                    {row.folder_id ? (
+                      <span style={{ fontSize: ".65em", fontWeight: 700, color: "#4338ca", background: "#eef2ff", borderRadius: 6, padding: "3px 8px" }}>
+                        {folders.find((f) => String(f.id) === String(row.folder_id))?.name || "Carpeta"}
+                      </span>
+                    ) : null}
                     {row.is_fitness_test ? (
                       <span
                         style={{
@@ -1096,6 +1503,7 @@ function WorkoutLibrary({
                       </span>
                     )}
                   </div>
+                  {canMutateRow(row) ? (
                   <label style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 8, fontSize: ".72em", color: "#475569", cursor: "pointer", fontWeight: 600 }}>
                     <input
                       type="checkbox"
@@ -1104,11 +1512,16 @@ function WorkoutLibrary({
                     />
                     TEST de esfuerzo (sin objetivo de tiempo)
                   </label>
+                  ) : null}
                 </div>
                 <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
                   <button
                     type="button"
-                    onClick={() => onUseWorkout(row)}
+                    onClick={async () => {
+                      const hydrated = await ensureStructures([row]);
+                      if (!hydrated?.[0]) return;
+                      onUseWorkout(hydrated[0]);
+                    }}
                     style={{
                       background: "linear-gradient(135deg,#e86f28,#ff8a3d)",
                       border: "none",
@@ -1147,6 +1560,7 @@ function WorkoutLibrary({
                   >
                     📋 Asignar
                   </button>
+                  {canMutateRow(row) ? (
                   <button
                     type="button"
                     onClick={() => deleteRow(row.id)}
@@ -1165,6 +1579,7 @@ function WorkoutLibrary({
                   >
                     {deletingId === row.id ? "…" : "Eliminar"}
                   </button>
+                  ) : null}
                 </div>
               </div>
             );
@@ -1433,12 +1848,43 @@ function WorkoutLibrary({
             </button>
             <button
               type="button"
+              onClick={openMoveToFolder}
+              disabled={librarySelectedIds.length === 0}
+              style={{ border: "1px solid #c7d2fe", background: librarySelectedIds.length === 0 ? "#f8fafc" : "#eef2ff", color: librarySelectedIds.length === 0 ? "#94a3b8" : "#4338ca", borderRadius: 8, padding: "8px 12px", fontWeight: 800, cursor: librarySelectedIds.length === 0 ? "not-allowed" : "pointer", fontFamily: "inherit", fontSize: ".82em" }}
+            >
+              Mover a carpeta
+            </button>
+            <button
+              type="button"
               onClick={openLibraryBatchAssign}
               disabled={librarySelectedIds.length === 0}
               style={{ border: "none", background: librarySelectedIds.length === 0 ? "#cbd5e1" : "linear-gradient(135deg,#e86f28,#ff8a3d)", borderRadius: 8, padding: "8px 12px", color: "#fff", fontWeight: 800, cursor: librarySelectedIds.length === 0 ? "not-allowed" : "pointer", fontFamily: "inherit", fontSize: ".82em" }}
             >
               Asignar seleccionados
             </button>
+          </div>
+        </div>
+      ) : null}
+      {moveModalOpen && activeTab === "mine" ? (
+        <div style={{ position: "fixed", inset: 0, zIndex: 290, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ ...S.card, width: "100%", maxWidth: 420, margin: 0 }}>
+            <div style={{ fontWeight: 900, marginBottom: 10 }}>Mover a carpeta</div>
+            <div style={{ fontSize: ".78em", color: "#64748b", marginBottom: 10 }}>Los workouts no se borran. Elige destino o déjalos sin carpeta.</div>
+            <LibraryFolderSelect
+              folders={ownFolders}
+              value={moveFolderId}
+              onChange={setMoveFolderId}
+              noneLabel="Sin carpeta"
+              style={{ width: "100%", boxSizing: "border-box", marginBottom: 14 }}
+            />
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <button type="button" onClick={() => setMoveModalOpen(false)} style={{ border: "1px solid #e2e8f0", background: "#fff", borderRadius: 8, padding: "8px 12px", cursor: "pointer", fontFamily: "inherit", fontWeight: 700 }}>
+                Cancelar
+              </button>
+              <button type="button" onClick={confirmMoveToFolder} disabled={movingToFolder} style={{ border: "none", background: movingToFolder ? "#cbd5e1" : "linear-gradient(135deg,#6366f1,#818cf8)", color: "#fff", borderRadius: 8, padding: "8px 12px", fontWeight: 800, cursor: movingToFolder ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+                {movingToFolder ? "Moviendo…" : "Mover"}
+              </button>
+            </div>
           </div>
         </div>
       ) : null}
@@ -1455,6 +1901,10 @@ function WorkoutLibrary({
               >
                 ✕
               </button>
+            </div>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12, flexWrap: "wrap" }}>
+              <div style={{ fontSize: ".75em", fontWeight: 700, color: "#64748b" }}>Carpeta destino</div>
+              <LibraryFolderSelect folders={ownFolders} value={fitFolderId} onChange={setFitFolderId} />
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               {fitDrafts.map((w, idx) => (

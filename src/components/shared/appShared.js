@@ -29,6 +29,16 @@ import {
   COLOR_ORANGE,
 } from "../../../lib/acwrBands.js";
 import { workoutActualKm as workoutActualKmFromLib, sumWeekKm as sumWeekKmFromLib } from "../../../lib/weekStats.js";
+import {
+  earnedCodesFromRows,
+  formatAchievementDate,
+  pickAchievedOnForCodes,
+  proposeNewAthleteAwards,
+  recordAwardPostResult,
+  totalKmFromWorkouts,
+} from "../../../lib/athleteAchievements.js";
+
+export { formatAchievementDate, pickAchievedOnForCodes };
 
 export {
   registerFcmToken,
@@ -1067,12 +1077,15 @@ export const markConversationRead = async ({ coachId, athleteId, readerRole }) =
   return Array.isArray(data) ? data.length : 0;
 };
 
-export const normalizeLibraryRow = (row) => {
-  const structure = normalizeWorkoutStructure(readStructure(row));
+export const normalizeLibraryRow = (row, { structureLoaded = true } = {}) => {
   const type = row.type && WORKOUT_TYPES.some((t) => t.id === row.type) ? row.type : "easy";
   const totalKm = Number.isFinite(Number(row.total_km)) ? Number(row.total_km) : 0;
   const distKm = Number.isFinite(Number(row.distance_km)) ? Number(row.distance_km) : totalKm;
   const wtype = row.workout_type && String(row.workout_type).trim() ? String(row.workout_type).trim() : type;
+  const hasStructureCol = Object.prototype.hasOwnProperty.call(row || {}, "structure")
+    || Object.prototype.hasOwnProperty.call(row || {}, "workout_structure");
+  const loaded = structureLoaded && hasStructureCol;
+  const structure = loaded ? normalizeWorkoutStructure(readStructure(row)) : null;
   return {
     id: row.id,
     coach_id: row.coach_id,
@@ -1083,12 +1096,17 @@ export const normalizeLibraryRow = (row) => {
     distance_km: distKm,
     duration_min: Number.isFinite(Number(row.duration_min)) ? Math.round(Number(row.duration_min)) : 0,
     description: row.description || "",
-    structure: Array.isArray(structure) ? structure : [],
+    structure: loaded ? (Array.isArray(structure) ? structure : []) : null,
     created_at: row.created_at ?? null,
     intensity: row.intensity != null ? String(row.intensity) : "",
     notes: row.notes != null ? String(row.notes) : "",
     is_fitness_test:
       row.is_fitness_test === true ? true : row.is_fitness_test === false ? false : null,
+    folder_id: row.folder_id ?? null,
+    is_system: row.is_system === true,
+    category: row.category != null ? String(row.category) : "",
+    seed_key: row.seed_key != null ? String(row.seed_key) : "",
+    copied_from_id: row.copied_from_id ?? null,
   };
 };
 
@@ -2016,40 +2034,88 @@ export async function loadAthleteAchievementSnapshot(athleteId) {
   }
 }
 
-export async function evaluateAndAwardAthleteAchievements(athleteId) {
-  if (!athleteId) return { newAwards: [], snapshot: { achievements: [], earned: [] }, progress: null };
-  try {
-    const [achRes, workRes] = await Promise.all([
-      authApiFetch(`/api/achievements?athlete_id=${encodeURIComponent(athleteId)}`),
-      supabase.from("workouts").select("*").eq("athlete_id", athleteId).eq("done", true),
-    ]);
-    if (!achRes.ok) return { newAwards: [], snapshot: { achievements: [], earned: [] }, progress: null };
-    const { all: allAchievements, earned: earnedList } = await achRes.json();
-    const doneWorkouts = workRes.data || [];
-    const totalKm = doneWorkouts.reduce((s, w) => s + (Number(w.total_km) || 0), 0);
-    const earnedCodes = new Set((earnedList || []).map((e) => e.achievement_code));
-    const newAchievements = [];
-    for (const ach of allAchievements || []) {
-      if (earnedCodes.has(ach.code)) continue;
-      let earned = false;
-      if (ach.condition_type === "total_km" && totalKm >= Number(ach.condition_value)) earned = true;
-      if (ach.condition_type === "workout_count" && doneWorkouts.length >= Number(ach.condition_value)) earned = true;
-      if (ach.condition_type === "single_km" && doneWorkouts.some((w) => (Number(w.total_km) || 0) >= Number(ach.condition_value))) earned = true;
-      if (ach.condition_type === "interval" && doneWorkouts.some((w) => w.type === "interval")) earned = true;
-      if (earned) {
-        await authApiFetch("/api/achievements", {
-          method: "POST",
-          body: JSON.stringify({ athlete_id: athleteId, achievement_code: ach.code, value: totalKm }),
-        });
-        newAchievements.push(ach);
-      }
+const emptyAwardResult = () => ({ newAwards: [], snapshot: { achievements: [], earned: [] }, progress: null });
+
+const awardLocks = new Map();
+
+async function readAwardPostBody(res) {
+  try { return await res.json(); } catch { return null; }
+}
+
+async function evaluateAndAwardAthleteAchievementsOnce(athleteId) {
+  const [achRes, workRes, evalRes] = await Promise.all([
+    authApiFetch(`/api/achievements?athlete_id=${encodeURIComponent(athleteId)}`),
+    supabase.from("workouts").select(
+      "id,scheduled_date,done,total_km,type,completed_at,manual_avg_hr,manual_max_hr,actual_avg_hr,actual_max_hr",
+    ).eq("athlete_id", athleteId),
+    supabase.from("athlete_evaluations").select("vdot, created_at").eq("athlete_id", athleteId).order("created_at", { ascending: true }),
+  ]);
+  if (!achRes.ok) return emptyAwardResult();
+  const json = await achRes.json();
+  const earnedList = Array.isArray(json.earned) ? json.earned : [];
+  const workouts = workRes.data || [];
+  const evaluations = evalRes.data || [];
+  const totalKm = totalKmFromWorkouts(workouts);
+  const earnedCodes = earnedCodesFromRows(earnedList);
+  const proposals = proposeNewAthleteAwards({
+    workouts,
+    evaluations,
+    earnedCodes,
+    value: totalKm,
+  });
+  const newAwards = [];
+  for (const proposal of proposals) {
+    if (earnedCodes.has(proposal.code) || (proposal.aliases || []).some((a) => earnedCodes.has(a))) continue;
+    const body = {
+      athlete_id: athleteId,
+      achievement_code: proposal.code,
+      value: proposal.value,
+    };
+    if (proposal.achieved_on) body.achieved_on = proposal.achieved_on;
+    const postRes = await authApiFetch("/api/achievements", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+    const postJson = await readAwardPostBody(postRes);
+    const recorded = recordAwardPostResult(newAwards, proposal, postRes.status, postJson);
+    if (recorded.reason === "already_owned" || recorded.reason === "inserted") {
+      earnedCodes.add(proposal.code);
     }
+  }
+  const snapshot = await loadAthleteAchievementSnapshot(athleteId);
+  const progress = computeAchievementProgress(workouts.filter((w) => w.done));
+  const toasts = newAwards.map((p) => {
+    const fromDisplay = ATHLETE_ACHIEVEMENT_DISPLAY_LIST.find((a) => (a.codes || []).includes(p.code));
+    return {
+      achievement_code: p.code,
+      achieved_on: p.achieved_on || null,
+      achievements: fromDisplay
+        ? { code: p.code, name: fromDisplay.name, icon: fromDisplay.icon, description: fromDisplay.requirement }
+        : { code: p.code, name: p.code, icon: "", description: "" },
+    };
+  });
+  return { newAwards: toasts, snapshot, progress };
+}
+
+export async function evaluateAndAwardAthleteAchievements(athleteId) {
+  if (!athleteId) return emptyAwardResult();
+  const key = String(athleteId);
+  const pending = awardLocks.get(key);
+  if (pending) {
+    try { await pending; } catch { /* el dueño del lock ya tragó el error */ }
     const snapshot = await loadAthleteAchievementSnapshot(athleteId);
-    const progress = computeAchievementProgress(doneWorkouts);
-    const newAwards = newAchievements.map((ach) => ({ achievement_code: ach.code, awarded_at: new Date().toISOString(), achievements: ach }));
-    return { newAwards, snapshot, progress };
+    return { newAwards: [], snapshot, progress: null };
+  }
+  let release;
+  const lock = new Promise((resolve) => { release = resolve; });
+  awardLocks.set(key, lock);
+  try {
+    return await evaluateAndAwardAthleteAchievementsOnce(athleteId);
   } catch {
-    return { newAwards: [], snapshot: { achievements: [], earned: [] }, progress: null };
+    return emptyAwardResult();
+  } finally {
+    awardLocks.delete(key);
+    release();
   }
 }
 

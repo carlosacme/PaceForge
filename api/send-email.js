@@ -1,5 +1,6 @@
 import { requireUser, jsonError } from "../lib/apiAuth.js";
 import { sendEmailViaResend } from "../lib/emailSender.js";
+import { athleteVisibleWorkoutDescription } from "../src/lib/enrichPace.js";
 
 /**
  * Unico punto de salida de correo transaccional de la app.
@@ -100,7 +101,7 @@ const TEMPLATES = {
       <p>Tu coach te ha asignado un nuevo entrenamiento:</p>
       <h3>${escapeHtml(title || "")}</h3>
       <p><strong>Fecha:</strong> ${escapeHtml(date || "")}</p>
-      <p><strong>Descripción:</strong> ${escapeHtml(description || "")}</p>
+      <p><strong>Descripción:</strong> ${escapeHtml(athleteVisibleWorkoutDescription(title, description || ""))}</p>
       <p><strong>Distancia:</strong> ${escapeHtml(totalKm)} km</p>
       <p><strong>Duración:</strong> ${escapeHtml(durationMin)} minutos</p>
       <h4>Estructura:</h4>
