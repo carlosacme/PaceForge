@@ -1,5 +1,28 @@
 apply plugin: 'com.android.application'
 
+def keystorePropertiesFile = rootProject.file("keystore.properties")
+def keystoreProperties = new Properties()
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
+def releaseSigningReady = keystorePropertiesFile.exists() &&
+    keystoreProperties['storeFile'] &&
+    keystoreProperties['storePassword'] &&
+    keystoreProperties['keyAlias'] &&
+    keystoreProperties['keyPassword']
+
+gradle.taskGraph.whenReady { graph ->
+    def wantsRelease = graph.allTasks.any { it.name.toLowerCase().contains("release") }
+    if (wantsRelease && !releaseSigningReady) {
+        throw new GradleException(
+            "Falta android/keystore.properties (o alguna clave vacía). " +
+            "Copia android/keystore.properties.example, rellénalo y coloca la llave de carga. " +
+            "Ver docs/android-release-signing.md. El debug no necesita ese archivo."
+        )
+    }
+}
+
 android {
     namespace = "com.runningapexflow.app"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -18,15 +41,19 @@ android {
     }
     signingConfigs {
         release {
-            storeFile file('runningapexflow.keystore')
-            storePassword 'RunningApex2026!'
-            keyAlias 'runningapexflow'
-            keyPassword 'RunningApex2026!'
+            if (releaseSigningReady) {
+                storeFile file(keystoreProperties['storeFile'])
+                storePassword keystoreProperties['storePassword']
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+            }
         }
     }
     buildTypes {
         release {
-            signingConfig signingConfigs.release
+            if (releaseSigningReady) {
+                signingConfig signingConfigs.release
+            }
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }

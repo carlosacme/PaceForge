@@ -28,3 +28,8 @@ dist-ssr
 .env.*
 !.env.example
 
+# Android upload key (Play App Signing). Nunca commitear.
+*.keystore
+*.jks
+android/keystore.properties
+
