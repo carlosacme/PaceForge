@@ -14,16 +14,20 @@ Si generas un keystore distinto, Play Console rechazará el AAB.
 ## Pasos
 
 1. Copia `android/keystore.properties.example` a `android/keystore.properties`.
-2. Coloca la llave de carga. Lo habitual es `android/app/runningapexflow.keystore`
-   (`storeFile` es relativo a `android/app/`).
-3. Rellena el properties:
+2. Guarda la llave de carga **fuera del repo** (por ejemplo `~/keys/` o
+   `C:/Users/you/keys/`). No la pongas en `android/app/` ni en la raíz del
+   proyecto.
+3. Rellena el properties con la **ruta absoluta** en `storeFile`:
 
    ```
-   storeFile=runningapexflow.keystore
+   storeFile=/home/you/keys/runningapexflow.keystore
    storePassword=...
    keyAlias=runningapexflow
    keyPassword=...
    ```
+
+   En Windows, barras normales sirven:
+   `storeFile=C:/Users/you/keys/runningapexflow.keystore`.
 
 4. Desde la raíz: `npm run build`, luego `npx cap sync android`.
 5. Desde `android/`: `./gradlew bundleRelease` (`gradlew.bat` en Windows).
@@ -36,7 +40,7 @@ valores por defecto.
 ## Comprobar que es la misma llave de carga
 
 ```
-keytool -list -v -keystore android/app/runningapexflow.keystore -alias runningapexflow
+keytool -list -v -keystore /home/you/keys/runningapexflow.keystore -alias runningapexflow
 ```
 
 La SHA-1 debe coincidir con **App signing → Upload key certificate** en Play
