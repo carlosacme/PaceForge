@@ -48,6 +48,13 @@ test("ningún evento conserva correo ni nombre", () => {
 test("la config de arranque no declara propiedades personales y filtra el correo", () => {
   const options = posthogInitOptions();
   assert.equal(options.person_profiles, "identified_only");
+  assert.equal(options.capture_pageview, true);
+  assert.equal(options.capture_pageleave, true);
+  assert.equal(options.autocapture, false);
+  assert.equal(options.disable_session_recording, true);
+  assert.equal(options.capture_dead_clicks, false);
+  assert.equal(options.capture_heatmaps, false);
+  assert.equal(typeof options.before_send, "function");
   assert.equal(JSON.stringify(options).includes("email"), false);
   const event = options.before_send({
     event: "$pageview",

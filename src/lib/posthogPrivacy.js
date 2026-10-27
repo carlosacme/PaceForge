@@ -44,6 +44,10 @@ export function posthogInitOptions() {
     person_profiles: "identified_only",
     capture_pageview: true,
     capture_pageleave: true,
+    autocapture: false,
+    disable_session_recording: true,
+    capture_dead_clicks: false,
+    capture_heatmaps: false,
     before_send: stripPersonalFromPosthogEvent,
   };
 }
