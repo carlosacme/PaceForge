@@ -1,4 +1,5 @@
 import React from "react";
+import { isIosApp } from "../lib/platform";
 
 /**
  * Banner coach: pedir permiso de notificaciones (web Notification / nativo Capacitor).
@@ -10,7 +11,7 @@ import React from "react";
  * }} props
  */
 export default function PushInviteBanner({ visible, onActivate, onDismiss }) {
-  if (!visible) return null;
+  if (!visible || isIosApp()) return null;
 
   return (
     <div

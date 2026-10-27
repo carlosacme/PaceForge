@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { isIosApp } from "../lib/platform";
 
 /**
  * InstallAppButton
@@ -60,6 +61,8 @@ export default function InstallAppButton() {
     }
   };
 
+  // La app nativa de iOS ya está instalada: ni botón ni instrucciones de Safari.
+  if (isIosApp()) return null;
   // Ya instalada: no mostrar nada.
   if (installed) return null;
   // Ni prompt de Android ni iOS: el navegador no soporta instalacion.

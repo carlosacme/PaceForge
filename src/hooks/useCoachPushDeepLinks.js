@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Capacitor } from "@capacitor/core";
+import { isIosApp } from "../lib/platform";
 import { registerFcmToken } from "../components/shared/appShared";
 import {
   initMessaging,
@@ -55,6 +56,7 @@ export function useCoachPushDeepLinks({
   const [nativeDeepLinkTick, setNativeDeepLinkTick] = useState(0);
 
   const syncFcmTokenToProfile = useCallback(async () => {
+    if (isIosApp()) return;
     try {
       const uid = session?.user?.id;
       if (!uid) {
@@ -95,7 +97,7 @@ export function useCoachPushDeepLinks({
    * PushNotifications.checkPermissions().
    */
   const refreshNativePushPermission = useCallback(async () => {
-    if (!isNativePush()) return;
+    if (isIosApp() || !isNativePush()) return;
     setNativePushPermission(await nativePushPermissionState());
   }, []);
 
@@ -110,10 +112,10 @@ export function useCoachPushDeepLinks({
   const pushPermissionKnown = isNativePush()
     ? nativePushPermission != null
     : typeof Notification !== "undefined";
-  const showPushInvite = Boolean(session) && pushPermissionKnown && !pushPermissionGranted && !pushInviteDismissed;
+  const showPushInvite = !isIosApp() && Boolean(session) && pushPermissionKnown && !pushPermissionGranted && !pushInviteDismissed;
 
   useEffect(() => {
-    if (authLoading || !session?.user?.id) return undefined;
+    if (isIosApp() || authLoading || !session?.user?.id) return undefined;
     let cancelled = false;
     (async () => {
       // Nativo: register() vuelve a emitir el token en cada arranque, asi que
@@ -134,7 +136,7 @@ export function useCoachPushDeepLinks({
   useEffect(() => {
     // En nativo el primer plano lo cubre el listener pushNotificationReceived
     // de nativePush.js; firebase/messaging no funciona en el WebView.
-    if (!session || Capacitor.isNativePlatform()) return undefined;
+    if (isIosApp() || !session || Capacitor.isNativePlatform()) return undefined;
     let unsub = () => {};
     (async () => {
       const m = await initMessaging();

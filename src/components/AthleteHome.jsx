@@ -336,6 +336,7 @@ export default function AthleteHome({ profile }) {
       // Push en segundo plano: registrar el token no debe retrasar el calendario.
       if (authData?.user?.id) {
         void (async () => {
+          if (isIosApp()) return;
           try {
             if (Capacitor.isNativePlatform()) {
               await registerNativePush({ notify: notifyPush });
