@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const platform = vi.hoisted(() => ({ current: "web" }));
@@ -62,7 +63,7 @@ describe("applyIosDocumentShell", () => {
 
 describe("css de .ios-app", () => {
   it("las reglas nuevas solo aplican bajo .ios-app y index.html no trae viewport-fit", () => {
-    const css = readFileSync(new URL("./index.css", import.meta.url), "utf8");
+    const css = readFileSync(join(process.cwd(), "src/index.css"), "utf8");
     const section = css.split("/* ios-app */")[1];
     expect(section).toBeTruthy();
     const selectors = section
@@ -74,7 +75,7 @@ describe("css de .ios-app", () => {
     expect(selectors.some((sel) => sel.includes("pf-athlete-bottom-nav"))).toBe(true);
     expect(selectors.some((sel) => sel.includes("input"))).toBe(true);
 
-    const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
+    const html = readFileSync(join(process.cwd(), "index.html"), "utf8");
     expect(html).toContain('name="viewport" content="width=device-width, initial-scale=1.0"');
     expect(html).not.toContain("viewport-fit");
   });
