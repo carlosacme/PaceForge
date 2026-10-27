@@ -1,4 +1,5 @@
 import { Capacitor } from "@capacitor/core";
+import { isIosApp } from "./platform";
 
 /**
  * Registro de push justo despues del login.
@@ -7,6 +8,7 @@ import { Capacitor } from "@capacitor/core";
  * de entrada: AuthLanding lo pide con import() dinamico.
  */
 export async function registerPushAfterLogin(notify) {
+  if (isIosApp()) return;
   try {
     if (Capacitor.isNativePlatform()) {
       const { registerNativePush } = await import("./nativePush");
