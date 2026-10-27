@@ -21,6 +21,7 @@
     ul li { margin-bottom: 6px; }
     .card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 24px; margin-bottom: 8px; }
     .footer { margin-top: 48px; padding-top: 24px; border-top: 1px solid #e2e8f0; color: #94a3b8; font-size: .85em; }
+    .nav-links { margin-bottom: 28px; }
   </style>
 </head>
 <body>
@@ -29,9 +30,16 @@
       <img class="logo-icon" src="/pwa-192.png" alt="RunningApexFlow" width="36" height="36" />
       <div class="logo-name">RUNNING<span>APEX</span>FLOW</div>
     </div>
+    <p class="nav-links"><a href="/">← Volver</a> · <a href="/terms">Términos</a></p>
 
     <h1>Política de Privacidad</h1>
-    <p class="updated">Última actualización: 17 de julio de 2026</p>
+    <p class="updated">Última actualización: 26 de octubre de 2026 · Versión 2026-10</p>
+
+    <div class="card">
+      <h2>Responsable del tratamiento</h2>
+      <p>El responsable del tratamiento de los datos personales es Carlos Enrique Acosta Merlano (persona natural). Domicilio: Sincelejo, Sucre, Colombia. Los datos de identificación y dirección del responsable se entregan bajo solicitud escrita a <a href="mailto:soporte@runningapexflow.com">soporte@runningapexflow.com</a>.</p>
+      <p>Para ejercer tus derechos o hacer preguntas sobre esta política: <a href="mailto:soporte@runningapexflow.com">soporte@runningapexflow.com</a>.</p>
+    </div>
 
     <div class="card">
       <h2>1. Información que recopilamos</h2>
@@ -43,7 +51,24 @@
         <li><strong>Datos de pago:</strong> procesados de forma segura por Wompi. No almacenamos datos de tarjetas de crédito.</li>
         <li><strong>Datos de dispositivo:</strong> token de notificaciones push (FCM) para envío de alertas.</li>
         <li><strong>Integraciones opcionales:</strong> datos de Garmin, COROS e intervals.icu cuando el usuario los conecta voluntariamente. Si conectas intervals.icu, almacenamos credenciales de acceso (API key u OAuth) para poder enviar tus entrenamientos planificados a tu reloj y sincronizar lo ejecutado.</li>
+        <li><strong>Ubicación precisa:</strong> se usa solo para mostrar el clima, y solo si concedes el permiso del dispositivo. No se guarda en tu cuenta ni en nuestra base de datos. Las coordenadas se envían al proveedor de clima para responder esa consulta y pueden quedar unos minutos en la memoria del dispositivo para no volver a pedir el permiso. Si niegas el permiso, el clima usa una ubicación aproximada de respaldo y te lo indicamos.</li>
+        <li><strong>Analítica (PostHog):</strong> identificamos la sesión solo con el identificador de usuario. No enviamos el correo, el nombre ni otras propiedades personales en esa identificación ni en los eventos de uso (páginas vistas y salida de página).</li>
+        <li><strong>Aceptación de estos documentos:</strong> al crear la cuenta guardamos la fecha en que aceptaste los términos y esta política, y la versión aceptada (por ejemplo, 2026-10).</li>
       </ul>
+
+      <h2>Datos de salud y actividad física</h2>
+      <p>Para armar y seguir el entrenamiento podemos tratar datos de salud y de actividad física que tú o tu coach registran, o que llegan si conectas un reloj:</p>
+      <ul>
+        <li>Frecuencia cardíaca (FC) y zonas de FC.</li>
+        <li>Esfuerzo percibido (RPE).</li>
+        <li>Evaluaciones y métricas VDOT.</li>
+        <li>Distancia, ritmo y desnivel.</li>
+        <li>Notas de la sesión.</li>
+      </ul>
+      <p>Ese tratamiento se hace con la autorización expresa del titular, dada al aceptar esta política en el registro. Conectar un reloj es opcional y no es requisito para crear la cuenta.</p>
+
+      <h2>Relojes e intervals.icu</h2>
+      <p>Garmin, COROS e intervals.icu son integraciones opcionales. Puedes no conectarlas y puedes revocarlas desde Configuración. Al revocarlas dejamos de usar esas credenciales para enviar o leer entrenamientos. Si eliminas la cuenta, también se borran las conexiones de dispositivo asociadas.</p>
     </div>
 
     <div class="card">
@@ -56,6 +81,8 @@
         <li>Procesar pagos de suscripciones y planes del marketplace.</li>
         <li>Calcular métricas de rendimiento (VDOT, zonas FC, carga de entrenamiento).</li>
         <li>Mejorar la plataforma mediante análisis de uso agregado y anónimo.</li>
+        <li>Mostrar el clima del lugar donde entrenas, si diste permiso de ubicación.</li>
+        <li>Medir el uso del producto con PostHog, asociado solo al identificador de usuario y sin correo.</li>
       </ul>
     </div>
 
@@ -69,6 +96,8 @@
         <li><strong>Anthropic:</strong> proveedor de IA para generación de entrenamientos. Los datos enviados no se usan para entrenar modelos.</li>
         <li><strong>Firebase (Google):</strong> servicio de notificaciones push.</li>
         <li><strong>intervals.icu:</strong> si conectas esta integración, enviamos tus entrenamientos planificados a tu cuenta de intervals.icu, que a su vez los transfiere a tu reloj Garmin o COROS. Su política de privacidad aplica para esos datos.</li>
+        <li><strong>Proveedor de clima:</strong> si pides el clima, las coordenadas de esa consulta se envían para obtener el pronóstico. No las guardamos en tu cuenta.</li>
+        <li><strong>PostHog:</strong> analítica de uso. Solo el identificador de usuario, sin correo ni nombre.</li>
       </ul>
     </div>
 
@@ -88,23 +117,29 @@
     <div class="card">
       <h2>5. Retención de datos</h2>
       <p>Conservamos tus datos mientras tu cuenta esté activa. Si eliminas tu cuenta desde la app, la eliminación es inmediata. Las solicitudes por correo se completan en un máximo de 30 días. Los registros de transacciones se conservan (anonimizados cuando es posible) por obligaciones legales. Más detalles en <a href="/eliminar-cuenta">Eliminación de cuenta</a>.</p>
+      <p>Al eliminar la cuenta desde la app se borra el perfil, el usuario de autenticación, los entrenamientos, las evaluaciones, los mensajes, los logros, los borradores y planes, y las conexiones de reloj ligadas a esa cuenta. Los atletas que siguen con otro usuario dejan de tenerte como coach, pero su cuenta no se elimina.</p>
+      <p>Los registros de facturación (pagos y compras de planes) no se borran: se quita el vínculo con tu usuario, tu atleta y, cuando aplica, tu coach, y se borra la reseña de la compra. El motivo es conservar el soporte de la operación. Esos registros se conservan 10 años. Wompi puede conservar sus propios comprobantes según su política.</p>
+      <p>Los registros técnicos (registros del servidor y eventos de analítica ya enviados) se conservan mientras sean necesarios para la seguridad y la operación del servicio y luego se eliminan o anonimizan.</p>
     </div>
 
     <div class="card">
       <h2>6. Tus derechos</h2>
       <p>Tienes derecho a:</p>
       <ul>
-        <li><strong>Acceder</strong> a todos los datos que tenemos sobre ti.</li>
+        <li><strong>Conocer</strong> y <strong>acceder</strong> a los datos que tenemos sobre ti.</li>
+        <li><strong>Actualizar</strong> y <strong>rectificar</strong> información incorrecta desde tu perfil en la app.</li>
+        <li><strong>Suprimir</strong> tu cuenta y tus datos personales desde la app (sección de eliminar cuenta, junto a estos enlaces) o pidiéndolo a <a href="mailto:soporte@runningapexflow.com">soporte@runningapexflow.com</a>. Instrucciones: <a href="/eliminar-cuenta">Eliminación de cuenta</a>.</li>
+        <li><strong>Revocar</strong> la autorización y las integraciones (Garmin, COROS, intervals.icu) desde Configuración. Revocar el consentimiento no deshace el tratamiento ya realizado, y puede implicar que dejemos de prestarte el servicio si el dato es necesario para operarlo.</li>
+        <li><strong>Exportar</strong> tus datos de entrenamiento en cualquier momento.</li>
         <li><strong>Corregir</strong> información incorrecta desde tu perfil en la app.</li>
         <li><strong>Eliminar</strong> tu cuenta y todos tus datos personales. Instrucciones: <a href="/eliminar-cuenta">Eliminación de cuenta</a>.</li>
-        <li><strong>Exportar</strong> tus datos de entrenamiento en cualquier momento.</li>
-        <li><strong>Revocar</strong> integraciones (Garmin, COROS, intervals.icu) desde Configuración.</li>
       </ul>
+      <p>Puedes ejercer estos derechos dentro de la app, en la sección de eliminar cuenta y en Configuración, y también escribiendo a <a href="mailto:soporte@runningapexflow.com">soporte@runningapexflow.com</a>.</p>
     </div>
 
     <div class="card">
-      <h2>7. Menores de edad</h2>
-      <p>RunningApexFlow no está dirigido a menores de 13 años. No recopilamos intencionalmente información de menores de 13 años. Si eres padre o tutor y crees que tu hijo ha proporcionado datos personales, contáctanos para eliminarlos.</p>
+      <h2>7. Edad mínima</h2>
+      <p>RunningApexFlow no está dirigido a menores de 18 años. No recopilamos intencionalmente información de menores de 18 años. Si eres padre o tutor y crees que un menor ha proporcionado datos personales, contáctanos para eliminarlos.</p>
     </div>
 
     <div class="card">
@@ -119,6 +154,7 @@
         <li><strong>Email:</strong> <a href="mailto:soporte@runningapexflow.com">soporte@runningapexflow.com</a></li>
         <li><strong>Plataforma:</strong> <a href="https://runningapexflow.com">runningapexflow.com</a></li>
         <li><strong>Eliminar cuenta:</strong> <a href="/eliminar-cuenta">runningapexflow.com/eliminar-cuenta</a></li>
+        <li><strong>Responsable:</strong> Carlos Enrique Acosta Merlano (persona natural). Domicilio: Sincelejo, Sucre, Colombia. Los datos de identificación y dirección del responsable se entregan bajo solicitud escrita a <a href="mailto:soporte@runningapexflow.com">soporte@runningapexflow.com</a>.</li>
       </ul>
     </div>
 

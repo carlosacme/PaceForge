@@ -12,6 +12,7 @@ import {
 import { isConfirmEmailRoute } from "./lib/authRoutes";
 import { initNativeAppLinks, consumePendingAppLink, subscribeAppLink, applyAppLink } from "./lib/nativeAppLinks";
 import AuthLanding from "./components/AuthLanding";
+import { identifyPosthogUser } from "./lib/posthogPrivacy";
 
 const AthleteHome = React.lazy(() => import("./components/AthleteHome"));
 const CoachApp = React.lazy(() => import("./CoachApp"));
@@ -194,9 +195,7 @@ export default function App() {
       }
       setSession(nextSession ?? null);
       if (nextSession?.user && typeof window !== "undefined" && window.posthog) {
-        window.posthog.identify(nextSession.user.id, {
-          email: nextSession.user.email,
-        });
+        identifyPosthogUser(window.posthog, nextSession.user.id);
       }
     });
 

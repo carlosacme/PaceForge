@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { supabase } from "../lib/supabase";
+import LegalDocDialog, { LegalDocAnchor } from "./LegalDocDialog";
 
 /**
  * Sección "Cuenta" con eliminación irreversible (Google Play).
@@ -10,6 +11,7 @@ export default function DeleteAccountSection({ notify, cardStyle }) {
   const [confirmText, setConfirmText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [legalDoc, setLegalDoc] = useState(null);
 
   const canConfirm = confirmText.trim() === "ELIMINAR" && !busy;
 
@@ -64,6 +66,11 @@ export default function DeleteAccountSection({ notify, cardStyle }) {
         <div style={{ fontSize: ".72em", letterSpacing: ".12em", color: "#64748b", fontWeight: 700, marginBottom: 10 }}>
           CUENTA
         </div>
+        <p style={{ margin: "0 0 12px", color: "#334155", fontSize: ".8em", lineHeight: 1.5 }}>
+          <LegalDocAnchor doc="privacy" setDoc={setLegalDoc}>Política de privacidad</LegalDocAnchor>
+          {" · "}
+          <LegalDocAnchor doc="terms" setDoc={setLegalDoc}>Términos</LegalDocAnchor>
+        </p>
         <p style={{ margin: "0 0 12px", color: "#64748b", fontSize: ".8em", lineHeight: 1.5 }}>
           Elimina permanentemente tu cuenta y los datos asociados. Esta acción no se puede deshacer.
         </p>
@@ -209,6 +216,7 @@ export default function DeleteAccountSection({ notify, cardStyle }) {
           </div>
         </div>
       ) : null}
+      <LegalDocDialog doc={legalDoc} onClose={() => setLegalDoc(null)} />
     </>
   );
 }

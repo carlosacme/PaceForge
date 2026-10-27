@@ -5,16 +5,12 @@ import App from "./App.jsx";
 import posthog from "posthog-js";
 import { startNativeBuildUpdateWatcher } from "./lib/nativeBuildUpdate";
 import { applyIosDocumentShell } from "./lib/platform";
+import { posthogInitOptions } from "./lib/posthogPrivacy";
 
 applyIosDocumentShell();
 
 if (typeof window !== "undefined" && import.meta.env.VITE_POSTHOG_KEY) {
-  posthog.init(import.meta.env.VITE_POSTHOG_KEY, {
-    api_host: "https://us.i.posthog.com",
-    person_profiles: "identified_only",
-    capture_pageview: true,
-    capture_pageleave: true,
-  });
+  posthog.init(import.meta.env.VITE_POSTHOG_KEY, posthogInitOptions());
 }
 
 function isInstallBannerTarget() {

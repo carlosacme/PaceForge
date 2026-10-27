@@ -2,6 +2,8 @@ import React, { useState, useEffect } from "react";
 import { supabase } from "../lib/supabase";
 import { isIosApp } from "../lib/platform";
 import { CONFIRM_EMAIL_PATH, goToSignupConfirmScreen } from "../lib/authRoutes";
+import LegalDocDialog, { LegalDocAnchor } from "./LegalDocDialog";
+import { signupUserData } from "../lib/signupConsent";
 import {
   BRAND_NAME,
   styles,
@@ -55,6 +57,8 @@ export default function AuthLanding({
   const [inviteCodeFromUrl, setInviteCodeFromUrl] = useState("");
   const [inviteParentCoachId, setInviteParentCoachId] = useState("");
   const [pendingCoachRequestId, setPendingCoachRequestId] = useState("");
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const [legalDoc, setLegalDoc] = useState(null);
 
   // Invite link → abrir registro (solo montamos cuando !session).
   useEffect(() => {
@@ -174,6 +178,10 @@ export default function AuthLanding({
         setAuthError("Por favor ingresa un correo electrónico válido.");
         return;
       }
+      if (!termsAccepted) {
+        setAuthError("Acepta los Términos y la Política de Privacidad para crear la cuenta.");
+        return;
+      }
     }
 
     // Un correo con mayusculas o un espacio pegado al copiar no deben ser una
@@ -288,11 +296,11 @@ export default function AuthLanding({
                 password: passwordNorm,
                 options: {
                   emailRedirectTo: origin ? `${origin}${CONFIRM_EMAIL_PATH}` : undefined,
-                  data: {
-                    full_name: authName.trim(),
+                  data: signupUserData({
+                    fullName: authName,
                     role: selectedRole,
-                    coach_id: resolvedCoachId,
-                  },
+                    coachId: resolvedCoachId,
+                  }),
                 },
               });
               if (isAuthLockContentionError(r.error)) throw r.error;
@@ -679,6 +687,11 @@ export default function AuthLanding({
                   >
                     ← Volver
                   </button>
+                  <div style={{ marginTop: 8, fontSize: ".78em", color: "#64748b" }}>
+                    <LegalDocAnchor doc="privacy" setDoc={setLegalDoc}>Política de privacidad</LegalDocAnchor>
+                    {" · "}
+                    <LegalDocAnchor doc="terms" setDoc={setLegalDoc}>Términos</LegalDocAnchor>
+                  </div>
                 </div>
               </div>
             ) : (
@@ -782,6 +795,20 @@ export default function AuthLanding({
                       style={inputBase}
                     />
                   </div>
+                  <label style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 14, fontSize: ".82em", color: "#334155", lineHeight: 1.45 }}>
+                    <input
+                      type="checkbox"
+                      checked={termsAccepted}
+                      onChange={(e) => {
+                        setTermsAccepted(e.target.checked);
+                        if (authError) setAuthError("");
+                      }}
+                      style={{ marginTop: 3 }}
+                    />
+                    <span>
+                      Acepto los <LegalDocAnchor doc="terms" setDoc={setLegalDoc}>Términos</LegalDocAnchor> y la <LegalDocAnchor doc="privacy" setDoc={setLegalDoc}>Política de Privacidad</LegalDocAnchor>
+                    </span>
+                  </label>
                   <button
                     type="submit"
                     disabled={authSubmitting}
@@ -825,6 +852,7 @@ export default function AuthLanding({
               </div>
             )}
           </main>
+          <LegalDocDialog doc={legalDoc} onClose={() => setLegalDoc(null)} />
         </div>
       );
     }
@@ -1081,7 +1109,11 @@ export default function AuthLanding({
                 <img src="/pwa-192.png" alt="" width={22} height={22} style={{ width: 22, height: 22, borderRadius: 6, objectFit: "cover" }} />
                 {BRAND_NAME}
               </div>
-              <div>© 2026</div>
+              <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                <LegalDocAnchor doc="privacy" setDoc={setLegalDoc} style={{ color: "#ff8a3d" }}>Política de privacidad</LegalDocAnchor>
+                <LegalDocAnchor doc="terms" setDoc={setLegalDoc} style={{ color: "#ff8a3d" }}>Términos</LegalDocAnchor>
+                <span>© 2026</span>
+              </div>
             </div>
           </footer>
         </main>
@@ -1105,6 +1137,7 @@ export default function AuthLanding({
             </div>
           </div>
         )}
+        <LegalDocDialog doc={legalDoc} onClose={() => setLegalDoc(null)} />
       </div>
     );
 
