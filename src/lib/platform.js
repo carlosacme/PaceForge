@@ -34,3 +34,20 @@ export function soloAthleteIosLocked({ userId, coachId, athletePlan, expiresAt, 
   if (Number.isNaN(expiresMs)) return false;
   return expiresMs <= now;
 }
+
+/** Viewport del shell iOS. index.html no se toca; se asigna al arrancar. */
+export const IOS_VIEWPORT_CONTENT = "width=device-width, initial-scale=1.0, viewport-fit=cover";
+
+/**
+ * Añade la clase ios-app y el viewport-fit solo si isIosApp().
+ * En web y Android no modifica el documento.
+ */
+export function applyIosDocumentShell(doc) {
+  const target = doc ?? (typeof document !== "undefined" ? document : null);
+  if (!target?.documentElement?.classList) return false;
+  if (!isIosApp()) return false;
+  target.documentElement.classList.add("ios-app");
+  const meta = target.querySelector?.('meta[name="viewport"]');
+  if (meta) meta.setAttribute("content", IOS_VIEWPORT_CONTENT);
+  return true;
+}

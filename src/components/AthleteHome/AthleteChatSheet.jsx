@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from "react";
 import { formatMessageTimestamp } from "../shared/appShared";
+import { isIosApp } from "../../lib/platform";
 
 /**
  * Sheet a pantalla completa del chat atleta→coach.
@@ -17,6 +18,7 @@ export default function AthleteChatSheet({
   sendAthleteChat,
 }) {
   const chatScrollRef = useRef(null);
+  const composerRef = useRef(null);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -28,11 +30,38 @@ export default function AthleteChatSheet({
     return () => cancelAnimationFrame(id);
   }, [open, chatMessages]);
 
+  useEffect(() => {
+    if (!open || !isIosApp()) return undefined;
+    const vv = window.visualViewport;
+    const composer = composerRef.current;
+    if (!vv || !composer) return undefined;
+
+    const sync = () => {
+      composer.style.transform = "";
+      const rect = composer.getBoundingClientRect();
+      const visibleBottom = vv.offsetTop + vv.height;
+      const overlap = Math.max(0, Math.ceil(rect.bottom + 8 - visibleBottom));
+      composer.style.transform = overlap > 0 ? `translateY(-${overlap}px)` : "";
+    };
+
+    vv.addEventListener("resize", sync);
+    vv.addEventListener("scroll", sync);
+    const onFocusIn = () => requestAnimationFrame(sync);
+    composer.addEventListener("focusin", onFocusIn);
+    sync();
+    return () => {
+      vv.removeEventListener("resize", sync);
+      vv.removeEventListener("scroll", sync);
+      composer.removeEventListener("focusin", onFocusIn);
+      composer.style.transform = "";
+    };
+  }, [open]);
+
   if (!open) return null;
 
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 9989, background: "rgba(15,23,42,.4)", display: "flex", alignItems: "flex-end" }}>
-      <div style={{ width: "100%", height: "100%", background: "#fff", borderTopLeftRadius: 18, borderTopRightRadius: 18, overflowY: "auto", padding: 16, paddingBottom: 94 }}>
+      <div className="pf-ios-safe-top pf-athlete-sheet-pad" style={{ width: "100%", height: "100%", background: "#fff", borderTopLeftRadius: 18, borderTopRightRadius: 18, overflowY: "auto", padding: 16, paddingBottom: 94 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
           <div style={{ fontSize: "1.05em", fontWeight: 900 }}>💬 Chat con tu coach</div>
           <button type="button" onClick={onClose} style={{ border: "1px solid #e2e8f0", background: "#fff", borderRadius: 8, padding: "6px 10px", color: "#475569", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>✕</button>
@@ -71,7 +100,7 @@ export default function AthleteChatSheet({
                 })
               )}
             </div>
-            <div style={{ display: "flex", gap: 8 }}>
+            <div ref={composerRef} className="pf-chat-composer" style={{ display: "flex", gap: 8 }}>
               <input
                 type="text"
                 value={chatDraft}

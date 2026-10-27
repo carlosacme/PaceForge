@@ -102,3 +102,61 @@ body {
     bottom: calc(76px + max(12px, env(safe-area-inset-bottom, 0px))) !important;
   }
 }
+
+/* ios-app */
+/* Reglas activas solo con <html class="ios-app">, que main.jsx pone si isIosApp(). */
+.ios-app .pf-athlete-screen {
+  padding-top: 0 !important;
+  padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px)) !important;
+}
+
+.ios-app .pf-athlete-screen::before {
+  content: "";
+  display: block;
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  height: max(28px, env(safe-area-inset-top, 0px));
+  margin-left: -32px;
+  margin-right: -32px;
+  background: var(--pf-bg-muted);
+}
+
+/* Misma fórmula que .pf-bottom-nav: el padding inferior suma el home indicator. */
+.ios-app .pf-athlete-bottom-nav {
+  height: auto !important;
+  min-height: 60px;
+  padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)) !important;
+}
+
+.ios-app .pf-athlete-sheet-pad {
+  padding-bottom: calc(94px + env(safe-area-inset-bottom, 0px)) !important;
+}
+
+.ios-app .pf-coach-main {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+.ios-app .pf-ios-sticky-top {
+  top: env(safe-area-inset-top, 0px) !important;
+}
+
+.ios-app .pf-ios-safe-top {
+  border-top: env(safe-area-inset-top, 0px) solid transparent;
+}
+
+.ios-app .pf-ios-min-svh {
+  min-height: 100svh !important;
+}
+
+.ios-app input,
+.ios-app select,
+.ios-app textarea {
+  font-size: 16px !important;
+}
+
+.ios-app .pf-chat-composer {
+  position: relative;
+  z-index: 3;
+  background: #fff;
+}

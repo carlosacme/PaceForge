@@ -4,6 +4,9 @@ import "./index.css";
 import App from "./App.jsx";
 import posthog from "posthog-js";
 import { startNativeBuildUpdateWatcher } from "./lib/nativeBuildUpdate";
+import { applyIosDocumentShell } from "./lib/platform";
+
+applyIosDocumentShell();
 
 if (typeof window !== "undefined" && import.meta.env.VITE_POSTHOG_KEY) {
   posthog.init(import.meta.env.VITE_POSTHOG_KEY, {
