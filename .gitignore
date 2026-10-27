@@ -34,3 +34,14 @@ scripts/output/
 *.keystore
 *.jks
 android/keystore.properties
+
+# iOS de Capacitor: se versiona ios/, no las carpetas generadas ni la firma.
+ios/**/Pods/
+ios/**/build/
+ios/**/DerivedData/
+ios/**/xcuserdata/
+ios/**/*.xcuserstate
+ios/**/*.mobileprovision
+ios/**/*.provisionprofile
+ios/**/*.p12
+ios/**/*.cer

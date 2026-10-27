@@ -1,5 +1,6 @@
 import { Capacitor } from "@capacitor/core";
 import { PushNotifications } from "@capacitor/push-notifications";
+import { isIosApp } from "./platform";
 import { registerFcmTokenDetailed, readOwnFcmToken, readOwnDeviceTokens } from "./fcmClient";
 import {
   describeDeliveredNotifications,
@@ -384,6 +385,8 @@ export async function nativePushPermissionState() {
  * @returns {Promise<boolean>} true si el dispositivo quedo registrado.
  */
 export async function registerNativePush({ notify: notifyFn } = {}) {
+  // iOS todavía no pide permiso ni registra token: no hay capability de push.
+  if (isIosApp()) return false;
   if (!isNativePush()) return false;
   if (notifyFn) setNativePushNotifier(notifyFn);
   patchDiag({ platform: Capacitor.getPlatform() });
