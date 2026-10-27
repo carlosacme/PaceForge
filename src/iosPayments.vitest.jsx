@@ -1,9 +1,11 @@
 import React from "react";
 import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { IOS_ACCOUNT_NO_ACCESS, IOS_FEATURE_UNAVAILABLE, isIosApp } from "./lib/platform";
+import { IOS_ACCOUNT_NO_ACCESS, IOS_FEATURE_UNAVAILABLE, isIosApp, soloAthleteIosLocked } from "./lib/platform";
 
 const platformState = vi.hoisted(() => ({ name: "web" }));
+const athleteFixture = vi.hoisted(() => ({ rows: null }));
+const authCalls = vi.hoisted(() => ({ signOut: vi.fn(async () => ({ error: null })) }));
 
 vi.mock("@capacitor/core", () => ({
   Capacitor: {
@@ -15,6 +17,17 @@ vi.mock("@capacitor/core", () => ({
 vi.mock("@capacitor/app", () => ({
   App: {
     addListener: () => Promise.resolve({ remove: () => {} }),
+  },
+}));
+
+vi.mock("@capacitor/push-notifications", () => ({
+  PushNotifications: {
+    addListener: () => Promise.resolve({ remove: () => {} }),
+    removeAllListeners: () => Promise.resolve(),
+    checkPermissions: () => Promise.resolve({ receive: "denied" }),
+    requestPermissions: () => Promise.resolve({ receive: "denied" }),
+    createChannel: () => Promise.resolve(),
+    register: () => Promise.resolve(),
   },
 }));
 
@@ -46,7 +59,10 @@ vi.mock("./lib/supabase", () => {
     if (op === "insert") return { data: { id: "purchase-1" }, error: null };
     if (op === "update" || op === "delete") return { data: null, error: null };
     if (table === "plan_marketplace") return { data: [plan], error: null };
-    if (table === "athletes") return { data: athletes, error: null };
+    if (table === "athletes") {
+      if (Array.isArray(athleteFixture.rows)) return { data: athleteFixture.rows, error: null };
+      return { data: athletes, error: null };
+    }
     return { data: [], error: null };
   }
 
@@ -85,12 +101,17 @@ vi.mock("./lib/supabase", () => {
   return {
     supabase: {
       from: (table) => chain(table),
+      channel() {
+        const ch = { on() { return ch; }, subscribe() { return ch; }, unsubscribe() {} };
+        return ch;
+      },
+      removeChannel() {},
       rpc: () => Promise.resolve({ data: [], error: null }),
       auth: {
         getSession: () => Promise.resolve({ data: { session: { access_token: "tok" } }, error: null }),
         getUser: () => Promise.resolve({ data: { user: { id: "coach-1", email: "coach@example.com" } }, error: null }),
         onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
-        signOut: () => Promise.resolve({ error: null }),
+        signOut: (...args) => authCalls.signOut(...args),
       },
     },
   };
@@ -107,6 +128,7 @@ import Builder from "./components/Builder";
 import Plan2Weeks from "./components/Plan2Weeks";
 import AdminMarketplacePanel from "./components/AdminMarketplacePanel";
 import { useAthleteSoloPayments } from "./components/AthleteHome/useAthleteSoloPayments";
+import AthleteHome from "./components/AthleteHome";
 import { useCoachNavigation } from "./hooks/useCoachNavigation";
 import { useCoachAthletes } from "./hooks/useCoachAthletes";
 import { styles } from "./components/shared/appShared";
@@ -169,6 +191,8 @@ function checkoutFetch() {
 
 beforeEach(() => {
   setPlatform("web");
+  athleteFixture.rows = null;
+  authCalls.signOut.mockClear();
   navigatedTo.length = 0;
   currentHref = "http://localhost:3000/";
   installLocation();
@@ -252,10 +276,36 @@ describe("AthletePaymentsView", () => {
     notify: () => {},
   };
 
-  it("en iOS no renderiza suscripción ni COP", () => {
+  it("en iOS, sin plan, muestra el aviso neutro y cerrar sesión", async () => {
     setPlatform("ios");
-    const { container } = render(<AthletePaymentsView {...props} />);
-    expect(container.innerHTML).toBe("");
+    render(<AthletePaymentsView {...props} />);
+    expect(screen.getByText(IOS_ACCOUNT_NO_ACCESS)).toBeTruthy();
+    assertNoCommerce();
+    fireEvent.click(screen.getByText("Cerrar sesión"));
+    await waitFor(() => expect(authCalls.signOut).toHaveBeenCalled());
+  });
+
+  it("en iOS, suscripción solo vencida, misma pantalla; vigente o con coach no muestra precios", () => {
+    setPlatform("ios");
+    const expired = render(
+      <AthletePaymentsView {...props} athletePlan="premium" subscriptionExpiresAt="2020-01-01T00:00:00.000Z" />,
+    );
+    expect(screen.getByText(IOS_ACCOUNT_NO_ACCESS)).toBeTruthy();
+    expect(screen.getByText("Cerrar sesión")).toBeTruthy();
+    assertNoCommerce();
+    expired.unmount();
+
+    const active = render(
+      <AthletePaymentsView {...props} athletePlan="premium" subscriptionExpiresAt="2099-01-01T00:00:00.000Z" />,
+    );
+    expect(active.container.innerHTML).toBe("");
+    expect(screen.queryByText("Renovar")).toBeNull();
+    active.unmount();
+
+    const coached = render(
+      <AthletePaymentsView {...props} profileCoachId="coach-9" athletePlan="free" />,
+    );
+    expect(coached.container.innerHTML).toBe("");
     assertNoCommerce();
   });
 
@@ -711,5 +761,93 @@ describe("AdminMarketplacePanel", () => {
     setPlatform("web");
     render(<AdminMarketplacePanel notify={() => {}} styles={styles} />);
     expect(await screen.findByText(/COP/)).toBeTruthy();
+  });
+});
+
+describe("soloAthleteIosLocked", () => {
+  const now = new Date("2026-06-01T00:00:00.000Z").getTime();
+
+  it("bloquea sin plan y con la suscripción vencida, y deja pasar coach o plan vigente", () => {
+    expect(soloAthleteIosLocked({ userId: "a", coachId: null, athletePlan: null, now })).toBe(true);
+    expect(soloAthleteIosLocked({ userId: "a", coachId: "", athletePlan: "free", now })).toBe(true);
+    expect(soloAthleteIosLocked({
+      userId: "a",
+      coachId: "a",
+      athletePlan: "premium",
+      expiresAt: "2020-01-01T00:00:00.000Z",
+      now,
+    })).toBe(true);
+    expect(soloAthleteIosLocked({
+      userId: "a",
+      coachId: null,
+      athletePlan: "premium",
+      expiresAt: "2099-01-01T00:00:00.000Z",
+      now,
+    })).toBe(false);
+    expect(soloAthleteIosLocked({ userId: "a", coachId: "coach-9", athletePlan: null, now })).toBe(false);
+  });
+});
+
+describe("AthleteHome atleta solo en iOS", () => {
+  const soloRow = { id: 9, name: "Solo", email: "solo@example.com", coach_id: null, athlete_plan: null };
+
+  it("sin plan o con suscripción vencida ve el aviso y puede cerrar sesión", async () => {
+    athleteFixture.rows = [soloRow];
+    setPlatform("ios");
+    const none = render(<AthleteHome profile={{ user_id: "solo-1", role: "athlete", name: "Solo", coach_id: null, athlete_plan: null }} />);
+    expect(await screen.findByText(IOS_ACCOUNT_NO_ACCESS)).toBeTruthy();
+    assertNoCommerce();
+    expect(screen.queryByText("Suscribirse")).toBeNull();
+    expect(screen.queryByText("Renovar")).toBeNull();
+    fireEvent.click(screen.getByText("Cerrar sesión"));
+    await waitFor(() => expect(authCalls.signOut).toHaveBeenCalled());
+    none.unmount();
+
+    authCalls.signOut.mockClear();
+    const expired = render(
+      <AthleteHome profile={{
+        user_id: "solo-1",
+        role: "athlete",
+        name: "Solo",
+        coach_id: null,
+        athlete_plan: "premium",
+        subscription_expires_at: "2020-01-01T00:00:00.000Z",
+      }} />,
+    );
+    expect(await screen.findByText(IOS_ACCOUNT_NO_ACCESS)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Cerrar sesión" })).toBeTruthy();
+    assertNoCommerce();
+    expired.unmount();
+  });
+
+  it("en android el mismo atleta no queda en esa pantalla", async () => {
+    athleteFixture.rows = [soloRow];
+    setPlatform("android");
+    render(<AthleteHome profile={{ user_id: "solo-1", role: "athlete", name: "Solo", coach_id: null, athlete_plan: null }} />);
+    expect(await screen.findByText(/Hola, Solo/)).toBeTruthy();
+    expect(screen.queryByText(IOS_ACCOUNT_NO_ACCESS)).toBeNull();
+  });
+
+  it("en iOS un atleta con coach o con plan vigente sigue en la app", async () => {
+    athleteFixture.rows = [{ ...soloRow, coach_id: "coach-9" }];
+    setPlatform("ios");
+    const coached = render(<AthleteHome profile={{ user_id: "solo-1", role: "athlete", name: "Solo", coach_id: "coach-9", athlete_plan: null }} />);
+    expect(await screen.findByText(/Hola, Solo/)).toBeTruthy();
+    expect(screen.queryByText(IOS_ACCOUNT_NO_ACCESS)).toBeNull();
+    coached.unmount();
+
+    athleteFixture.rows = [{ ...soloRow, athlete_plan: "premium" }];
+    render(
+      <AthleteHome profile={{
+        user_id: "solo-1",
+        role: "athlete",
+        name: "Solo",
+        coach_id: null,
+        athlete_plan: "premium",
+        subscription_expires_at: "2099-01-01T00:00:00.000Z",
+      }} />,
+    );
+    expect(await screen.findByText(/Hola, Solo/)).toBeTruthy();
+    expect(screen.queryByText(/Suscribirse|Renovar|COP/)).toBeNull();
   });
 });

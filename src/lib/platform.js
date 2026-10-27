@@ -18,3 +18,19 @@ export const IOS_FEATURE_UNAVAILABLE =
 
 export const IOS_ACCOUNT_NO_ACCESS =
   "Tu cuenta no tiene acceso activo. Escríbenos a soporte@runningapexflow.com";
+
+/**
+ * Atleta independiente sin plan, o con la suscripción solo ya vencida.
+ * Si el coach_id es de otra persona, el acceso va con el coach y no se bloquea.
+ */
+export function soloAthleteIosLocked({ userId, coachId, athletePlan, expiresAt, now = Date.now() } = {}) {
+  const cid = coachId == null ? "" : String(coachId).trim();
+  const uid = userId == null ? "" : String(userId).trim();
+  if (cid && cid !== uid) return false;
+  const plan = String(athletePlan ?? "").trim().toLowerCase();
+  if (plan !== "premium") return true;
+  if (expiresAt == null || String(expiresAt).trim() === "") return false;
+  const expiresMs = new Date(expiresAt).getTime();
+  if (Number.isNaN(expiresMs)) return false;
+  return expiresMs <= now;
+}

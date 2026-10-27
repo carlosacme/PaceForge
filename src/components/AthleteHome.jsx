@@ -1,6 +1,7 @@
 import React, { lazy, Suspense, useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { supabase } from "../lib/supabase";
-import { IOS_FEATURE_UNAVAILABLE, isIosApp } from "../lib/platform";
+import { IOS_FEATURE_UNAVAILABLE, isIosApp, soloAthleteIosLocked } from "../lib/platform";
+import IosNoAccessScreen from "./IosNoAccessScreen";
 import WeatherWidget, { useWeather } from "./WeatherWidget";
 import InstallAppButton from "./InstallAppButton";
 import CoachLinkActions from "./AthleteHome/CoachLinkActions";
@@ -10,7 +11,7 @@ import { AthleteHomeProgress, AthleteWeeklyStrip, AthleteMonthSummary } from "./
 import AthletePaymentsView from "./AthleteHome/AthletePaymentsView";
 import { useAthleteSideChat } from "./AthleteHome/useAthleteSideChat";
 import AthleteChatSheet from "./AthleteHome/AthleteChatSheet";
-import AthleteSettingsPanel, { useCoachDirectory, AthleteProfileSessionFooter } from "./AthleteHome/AthleteSettingsPanel";
+import AthleteSettingsPanel, { useCoachDirectory, AthleteProfileSessionFooter, signOutAthleteSession } from "./AthleteHome/AthleteSettingsPanel";
 import { useAthleteWorkoutOverlays } from "./AthleteHome/useAthleteWorkoutOverlays";
 import AthleteWorkoutOverlays from "./AthleteHome/AthleteWorkoutOverlays";
 import AthleteOwnCalendar from "./AthleteHome/AthleteOwnCalendar";
@@ -132,6 +133,7 @@ export default function AthleteHome({ profile }) {
   const [workouts, setWorkouts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
+  const [iosSigningOut, setIosSigningOut] = useState(false);
   const [athleteNotRegistered, setAthleteNotRegistered] = useState(false);
   const [showEvaluation, setShowEvaluation] = useState(false);
   const [athleteActiveTab, setAthleteActiveTab] = useState(() => readStoredAthleteNavTab());
@@ -670,6 +672,26 @@ export default function AthleteHome({ profile }) {
     },
   });
 
+
+  const iosSoloLocked = iosApp && !loading && soloAthleteIosLocked({
+    userId: profile?.user_id,
+    coachId: athleteInfo?.coach_id ?? profile?.coach_id,
+    athletePlan: profile?.athlete_plan ?? athleteInfo?.athlete_plan,
+    expiresAt: profile?.subscription_expires_at ?? profile?.athlete_plan_expires_at,
+  });
+  if (iosSoloLocked) {
+    return (
+      <IosNoAccessScreen
+        signingOut={iosSigningOut}
+        onSignOut={async () => {
+          if (iosSigningOut) return;
+          setIosSigningOut(true);
+          try { await signOutAthleteSession(); }
+          finally { setIosSigningOut(false); }
+        }}
+      />
+    );
+  }
 
   return (
     <div style={{ ...S.page, paddingBottom: 96, overflowX: "hidden", overflowY: "visible", position: "relative" }}>

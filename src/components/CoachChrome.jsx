@@ -10,7 +10,8 @@ import {
   coachTrialDaysRemainingFromStart,
   styles,
 } from "./shared/appShared";
-import { IOS_ACCOUNT_NO_ACCESS, isIosApp } from "../lib/platform";
+import { isIosApp } from "../lib/platform";
+import IosNoAccessScreen from "./IosNoAccessScreen";
 
 const Athletes = React.lazy(() => import("./Athletes"));
 const CoachSettings = React.lazy(() => import("./CoachSettings"));
@@ -117,32 +118,7 @@ export default function CoachChrome({
   const keep = (id) => view === id || seenViews.has(id);
 
   if (iosApp && coachPlanBlockedUi) {
-    return (
-      <div style={{ ...S.root, minHeight: "100svh", display: "flex", alignItems: "center", justifyContent: "center", padding: 24, background: "#f8fafc" }}>
-        <div style={{ ...S.card, maxWidth: 440, width: "100%", textAlign: "center" }}>
-          <p style={{ margin: "0 0 16px", color: "#334155", fontSize: ".95em", lineHeight: 1.5 }}>{IOS_ACCOUNT_NO_ACCESS}</p>
-          <button
-            type="button"
-            onClick={handleSignOut}
-            disabled={signingOut}
-            style={{
-              width: "100%",
-              background: "#fef2f2",
-              border: "1px solid #fecaca",
-              borderRadius: 8,
-              padding: "12px 14px",
-              color: "#dc2626",
-              cursor: signingOut ? "wait" : "pointer",
-              fontFamily: "inherit",
-              fontSize: ".88em",
-              fontWeight: 800,
-            }}
-          >
-            {signingOut ? "Cerrando sesión…" : "Cerrar sesión"}
-          </button>
-        </div>
-      </div>
-    );
+    return <IosNoAccessScreen onSignOut={handleSignOut} signingOut={signingOut} />;
   }
 
   const trialBannerDays =
