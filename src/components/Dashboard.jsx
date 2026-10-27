@@ -12,6 +12,7 @@ import {
   withAuthLockRetry,
 } from "./shared/appShared";
 import CoachRequestsInbox from "./CoachRequestsInbox";
+import { IOS_FEATURE_UNAVAILABLE, isIosApp } from "../lib/platform";
 import { useCoachRequests } from "../hooks/useCoachRequests";
 
 const MONTH_INDEX = {
@@ -229,7 +230,7 @@ function Dashboard({
       {planLimitWarning ? (
         <div style={{ ...S.card, marginBottom: 16, border: "1px solid rgba(255,138,61,.4)", background: "#fffbeb" }}>
           <div style={{ color: "#92400e", fontSize: ".86em", fontWeight: 700, marginBottom: 10 }}>
-            {planLimitWarning}
+            {isIosApp() ? IOS_FEATURE_UNAVAILABLE : planLimitWarning}
           </div>
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}>
             <button
@@ -239,6 +240,7 @@ function Dashboard({
             >
               Cerrar
             </button>
+            {isIosApp() ? null : (
             <button
               type="button"
               onClick={onGoToPlans}
@@ -246,6 +248,7 @@ function Dashboard({
             >
               Ver Planes
             </button>
+            )}
           </div>
         </div>
       ) : null}

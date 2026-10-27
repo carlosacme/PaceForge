@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { supabase } from "../lib/supabase";
+import { isIosApp } from "../lib/platform";
 import { enrichStructureWithPaces, isTestWorkoutTitle, rescaleStructureToVdot, stripTestTimeGoalFromDescription, stripTestTimeGoalsFromStructure } from "../lib/enrichPace";
 import { PLAN_CALIBRATION_VDOT, progressionDelta } from "../lib/vdot";
 import {
@@ -1225,7 +1226,7 @@ function WorkoutLibrary({
                         <strong>Coach origen:</strong> {coachOrigin}
                       </div>
                       <div>
-                        Nivel: {p.level || "—"} · {p.duration_weeks ?? "—"} sem · {p.sessions_per_week ?? "—"} sesiones/sem · ${formatCopInt(p.price_cop || 0)} COP
+                        Nivel: {p.level || "—"} · {p.duration_weeks ?? "—"} sem · {p.sessions_per_week ?? "—"} sesiones/sem{isIosApp() ? "" : ` · $${formatCopInt(p.price_cop || 0)} COP`}
                       </div>
                       <div style={{ fontWeight: 800, color: estadoColor, marginTop: 4 }}>Estado: {estado}</div>
                     </div>

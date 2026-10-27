@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "../lib/supabase";
+import { IOS_FEATURE_UNAVAILABLE, isIosApp } from "../lib/platform";
 import {
   normalizeAthlete,
   isAuthLockContentionError,
@@ -167,7 +168,9 @@ export function useCoachAthletes({ session, authLoading, notify, profile }) {
     const rawPlan = String(profile?.subscription_plan || "Basico").toLowerCase();
     const isBasicPlan = rawPlan === "basico" || rawPlan === "básico" || rawPlan === "starter";
     if (isBasicPlan && athletes.length >= 15) {
-      const limitMsg = "Has alcanzado el límite de tu plan. Actualiza al plan Pro para agregar más atletas.";
+      const limitMsg = isIosApp()
+        ? IOS_FEATURE_UNAVAILABLE
+        : "Has alcanzado el límite de tu plan. Actualiza al plan Pro para agregar más atletas.";
       setPlanLimitWarning(limitMsg);
       notify(limitMsg);
       return;

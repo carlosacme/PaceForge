@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { supabase } from "../../lib/supabase";
+import { isIosApp } from "../../lib/platform";
 import { exportAthletePlanToPdf } from "../../lib/exportAthletePlanPdf";
 import WeatherWidget from "../WeatherWidget";
 import PushToWatchButton from "../PushToWatchButton";
@@ -33,6 +34,7 @@ import {
 
 function Athletes({ athletes, selected, onSelect, workoutsRefresh, openRegistroWorkoutId, onRegistroOpened, onAthleteWorkoutsDoneSync, onAthleteFcSync, coachDisplayName, onDeleteAthlete, notify, onOpenInviteModal }) {
   const S = styles;
+  const iosApp = isIosApp();
   const athlete = (selected ? athletes.find(a => String(a.id) === String(selected.id)) : athletes[0]) || null;
   const [searchQuery, setSearchQuery] = useState("");
   const [workouts, setWorkouts] = useState([]);
@@ -604,6 +606,7 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, openRegistroW
             })()}
           </div>
 
+          {iosApp ? null : (
           <AthletePaymentsPanel
             athletePayments={athletePaymentsApi.athletePayments}
             loadingPayments={athletePaymentsApi.loadingPayments}
@@ -611,6 +614,7 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, openRegistroW
             openPaymentModal={athletePaymentsApi.openPaymentModal}
             updatePaymentStatus={athletePaymentsApi.updatePaymentStatus}
           />
+          )}
 
           <FormaFatigaPanel workouts={workouts} loadingWorkouts={loadingWorkouts} />
 
@@ -676,6 +680,7 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, openRegistroW
         registroComparison={registroComparison}
         onClose={() => setRegistroModal(null)}
       />
+      {iosApp ? null : (
       <AthletePaymentModal
         paymentModalOpen={athletePaymentsApi.paymentModalOpen}
         paymentForm={athletePaymentsApi.paymentForm}
@@ -684,6 +689,7 @@ function Athletes({ athletes, selected, onSelect, workoutsRefresh, openRegistroW
         closePaymentModal={athletePaymentsApi.closePaymentModal}
         registerPayment={athletePaymentsApi.registerPayment}
       />
+      )}
 
     </div>
   );

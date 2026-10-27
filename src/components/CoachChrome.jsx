@@ -10,6 +10,8 @@ import {
   coachTrialDaysRemainingFromStart,
   styles,
 } from "./shared/appShared";
+import { isIosApp } from "../lib/platform";
+import IosNoAccessScreen from "./IosNoAccessScreen";
 
 const Athletes = React.lazy(() => import("./Athletes"));
 const CoachSettings = React.lazy(() => import("./CoachSettings"));
@@ -98,10 +100,11 @@ export default function CoachChrome({
   const S = styles;
   const sessionUserId = session?.user?.id ?? "";
   const isProfilesAdmin = profile?.role === "admin";
+  const iosApp = isIosApp();
   const coachPlanBlockedUi =
     profile?.role === "coach" && profile?.plan_status === "blocked" && !isProfilesAdmin;
   const showCoachPlanPickerScreen =
-    profile?.role === "coach" && !isProfilesAdmin && (coachPlanBlockedUi || coachPlanPickerVoluntary);
+    !iosApp && profile?.role === "coach" && !isProfilesAdmin && (coachPlanBlockedUi || coachPlanPickerVoluntary);
 
   const [seenViews, setSeenViews] = useState(() => new Set());
   useEffect(() => {
@@ -113,6 +116,10 @@ export default function CoachChrome({
     });
   }, [view]);
   const keep = (id) => view === id || seenViews.has(id);
+
+  if (iosApp && coachPlanBlockedUi) {
+    return <IosNoAccessScreen onSignOut={handleSignOut} signingOut={signingOut} />;
+  }
 
   const trialBannerDays =
     profile?.role === "coach" ? coachTrialDaysRemainingFromStart(profile) : null;
@@ -233,6 +240,7 @@ export default function CoachChrome({
               <span>
                 ⏳ Período de prueba: {trialBannerDays} día{trialBannerDays === 1 ? "" : "s"} restantes
               </span>
+              {iosApp ? null : (
               <button
                 type="button"
                 onClick={() => {
@@ -253,6 +261,7 @@ export default function CoachChrome({
               >
                 Ver planes
               </button>
+              )}
             </div>
           ) : null}
           {loadingAthletes ? (

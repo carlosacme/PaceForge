@@ -198,19 +198,15 @@ export default function AthleteSettingsPanel({
   );
 }
 
-/**
- * Contraseña / borrar cuenta / logout. Hoy se pintan en TODOS los sub-tabs
- * de Perfil (layout preexistente). No moverlos dentro de Config.
- */
-export function AthleteProfileSessionFooter({ notify, cardStyle }) {
-  const handleLogout = async () => {
-    if (typeof localStorage !== "undefined") {
-      localStorage.removeItem("raf_athlete_tab");
-      localStorage.removeItem("raf_athlete_eval_open");
-      localStorage.removeItem("raf_athlete_profile_tab");
-      localStorage.removeItem("raf_athlete_progress_tab");
-      localStorage.removeItem("raf_lastView");
-    }
+/** Cierra la sesión del atleta y retira el push de este dispositivo. */
+export async function signOutAthleteSession() {
+  if (typeof localStorage !== "undefined") {
+    localStorage.removeItem("raf_athlete_tab");
+    localStorage.removeItem("raf_athlete_eval_open");
+    localStorage.removeItem("raf_athlete_profile_tab");
+    localStorage.removeItem("raf_athlete_progress_tab");
+    localStorage.removeItem("raf_lastView");
+  }
     // Retirar el token de push de ESTE dispositivo ANTES de salir,
     // para que el proximo usuario no herede las notificaciones. Los
     // otros dispositivos del atleta siguen recibiendo. No debe
@@ -235,9 +231,16 @@ export function AthleteProfileSessionFooter({ notify, cardStyle }) {
     } catch (e) {
       console.warn("[FCM] limpieza en logout:", e);
     }
-    const { error } = await supabase.auth.signOut();
-    if (error) { console.error("Error al cerrar sesión:", error); alert(`Error al cerrar sesión: ${error.message}`); }
-  };
+  const { error } = await supabase.auth.signOut();
+  if (error) { console.error("Error al cerrar sesión:", error); alert(`Error al cerrar sesión: ${error.message}`); }
+}
+
+/**
+ * Contraseña / borrar cuenta / logout. Hoy se pintan en TODOS los sub-tabs
+ * de Perfil (layout preexistente). No moverlos dentro de Config.
+ */
+export function AthleteProfileSessionFooter({ notify, cardStyle }) {
+  const handleLogout = () => signOutAthleteSession();
 
   return (
     <>

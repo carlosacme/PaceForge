@@ -5,6 +5,7 @@ import {
   getCurrentMonthKey,
   coachTrialDaysRemainingFromStart,
 } from "../shared/appShared";
+import { isIosApp } from "../../lib/platform";
 
 export default function AdminCoachesProfilesPanel({ notify, adminUserId }) {
   const S = styles;
@@ -265,7 +266,7 @@ export default function AdminCoachesProfilesPanel({ notify, adminUserId }) {
                     <td style={cell}>{planBadge(p.plan_status || "—")}</td>
                     <td style={cell}>{chosenPlanBadge(p.subscription_plan)}</td>
                     <td style={cell}>{subscriptionPeriodLabel(p.subscription_period)}</td>
-                    <td style={cell}>{formatSubscriptionAmountCop(p.subscription_amount)}</td>
+                    <td style={cell}>{isIosApp() ? "—" : formatSubscriptionAmountCop(p.subscription_amount)}</td>
                     <td style={cell}>{subscriptionDaysRemainingCol(p)}</td>
                     <td style={cell}>{validatedCol(p)}</td>
                     <td style={cell}>

@@ -1,6 +1,9 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import { ATHLETE_SOLO_COP } from "../../lib/planPrices";
 import { useAthleteSoloPayments } from "./useAthleteSoloPayments";
+import { isIosApp, soloAthleteIosLocked } from "../../lib/platform";
+import IosNoAccessScreen from "../IosNoAccessScreen";
+import { signOutAthleteSession } from "./AthleteSettingsPanel";
 
 const SOLO_PLAN_MONTHLY_COP = ATHLETE_SOLO_COP.monthly;
 const SOLO_PLAN_ANNUAL_COP = ATHLETE_SOLO_COP.annual;
@@ -28,6 +31,7 @@ export default function AthletePaymentsView({
   notify,
 }) {
   const { payments, loading, startCheckout } = useAthleteSoloPayments({ athleteId, notify });
+  const [signingOut, setSigningOut] = useState(false);
 
   const hasCoachPremiumIncluded = useMemo(() => {
     const uid = profileUserId;
@@ -51,6 +55,27 @@ export default function AthletePaymentsView({
     if (Number.isNaN(d.getTime())) return null;
     return d.toLocaleDateString("es-CO", { day: "numeric", month: "long", year: "numeric" });
   }, [subscriptionExpiresAt]);
+
+  if (isIosApp()) {
+    const soloLocked = !hasCoachPremiumIncluded && soloAthleteIosLocked({
+      userId: profileUserId,
+      coachId: profileCoachId,
+      athletePlan,
+      expiresAt: subscriptionExpiresAt,
+    });
+    if (!soloLocked) return null;
+    return (
+      <IosNoAccessScreen
+        signingOut={signingOut}
+        onSignOut={async () => {
+          if (signingOut) return;
+          setSigningOut(true);
+          try { await signOutAthleteSession(); }
+          finally { setSigningOut(false); }
+        }}
+      />
+    );
+  }
 
   return (
     <>

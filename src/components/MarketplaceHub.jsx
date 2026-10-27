@@ -15,6 +15,7 @@ import { enrichStructureWithPaces, rescaleStructureToVdot, stripTestTimeGoalFrom
 import { PLAN_CALIBRATION_VDOT } from "../lib/vdot";
 import MarketplacePlanWorkoutsAccordion from "./shared/MarketplacePlanWorkoutsAccordion";
 import { LIBRARY_LIST_COLUMNS, hydrateLibraryRows } from "../lib/libraryApi";
+import { isIosApp } from "../lib/platform";
 
 function toMonday(date) {
   const d = new Date(date);
@@ -29,6 +30,7 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
   const isCoach = profileRole === "coach";
   const isAthlete = profileRole === "athlete";
   const isAdmin = profileRole === "admin";
+  const iosApp = isIosApp();
   const [plans, setPlans] = useState([]);
   const [loadingPlans, setLoadingPlans] = useState(true);
   const [selectedPlan, setSelectedPlan] = useState(null);
@@ -250,6 +252,7 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
   }, [selectedPlan, volumeByPlanId]);
 
   const handleBuyWithWompi = async (plan) => {
+    if (isIosApp()) return;
     if (!currentUserId) { notify?.("Inicia sesión para comprar."); return; }
     setCheckoutLoading(String(plan.id));
     try {
@@ -372,7 +375,7 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
     }
     return false;
   }, [selectedPlan, lockAfterWeek1]);
-  const hidePurchaseCta = useMemo(() => Boolean(isAdmin || selectedPlanIsOwner), [isAdmin, selectedPlanIsOwner]);
+  const hidePurchaseCta = useMemo(() => Boolean(iosApp || isAdmin || selectedPlanIsOwner), [iosApp, isAdmin, selectedPlanIsOwner]);
 
   const approveMarketplaceRow = async (planId) => {
     const { error } = await supabase.from("plan_marketplace").update({ is_approved: true, is_active: true }).eq("id", planId);
@@ -453,7 +456,7 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
     <div style={S.page}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
         <h1 style={{ ...S.pageTitle, marginBottom: 0 }}>🛒 Marketplace</h1>
-        {isCoach ? (
+        {isCoach && !iosApp ? (
           <button type="button" onClick={() => { setEditingMarketplacePlanId(null); setEditingPlanSnapshot(null); setPlanForm({ title: "", description: "", level: "intermedio", duration_weeks: "8", sessions_per_week: "4", price_cop: "120000", preview_workouts: [] }); setShowPublishModal(true); }} style={{ background: "linear-gradient(135deg,#0ea5e9,#0284c7)", border: "none", borderRadius: 9, padding: "8px 12px", color: "#fff", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".8em" }}>
             ➕ Publicar plan
           </button>
@@ -485,8 +488,12 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
                         <div style={{ fontSize: ".78em", color: "#64748b", marginTop: 4 }}>Ventas: {sales}</div>
                       </div>
                     </div>
-                    <div style={{ marginTop: 8, fontSize: ".82em", color: "#0f172a", fontWeight: 700 }}>Ganancia estimada: ${formatCopInt(coachEarnings)} COP</div>
-                    <div style={{ marginTop: 4, fontSize: ".75em", color: "#64748b" }}>Tu ganancia: ${formatCopInt(Math.round(price * 0.8))} COP (80% del precio)</div>
+                    {iosApp ? null : (
+                      <>
+                        <div style={{ marginTop: 8, fontSize: ".82em", color: "#0f172a", fontWeight: 700 }}>Ganancia estimada: ${formatCopInt(coachEarnings)} COP</div>
+                        <div style={{ marginTop: 4, fontSize: ".75em", color: "#64748b" }}>Tu ganancia: ${formatCopInt(Math.round(price * 0.8))} COP (80% del precio)</div>
+                      </>
+                    )}
                     <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
                       <button type="button" onClick={() => openEditMarketplacePlan(p)} style={{ border: "1px solid #bae6fd", background: "#f0f9ff", color: "#0369a1", borderRadius: 8, padding: "6px 10px", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".74em" }}>✏️ Editar</button>
                       <button type="button" onClick={() => deleteMarketplacePlanCoach(p)} style={{ border: "1px solid #fecaca", background: "#fef2f2", color: "#b91c1c", borderRadius: 8, padding: "6px 10px", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".74em" }}>🗑️ Eliminar</button>
@@ -499,7 +506,7 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
         </div>
       ) : null}
 
-      {isCoach || isAdmin ? (
+      {(isCoach || isAdmin) && !iosApp ? (
         <div style={{ ...S.card, marginBottom: 14 }}>
           <div style={{ fontSize: ".72em", letterSpacing: ".12em", textTransform: "uppercase", color: "#64748b", marginBottom: 8 }}>Ventas confirmadas</div>
           {loadingConfirmedSales ? <div style={{ color: "#64748b", fontSize: ".84em" }}>Cargando ventas…</div> : confirmedSalesList.length === 0 ? <div style={{ color: "#94a3b8", fontSize: ".84em" }}>Aún no tienes ventas confirmadas.</div> : (
@@ -539,7 +546,7 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
                         <div style={{ fontWeight: 800, color: "#0f172a", marginBottom: 4 }}>✅ {plan.title}</div>
                         <div style={{ fontSize: ".78em", color: "#64748b" }}>{plan.duration_weeks} semanas · {plan.sessions_per_week} sesiones/sem · {String(plan.level || "")}</div>
                         <div style={{ fontSize: ".75em", color: "#16a34a", fontWeight: 700, marginTop: 4 }}>
-                          Comprado el {new Date(purchasedAt).toLocaleDateString("es-CO", { day: "numeric", month: "long", year: "numeric" })}{" · "}${Number(pricePaid || 0).toLocaleString("es-CO")} COP
+                          Comprado el {new Date(purchasedAt).toLocaleDateString("es-CO", { day: "numeric", month: "long", year: "numeric" })}{iosApp ? "" : ` · $${Number(pricePaid || 0).toLocaleString("es-CO")} COP`}
                         </div>
                       </div>
                       <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-end" }}>
@@ -581,7 +588,7 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
                 <div style={{ fontSize: ".78em", color: "#64748b", marginTop: 2 }}>
                   {p.duration_weeks} semanas · {p.sessions_per_week} sesiones/semana{startKm != null ? ` · desde ${startKm} km/sem` : ""}
                 </div>
-                <div style={{ marginTop: 8, fontSize: ".95em", fontWeight: 800, color: "#0f172a" }}>${formatCopInt(p.price_cop)} COP</div>
+                {iosApp ? null : <div style={{ marginTop: 8, fontSize: ".95em", fontWeight: 800, color: "#0f172a" }}>${formatCopInt(p.price_cop)} COP</div>}
                 <div style={{ marginTop: 6, fontSize: ".78em", color: "#ff8a3d", fontWeight: 700 }}>{ratingStars} {rating > 0 ? rating.toFixed(1) : "0.0"}</div>
                 <button type="button" onClick={() => setSelectedPlan(p)} style={{ marginTop: 10, width: "100%", background: "linear-gradient(135deg,#0d9488,#14b8a6)", border: "none", borderRadius: 8, padding: "8px 10px", color: "#fff", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: ".78em" }}>Ver plan</button>
                 {isAdmin ? (
@@ -739,7 +746,9 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
               </select>
               <input type="number" value={planForm.duration_weeks} onChange={(e) => setPlanForm((f) => ({ ...f, duration_weeks: e.target.value }))} placeholder="Duración semanas" style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit" }} />
               <input type="number" value={planForm.sessions_per_week} onChange={(e) => setPlanForm((f) => ({ ...f, sessions_per_week: e.target.value }))} placeholder="Sesiones/semana" style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit" }} />
+              {iosApp ? null : (
               <input type="number" value={planForm.price_cop} onChange={(e) => setPlanForm((f) => ({ ...f, price_cop: e.target.value }))} placeholder="Precio COP" style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit" }} />
+              )}
               <div style={{ gridColumn: "1 / -1", border: "1px solid #e2e8f0", borderRadius: 10, padding: 10 }}>
                 <div style={{ fontSize: ".78em", fontWeight: 800, marginBottom: 8 }}>Entrenos de muestra (biblioteca)</div>
                 {loadingLibrary ? <div style={{ color: "#64748b", fontSize: ".82em" }}>Cargando biblioteca…</div> : coachLibraryRows.length === 0 ? <div style={{ color: "#94a3b8", fontSize: ".82em" }}>No tienes workouts en tu biblioteca.</div> : (
@@ -757,7 +766,9 @@ function MarketplaceHub({ profileRole, currentUserId, coachUserId = null, notify
                 )}
               </div>
             </div>
+            {iosApp ? null : (
             <div style={{ marginTop: 8, fontSize: ".8em", color: "#334155", fontWeight: 700 }}>Tu ganancia: ${formatCopInt(Math.round((Number(planForm.price_cop || 0) || 0) * 0.8))} COP (80% del precio)</div>
+            )}
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
               <button type="button" onClick={() => { setShowPublishModal(false); setEditingMarketplacePlanId(null); setEditingPlanSnapshot(null); }} style={{ border: "1px solid #e2e8f0", borderRadius: 8, background: "#fff", padding: "8px 12px", cursor: "pointer", fontFamily: "inherit" }}>Cancelar</button>
               <button type="button" onClick={submitCoachPlan} disabled={savingPlan} style={{ border: "none", borderRadius: 8, background: savingPlan ? "#cbd5e1" : "linear-gradient(135deg,#0ea5e9,#0284c7)", padding: "8px 12px", color: "#fff", fontWeight: 800, cursor: savingPlan ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
