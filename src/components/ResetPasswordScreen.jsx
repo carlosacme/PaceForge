@@ -84,6 +84,7 @@ export default function ResetPasswordScreen({ onDone, onCancel }) {
 
   return (
     <div
+      className="pf-ios-min-svh pf-ios-safe-top"
       style={{
         minHeight: "100vh",
         background: "#f8fafc",

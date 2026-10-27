@@ -131,7 +131,7 @@ export default function CoachChrome({
     !coachPlanBlockedUi;
 
   return (
-      <div style={S.root}>
+      <div className="pf-ios-min-svh" style={S.root}>
         {notification && <div style={S.notification}>✓ {notification}</div>}
         <InviteModal
           open={inviteModalOpen}
@@ -201,7 +201,7 @@ export default function CoachChrome({
         </aside>
 
         <main
-          className="pf-main-mobile-pad"
+          className="pf-main-mobile-pad pf-coach-main"
           style={{ flex: 1, overflowY: "auto", background: "#f8fafc", position: "relative" }}
         >
           <div style={{ padding: "12px 16px 0" }}>
@@ -218,6 +218,7 @@ export default function CoachChrome({
           />
           {showTrialBanner ? (
             <div
+              className="pf-ios-sticky-top"
               style={{
                 position: "sticky",
                 top: 0,

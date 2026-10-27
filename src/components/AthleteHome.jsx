@@ -694,7 +694,7 @@ export default function AthleteHome({ profile }) {
   }
 
   return (
-    <div style={{ ...S.page, paddingBottom: 96, overflowX: "hidden", overflowY: "visible", position: "relative" }}>
+    <div className="pf-athlete-screen" style={{ ...S.page, paddingBottom: 96, overflowX: "hidden", overflowY: "visible", position: "relative" }}>
       {message ? (
         <div style={{ ...S.card, border: `1px solid ${message.startsWith("✅") ? "rgba(34,197,94,.45)" : "rgba(239,68,68,.35)"}`, background: message.startsWith("✅") ? "rgba(34,197,94,.1)" : "rgba(239,68,68,.08)", color: message.startsWith("✅") ? "#166534" : "#fecaca", marginBottom: 14 }}>
           {message}
@@ -854,7 +854,7 @@ export default function AthleteHome({ profile }) {
       />
 
 
-      <nav aria-label="Navegación atleta" style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 9999, display: "flex", flexDirection: "row", justifyContent: "space-around", alignItems: "center", background: "white", borderTop: "1px solid #e2e8f0", padding: "8px 0 12px 0", height: "60px" }}>
+      <nav className="pf-athlete-bottom-nav" aria-label="Navegación atleta" style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 9999, display: "flex", flexDirection: "row", justifyContent: "space-around", alignItems: "center", background: "white", borderTop: "1px solid #e2e8f0", padding: "8px 0 12px 0", height: "60px" }}>
         <button type="button" style={{ minWidth: 60, color: athleteActiveTab === "home" ? "#c2410c" : "#64748b", background: athleteActiveTab === "home" ? "rgba(255,138,61,.14)" : "transparent", fontWeight: athleteActiveTab === "home" ? 800 : 600 }} onClick={() => handleAthleteNavTabChange("home")}><span className="pf-bnav-icon">🏠</span><span style={{ fontSize: "10px" }}>Inicio</span></button>
         {iosApp ? null : (
         <button type="button" style={{ minWidth: 60, color: athleteActiveTab === "marketplace" ? "#c2410c" : "#64748b", background: athleteActiveTab === "marketplace" ? "rgba(255,138,61,.14)" : "transparent", fontWeight: athleteActiveTab === "marketplace" ? 800 : 600 }} onClick={() => handleAthleteNavTabChange("marketplace")}><span className="pf-bnav-icon">🛒</span><span style={{ fontSize: "10px" }}>Market</span></button>
@@ -866,7 +866,7 @@ export default function AthleteHome({ profile }) {
 
       {athleteActiveTab !== "home" ? (
         <div style={{ position: "fixed", inset: 0, zIndex: 9988, background: "rgba(15,23,42,.4)", display: "flex", alignItems: "flex-end" }}>
-          <div style={{ width: "100%", height: "100%", background: "#fff", borderTopLeftRadius: 18, borderTopRightRadius: 18, overflowY: "auto", padding: 16, paddingBottom: 94 }}>
+          <div className="pf-ios-safe-top pf-athlete-sheet-pad" style={{ width: "100%", height: "100%", background: "#fff", borderTopLeftRadius: 18, borderTopRightRadius: 18, overflowY: "auto", padding: 16, paddingBottom: 94 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
               <div style={{ fontSize: "1.05em", fontWeight: 900, color: "#0f172a" }}>
                 {athleteActiveTab === "marketplace" ? "🛒 Marketplace" : athleteActiveTab === "challenges" ? "🏆 Retos" : athleteActiveTab === "eval" ? "⚡ Evaluación VDOT" : "👤 Perfil"}

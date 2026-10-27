@@ -475,6 +475,7 @@ export default function ConfirmEmailScreen() {
 
   return (
     <div
+      className="pf-ios-min-svh pf-ios-safe-top"
       style={{
         minHeight: "100vh",
         background: "#f8fafc",

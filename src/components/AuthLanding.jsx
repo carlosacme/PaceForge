@@ -509,7 +509,7 @@ export default function AuthLanding({
       };
 
       return (
-        <div style={S.root}>
+        <div className="pf-ios-min-svh pf-ios-safe-top" style={S.root}>
           <main style={{ ...S.page, display: "flex", alignItems: "center", justifyContent: "center", width: "100%", minHeight: "70vh", padding: "20px 16px" }}>
             {authLandingStep === "choice" ? (
               <div style={{ ...S.card, width: "100%", maxWidth: 440, padding: "32px 28px 36px" }}>
@@ -830,8 +830,8 @@ export default function AuthLanding({
     }
 
     return (
-      <div style={{ ...S.root, background: "linear-gradient(165deg,#0d1f38 0%,#12294a 45%,#0d1f38 100%)", minHeight: "100vh" }}>
-        <main style={{ ...S.page, width: "100%", display: "flex", flexDirection: "column", minHeight: "100vh", background: "transparent" }}>
+      <div className="pf-ios-min-svh pf-ios-safe-top" style={{ ...S.root, background: "linear-gradient(165deg,#0d1f38 0%,#12294a 45%,#0d1f38 100%)", minHeight: "100vh" }}>
+        <main className="pf-ios-min-svh" style={{ ...S.page, width: "100%", display: "flex", flexDirection: "column", minHeight: "100vh", background: "transparent" }}>
           <header
             style={{
               display: "flex",

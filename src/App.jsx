@@ -62,7 +62,7 @@ if (PASSWORD_RECOVERY_IN_URL && typeof sessionStorage !== "undefined") {
 
 function ShellFallback({ title }) {
   return (
-    <div style={styles.root}>
+    <div className="pf-ios-min-svh pf-ios-safe-top" style={styles.root}>
       <main style={{ ...styles.page, display: "flex", alignItems: "center", justifyContent: "center", width: "100%" }}>
         <h1 style={styles.pageTitle}>{title}</h1>
       </main>
