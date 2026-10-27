@@ -19,6 +19,7 @@ import {
   authApiFetch,
 } from "./shared/appShared";
 import WorkoutStructureEditor from "./shared/WorkoutStructureEditor";
+import { IOS_FEATURE_UNAVAILABLE, isIosApp } from "../lib/platform";
 
 /** Columnas livianas para la LISTA de planes (sin JSONB pesados). */
 const PLAN_LIST_COLUMNS =
@@ -649,6 +650,14 @@ DESCANSO Y DISTRIBUCIÓN
       setAiGenerating(false);
     }
   };
+
+  if (isIosApp()) {
+    return (
+      <div style={S.page}>
+        <p style={{ color: "#64748b", margin: 0 }}>{IOS_FEATURE_UNAVAILABLE}</p>
+      </div>
+    );
+  }
 
   return (
     <div style={S.page}>

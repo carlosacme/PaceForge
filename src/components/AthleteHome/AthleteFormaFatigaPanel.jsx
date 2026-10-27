@@ -7,6 +7,7 @@ import {
   computeGarminLoadMetricsFromWorkouts,
   formaFatigaStatusFromPoint,
 } from "../shared/appShared";
+import { IOS_FEATURE_UNAVAILABLE, isIosApp } from "../../lib/platform";
 
 /**
  * Perfil -> Forma del atleta.
@@ -29,6 +30,13 @@ export default function AthleteFormaFatigaPanel({
   const garminLoadMetrics = useMemo(() => computeGarminLoadMetricsFromWorkouts(workouts), [workouts]);
 
   if (!hasPremiumAccess) {
+    if (isIosApp()) {
+      return (
+        <div style={{ ...cardStyle, textAlign: "center" }}>
+          <p style={{ color: "#64748b", margin: 0 }}>{IOS_FEATURE_UNAVAILABLE}</p>
+        </div>
+      );
+    }
     return (
       <div style={{ ...cardStyle, textAlign: "center" }}>
         <p style={{ color: "#64748b" }}>Esta sección requiere Plan Premium Atleta.</p>

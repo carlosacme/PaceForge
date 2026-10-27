@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { supabase } from "../lib/supabase";
 import { formatCopInt } from "./shared/appShared";
 import { COACH_LIST_COP, applyPromoPercent } from "../lib/planPrices";
+import { isIosApp } from "../lib/platform";
 
 /**
  * UI del picker. Los COP salen de src/lib/planPrices.js (misma fuente que
@@ -101,6 +102,7 @@ export default function PlanPicker({ open, locked = false, onClose, notify }) {
   }, [coachPromoInput, notify]);
 
   const handleCoachPlanPagarAhora = useCallback(async () => {
+    if (isIosApp()) return;
     if (!coachPickerPlan || !coachPickerPeriod) {
       notify("Elige un plan y un período de pago.");
       return;
@@ -167,6 +169,7 @@ export default function PlanPicker({ open, locked = false, onClose, notify }) {
   }, [coachPickerPlan, coachPickerPeriod, coachAppliedPromo, notify]);
 
   if (!open) return null;
+  if (isIosApp()) return null;
   if (typeof document === "undefined") return null;
 
   // Portal a body: same z-index 4000 as before; ensures Cerrar is clickable above chrome.

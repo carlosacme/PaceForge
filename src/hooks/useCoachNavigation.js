@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
+import { isIosApp } from "../lib/platform";
 
 const COACH_NAV_BASE_ITEMS = [
   { id: "dashboard", icon: "▤", label: "Panel", shortLabel: "Inicio", color: "#ff8a3d" },
@@ -25,8 +26,15 @@ const TAB_KEY_TRAINING = "raf_tab_entrenamientos";
  * }} args
  */
 export function useCoachNavigation({ session, profile, onCloseAddAthleteForm }) {
-  const [view, setView] = useState("dashboard");
+  const [view, setViewState] = useState("dashboard");
   const [viewRestored, setViewRestored] = useState(false);
+  const setView = useCallback((next) => {
+    setViewState((prev) => {
+      const resolved = typeof next === "function" ? next(prev) : next;
+      if (isIosApp() && resolved === "marketplace") return "dashboard";
+      return resolved;
+    });
+  }, []);
 
   const readStoredTab = useCallback((key, allowed, fallback) => {
     if (typeof window === "undefined") return fallback;
@@ -58,6 +66,7 @@ export function useCoachNavigation({ session, profile, onCloseAddAthleteForm }) 
     return "plan_2_semanas";
   }, []);
 
+  const iosApp = isIosApp();
   const coachNavItems = useMemo(() => {
     const role = profile?.role;
     const items = [...COACH_NAV_BASE_ITEMS];
@@ -65,8 +74,8 @@ export function useCoachNavigation({ session, profile, onCloseAddAthleteForm }) 
     if (role === "admin") {
       items.push({ id: "admin", icon: "🔐", label: "Admin", shortLabel: "Admin", color: "#7c3aed" });
     }
-    return items;
-  }, [profile?.role]);
+    return iosApp ? items.filter((item) => item.id !== "marketplace") : items;
+  }, [profile?.role, iosApp]);
 
   const allowedCoachViews = useMemo(() => {
     const hiddenViews = ["evaluation", "plan12", "builder", "carrera_gpx", "challenges"];

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "../lib/supabase";
+import { isIosApp } from "../lib/platform";
 import { CONFIRM_EMAIL_PATH, goToSignupConfirmScreen } from "../lib/authRoutes";
 import {
   BRAND_NAME,
@@ -1039,7 +1040,9 @@ export default function AuthLanding({
                 }}
               >
                 <div style={{ fontWeight: 900, color: "#ff8a3d", fontSize: "1.1em", marginBottom: 8 }}>Coach</div>
+                {isIosApp() ? null : (
                 <div style={{ fontSize: ".82em", fontWeight: 700, color: "#f8fafc", marginBottom: 12 }}>7 días de prueba gratis</div>
+                )}
                 <ul style={{ margin: 0, paddingLeft: 18, color: "rgba(248,250,252,.7)", fontSize: ".88em", lineHeight: 1.55 }}>
                   <li>Panel en vivo</li>
                   <li>Biblioteca de workouts</li>
@@ -1058,7 +1061,9 @@ export default function AuthLanding({
                 }}
               >
                 <div style={{ fontWeight: 900, color: "#17c6a3", fontSize: "1.1em", marginBottom: 8 }}>Atleta</div>
+                {isIosApp() ? null : (
                 <div style={{ fontSize: ".82em", fontWeight: 700, color: "#f8fafc", marginBottom: 12 }}>Plan Premium disponible</div>
+                )}
                 <ul style={{ margin: 0, paddingLeft: 18, color: "rgba(248,250,252,.7)", fontSize: ".88em", lineHeight: 1.55 }}>
                   <li>Calendario personalizado</li>
                   <li>Evaluación VDOT propia</li>

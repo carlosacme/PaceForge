@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "../../lib/supabase";
 import { ATHLETE_SOLO_COP } from "../../lib/planPrices";
+import { isIosApp } from "../../lib/platform";
 
 const SOLO_PLAN_MONTHLY_COP = ATHLETE_SOLO_COP.monthly;
 const SOLO_PLAN_ANNUAL_COP = ATHLETE_SOLO_COP.annual;
@@ -40,6 +41,7 @@ export function useAthleteSoloPayments({ athleteId, notify }) {
   }, [loadPayments]);
 
   const startCheckout = async (period) => {
+    if (isIosApp()) return;
     const amountCop = period === "annual" ? SOLO_PLAN_ANNUAL_COP : SOLO_PLAN_MONTHLY_COP;
     try {
       const { data: sessData } = await supabase.auth.getSession();

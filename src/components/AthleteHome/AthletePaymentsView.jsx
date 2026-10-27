@@ -1,6 +1,7 @@
 import React, { useMemo } from "react";
 import { ATHLETE_SOLO_COP } from "../../lib/planPrices";
 import { useAthleteSoloPayments } from "./useAthleteSoloPayments";
+import { isIosApp } from "../../lib/platform";
 
 const SOLO_PLAN_MONTHLY_COP = ATHLETE_SOLO_COP.monthly;
 const SOLO_PLAN_ANNUAL_COP = ATHLETE_SOLO_COP.annual;
@@ -51,6 +52,8 @@ export default function AthletePaymentsView({
     if (Number.isNaN(d.getTime())) return null;
     return d.toLocaleDateString("es-CO", { day: "numeric", month: "long", year: "numeric" });
   }, [subscriptionExpiresAt]);
+
+  if (isIosApp()) return null;
 
   return (
     <>

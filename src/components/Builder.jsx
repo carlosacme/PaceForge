@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { supabase } from "../lib/supabase";
+import { IOS_FEATURE_UNAVAILABLE, isIosApp } from "../lib/platform";
 import { enrichStructureWithPaces, isTestWorkoutTitle, rescaleStructureToVdot, stripTestTimeGoalFromDescription, stripTestTimeGoalsFromStructure } from "../lib/enrichPace";
 import {
   BRAND_NAME,
@@ -288,7 +289,7 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
     } else {
       // verificar límite normal según plan
       if (isBasicPlan && monthGenerations >= 100) {
-        setGenerationLimitMsg("Has alcanzado el límite de 100 generaciones del plan Básico. Actualiza al plan Pro para generaciones ilimitadas.");
+        setGenerationLimitMsg(isIosApp() ? IOS_FEATURE_UNAVAILABLE : "Has alcanzado el límite de 100 generaciones del plan Básico. Actualiza al plan Pro para generaciones ilimitadas.");
         return;
       }
     }
@@ -444,7 +445,8 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
       </div>
       {builderTab === "ai" && generationLimitMsg ? (
         <div style={{ ...S.card, marginBottom: 14, border: "1px solid rgba(255,138,61,.4)", background: "#fffbeb" }}>
-          <div style={{ color: "#92400e", fontSize: ".84em", fontWeight: 700, marginBottom: 10 }}>{generationLimitMsg}</div>
+          <div style={{ color: "#92400e", fontSize: ".84em", fontWeight: 700, marginBottom: 10 }}>{isIosApp() ? IOS_FEATURE_UNAVAILABLE : generationLimitMsg}</div>
+          {isIosApp() ? null : (
           <div style={{ display: "flex", justifyContent: "flex-end" }}>
             <button
               type="button"
@@ -454,6 +456,7 @@ function Builder({ athletes, aiPrompt, setAiPrompt, aiWorkout, setAiWorkout, aiL
               Ver Planes
             </button>
           </div>
+          )}
         </div>
       ) : null}
       <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 24 }}>

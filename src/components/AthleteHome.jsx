@@ -1,5 +1,6 @@
 import React, { lazy, Suspense, useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { supabase } from "../lib/supabase";
+import { IOS_FEATURE_UNAVAILABLE, isIosApp } from "../lib/platform";
 import WeatherWidget, { useWeather } from "./WeatherWidget";
 import InstallAppButton from "./InstallAppButton";
 import CoachLinkActions from "./AthleteHome/CoachLinkActions";
@@ -403,6 +404,16 @@ export default function AthleteHome({ profile }) {
     setAthleteActiveTab(tabId);
     if (typeof localStorage !== "undefined") localStorage.setItem(RAF_ATHLETE_NAV_TAB_KEY, tabId);
   }, []);
+
+  const iosApp = isIosApp();
+  useEffect(() => {
+    if (!iosApp) return;
+    if (athleteActiveTab === "marketplace") handleAthleteNavTabChange("home");
+  }, [iosApp, athleteActiveTab, handleAthleteNavTabChange]);
+  useEffect(() => {
+    if (!iosApp) return;
+    if (athleteProfileTab === "pagos") setAthleteProfileTab("logros");
+  }, [iosApp, athleteProfileTab]);
 
   /**
    * Salta al destino de un aviso push. La web lo recibe en la URL y la APK en
@@ -823,7 +834,9 @@ export default function AthleteHome({ profile }) {
 
       <nav aria-label="Navegación atleta" style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 9999, display: "flex", flexDirection: "row", justifyContent: "space-around", alignItems: "center", background: "white", borderTop: "1px solid #e2e8f0", padding: "8px 0 12px 0", height: "60px" }}>
         <button type="button" style={{ minWidth: 60, color: athleteActiveTab === "home" ? "#c2410c" : "#64748b", background: athleteActiveTab === "home" ? "rgba(255,138,61,.14)" : "transparent", fontWeight: athleteActiveTab === "home" ? 800 : 600 }} onClick={() => handleAthleteNavTabChange("home")}><span className="pf-bnav-icon">🏠</span><span style={{ fontSize: "10px" }}>Inicio</span></button>
+        {iosApp ? null : (
         <button type="button" style={{ minWidth: 60, color: athleteActiveTab === "marketplace" ? "#c2410c" : "#64748b", background: athleteActiveTab === "marketplace" ? "rgba(255,138,61,.14)" : "transparent", fontWeight: athleteActiveTab === "marketplace" ? 800 : 600 }} onClick={() => handleAthleteNavTabChange("marketplace")}><span className="pf-bnav-icon">🛒</span><span style={{ fontSize: "10px" }}>Market</span></button>
+        )}
         <button type="button" style={{ minWidth: 60, color: athleteActiveTab === "challenges" ? "#c2410c" : "#64748b", background: athleteActiveTab === "challenges" ? "rgba(255,138,61,.14)" : "transparent", fontWeight: athleteActiveTab === "challenges" ? 800 : 600 }} onClick={() => handleAthleteNavTabChange("challenges")}><span className="pf-bnav-icon">🏆</span><span style={{ fontSize: "10px" }}>Retos</span></button>
         <button type="button" style={{ minWidth: 60, color: athleteActiveTab === "eval" ? "#c2410c" : "#64748b", background: athleteActiveTab === "eval" ? "rgba(255,138,61,.14)" : "transparent", fontWeight: athleteActiveTab === "eval" ? 800 : 600 }} onClick={() => handleAthleteNavTabChange("eval")}><span className="pf-bnav-icon">⚡</span><span style={{ fontSize: "10px" }}>Eval</span></button>
         <button type="button" style={{ minWidth: 60, color: athleteActiveTab === "profile" ? "#c2410c" : "#64748b", background: athleteActiveTab === "profile" ? "rgba(255,138,61,.14)" : "transparent", fontWeight: athleteActiveTab === "profile" ? 800 : 600 }} onClick={() => handleAthleteNavTabChange("profile")}><span className="pf-bnav-icon">👤</span><span style={{ fontSize: "10px" }}>Perfil</span></button>
@@ -839,7 +852,7 @@ export default function AthleteHome({ profile }) {
               <button type="button" onClick={() => handleAthleteNavTabChange("home")} style={{ border: "1px solid #e2e8f0", background: "#fff", borderRadius: 8, padding: "6px 10px", color: "#475569", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>✕</button>
             </div>
 
-            {athleteActiveTab === "marketplace" ? (
+            {athleteActiveTab === "marketplace" && !iosApp ? (
               <Suspense fallback={<div>Cargando...</div>}>
                 <MarketplaceHub profileRole="athlete" currentUserId={profile?.user_id ?? null} coachUserId={null} notify={notifyCallback} styles={styles} />
               </Suspense>
@@ -861,6 +874,10 @@ export default function AthleteHome({ profile }) {
               ) : null}
               <EvaluationView athletes={[normalizeAthlete(athleteInfo)]} currentUserId={profile?.user_id ?? null} notify={(msg) => setMessage(msg)} athleteOnlyId={athleteInfo?.id} />
                 </Suspense>
+              ) : iosApp ? (
+                <div style={{ ...S.card, textAlign: "center" }}>
+                  <p style={{ color: "#64748b", margin: 0 }}>{IOS_FEATURE_UNAVAILABLE}</p>
+                </div>
               ) : (
                 <div style={{ ...S.card, textAlign: "center" }}>
                   <p style={{ color: "#64748b" }}>La evaluación VDOT requiere Plan Premium Atleta.</p>
@@ -876,7 +893,9 @@ export default function AthleteHome({ profile }) {
                   <button type="button" onClick={() => setAthleteProfileTab("forma")} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", background: athleteProfileTab === "forma" ? "rgba(255,138,61,.14)" : "#fff", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>📊 Forma</button>
                   <button type="button" onClick={() => setAthleteProfileTab("mes")} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", background: athleteProfileTab === "mes" ? "rgba(255,138,61,.14)" : "#fff", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>📅 Mes</button>
                   <button type="button" onClick={() => setAthleteProfileTab("config")} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", background: athleteProfileTab === "config" ? "rgba(255,138,61,.14)" : "#fff", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>⚙️ Config</button>
+                  {iosApp ? null : (
                   <button type="button" onClick={() => setAthleteProfileTab("pagos")} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", background: athleteProfileTab === "pagos" ? "rgba(255,138,61,.14)" : "#fff", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>💳 Pagos</button>
+                  )}
                 </div>
 
                 {athleteProfileTab === "logros" ? (
@@ -930,7 +949,7 @@ export default function AthleteHome({ profile }) {
                   <AthleteMonthSummary cardStyle={S.card} workouts={workouts} />
                 ) : null}
 
-                {athleteProfileTab === "pagos" ? (
+                {athleteProfileTab === "pagos" && !iosApp ? (
                   <AthletePaymentsView
                     cardStyle={S.card}
                     athleteId={athleteInfo?.id}

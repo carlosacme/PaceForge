@@ -5,6 +5,7 @@ import DeleteAccountSection from "./DeleteAccountSection";
 import ChangePasswordSection from "./ChangePasswordSection";
 import CoachRequestsInbox from "./CoachRequestsInbox";
 import { useCoachRequests } from "../hooks/useCoachRequests";
+import { isIosApp } from "../lib/platform";
 
 function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAthletes, notify, onSignOut, signingOut = false, styles, isStaff = false, onReloadAthletes }) {
   const S = styles;
@@ -601,6 +602,7 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
             />
           </div>
 
+          {isIosApp() ? null : (
           <div style={{ ...S.card, marginBottom: 18 }}>
             <div style={{ fontSize: ".72em", letterSpacing: ".12em", color: "#64748b", fontWeight: 700, marginBottom: 16 }}>
               SUSCRIPCIÓN
@@ -624,6 +626,7 @@ function CoachSettings({ coachUserId, sessionEmail, profileName, athletes, setAt
               <input type="date" value={form.subscription_renews_at} onChange={(e) => setForm((f) => ({ ...f, subscription_renews_at: e.target.value }))} style={inputStyle} />,
             )}
           </div>
+          )}
 
           <button
             type="submit"
