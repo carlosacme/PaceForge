@@ -1,5 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { getMessaging, getToken, deleteToken, onMessage, isSupported } from "firebase/messaging";
+import { isIosApp } from "./platform";
 import { readyServiceWorker } from "./readyServiceWorker.js";
 
 const firebaseConfig = {
@@ -21,6 +22,7 @@ export let messaging = null;
  * Debe llamarse una vez en el cliente antes de getToken / onMessage.
  */
 export async function initMessaging() {
+  if (isIosApp()) return null;
   if (typeof window === "undefined") return null;
   if (messaging) return messaging;
   if (!(await isSupported())) return null;
@@ -31,6 +33,7 @@ export async function initMessaging() {
 const VAPID_KEY = "BNqJM5D8RqCSeSXTcnU3dkye1fjPvAYcb7P4R1erlQpscPuU4VFmeJ0LSJL0jTh-POI7byyPPxDevIaWFt23DLM";
 
 export const requestNotificationPermission = async () => {
+  if (isIosApp()) return null;
   const m = await initMessaging();
   if (!m) return null;
   const permission = await Notification.requestPermission();
@@ -48,6 +51,7 @@ export const requestNotificationPermission = async () => {
 
 /** Sin modal: obtiene token si el permiso ya está concedido (p. ej. al recargar). */
 export async function refreshFcmTokenIfGranted() {
+  if (isIosApp()) return null;
   if (typeof window === "undefined" || typeof Notification === "undefined") return null;
   if (Notification.permission !== "granted") return null;
   const m = await initMessaging();
