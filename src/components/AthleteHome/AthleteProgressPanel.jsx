@@ -162,14 +162,17 @@ export function AthleteWeeklyStrip({ cardStyle, workouts }) {
     return recentBogotaWeeks(new Date(), 4).map((range) => {
       const weekRows = workoutsInRange(workouts, range.start, range.end);
       const summary = summarizeExecuted(weekRows);
+      // Adherencia total: hechos de carrera y de fuerza sobre todos los planeados de la semana.
       const adherence = weekRows.length > 0 ? Math.round((summary.completed / weekRows.length) * 100) : 0;
       return {
         key: `${range.start}-${range.end}`,
         label: range.offset === 0 ? "Semana actual" : `Hace ${range.offset} semana${range.offset === 1 ? "" : "s"}`,
         range: `${range.start} → ${range.end}`,
         kmTotal: summary.km,
-        completed: summary.completed,
-        total: weekRows.length,
+        sessions: summary.sessions,
+        runningPlanned: summary.runningPlanned,
+        strengthSessions: summary.strengthSessions,
+        strengthPlanned: summary.strengthPlanned,
         adherence,
         missingDistance: summary.missingDistance,
       };
@@ -206,7 +209,12 @@ export function AthleteWeeklyStrip({ cardStyle, workouts }) {
                   <div style={{ height: "100%", width: adherencePct + "%", background: adherenceColor, borderRadius: 999, transition: "width .3s" }} />
                 </div>
               </div>
-              <div style={{ fontSize: ".62em", color: "#94a3b8" }}>{formatSessionCount(week.completed, week.total)} sesiones</div>
+              {week.runningPlanned > 0 ? (
+                <div style={{ fontSize: ".62em", color: "#94a3b8" }}>{formatSessionCount(week.sessions, week.runningPlanned)} carreras</div>
+              ) : null}
+              {week.strengthPlanned > 0 ? (
+                <div style={{ fontSize: ".62em", color: "#94a3b8" }}>{formatSessionCount(week.strengthSessions, week.strengthPlanned)} sesiones de fuerza</div>
+              ) : null}
             </div>
           );
         })}

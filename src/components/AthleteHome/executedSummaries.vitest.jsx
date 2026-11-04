@@ -119,9 +119,53 @@ describe("resúmenes con lo corrido en Bogotá", () => {
     render(<AthleteWeeklyStrip cardStyle={cardStyle} workouts={workouts} />);
     expect(screen.getByText("2026-02-23 → 2026-03-01")).toBeTruthy();
     expect(screen.getAllByText("25.0").length).toBeGreaterThan(0);
-    expect(screen.getByText("3 de 4 sesiones")).toBeTruthy();
+    expect(screen.getByText("2 de 3 carreras")).toBeTruthy();
+    expect(screen.getByText("1 de 1 sesiones de fuerza")).toBeTruthy();
     expect(screen.getByText("75%")).toBeTruthy();
     expect(screen.queryByText("48.0")).toBeNull();
+  });
+
+  it("la tira separa 1 de 2 carreras y 1 de 1 fuerza, y la adherencia sigue siendo 2 de 3", () => {
+    render(
+      <AthleteWeeklyStrip
+        cardStyle={cardStyle}
+        workouts={[
+          { id: "r1", scheduled_date: "2026-02-24", done: true, type: "easy", title: "Rodaje", actual_distance_km: 8, structure: [{ block_type: "Rodaje", duration_min: "40", target_pace: "6:00-5:30" }] },
+          { id: "r2", scheduled_date: "2026-02-25", done: false, type: "easy", title: "Tempo", structure: [{ block_type: "Rodaje", duration_min: "30", target_pace: "5:00-4:40" }] },
+          { id: "f1", scheduled_date: "2026-02-26", done: true, type: "recovery", title: "Fuerza", structure: strengthStructure },
+        ]}
+      />,
+    );
+    expect(screen.getByText("1 de 2 carreras")).toBeTruthy();
+    expect(screen.getByText("1 de 1 sesiones de fuerza")).toBeTruthy();
+    expect(screen.getByText("67%")).toBeTruthy();
+  });
+
+  it("una semana sin fuerza planeada solo muestra carreras", () => {
+    render(
+      <AthleteWeeklyStrip
+        cardStyle={cardStyle}
+        workouts={[
+          { id: "r1", scheduled_date: "2026-02-24", done: true, type: "easy", title: "Rodaje", actual_distance_km: 8, structure: [{ block_type: "Rodaje", duration_min: "40", target_pace: "6:00-5:30" }] },
+          { id: "r2", scheduled_date: "2026-02-25", done: false, type: "easy", title: "Tempo", structure: [{ block_type: "Rodaje", duration_min: "30", target_pace: "5:00-4:40" }] },
+        ]}
+      />,
+    );
+    expect(screen.getByText("1 de 2 carreras")).toBeTruthy();
+    expect(screen.queryByText(/sesiones de fuerza/)).toBeNull();
+  });
+
+  it("una semana sin carreras planeadas solo muestra fuerza", () => {
+    render(
+      <AthleteWeeklyStrip
+        cardStyle={cardStyle}
+        workouts={[
+          { id: "f1", scheduled_date: "2026-02-26", done: true, type: "recovery", title: "Fuerza", structure: strengthStructure },
+        ]}
+      />,
+    );
+    expect(screen.getByText("1 de 1 sesiones de fuerza")).toBeTruthy();
+    expect(screen.queryByText(/carreras/)).toBeNull();
   });
 
   it("el resumen de perfil no usa el km planeado y nota la fuerza sin distancia", () => {
