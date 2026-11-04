@@ -28,7 +28,8 @@ import {
   COLOR_RED,
   COLOR_ORANGE,
 } from "../../../lib/acwrBands.js";
-import { workoutActualKm as workoutActualKmFromLib, sumWeekKm as sumWeekKmFromLib, currentWeekRangeBogota } from "../../../lib/weekStats.js";
+import { addDaysYmd } from "../../../lib/cotDate.js";
+import { workoutActualKm as workoutActualKmFromLib, sumWeekKm as sumWeekKmFromLib, currentWeekRangeBogota, bogotaLoadWindows, bogotaWeekStartYmd } from "../../../lib/weekStats.js";
 import {
   earnedCodesFromRows,
   formatAchievementDate,
@@ -444,13 +445,16 @@ export const addDays = (d, n) => {
   return x;
 };
 
-/** Km últimos 7d vs promedio semanal (4 semanas lun–dom), ratio aguda/crónica y barras (solo workouts completados). */
-export const computeGarminLoadMetricsFromWorkouts = (workouts) => {
-  const today = new Date();
-  const todayYmd = formatLocalYMD(today);
+/**
+ * Km últimos 7d vs promedio semanal (4 semanas lun–dom), ratio aguda/crónica
+ * y barras (solo workouts completados). Las ventanas se arman aquí, en
+ * America/Bogota; quien llama solo pasa los workouts. La fórmula sigue
+ * sumando total_km.
+ */
+export const computeGarminLoadMetricsFromWorkouts = (workouts, now = new Date()) => {
+  const { today: todayYmd, acuteFrom: acuteStartYmd, weeks } = bogotaLoadWindows(now);
   const doneWorkouts = (workouts || []).filter((w) => w?.done);
 
-  const acuteStartYmd = formatLocalYMD(addDays(today, -6));
   let acuteKm = 0;
   for (const w of doneWorkouts) {
     const ymd = normalizeScheduledDateYmd(w.scheduled_date);
@@ -458,16 +462,13 @@ export const computeGarminLoadMetricsFromWorkouts = (workouts) => {
     acuteKm += Number(w.total_km) || 0;
   }
 
-  const currentMonday = startOfWeekMonday(today);
   const weekBars = [];
   let totalKm4w = 0;
   let totalSessions4w = 0;
   let totalMin4w = 0;
   for (let i = 0; i < 4; i += 1) {
-    const start = addDays(currentMonday, -(i * 7));
-    const end = addDays(start, 6);
-    const startYmd = formatLocalYMD(start);
-    const endYmd = formatLocalYMD(end);
+    const startYmd = weeks[i].from;
+    const endYmd = weeks[i].to;
     let weekKm = 0;
     let weekSessions = 0;
     let weekMin = 0;
@@ -553,6 +554,7 @@ export const formatDurationMinutesTotal = (mins) => {
   return `${h} h ${r} min`;
 };
 
+/** Grilla del calendario. Usa el lunes local del navegador a propósito. */
 export const startOfMonthWeekMonday = (year, monthIndex) => startOfWeekMonday(new Date(year, monthIndex, 1));
 
 export const getMonthGrid = (year, monthIndex) => {
@@ -1968,7 +1970,7 @@ const getWorkoutReferenceDate = (w) => {
   const d = new Date(raw);
   return Number.isNaN(d.getTime()) ? null : d;
 };
-const getWeekStartYmdFromDate = (d) => (d && !Number.isNaN(d.getTime()) ? formatLocalYMD(startOfWeekMonday(d)) : null);
+const getWeekStartYmdFromDate = (value) => bogotaWeekStartYmd(value) || null;
 const getLongestConsecutiveWeeks = (weekKeys) => {
   if (!Array.isArray(weekKeys) || weekKeys.length === 0) return 0;
   const uniq = [...new Set(weekKeys)].sort();
@@ -2000,14 +2002,14 @@ export const computeAthleteAchievementVisualProgress = (allWorkouts, evaluations
   for (const w of sortedScheduled) { streak = w?.done ? streak + 1 : 0; if (streak > longestDoneNoFailStreak) longestDoneNoFailStreak = streak; }
   const weekMap = {};
   for (const w of sortedScheduled) {
-    const weekKey = getWeekStartYmdFromDate(getWorkoutReferenceDate(w));
+    const weekKey = getWeekStartYmdFromDate(w?.completed_at || w?.scheduled_date || w?.created_at);
     if (!weekKey) continue;
     if (!weekMap[weekKey]) weekMap[weekKey] = { total: 0, done: 0 };
     weekMap[weekKey].total += 1;
     if (w?.done) weekMap[weekKey].done += 1;
   }
   const fullWeeksCompleted = Object.values(weekMap).filter((x) => x.total > 0 && x.done >= x.total).length;
-  const doneWeekKeys = done.map((w) => getWeekStartYmdFromDate(getWorkoutReferenceDate(w))).filter(Boolean);
+  const doneWeekKeys = done.map((w) => getWeekStartYmdFromDate(w?.completed_at || w?.scheduled_date || w?.created_at)).filter(Boolean);
   const consecutiveDoneWeeks = getLongestConsecutiveWeeks(doneWeekKeys);
   const evalRows = Array.isArray(evaluations) ? evaluations : [];
   const vdotValues = evalRows.map((r) => Number(r?.vdot)).filter((v) => Number.isFinite(v) && v > 0);
@@ -2193,15 +2195,14 @@ const avgRpeKmInWindow = (eligibleWorkouts, startYmd, endYmd) => {
   return loads.reduce((a, b) => a + b, 0) / loads.length;
 };
 
-export const computeFormaFatigaWeeklyPoints = (workouts) => {
+export const computeFormaFatigaWeeklyPoints = (workouts, now = new Date()) => {
   const eligible = workouts.filter((w) => w.done && clampWorkoutRpe(w.rpe) != null);
-  const today = new Date();
+  const today = bogotaLoadWindows(now).today;
   const points = [];
   for (let i = 0; i < 8; i += 1) {
-    const endD = addDays(today, -i * 7);
-    const endYmd = formatLocalYMD(endD);
-    const acute = avgRpeKmInWindow(eligible, formatLocalYMD(addDays(endD, -6)), endYmd);
-    const chronic = avgRpeKmInWindow(eligible, formatLocalYMD(addDays(endD, -27)), endYmd);
+    const endYmd = addDaysYmd(today, -i * 7);
+    const acute = avgRpeKmInWindow(eligible, addDaysYmd(endYmd, -6), endYmd);
+    const chronic = avgRpeKmInWindow(eligible, addDaysYmd(endYmd, -27), endYmd);
     points.push({ i, label: i === 0 ? "Actual" : `−${i} sem`, endYmd, acute, chronic, forma: acute != null || chronic != null ? (chronic ?? 0) - (acute ?? 0) : null });
   }
   return points;

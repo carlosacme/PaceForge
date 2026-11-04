@@ -9,7 +9,7 @@ import {
   isAuthLockContentionError,
   withAuthLockRetry,
 } from "./shared/appShared";
-import { formatCoachSessionLines, formatYmdLongEs, weekSessionBreakdown } from "../../lib/weekStats.js";
+import { formatCoachSessionLines, formatRpeValue, formatYmdLongEs, weekRpeAverages, weekSessionBreakdown } from "../../lib/weekStats.js";
 import CoachRequestsInbox from "./CoachRequestsInbox";
 import { IOS_FEATURE_UNAVAILABLE, isIosApp } from "../lib/platform";
 import { useCoachRequests } from "../hooks/useCoachRequests";
@@ -19,7 +19,7 @@ const MONTH_INDEX = {
   Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11,
 };
 
-/** Etiqueta de carrera y días restantes (para tablas y métricas). */
+/** Días restantes hasta la carrera. Usa la medianoche local del navegador a propósito. */
 export const getRaceMeta = (nextRace) => {
   if (!nextRace || typeof nextRace !== "string") return { name: "—", daysLeft: null };
   const [raceNameRaw, datePartRaw] = nextRace.split(" - ");
@@ -159,11 +159,7 @@ function Dashboard({
 
   const weekKmDonePct = weekKm.planned > 0 ? Math.round((weekKm.actual / weekKm.planned) * 100) : 0;
 
-  const { weekAvgRpe, weekRpeCount } = useMemo(() => {
-    const rpeVals = weekWorkouts.filter((w) => w.done && w.rpe != null).map((w) => w.rpe);
-    const avgRpe = rpeVals.length ? rpeVals.reduce((a, b) => a + b, 0) / rpeVals.length : null;
-    return { weekAvgRpe: avgRpe, weekRpeCount: rpeVals.length };
-  }, [weekWorkouts]);
+  const weekRpe = useMemo(() => weekRpeAverages(weekWorkouts), [weekWorkouts]);
 
   const globalAdherencePct = weekSessions.pct;
 
@@ -410,12 +406,20 @@ function Dashboard({
                 color: "#22c55e",
               },
               {
-                label: "Carga promedio RPE",
-                value: weekAvgRpe != null ? weekAvgRpe.toFixed(1) : "—",
-                sub:
-                  weekAvgRpe != null
-                    ? `Promedio de RPE en sesiones completadas con registro (${weekRpeCount} sesiones)`
-                    : "Ningún workout completado con RPE esta semana",
+                label: "RPE carrera (promedio)",
+                value: weekRpe.runAvg != null ? formatRpeValue(weekRpe.runAvg) : "—",
+                sub: (
+                  <>
+                    <div>
+                      {weekRpe.runAvg != null
+                        ? `Promedio de RPE en carreras hechas (${weekRpe.runCount} sesiones)`
+                        : "Ninguna carrera hecha con RPE esta semana"}
+                    </div>
+                    {weekRpe.strengthCount > 0 ? (
+                      <div>{`RPE fuerza: ${formatRpeValue(weekRpe.strengthAvg)}`}</div>
+                    ) : null}
+                  </>
+                ),
                 icon: "📊",
                 color: "#a855f7",
               },
