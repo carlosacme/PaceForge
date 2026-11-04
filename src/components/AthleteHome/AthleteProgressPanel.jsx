@@ -3,6 +3,8 @@ import {
   bogotaSummaryRanges,
   executedActivities,
   formatExecutedDuration,
+  formatKm1,
+  formatSessionCount,
   monthLabelEs,
   recentBogotaWeeks,
   summarizeExecuted,
@@ -39,7 +41,7 @@ function ActivityList({ activities }) {
             <div style={{ color: "#64748b" }}>{a.date}</div>
           </div>
           <div style={{ textAlign: "right", color: "#334155", flexShrink: 0 }}>
-            <div>{a.strength ? "fuerza" : a.missingDistance ? "sin distancia" : `${a.km.toFixed(1)} km`}</div>
+            <div>{a.strength ? "fuerza" : a.missingDistance ? "sin distancia" : `${formatKm1(a.km)} km`}</div>
             <div style={{ color: "#64748b" }}>
               {a.strength ? "—" : ([a.durationMin ? `${a.durationMin} min` : null, a.paceLabel].filter(Boolean).join(" · ") || "—")}
             </div>
@@ -53,16 +55,16 @@ function ActivityList({ activities }) {
 function ExecutedFooter({ summary }) {
   return (
     <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px solid #e2e8f0", fontSize: ".84em", color: "#0f172a", fontWeight: 700 }}>
-      {summary.sessions} realizados · {summary.km.toFixed(1)} km reales
+      {formatSessionCount(summary.sessions, summary.runningPlanned)} · {formatKm1(summary.km)} km reales
       {summary.missingDistance > 0 ? ` · ${summary.missingDistance} sin distancia real` : ""}
     </div>
   );
 }
 
-function StrengthSessionsLine({ count }) {
+function StrengthSessionsLine({ done, planned }) {
   return (
     <div style={{ marginTop: 8, fontSize: ".82em", color: "#475569" }}>
-      Sesiones de fuerza realizadas: {count}
+      Sesiones de fuerza realizadas: {formatSessionCount(done, planned)}
     </div>
   );
 }
@@ -105,7 +107,7 @@ export function AthleteHomeProgress({ cardStyle, workouts }) {
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
           <span style={{ color: "#64748b", fontSize: ".85em" }}>🏃 Kilometraje real</span>
-          <span style={{ fontSize: "1.35em", fontWeight: 900, color: "#22c55e", fontFamily: "monospace" }}>{progressStats.km.toFixed(1)} km</span>
+          <span style={{ fontSize: "1.35em", fontWeight: 900, color: "#22c55e", fontFamily: "monospace" }}>{formatKm1(progressStats.km)} km</span>
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
           <span style={{ color: "#64748b", fontSize: ".85em" }}>⏱️ Tiempo real</span>
@@ -113,7 +115,7 @@ export function AthleteHomeProgress({ cardStyle, workouts }) {
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
           <span style={{ color: "#64748b", fontSize: ".85em" }}>🗓️ Sesiones realizadas</span>
-          <span style={{ fontSize: "1.35em", fontWeight: 900, color: "#22c55e", fontFamily: "monospace" }}>{progressStats.sessions}</span>
+          <span style={{ fontSize: "1.35em", fontWeight: 900, color: "#22c55e", fontFamily: "monospace" }}>{formatSessionCount(progressStats.sessions, progressStats.runningPlanned)}</span>
         </div>
       </div>
       {progressStats.missingDistance > 0 ? (
@@ -121,12 +123,12 @@ export function AthleteHomeProgress({ cardStyle, workouts }) {
           {progressStats.missingDistance} realizado{progressStats.missingDistance === 1 ? "" : "s"} sin distancia real: no suma km.
         </div>
       ) : null}
-      {progressTab === "week" ? <StrengthSessionsLine count={progressStats.strengthSessions} /> : null}
+      {progressTab === "week" ? <StrengthSessionsLine done={progressStats.strengthSessions} planned={progressStats.strengthPlanned} /> : null}
       {progressTab === "month" ? (
         <div style={{ marginTop: 14 }}>
           <ActivityList activities={progressStats.activities} />
           <ExecutedFooter summary={progressStats} />
-          <StrengthSessionsLine count={progressStats.strengthSessions} />
+          <StrengthSessionsLine done={progressStats.strengthSessions} planned={progressStats.strengthPlanned} />
         </div>
       ) : null}
       {progressTab === "year" ? (
@@ -139,7 +141,7 @@ export function AthleteHomeProgress({ cardStyle, workouts }) {
                 <div key={m.start} style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: ".82em" }}>
                   <span style={{ textTransform: "capitalize", color: "#0f172a", fontWeight: 700 }}>{monthLabelEs(m.year, m.month)}</span>
                   <span style={{ color: "#334155", textAlign: "right" }}>
-                    {m.sessions} realizados · {m.km.toFixed(1)} km
+                    {formatSessionCount(m.sessions, m.runningPlanned)} · {formatKm1(m.km)} km
                     {m.missingDistance > 0 ? ` · ${m.missingDistance} sin km` : ""}
                   </span>
                 </div>
@@ -147,7 +149,7 @@ export function AthleteHomeProgress({ cardStyle, workouts }) {
             </div>
           )}
           <ExecutedFooter summary={progressStats} />
-          <StrengthSessionsLine count={progressStats.strengthSessions} />
+          <StrengthSessionsLine done={progressStats.strengthSessions} planned={progressStats.strengthPlanned} />
         </div>
       ) : null}
     </div>
@@ -190,7 +192,7 @@ export function AthleteWeeklyStrip({ cardStyle, workouts }) {
               <div style={{ fontSize: ".6em", color: "#94a3b8", marginBottom: 10 }}>{week.range}</div>
               <div style={{ marginBottom: 8 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: ".65em", color: "#64748b", marginBottom: 3 }}>
-                  <span>Km reales</span><span style={{ fontWeight: 800, color: "#0f172a" }}>{week.kmTotal.toFixed(1)}</span>
+                  <span>Km reales</span><span style={{ fontWeight: 800, color: "#0f172a" }}>{formatKm1(week.kmTotal)}</span>
                 </div>
                 <div style={{ height: 5, background: "#e2e8f0", borderRadius: 999 }}>
                   <div style={{ height: "100%", width: kmPct + "%", background: "linear-gradient(90deg,#ff8a3d,#f97316)", borderRadius: 999, transition: "width .3s" }} />
@@ -204,7 +206,7 @@ export function AthleteWeeklyStrip({ cardStyle, workouts }) {
                   <div style={{ height: "100%", width: adherencePct + "%", background: adherenceColor, borderRadius: 999, transition: "width .3s" }} />
                 </div>
               </div>
-              <div style={{ fontSize: ".62em", color: "#94a3b8" }}>{week.completed}/{week.total} sesiones</div>
+              <div style={{ fontSize: ".62em", color: "#94a3b8" }}>{formatSessionCount(week.completed, week.total)} sesiones</div>
             </div>
           );
         })}
@@ -238,14 +240,14 @@ export function AthleteMonthSummary({ cardStyle, workouts }) {
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
           <div style={{ background: "#f8fafc", borderRadius: 10, padding: "12px 14px" }}>
             <div style={{ fontSize: ".68em", color: "#64748b", marginBottom: 4 }}>Km reales</div>
-            <div style={{ fontSize: "1.6em", fontWeight: 900, color: "#0f172a", fontFamily: "monospace" }}>{thisSummary.km.toFixed(1)}</div>
+            <div style={{ fontSize: "1.6em", fontWeight: 900, color: "#0f172a", fontFamily: "monospace" }}>{formatKm1(thisSummary.km)}</div>
             <div style={{ fontSize: ".7em", color: kmDeltaColor, fontWeight: 700, marginTop: 2 }}>
-              {kmDelta >= 0 ? "+" : ""}{kmDelta.toFixed(1)} vs mes anterior
+              {kmDelta >= 0 ? "+" : ""}{formatKm1(kmDelta)} vs mes anterior
             </div>
           </div>
           <div style={{ background: "#f8fafc", borderRadius: 10, padding: "12px 14px" }}>
             <div style={{ fontSize: ".68em", color: "#64748b", marginBottom: 4 }}>Realizados</div>
-            <div style={{ fontSize: "1.6em", fontWeight: 900, color: "#0f172a", fontFamily: "monospace" }}>{thisSummary.sessions}</div>
+            <div style={{ fontSize: "1.6em", fontWeight: 900, color: "#0f172a", fontFamily: "monospace" }}>{formatSessionCount(thisSummary.sessions, thisSummary.runningPlanned)}</div>
             <div style={{ fontSize: ".7em", color: adherenceThis >= 80 ? "#16a34a" : "#ff8a3d", fontWeight: 700, marginTop: 2 }}>
               {adherenceThis}% adherencia
             </div>
@@ -256,7 +258,7 @@ export function AthleteMonthSummary({ cardStyle, workouts }) {
             <div style={{ fontSize: ".68em", color: "#b45309", fontWeight: 700, marginBottom: 4 }}>🏆 Mejor sesión</div>
             <div style={{ fontWeight: 800, fontSize: ".88em", color: "#0f172a" }}>{bestSession.title}</div>
             <div style={{ fontSize: ".75em", color: "#64748b", marginTop: 2 }}>
-              {bestSession.km.toFixed(1)} km
+              {formatKm1(bestSession.km)} km
               {bestSession.durationMin ? ` · ${bestSession.durationMin} min` : ""}
               {bestSession.paceLabel ? ` · ${bestSession.paceLabel}` : ""}
               {bestSession.rpe ? ` · RPE ${bestSession.rpe}` : ""}
@@ -266,14 +268,14 @@ export function AthleteMonthSummary({ cardStyle, workouts }) {
         <div style={{ fontSize: ".68em", color: "#64748b", textTransform: "uppercase", letterSpacing: ".13em", marginBottom: 8 }}>Actividades</div>
         <ActivityList activities={activities} />
         <ExecutedFooter summary={thisSummary} />
-        <StrengthSessionsLine count={thisSummary.strengthSessions} />
+        <StrengthSessionsLine done={thisSummary.strengthSessions} planned={thisSummary.strengthPlanned} />
       </div>
       <div style={{ ...cardStyle }}>
         <div style={{ fontSize: ".68em", color: "#64748b", textTransform: "uppercase", letterSpacing: ".13em", marginBottom: 10 }}>Comparativa vs mes anterior</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {[
-            { label: "Km reales", val: thisSummary.km.toFixed(1), prev: lastSummary.km.toFixed(1) },
-            { label: "Sesiones realizadas", val: thisSummary.sessions, prev: lastSummary.sessions },
+            { label: "Km reales", val: formatKm1(thisSummary.km), prev: formatKm1(lastSummary.km) },
+            { label: "Sesiones realizadas", val: formatSessionCount(thisSummary.sessions, thisSummary.runningPlanned), prev: formatSessionCount(lastSummary.sessions, lastSummary.runningPlanned) },
             { label: "Adherencia", val: `${adherenceThis}%`, prev: `${adherenceLast}%` },
           ].map((row) => (
             <div key={row.label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid #f1f5f9" }}>
