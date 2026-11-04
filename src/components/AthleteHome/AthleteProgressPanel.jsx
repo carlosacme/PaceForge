@@ -39,9 +39,9 @@ function ActivityList({ activities }) {
             <div style={{ color: "#64748b" }}>{a.date}</div>
           </div>
           <div style={{ textAlign: "right", color: "#334155", flexShrink: 0 }}>
-            <div>{a.missingDistance ? "sin distancia" : `${a.km.toFixed(1)} km`}</div>
+            <div>{a.strength ? "fuerza" : a.missingDistance ? "sin distancia" : `${a.km.toFixed(1)} km`}</div>
             <div style={{ color: "#64748b" }}>
-              {[a.durationMin ? `${a.durationMin} min` : null, a.paceLabel].filter(Boolean).join(" · ") || "—"}
+              {a.strength ? "—" : ([a.durationMin ? `${a.durationMin} min` : null, a.paceLabel].filter(Boolean).join(" · ") || "—")}
             </div>
           </div>
         </div>
@@ -55,6 +55,14 @@ function ExecutedFooter({ summary }) {
     <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px solid #e2e8f0", fontSize: ".84em", color: "#0f172a", fontWeight: 700 }}>
       {summary.sessions} realizados · {summary.km.toFixed(1)} km reales
       {summary.missingDistance > 0 ? ` · ${summary.missingDistance} sin distancia real` : ""}
+    </div>
+  );
+}
+
+function StrengthSessionsLine({ count }) {
+  return (
+    <div style={{ marginTop: 8, fontSize: ".82em", color: "#475569" }}>
+      Sesiones de fuerza realizadas: {count}
     </div>
   );
 }
@@ -113,10 +121,12 @@ export function AthleteHomeProgress({ cardStyle, workouts }) {
           {progressStats.missingDistance} realizado{progressStats.missingDistance === 1 ? "" : "s"} sin distancia real: no suma km.
         </div>
       ) : null}
+      {progressTab === "week" ? <StrengthSessionsLine count={progressStats.strengthSessions} /> : null}
       {progressTab === "month" ? (
         <div style={{ marginTop: 14 }}>
           <ActivityList activities={progressStats.activities} />
           <ExecutedFooter summary={progressStats} />
+          <StrengthSessionsLine count={progressStats.strengthSessions} />
         </div>
       ) : null}
       {progressTab === "year" ? (
@@ -137,6 +147,7 @@ export function AthleteHomeProgress({ cardStyle, workouts }) {
             </div>
           )}
           <ExecutedFooter summary={progressStats} />
+          <StrengthSessionsLine count={progressStats.strengthSessions} />
         </div>
       ) : null}
     </div>
@@ -149,13 +160,13 @@ export function AthleteWeeklyStrip({ cardStyle, workouts }) {
     return recentBogotaWeeks(new Date(), 4).map((range) => {
       const weekRows = workoutsInRange(workouts, range.start, range.end);
       const summary = summarizeExecuted(weekRows);
-      const adherence = weekRows.length > 0 ? Math.round((summary.sessions / weekRows.length) * 100) : 0;
+      const adherence = weekRows.length > 0 ? Math.round((summary.completed / weekRows.length) * 100) : 0;
       return {
         key: `${range.start}-${range.end}`,
         label: range.offset === 0 ? "Semana actual" : `Hace ${range.offset} semana${range.offset === 1 ? "" : "s"}`,
         range: `${range.start} → ${range.end}`,
         kmTotal: summary.km,
-        completed: summary.sessions,
+        completed: summary.completed,
         total: weekRows.length,
         adherence,
         missingDistance: summary.missingDistance,
@@ -214,8 +225,8 @@ export function AthleteMonthSummary({ cardStyle, workouts }) {
   const lastSummary = summarizeExecuted(lastMonthWorkouts);
   const activities = executedActivities(thisMonthWorkouts);
   const bestSession = [...activities].filter((a) => a.km > 0).sort((a, b) => b.km - a.km)[0];
-  const adherenceThis = thisMonthWorkouts.length ? Math.round((thisSummary.sessions / thisMonthWorkouts.length) * 100) : 0;
-  const adherenceLast = lastMonthWorkouts.length ? Math.round((lastSummary.sessions / lastMonthWorkouts.length) * 100) : 0;
+  const adherenceThis = thisMonthWorkouts.length ? Math.round((thisSummary.completed / thisMonthWorkouts.length) * 100) : 0;
+  const adherenceLast = lastMonthWorkouts.length ? Math.round((lastSummary.completed / lastMonthWorkouts.length) * 100) : 0;
   const kmDelta = thisSummary.km - lastSummary.km;
   const kmDeltaColor = kmDelta >= 0 ? "#16a34a" : "#dc2626";
   const monthLabel = monthLabelEs(ranges.month.year, ranges.month.month);
@@ -255,6 +266,7 @@ export function AthleteMonthSummary({ cardStyle, workouts }) {
         <div style={{ fontSize: ".68em", color: "#64748b", textTransform: "uppercase", letterSpacing: ".13em", marginBottom: 8 }}>Actividades</div>
         <ActivityList activities={activities} />
         <ExecutedFooter summary={thisSummary} />
+        <StrengthSessionsLine count={thisSummary.strengthSessions} />
       </div>
       <div style={{ ...cardStyle }}>
         <div style={{ fontSize: ".68em", color: "#64748b", textTransform: "uppercase", letterSpacing: ".13em", marginBottom: 10 }}>Comparativa vs mes anterior</div>

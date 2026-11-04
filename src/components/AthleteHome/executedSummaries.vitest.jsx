@@ -3,11 +3,16 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { AthleteHomeProgress, AthleteMonthSummary, AthleteWeeklyStrip } from "./AthleteProgressPanel";
 
 const cardStyle = { background: "#fff", padding: 12 };
+const strengthStructure = [
+  { block_type: "Calentamiento", duration_min: "10", description: "Movilidad" },
+  { block_type: "Intervalo", duration_min: "30", description: "Sentadillas, 3 series x 12" },
+];
 const workouts = [
   {
     id: "run",
     scheduled_date: "2026-02-28",
     done: true,
+    type: "easy",
     title: "Rodaje real",
     total_km: 18,
     distance_km: 18,
@@ -15,20 +20,33 @@ const workouts = [
     actual_distance_km: 10,
     actual_duration_min: 50,
     actual_avg_pace_s: 300,
+    structure: [{ block_type: "Rodaje", duration_min: "50", target_pace: "5:30-5:00" }],
   },
   {
     id: "gym",
-    scheduled_date: "2026-02-12",
+    scheduled_date: "2026-02-24",
     done: true,
-    type: "strength",
+    type: "recovery",
     title: "Fuerza",
     total_km: 3,
     duration_min: 40,
+    actual_distance_km: 2,
+    actual_duration_min: 40,
+    structure: strengthStructure,
+  },
+  {
+    id: "gym-open",
+    scheduled_date: "2026-02-18",
+    done: false,
+    type: "recovery",
+    title: "Fuerza pendiente",
+    structure: strengthStructure,
   },
   {
     id: "skip",
-    scheduled_date: "2026-02-20",
+    scheduled_date: "2026-02-26",
     done: false,
+    type: "easy",
     title: "No corrido",
     total_km: 30,
     distance_km: 30,
@@ -39,6 +57,7 @@ const workouts = [
     id: "march",
     scheduled_date: "2026-03-01",
     done: true,
+    type: "easy",
     title: "Marzo temprano",
     total_km: 21,
     duration_min: 100,
@@ -64,8 +83,9 @@ describe("resúmenes con lo corrido en Bogotá", () => {
     expect(screen.getByText("2026-02-23 → 2026-03-01")).toBeTruthy();
     expect(screen.getByText("25.0 km")).toBeTruthy();
     expect(screen.getByText("2")).toBeTruthy();
+    expect(screen.getByText("Sesiones de fuerza realizadas: 1")).toBeTruthy();
     expect(screen.queryByText("No corrido")).toBeNull();
-    expect(screen.queryByText("30.0 km")).toBeNull();
+    expect(screen.queryByText("27.0 km")).toBeNull();
   });
 
   it("el mes de Bogotá lista lo realizado y deja fuera marzo y lo no corrido", () => {
@@ -74,10 +94,14 @@ describe("resúmenes con lo corrido en Bogotá", () => {
     expect(screen.getByText("2026-02-01 → 2026-02-28")).toBeTruthy();
     expect(screen.getByText("Rodaje real")).toBeTruthy();
     expect(screen.getByText("Fuerza")).toBeTruthy();
-    expect(screen.getByText("sin distancia")).toBeTruthy();
+    expect(screen.getByText("fuerza")).toBeTruthy();
+    expect(screen.queryByText("sin distancia")).toBeNull();
+    expect(screen.queryByText("2.0 km")).toBeNull();
     expect(screen.getByText("50 min · 5:00/km")).toBeTruthy();
-    expect(screen.getByText((_, node) => node.textContent === "2 realizados · 10.0 km reales · 1 sin distancia real")).toBeTruthy();
+    expect(screen.getByText((_, node) => node.textContent === "1 realizados · 10.0 km reales")).toBeTruthy();
+    expect(screen.getByText("Sesiones de fuerza realizadas: 1")).toBeTruthy();
     expect(screen.queryByText("No corrido")).toBeNull();
+    expect(screen.queryByText("Fuerza pendiente")).toBeNull();
     expect(screen.queryByText("Marzo temprano")).toBeNull();
   });
 
@@ -87,13 +111,16 @@ describe("resúmenes con lo corrido en Bogotá", () => {
     expect(screen.getByText("2026-01-01 → 2026-12-31")).toBeTruthy();
     expect(screen.getByText("febrero 2026")).toBeTruthy();
     expect(screen.getByText("marzo 2026")).toBeTruthy();
-    expect(screen.getByText((_, node) => node.textContent === "3 realizados · 25.0 km reales · 1 sin distancia real")).toBeTruthy();
+    expect(screen.getByText((_, node) => node.textContent === "2 realizados · 25.0 km reales")).toBeTruthy();
+    expect(screen.getByText("Sesiones de fuerza realizadas: 1")).toBeTruthy();
   });
 
   it("la tira semanal muestra km reales de la semana de Bogotá", () => {
     render(<AthleteWeeklyStrip cardStyle={cardStyle} workouts={workouts} />);
     expect(screen.getByText("2026-02-23 → 2026-03-01")).toBeTruthy();
     expect(screen.getAllByText("25.0").length).toBeGreaterThan(0);
+    expect(screen.getByText("3/4 sesiones")).toBeTruthy();
+    expect(screen.getByText("75%")).toBeTruthy();
     expect(screen.queryByText("48.0")).toBeNull();
   });
 
@@ -101,8 +128,10 @@ describe("resúmenes con lo corrido en Bogotá", () => {
     render(<AthleteMonthSummary cardStyle={cardStyle} workouts={workouts} />);
     expect(screen.getByText(/Resumen · febrero 2026/)).toBeTruthy();
     expect(screen.getAllByText("Rodaje real").length).toBe(2);
+    expect(screen.getByText("fuerza")).toBeTruthy();
     expect(screen.getByText((_, node) => node.textContent === "10.0 km · 50 min · 5:00/km")).toBeTruthy();
-    expect(screen.getByText((_, node) => node.textContent === "2 realizados · 10.0 km reales · 1 sin distancia real")).toBeTruthy();
+    expect(screen.getByText((_, node) => node.textContent === "1 realizados · 10.0 km reales")).toBeTruthy();
+    expect(screen.getByText("Sesiones de fuerza realizadas: 1")).toBeTruthy();
     expect(screen.queryByText("No corrido")).toBeNull();
     expect(screen.queryByText("18.0")).toBeNull();
   });
