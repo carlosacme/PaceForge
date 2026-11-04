@@ -254,7 +254,7 @@ export default function AthleteCalendarSection({
                     const wt = WORKOUT_TYPES.find((t) => t.id === w.type) || WORKOUT_TYPES[0];
                     const kmNum = Number(w.total_km);
                     const kmLabel = Number.isFinite(kmNum) && kmNum > 0
-                      ? `${Number.isInteger(kmNum) ? kmNum : kmNum.toFixed(1)} km`
+                      ? `plan ${Number.isInteger(kmNum) ? kmNum : kmNum.toFixed(1)} km`
                       : "";
                     return (
                       <button

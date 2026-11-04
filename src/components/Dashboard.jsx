@@ -4,13 +4,12 @@ import { useAppResumeRefresh } from "../hooks/useAppResumeRefresh";
 import {
   styles,
   sumWeekKm,
-  formatLocalYMD,
-  startOfWeekMonday,
-  addDays,
+  currentWeekRangeYmd,
   normalizeWorkoutRow,
   isAuthLockContentionError,
   withAuthLockRetry,
 } from "./shared/appShared";
+import { formatCoachSessionLines, formatRpeValue, formatYmdLongEs, weekRpeAverages, weekSessionBreakdown } from "../../lib/weekStats.js";
 import CoachRequestsInbox from "./CoachRequestsInbox";
 import { IOS_FEATURE_UNAVAILABLE, isIosApp } from "../lib/platform";
 import { useCoachRequests } from "../hooks/useCoachRequests";
@@ -20,7 +19,7 @@ const MONTH_INDEX = {
   Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11,
 };
 
-/** Etiqueta de carrera y días restantes (para tablas y métricas). */
+/** Días restantes hasta la carrera. Usa la medianoche local del navegador a propósito. */
 export const getRaceMeta = (nextRace) => {
   if (!nextRace || typeof nextRace !== "string") return { name: "—", daysLeft: null };
   const [raceNameRaw, datePartRaw] = nextRace.split(" - ");
@@ -69,12 +68,11 @@ function Dashboard({
   onReloadAthletes,
 }) {
   const S = styles;
-  const weekStart = useMemo(() => startOfWeekMonday(new Date()), []);
-  const weekEnd = useMemo(() => addDays(weekStart, 6), [weekStart]);
-  const weekRangeLabel = useMemo(() => {
-    const opt = { day: "numeric", month: "long", year: "numeric" };
-    return `Semana del ${weekStart.toLocaleDateString("es", opt)} al ${weekEnd.toLocaleDateString("es", opt)}`;
-  }, [weekStart, weekEnd]);
+  const { from: weekStart, to: weekEnd } = useMemo(() => currentWeekRangeYmd(new Date()), []);
+  const weekRangeLabel = useMemo(
+    () => `Semana del ${formatYmdLongEs(weekStart)} al ${formatYmdLongEs(weekEnd)}`,
+    [weekStart, weekEnd],
+  );
 
   const [weekWorkouts, setWeekWorkouts] = useState([]);
   const [dashLoading, setDashLoading] = useState(true);
@@ -108,8 +106,8 @@ function Dashboard({
       return;
     }
     if (!silent) setDashLoading(true);
-    const ws = formatLocalYMD(weekStart);
-    const we = formatLocalYMD(weekEnd);
+    const ws = weekStart;
+    const we = weekEnd;
     try {
       await withAuthLockRetry(async () => {
         const { data: staffRows, error: staffErr } = await supabase
@@ -157,29 +155,20 @@ function Dashboard({
   // Km de la semana a partir de los workouts que ya estan cargados (misma
   // consulta de siempre), no del weekly_km declarado en la ficha del atleta.
   const weekKm = useMemo(() => sumWeekKm(weekWorkouts), [weekWorkouts]);
+  const weekSessions = useMemo(() => weekSessionBreakdown(weekWorkouts), [weekWorkouts]);
 
   const weekKmDonePct = weekKm.planned > 0 ? Math.round((weekKm.actual / weekKm.planned) * 100) : 0;
 
-  const { weekWorkoutsTotal, weekWorkoutsDone, weekAvgRpe, weekRpeCount } = useMemo(() => {
-    const total = weekWorkouts.length;
-    const done = weekWorkouts.filter((w) => w.done).length;
-    const rpeVals = weekWorkouts.filter((w) => w.done && w.rpe != null).map((w) => w.rpe);
-    const avgRpe = rpeVals.length ? rpeVals.reduce((a, b) => a + b, 0) / rpeVals.length : null;
-    return { weekWorkoutsTotal: total, weekWorkoutsDone: done, weekAvgRpe: avgRpe, weekRpeCount: rpeVals.length };
-  }, [weekWorkouts]);
+  const weekRpe = useMemo(() => weekRpeAverages(weekWorkouts), [weekWorkouts]);
 
-  const globalAdherencePct = weekWorkoutsTotal > 0
-    ? Math.round((weekWorkoutsDone / weekWorkoutsTotal) * 100)
-    : 0;
+  const globalAdherencePct = weekSessions.pct;
 
   const athleteRows = useMemo(() => {
     return (athletes || []).map((a) => {
       const forAthlete = weekWorkouts.filter((w) => String(w.athlete_id) === String(a.id));
-      const weekTotal = forAthlete.length;
-      const weekDone = forAthlete.filter((w) => w.done).length;
-      const adherencePct = weekTotal > 0 ? Math.round((weekDone / weekTotal) * 100) : 0;
+      const sessions = weekSessionBreakdown(forAthlete);
       const { name: raceName, daysLeft } = getRaceMeta(a.next_race);
-      return { athlete: a, weekTotal, weekDone, adherencePct, raceName, daysLeft, km: sumWeekKm(forAthlete) };
+      return { athlete: a, sessions, adherencePct: sessions.pct, raceName, daysLeft, km: sumWeekKm(forAthlete) };
     });
   }, [athletes, weekWorkouts]);
 
@@ -392,30 +381,45 @@ function Dashboard({
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 14, marginBottom: 28 }}>
             {[
               { label: "Atletas activos", value: athletes.length, sub: "Registrados bajo tu cuenta", icon: "🏃", color: "#ff8a3d" },
-              { label: "Km programados / semana", value: `${weekKm.planned} km`, sub: "Suma de los workouts de esta semana", icon: "📍", color: "#3b82f6" },
+              { label: "Plan (todos los workouts)", value: `${weekKm.planned} km`, sub: "Suma del km planeado de todos los workouts de esta semana", icon: "📍", color: "#3b82f6" },
               {
-                label: "Km corridos / semana",
+                label: "Corrido (carreras hechas)",
                 value: `${weekKm.actual} km`,
-                sub: weekKm.planned > 0
-                  ? `${weekKmDonePct}% de lo programado · solo sesiones marcadas como hechas`
-                  : "Sin kilómetros programados esta semana",
+                sub: [
+                  weekKm.planned > 0
+                    ? `${weekKmDonePct}% del plan · solo carreras hechas`
+                    : "Sin kilómetros planeados esta semana",
+                  weekSessions.missingDistance > 0
+                    ? `${weekSessions.missingDistance} sin distancia real`
+                    : "",
+                ].filter(Boolean).join(" · "),
                 icon: "🏁",
                 color: weekKm.planned > 0 && weekKm.actual >= weekKm.planned ? "#16a34a" : "#d97706",
               },
               {
                 label: "Adherencia global",
-                value: weekWorkoutsTotal ? `${globalAdherencePct}%` : "—",
-                sub: weekWorkoutsTotal ? `${weekWorkoutsDone} de ${weekWorkoutsTotal} workouts esta semana` : "Sin entrenamientos programados esta semana",
+                value: weekSessions.total ? `${globalAdherencePct}%` : "—",
+                sub: weekSessions.total
+                  ? formatCoachSessionLines(weekSessions).join(" · ")
+                  : "Sin entrenamientos programados esta semana",
                 icon: "✅",
                 color: "#22c55e",
               },
               {
-                label: "Carga promedio RPE",
-                value: weekAvgRpe != null ? weekAvgRpe.toFixed(1) : "—",
-                sub:
-                  weekAvgRpe != null
-                    ? `Promedio de RPE en sesiones completadas con registro (${weekRpeCount} sesiones)`
-                    : "Ningún workout completado con RPE esta semana",
+                label: "RPE carrera (promedio)",
+                value: weekRpe.runAvg != null ? formatRpeValue(weekRpe.runAvg) : "—",
+                sub: (
+                  <>
+                    <div>
+                      {weekRpe.runAvg != null
+                        ? `Promedio de RPE en carreras hechas (${weekRpe.runCount} sesiones)`
+                        : "Ninguna carrera hecha con RPE esta semana"}
+                    </div>
+                    {weekRpe.strengthCount > 0 ? (
+                      <div>{`RPE fuerza: ${formatRpeValue(weekRpe.strengthAvg)}`}</div>
+                    ) : null}
+                  </>
+                ),
                 icon: "📊",
                 color: "#a855f7",
               },
@@ -436,7 +440,7 @@ function Dashboard({
                 <thead>
                   <tr style={{ background: "#f1f5f9", textAlign: "left", color: "#94a3b8" }}>
                     <th style={{ padding: "12px 14px", fontWeight: 700 }}>Atleta</th>
-                    <th style={{ padding: "12px 14px", fontWeight: 700 }}>Km sem · plan / real</th>
+                    <th style={{ padding: "12px 14px", fontWeight: 700 }}>Km sem · plan / corrido</th>
                     <th style={{ padding: "12px 14px", fontWeight: 700, minWidth: 160 }}>Adherencia (semana)</th>
                     <th style={{ padding: "12px 14px", fontWeight: 700 }}>Próxima carrera</th>
                     <th style={{ padding: "12px 14px", fontWeight: 700 }}>Días restantes</th>
@@ -450,7 +454,7 @@ function Dashboard({
                       </td>
                     </tr>
                   ) : (
-                    athleteRows.map(({ athlete: a, weekTotal, weekDone, adherencePct, raceName, daysLeft, km }) => (
+                    athleteRows.map(({ athlete: a, sessions, adherencePct, raceName, daysLeft, km }) => (
                       <tr
                         key={a.id}
                         onClick={() => onSelect(a)}
@@ -458,10 +462,10 @@ function Dashboard({
                       >
                         <td style={{ padding: "12px 14px", color: "#0f172a", fontWeight: 600 }}>{a.name}</td>
                         <td style={{ padding: "12px 14px", color: "#64748b", fontFamily: "monospace" }}>
-                          {km.planned > 0 ? (
+                          {km.planned > 0 || km.actual > 0 ? (
                             <>
-                              {km.planned} /{" "}
-                              <span style={{ color: km.actual >= km.planned ? "#16a34a" : "#d97706", fontWeight: 700 }}>{km.actual}</span> km
+                              Plan {km.planned} ·{" "}
+                              <span style={{ color: km.actual >= km.planned ? "#16a34a" : "#d97706", fontWeight: 700 }}>Corrido {km.actual}</span> km
                             </>
                           ) : (
                             "—"
@@ -469,9 +473,9 @@ function Dashboard({
                         </td>
                         <td style={{ padding: "12px 14px" }}>
                           <div style={{ fontSize: ".72em", color: "#64748b", marginBottom: 4 }}>
-                            {weekTotal ? `${weekDone}/${weekTotal} · ${adherencePct}%` : "Sin workouts esta semana"}
+                            {sessions.total ? `${formatCoachSessionLines(sessions).join(" · ")} · ${adherencePct}%` : "Sin workouts esta semana"}
                           </div>
-                          <ProgressBar value={weekDone} total={weekTotal || 1} color={adherencePct >= 70 ? "#22c55e" : adherencePct >= 40 ? "#ff8a3d" : "#ef4444"} />
+                          <ProgressBar value={sessions.done} total={sessions.total || 1} color={adherencePct >= 70 ? "#22c55e" : adherencePct >= 40 ? "#ff8a3d" : "#ef4444"} />
                         </td>
                         <td style={{ padding: "12px 14px", color: "#94a3b8", maxWidth: 200 }}>{raceName}</td>
                         <td style={{ padding: "12px 14px", color: "#cbd5e1", fontFamily: "monospace" }}>
@@ -485,7 +489,7 @@ function Dashboard({
             </div>
           </div>
 
-          <div style={{ fontSize: ".72em", letterSpacing: ".15em", color: "#475569", textTransform: "uppercase", marginBottom: 14 }}>Km programados esta semana, por atleta</div>
+          <div style={{ fontSize: ".72em", letterSpacing: ".15em", color: "#475569", textTransform: "uppercase", marginBottom: 14 }}>Plan (km programados esta semana, por atleta)</div>
           <div style={{ ...S.card, padding: "18px 16px 22px" }}>
             {athletes.length === 0 ? (
               <div style={{ color: "#64748b", fontSize: ".85em" }}>Sin datos para graficar.</div>
@@ -515,7 +519,7 @@ function Dashboard({
                         alignItems: "center",
                         gap: 8,
                       }}
-                      title={`${a.name}: ${km} km programados · ${weekKmForAthlete.actual} km corridos`}
+                      title={`${a.name}: plan ${km} km · corrido ${weekKmForAthlete.actual} km`}
                     >
                       <div
                         style={{
@@ -544,7 +548,7 @@ function Dashboard({
                       <div style={{ fontSize: ".62em", color: "#94a3b8", textAlign: "center", lineHeight: 1.2, wordBreak: "break-word" }}>
                         {(a.name || "").split(/\s+/)[0]}
                       </div>
-                      <div style={{ fontSize: ".65em", color: "#64748b", fontFamily: "monospace" }}>{km}</div>
+                      <div style={{ fontSize: ".65em", color: "#64748b", fontFamily: "monospace" }}>{km} plan</div>
                     </div>
                   );
                 })}

@@ -401,7 +401,7 @@ async function handleWeeklySummary(req, res) {
     rows = await fetchWorkoutsInRange(supabase, {
       from: range.prevFrom,
       to: range.closedTo,
-      columns: "athlete_id,scheduled_date,done,total_km,actual_distance_km,manual_distance_km",
+      columns: "athlete_id,scheduled_date,done,total_km,actual_distance_km,manual_distance_km,structure",
     });
   } catch (e) {
     console.error("[weekly] workouts:", e.message);
