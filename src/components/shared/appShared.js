@@ -28,7 +28,7 @@ import {
   COLOR_RED,
   COLOR_ORANGE,
 } from "../../../lib/acwrBands.js";
-import { workoutActualKm as workoutActualKmFromLib, sumWeekKm as sumWeekKmFromLib } from "../../../lib/weekStats.js";
+import { workoutActualKm as workoutActualKmFromLib, sumWeekKm as sumWeekKmFromLib, currentWeekRangeBogota } from "../../../lib/weekStats.js";
 import {
   earnedCodesFromRows,
   formatAchievementDate,
@@ -978,17 +978,14 @@ export const reconcileWorkoutList = (list, { paceRanges = null, kmKey = null, lo
 };
 
 /**
- * Lunes y domingo (YYYY-MM-DD) de la semana en curso, en la hora local del
- * navegador, que es la misma convencion que usa el calendario del coach.
+ * Lunes y domingo (YYYY-MM-DD) de la semana en curso en America/Bogota.
+ * Lo usan los km y las sesiones del coach (panel y lista de atletas).
  */
-export const currentWeekRangeYmd = (ref = new Date()) => {
-  const monday = startOfWeekMonday(ref);
-  return { from: formatLocalYMD(monday), to: formatLocalYMD(addDays(monday, 6)) };
-};
+export const currentWeekRangeYmd = (ref = new Date()) => currentWeekRangeBogota(ref);
 
 /**
- * Distancia realmente corrida y km semanales: misma fórmula que el cron de
- * resumen (`lib/weekStats.js`). planned = total_km; actual solo si done.
+ * Distancia corrida y km semanales: misma fórmula que el cron de resumen
+ * (`lib/weekStats.js`). planned = total_km de todos; actual = carreras hechas.
  */
 export const workoutActualKm = workoutActualKmFromLib;
 export const sumWeekKm = sumWeekKmFromLib;
@@ -1004,7 +1001,7 @@ export const fetchWeeklyKmByAthlete = async (athleteIds, range) => {
   const { from, to } = range || currentWeekRangeYmd();
   const { data, error } = await supabase
     .from("workouts")
-    .select("athlete_id, total_km, done, actual_distance_km, manual_distance_km")
+    .select("athlete_id, total_km, done, actual_distance_km, manual_distance_km, structure")
     .in("athlete_id", ids)
     .gte("scheduled_date", from)
     .lte("scheduled_date", to);

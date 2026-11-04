@@ -134,7 +134,7 @@ export const WeeklyLoadLine = ({ load }) => {
   return (
     <>
       Plan {planned} ·{" "}
-      <span style={{ color: cumplio ? "#16a34a" : "#d97706", fontWeight: 700 }}>Real {actual}</span> km
+      <span style={{ color: cumplio ? "#16a34a" : "#d97706", fontWeight: 700 }}>Corrido {actual}</span> km
     </>
   );
 };
